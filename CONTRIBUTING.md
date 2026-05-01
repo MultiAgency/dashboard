@@ -1,6 +1,8 @@
 # Contributing Guide
 
-Thank you for contributing to everything-dev! 🎉
+Thank you for contributing to the **Agency Dashboard Template**! 🎉
+
+This template is maintained by [MultiAgency](https://github.com/MultiAgency) and built on the upstream [everything.dev](https://github.com/NEARBuilders/everything-dev) runtime. Issues and PRs about the template (agency surfaces, modules, dashboard customizations) belong here. Issues and PRs about the underlying runtime/framework belong upstream.
 
 ## Quick Setup
 
@@ -12,7 +14,7 @@ bos dev --host remote    # Start development (typical workflow)
 
 Visit http://localhost:3002 (UI) and http://localhost:3014 (API).
 
-**Need more details?** See [README.md](./README.md) for architecture overview and [LLM.txt](./LLM.txt) for technical deep-dive.
+**Need more details?** See [README.md](./README.md) for architecture and [AGENTS.md](./AGENTS.md) for the agent operational guide.
 
 ## Development Workflow
 
@@ -28,10 +30,9 @@ Visit http://localhost:3002 (UI) and http://localhost:3014 (API).
 Business logic lives in independent plugins under `plugins/`:
 
 - **`plugins/registry/`** — FastKV app discovery, metadata publish/relay (no database)
-- **`plugins/projects/`** — Projects CRUD, KV store, org management, API keys (SQLite via libsql)
 - **`plugins/_template/`** — Scaffold for new plugins
 
-Each plugin has its own `contract.ts`, `index.ts`, `rspack.config.js`, and `package.json`. Routes are namespaced in the UI: `apiClient.registry.*()` and `apiClient.projects.*()`.
+Each plugin has its own `contract.ts`, `index.ts`, `rspack.config.js`, and `package.json`. Routes are namespaced in the UI: `apiClient.registry.*()`.
 
 The `api/` package is a thin structural shell with only health/ping routes and shared auth middleware. It can compose across plugins in-process via `createPlugin.withPlugins<PluginsClient>()` — the API receives typed client factories for all other plugins and calls their routers directly without HTTP roundtrips.
 
@@ -54,12 +55,10 @@ Secrets go in `.env` (see [.env.example](./.env.example) for required variables)
 
 ### Project Documentation
 
-- **[AGENTS.md](./AGENTS.md)** - Operational guide for AI agents
 - **[README.md](./README.md)** - Architecture, tech stack, and quick start
-- **[LLM.txt](./LLM.txt)** - Technical guide for LLMs and developers
-- **[api/README.md](./api/README.md)** - API plugin documentation
-- **[ui/README.md](./ui/README.md)** - Frontend documentation
-- **[host/README.md](./host/README.md)** - Server host documentation
+- **[AGENTS.md](./AGENTS.md)** - Operational guide for AI agents
+- **[ui/public/README.md](./ui/public/README.md)** - Public-facing description of the maintainer's reference deployment
+- **[ui/public/skill.md](./ui/public/skill.md)** - Agent-oriented usage notes for the deployed site
 
 ## Git Workflow
 
@@ -176,7 +175,7 @@ Added new endpoint for user profiles
 - Ensure type safety (no `any` types unless absolutely necessary)
 - Write descriptive commit messages
 - Add tests for new features
-- Use semantic Tailwind classes (see LLM.txt for style guide)
+- Use semantic Tailwind classes
 - No code comments in implementation (code should be self-documenting)
 
 ### Linting
@@ -191,19 +190,19 @@ bun format      # Format code
 
 ## Reporting Issues
 
-Use [GitHub Issues](https://github.com/NEARBuilders/everything-dev/issues) with:
+Use [GitHub Issues](https://github.com/MultiAgency/dashboard/issues) with:
 
 - **Clear description** of the problem
 - **Steps to reproduce** the issue
 - **Expected behavior** vs **actual behavior**
 - **Environment details** (OS, Node/Bun version, browser, etc.)
 
+For issues with the upstream runtime itself, file at [NEARBuilders/everything-dev](https://github.com/NEARBuilders/everything-dev/issues).
+
 ## Getting Help
 
 - Check [AGENTS.md](./AGENTS.md) for agent operational guidance
 - Check the [README](./README.md) for architecture and setup
-- Read the [LLM.txt](./LLM.txt) for technical details
-- Review workspace READMEs for specific documentation
 - Ask questions in GitHub Issues or Discussions
 
 ---

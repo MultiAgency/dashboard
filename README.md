@@ -5,15 +5,42 @@
 
 <div align="center">
 
-<h1 style="font-size: 4.25rem; font-weight: 800; line-height: 1; margin: 0;">everything.dev</h1>
+<h1 style="font-size: 4.25rem; font-weight: 800; line-height: 1; margin: 0;">Agency Dashboard Template</h1>
 
 <img src="ui/src/assets/under-construction.gif" alt="Under construction" width="380" />
 
 </div>
 
-[Module Federation](https://module-federation.io/) monorepo with runtime-loaded configuration, demonstrating [every-plugin](https://plugin.everything.dev/) architecture, [**everything-dev**](https://github.com/NEARBuilders/everything-dev/blob/main/packages/everything-dev/README.md) api & cli, and [NEAR Protocol](https://near.dev/) integration.
+A customizable dashboard template for on-chain agencies — DAO-shaped entities sourcing contributors, allocating treasury to projects, and billing against allocations.
+
+Maintained by [MultiAgency](https://github.com/MultiAgency). Built on [everything.dev](https://github.com/NEARBuilders/everything-dev).
+
+A [Module Federation](https://module-federation.io/) site composed at runtime, using the [`every-plugin`](https://plugin.everything.dev/) architecture and the [**everything-dev**](https://github.com/NEARBuilders/everything-dev/blob/main/packages/everything-dev/README.md) api & cli, with [NEAR Protocol](https://near.dev/) integration.
 
 Built with [Tanstack Start](https://tanstack.com/start/latest/docs/framework/react/quick-start), [Hono.js](https://hono.dev/), [oRPC](https://orpc.dev/), [better-auth](https://better-auth.com/), and [rsbuild](https://rsbuild.rs/).
+
+## Status
+
+This fork is being shaped into the template described above. Today, the codebase is substantially the upstream everything.dev runtime with a few agency-shaped tweaks. The agency-specific modules listed under Planned do not yet exist.
+
+**Template-committed (kept and shaped per the template):**
+- Authentication (login)
+- Home
+- Settings
+
+**Inherited from upstream — included as scaffolding; safe to delete day one if not needed for your agency:**
+- Organizations — upstream `better-auth` org-scoped concept; conflicts with the planned Sputnik-DAO-membership gating
+- Admin dashboard — opencode console; depends on the `opencode` plugin that isn't present in this repo
+- Apps browser — everything.dev apps registry, not agency-specific
+
+**Planned (not yet built):**
+- Projects
+- Contributors
+- Treasury
+- Billings
+- Applications
+
+Fork this repo, remove or extend any of the modules above, and customize per agency. When you deploy your fork, also rewrite [`ui/public/README.md`](./ui/public/README.md) and [`ui/public/skill.md`](./ui/public/skill.md) — those describe the maintainer's reference deployment and ship as-is to the deployed site.
 
 ## Quick Start
 
@@ -24,14 +51,14 @@ bos dev --host remote   # Start development (typical workflow)
 
 This will start serving the UI, the API, and mounting it on a universally shared (remote) HOST application's build.
 
-- Host: http://localhost:3000
-- API: http://localhost:3000/api
+- UI: http://localhost:3002
+- API: http://localhost:3014
 
 This maintains a flexible, well-typed architecture that connects the entirity of the application, it's operating system, and a cli to interact with it. It is a perpetually in-development model for the [Blockchain Operating System (BOS)](https://near.social/#/)
 
 ## CLI Commands
 
-`everything-dev` is the canonical runtime package and CLI. `bos` is a command alias for the same tool. See [.agent/skills/bos/SKILL.md](.agent/skills/bos/SKILL.md) for the full reference.
+`everything-dev` is the canonical runtime package and CLI. `bos` is a command alias for the same tool. See [.opencode/skills/everything-dev/SKILL.md](.opencode/skills/everything-dev/SKILL.md) for the full reference.
 
 ### Development
 
@@ -117,17 +144,8 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines in
 
 - **[AGENTS.md](./AGENTS.md)** - Quick operational guide for AI agents
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Contribution guidelines and git workflow
-- **[LLM.txt](./LLM.txt)** - Deep technical reference for implementation
-- **[API README](./api/README.md)** - API plugin documentation
-- **[UI README](./ui/README.md)** - Frontend documentation
-- **[Host README](./host/README.md)** - Server host documentation
-
-**Documentation Purpose:**
-- `README.md` (this file) - Human quick start and overview
-- `AGENTS.md` - Agent operational shortcuts
-- `CONTRIBUTING.md` - How to contribute (branch, commit, PR workflow)
-- `LLM.txt` - Technical deep-dive for implementation details
-- Package READMEs (api/, ui/, host/) - Package-specific details
+- **[ui/public/README.md](./ui/public/README.md)** - Public-facing description of the maintainer's reference deployment
+- **[ui/public/skill.md](./ui/public/skill.md)** - Agent-oriented usage notes for the deployed site
 
 ## Architecture
 
@@ -161,42 +179,39 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines in
 
 ## Configuration
 
-All runtime configuration lives in `bos.config.json`:
+All runtime configuration lives in `bos.config.json`. The shape used by this repo:
 
 ```json
 {
   "account": "dev.everything.near",
-  "domain": "everything.dev",
-  "staging": { "domain": "staging.dev.yourapp.dev" },
+  "domain": "agency",
   "repository": "https://github.com/nearbuilders/everything-dev",
-  "testnet": "dev.allthethings.testnet",
+  "staging": {
+    "domain": "staging.dev.everything.dev"
+  },
   "plugins": {
     "template": {
       "development": "local:plugins/_template"
+    },
+    "registry": {
+      "development": "local:plugins/registry",
+      "variables": {
+        "registryNamespace": "dev.everything.near"
+      }
     }
   },
   "app": {
-    "host": {
-      "name": "host",
-      "development": "local:host",
-      "production": "https://..."
-    },
-    "ui": {
-      "name": "ui",
-      "development": "local:ui",
-      "production": "https://...",
-      "ssr": "https://..."
-    },
-    "api": {
-      "name": "api",
-      "development": "local:api",
-      "production": "https://...",
-      "variables": {},
-      "secrets": []
-    }
-  }
+    "host": { "name": "host", "development": "local:host" },
+    "ui": { "name": "ui", "development": "local:ui" },
+    "api": { "name": "api", "development": "local:api", "secrets": [] }
+  },
+  "testnet": "dev.allthethings.testnet",
+  "shared": { "ui": {} },
+  "extends": "bos://dev.everything.near/everything.dev"
 }
 ```
+
+The full `bos.config.json` also stages plugin entries for `projects` and `opencode`, which are placeholders for surfaces under development — those plugin directories are not yet present in the repo, and the entries above are the resolvable subset.
 
 The temporary publish registry currently points at `dev.everything.near`, and `bos publish --deploy` is the release path when you want Zephyr URLs refreshed first.
 
@@ -217,8 +232,6 @@ Required runtime vars:
 - `HOST_DATABASE_URL` - Database connection string
 - `HOST_DATABASE_AUTH_TOKEN` - Database auth token
 - `CORS_ORIGIN` - Comma-separated allowed origins (defaults to host + UI URLs from config)
-
-See [.agent/skills/bos/docs/types.md](.agent/skills/bos/docs/types.md) for the complete schema.
 
 ## Lint Setup
 
@@ -255,7 +268,8 @@ Biome is configured in `biome.json` at the project root. Generated files (like `
 
 ## Related Projects
 
-- **[[every-plugin](https://plugin.everything.dev/)](https://github.com/near-everything/[every-plugin](https://plugin.everything.dev/))** - Plugin framework for modular APIs
+- **[everything.dev](https://github.com/NEARBuilders/everything-dev)** - Upstream foundation: the runtime this template is built on
+- **[every-plugin](https://github.com/near-everything/every-plugin)** - Plugin framework for modular APIs
 - **[near-kit](https://kit.near.tools)** - Unified NEAR Protocol SDK
 - **[better-near-auth](https://github.com/elliotBraem/better-near-auth)** - NEAR authentication for Better-Auth
 

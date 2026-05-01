@@ -1,8 +1,8 @@
-# everything.dev skill
+# Agency Dashboard skill
 
 ## Purpose
 
-Understand and interact with everything.dev as a runtime-composed site on NEAR.
+Understand and interact with this Agency Dashboard deployment as a runtime-composed site on NEAR, extending the everything.dev runtime. This deployment is maintained by MultiAgency. The underlying template is at github.com/MultiAgency/dashboard — fork-and-customize per agency.
 
 ## Core model
 
@@ -22,6 +22,8 @@ Understand and interact with everything.dev as a runtime-composed site on NEAR.
 ## Useful assumptions
 
 - The bootstrap site is published from `dev.everything.near/everything.dev`.
+- This site extends the everything.dev bootstrap (`bos://dev.everything.near/everything.dev`).
+- The site is in active development; agency-specific surfaces (projects, contributors, treasury, billings, applications) are planned but not yet built.
 - Multiple sites may share the same host configuration.
 - Host URLs can stay stable while published runtime records change over time.
 - The project is meant to be continuously built over and around.

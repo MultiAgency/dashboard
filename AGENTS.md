@@ -1,6 +1,6 @@
 # Agent Instructions
 
-This document provides operational guidance for AI agents working on a BOS project scaffolded via `bos init`.
+Operational guidance for AI agents working on the **Agency Dashboard Template** repo (maintained by [MultiAgency](https://github.com/MultiAgency); built on the [everything.dev](https://github.com/NEARBuilders/everything-dev) runtime, scaffolded via `bos init`). The repo is being shaped into a fork-and-customize template for on-chain agencies; many surfaces named in the README's Planned section are not yet built — verify what exists in `ui/src/routes/` and `plugins/` before assuming.
 
 ## Quick Reference
 

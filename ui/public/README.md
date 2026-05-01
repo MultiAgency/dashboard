@@ -1,14 +1,14 @@
-# everything.dev
+# Agency Dashboard
 
-everything.dev is an open runtime for apps on NEAR.
+This is MultiAgency's reference deployment of the [Agency Dashboard Template](https://github.com/MultiAgency/dashboard) — a runtime-composed site for on-chain agencies on NEAR, built on the everything.dev runtime.
 
 The bootstrap root is published from `dev.everything.near/everything.dev` and composed at runtime from public configuration rather than a single fixed bundle.
 
 ## What it is
 
-- A site for browsing and inspecting published runtimes
-- A product surface built from a host, remote UI, and remote API
-- A public reference for runtime composition on NEAR
+- A dashboard surface for an on-chain agency, deployed as the reference instance of the template
+- A product surface built from a host, remote UI, and remote API — composed at runtime
+- A downstream runtime built on top of `everything.dev`
 
 ## How it works
 
@@ -44,5 +44,6 @@ The bootstrap root is published from `dev.everything.near/everything.dev` and co
 ## Canonical context
 
 - Bootstrap runtime: `dev.everything.near/everything.dev`
+- This site extends `bos://dev.everything.near/everything.dev` via `bos.config.json`
 - Stable host URLs can be reused across multiple sites
 - Composition happens through published config, not rebuild-only deployment
