@@ -1,0 +1,45 @@
+{
+  "account": "dev.everything.near",
+  "domain": "agency",
+  "repository": "https://github.com/nearbuilders/everything-dev",
+  "staging": {
+    "domain": "staging.dev.everything.dev"
+  },
+  "plugins": {
+    "template": {
+      "development": "local:plugins/_template"
+    },
+    "registry": {
+      "development": "local:plugins/registry",
+      "variables": {
+        "registryNamespace": "dev.everything.near"
+      }
+    },
+    "projects": {
+      "development": "local:plugins/projects"
+    },
+    "opencode": {
+      "development": "local:plugins/opencode"
+    }
+  },
+  "app": {
+    "host": {
+      "name": "host",
+      "development": "local:host"
+    },
+    "ui": {
+      "name": "ui",
+      "development": "local:ui"
+    },
+    "api": {
+      "name": "api",
+      "development": "local:api",
+      "secrets": []
+    }
+  },
+  "testnet": "dev.allthethings.testnet",
+  "shared": {
+    "ui": {}
+  },
+  "extends": "bos://dev.everything.near/everything.dev"
+}

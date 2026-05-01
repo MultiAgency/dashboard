@@ -1,0 +1,3 @@
+[install]
+  linker = "isolated"
+  ignore-scripts = true
