@@ -1,30 +1,33 @@
 {
-  "account": "dev.everything.near",
-  "domain": "agency",
-  "repository": "https://github.com/nearbuilders/everything-dev",
+  "account": "agency.near",
+  "extends": "bos://dev.everything.near/everything.dev",
+  "domain": "multiagency.ai",
+  "testnet": "agency.testnet",
   "staging": {
-    "domain": "staging.dev.everything.dev"
+    "domain": "dev.multiagency.ai"
   },
-  "plugins": {
-    "template": {
-      "development": "local:plugins/_template"
-    },
-    "registry": {
-      "development": "local:plugins/registry",
-      "variables": {
-        "registryNamespace": "dev.everything.near"
+  "repository": "https://github.com/MultiAgency/dashboard",
+  "shared": {
+    "ui": {
+      "effect": {
+        "version": "3.21.0",
+        "requiredVersion": "^3.21.0",
+        "singleton": true,
+        "strictVersion": false,
+        "shareScope": "default"
+      },
+      "zod": {
+        "version": "4.3.6",
+        "requiredVersion": "^4.3.6",
+        "singleton": true,
+        "strictVersion": false,
+        "shareScope": "default"
       }
-    },
-    "projects": {
-      "development": "local:plugins/projects"
-    },
-    "opencode": {
-      "development": "local:plugins/opencode"
     }
   },
+  "plugins": {},
   "app": {
     "host": {
-      "name": "host",
       "development": "local:host"
     },
     "ui": {
@@ -36,10 +39,5 @@
       "development": "local:api",
       "secrets": []
     }
-  },
-  "testnet": "dev.allthethings.testnet",
-  "shared": {
-    "ui": {}
-  },
-  "extends": "bos://dev.everything.near/everything.dev"
+  }
 }

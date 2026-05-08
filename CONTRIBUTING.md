@@ -8,11 +8,11 @@ This template is maintained by [MultiAgency](https://github.com/MultiAgency) and
 
 ```bash
 bun install              # Install dependencies
-bun db:migrate           # Run database migrations
+bun run db:migrate       # Apply API schema to ./api.db
 bos dev --host remote    # Start development (typical workflow)
 ```
 
-Visit http://localhost:3002 (UI) and http://localhost:3014 (API).
+UI is at http://localhost:3002; API runs on a dynamic port (check the `[API ✓ ready]` line in the dev server output).
 
 **Need more details?** See [README.md](./README.md) for architecture and [AGENTS.md](./AGENTS.md) for the agent operational guide.
 
@@ -20,21 +20,20 @@ Visit http://localhost:3002 (UI) and http://localhost:3014 (API).
 
 ### Making Changes
 
-- **UI Changes**: Edit `ui/src/` → hot reload automatically → deploy with `bun run build:ui`
-- **API Changes**: Edit `api/src/` → hot reload automatically → deploy with `bun run build:api`
-- **Plugin Changes**: Edit `plugins/*/src/` → hot reload automatically → deploy per plugin
-- **Host Changes**: Edit `host/src/` or `bos.config.json` → deploy with `bun run build:host`
+- **UI Changes**: Edit `ui/src/` → hot reload automatically → publish with `bos publish --deploy`
+- **API Changes**: Edit `api/src/` → hot reload automatically → publish with `bos publish --deploy`
+- **Runtime Config**: Edit `bos.config.json` → publish with `bos publish --deploy` (the host is remote — not in this repo)
 
 ### Plugin Architecture
 
-Business logic lives in independent plugins under `plugins/`:
+Business logic is organized into independent plugins loaded via Module Federation:
 
-- **`plugins/registry/`** — FastKV app discovery, metadata publish/relay (no database)
-- **`plugins/_template/`** — Scaffold for new plugins
+- **`api/`** — Owns the agency surface today (applications, projects, contributors, allocations, billings, assignments, settings, treasury, nearn, team, me) plus shared auth middleware. As agency-specific plugins ship, business logic can migrate out of `api/` into its own plugin.
+- **`plugins/`** — No plugins currently registered. New plugins live here, each self-contained with its own `contract.ts`, `index.ts`, `rspack.config.js`, and `package.json`. The canonical scaffold lives upstream at [`NEARBuilders/everything-dev/plugins/_template`](https://github.com/NEARBuilders/everything-dev/tree/main/plugins/_template); the dashboard fork has not validated the end-to-end scaffolding flow.
 
-Each plugin has its own `contract.ts`, `index.ts`, `rspack.config.js`, and `package.json`. Routes are namespaced in the UI: `apiClient.registry.*()`.
+The UI accesses plugin routes via namespaced clients: `apiClient.<pluginName>.<routeName>()`.
 
-The `api/` package is a thin structural shell with only health/ping routes and shared auth middleware. It can compose across plugins in-process via `createPlugin.withPlugins<PluginsClient>()` — the API receives typed client factories for all other plugins and calls their routers directly without HTTP roundtrips.
+The API can compose across plugins in-process via `createPlugin.withPlugins<PluginsClient>()` — it receives typed client factories for all other plugins and calls their routers directly without HTTP roundtrips.
 
 Plugin and API variables are configured in `bos.config.json`:
 - API variables: `app.api.variables` → `config.variables` in `initialize`
@@ -44,11 +43,13 @@ Plugins are accessible both directly via HTTP (`/api/{key}/*`) and in-process vi
 
 ### Environment Configuration
 
-All runtime URLs are configured in `bos.config.json` - no rebuild needed! Switch environments:
+All runtime URLs are configured in `bos.config.json` - no rebuild needed. Use the workspace dev scripts to choose what runs locally:
 
 ```bash
-NODE_ENV=development bun dev:host  # Use local services (default)
-NODE_ENV=production bun dev:host   # Use production CDN URLs
+bun run dev          # Local UI + API, remote host (typical)
+bun run dev:ui       # Local UI only; API runs remote
+bun run dev:api      # Local API only; UI runs remote
+bun run dev:proxy    # Local UI + API behind a proxy
 ```
 
 Secrets go in `.env` (see [.env.example](./.env.example) for required variables).
@@ -102,36 +103,6 @@ git commit -m "test(ui): add coverage for login flow"
 - `test:` - Tests
 - `chore:` - Build/config/tooling changes
 
-### Changesets
-
-We use [Changesets](https://github.com/changesets/changesets) for versioning.
-
-**When to add a changeset:**
-- Any user-facing change (features, fixes, deprecations)
-- Breaking changes
-- Skip for: docs-only changes, internal refactors, test-only changes
-
-**Create a changeset:**
-```bash
-bun run changeset
-# Follow prompts to select packages and write description
-```
-
-**Changeset file format:**
-```markdown
----
-"api": minor
-"ui": patch
----
-
-Added new endpoint for user profiles
-```
-
-**The release workflow:**
-1. Changesets action creates a "Version Packages" PR on merge to main
-2. On merge of that PR, GitHub releases are created for api/ui
-3. Deployments happen automatically via CI
-
 ### Pull Request Process
 
 1. **Before creating PR:**
@@ -151,11 +122,9 @@ Added new endpoint for user profiles
    - All tests must pass
    - Type checking must pass
    - Linting must pass
-   - Changeset added (if applicable)
 
 4. **After merge:**
    - Delete your branch
-   - Changesets action will handle versioning
 
 ## Contributing Code
 
@@ -164,10 +133,9 @@ Added new endpoint for user profiles
 3. **Create** a feature branch: `git checkout -b feature/amazing-feature`
 4. **Make** your changes
 5. **Test** thoroughly: `bun test` and `bun typecheck`
-6. **Add changeset** if needed: `bun run changeset`
-7. **Commit** using [Semantic Commits](https://gist.github.com/joshbuchea/6f47e86d2510bce28f8e7f42ae84c716)
-8. **Push** to your fork: `git push origin feature/amazing-feature`
-9. **Open** a Pull Request to the main repository
+6. **Commit** using [Semantic Commits](https://gist.github.com/joshbuchea/6f47e86d2510bce28f8e7f42ae84c716)
+7. **Push** to your fork: `git push origin feature/amazing-feature`
+8. **Open** a Pull Request to the main repository
 
 ### Code Style
 

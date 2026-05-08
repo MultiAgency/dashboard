@@ -1,0 +1,17 @@
+# Fork-side protections applied when this repo runs `bos sync` against upstream everything-dev.
+# Combined with upstream's `.templatesync-exclude` to determine what stays local.
+# Only list paths NOT already covered by upstream's exclude — duplication is wasteful but harmless.
+
+# Routes — every route in this fork is agency-shaped; upstream's are not
+ui/src/routes/**
+
+# Public assets — agency branding lives here
+ui/public/**
+
+# Top-level docs — fork-customized
+AGENTS.md
+README.md
+CONTRIBUTING.md
+
+# Plugins — this fork ships none of upstream's scaffolds (_template, registry, auth, etc.)
+plugins/**

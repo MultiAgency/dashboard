@@ -48,27 +48,4 @@ function TooltipContent({
   );
 }
 
-function ClassicTooltipContent({
-  className,
-  sideOffset = 6,
-  children,
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
-  return (
-    <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Content
-        data-slot="tooltip-content"
-        sideOffset={sideOffset}
-        className={cn(
-          "z-50 w-fit rounded-none border-2 border-inset border-[rgb(51,51,51)] bg-[rgb(255,255,200)] px-2 py-1 text-xs text-[rgb(35,35,35)] shadow-none",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </TooltipPrimitive.Content>
-    </TooltipPrimitive.Portal>
-  );
-}
-
-export { ClassicTooltipContent, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
+export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };

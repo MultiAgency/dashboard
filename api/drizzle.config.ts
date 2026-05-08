@@ -5,7 +5,7 @@ export default defineConfig({
   out: "./src/db/migrations",
   dialect: "turso",
   dbCredentials: {
-    url: process.env.API_DATABASE_URL || "file:./api.db",
+    url: process.env.API_DATABASE_URL || "file:../api.db",
     authToken: process.env.API_DATABASE_AUTH_TOKEN,
   },
   verbose: true,

@@ -48,9 +48,8 @@
     "includes": [
       "**",
       "!!**/ui/src/routeTree.gen.ts",
-      "!!**/plugins/**/types/**/*.d.ts",
-      "!!**/env.d.ts",
-      "!!**/virtual-modules.d.ts"
+      "!!**/ui/src/styles.css",
+      "!!**/api/src/db/migrations"
     ],
     "ignoreUnknown": true
   },

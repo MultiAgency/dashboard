@@ -1,7 +1,7 @@
 {
-  "short_name": "everything.dev",
-  "name": "everything.dev",
-  "description": "Open runtime for apps on NEAR, composed from published config and loaded at runtime.",
+  "short_name": "MultiAgency",
+  "name": "MultiAgency",
+  "description": "Dashboard for agencies integrated with Trezu and NEARN.",
   "icons": [
     {
       "src": "favicon-16x16.png",

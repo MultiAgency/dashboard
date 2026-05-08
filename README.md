@@ -7,8 +7,6 @@
 
 <h1 style="font-size: 4.25rem; font-weight: 800; line-height: 1; margin: 0;">Agency Dashboard Template</h1>
 
-<img src="ui/src/assets/under-construction.gif" alt="Under construction" width="380" />
-
 </div>
 
 A customizable dashboard template for on-chain agencies — DAO-shaped entities sourcing contributors, allocating treasury to projects, and billing against allocations.
@@ -21,44 +19,74 @@ Built with [Tanstack Start](https://tanstack.com/start/latest/docs/framework/rea
 
 ## Status
 
-This fork is being shaped into the template described above. Today, the codebase is substantially the upstream everything.dev runtime with a few agency-shaped tweaks. The agency-specific modules listed under Planned do not yet exist.
+This fork is shaped as the template described above. Phase 0 cleanup removed the upstream surfaces that don't fit the agency model (organizations, admin dashboard, apps browser, registry plugin). The agency-specific modules below are wired end-to-end in this commit.
 
-**Template-committed (kept and shaped per the template):**
-- Authentication (login)
+**Public surface:**
+
+- Landing — operating model + docs links + CTAs
+- Projects directory (title + status + slug per row; full project listings live on NEARN, not this dashboard)
+- Express interest form (replicate / contributor)
+- Connect (NEAR sign-in via `better-near-auth` SIWN — only auth method)
+
+**Authenticated workspace:**
+
 - Home
-- Settings
+- Settings — identity + agency configuration (DAO account, NEARN account, name, website, description, metadata) for admins
+- Admin / Projects — list, create, edit, assign contributors
+- Admin / Contributors — list, create, edit (compliance status + docs)
+- Admin / Allocations — per-project budget rollup, allocate/deallocate, audit log
+- Admin / Billings — flat list with project / contributor filters; create new billings as project-scoped pointers to Sputnik DAO proposals (`proposalId` required, `NOT NULL UNIQUE`). Status is read live from chain per-request (seven-state Sputnik enum); no local lifecycle field, no manual status override. Per-row Trezu deep-link for the live chain view.
+- Admin / Applications — flat list with kind / status filters; review submissions from `/apply`, transition status (new → reviewing → accepted/declined). Submissions themselves are immutable
 
-**Inherited from upstream — included as scaffolding; safe to delete day one if not needed for your agency:**
-- Organizations — upstream `better-auth` org-scoped concept; conflicts with the planned Sputnik-DAO-membership gating
-- Admin dashboard — opencode console; depends on the `opencode` plugin that isn't present in this repo
-- Apps browser — everything.dev apps registry, not agency-specific
+Admin routes are gated server-side by a `gates` registry that checks Sputnik DAO role membership (strict `Admin` / `Approver` / `Requestor` tiers plus named compositions like `operator` for Admin OR Approver) for the signed-in NEAR account against `agency_settings.daoAccountId`. Time-series admin lists (billings, allocations, applications) are paginated cursor-style; the UI exposes a "load more" button.
 
-**Planned (not yet built):**
-- Projects
-- Contributors
-- Treasury
-- Billings
-- Applications
+Fork this repo, remove or extend any of the modules above, and customize per agency. When you deploy your fork, rewrite [`ui/public/README.md`](./ui/public/README.md), [`ui/public/skill.md`](./ui/public/skill.md), and [`ui/public/manifest.json`](./ui/public/manifest.json) — those carry the maintainer's identity and ship as-is to the deployed site (manifest.json drives the install-prompt + browser-tab name).
 
-Fork this repo, remove or extend any of the modules above, and customize per agency. When you deploy your fork, also rewrite [`ui/public/README.md`](./ui/public/README.md) and [`ui/public/skill.md`](./ui/public/skill.md) — those describe the maintainer's reference deployment and ship as-is to the deployed site.
+## First-time setup (forks)
+
+Every agency points this dashboard at its own Sputnik DAO. There are two paths — pick whichever fits your deployment workflow:
+
+**Prerequisites**: NEAR account, Sputnik DAO contract on NEAR, Admin role in that DAO.
+
+**Path A — set the env var before deploying (recommended):**
+
+```bash
+export AGENCY_DAO_ACCOUNT=your-dao.sputnik-dao.near
+bun install
+bun run db:migrate
+bos dev --host remote
+```
+
+The plugin's `initialize` seeds `agency_settings.daoAccountId` from the env var the next time the process starts against an empty row. Admin gates work immediately. Use this path when you control your deployment environment.
+
+**Path B — claim through the UI after deploy (fallback):**
+
+Deploy without setting the env var. Sign in with NEAR; `/home` renders a "Set up your agency" affordance. Submit your DAO account ID (and admin role name if your DAO uses something other than `Admin`, e.g. raw Sputnik's `council`). The handler verifies you're admin on the destination DAO before writing the row. Useful for PaaS hosts where env injection happens after deploy.
+
+**Verification:** after either path, `/settings` shows your DAO account id and the admin nav appears. If admin endpoints return FORBIDDEN, the dashboard is still pointed at the placeholder DAO — re-run with the env var set, or use the claim flow.
 
 ## Quick Start
 
 ```bash
 bun install             # Install dependencies
+bun run db:migrate      # Apply API schema to ./api.db (one-time per fresh checkout)
 bos dev --host remote   # Start development (typical workflow)
 ```
 
-This will start serving the UI, the API, and mounting it on a universally shared (remote) HOST application's build.
+The agency API plugin owns its own libsql database at `./api.db` and ships its
+own migrations in `api/src/db/migrations/`. `bun run db:migrate` applies them;
+the API plugin's `initialize` then upserts default rows (e.g. `agency_settings`)
+against the now-migrated schema. Skipping this step before `bos dev` causes
+`SQLITE_ERROR: no such table: ...` at API startup.
+
+This serves the UI and API locally and mounts them on a remote host (loaded via `bos.config.json`'s `extends`).
 
 - UI: http://localhost:3002
-- API: http://localhost:3014
-
-This maintains a flexible, well-typed architecture that connects the entirity of the application, it's operating system, and a cli to interact with it. It is a perpetually in-development model for the [Blockchain Operating System (BOS)](https://near.social/#/)
+- API: dynamic port (check the `[API ✓ ready]` line in the dev server output)
 
 ## CLI Commands
 
-`everything-dev` is the canonical runtime package and CLI. `bos` is a command alias for the same tool. See [.opencode/skills/everything-dev/SKILL.md](.opencode/skills/everything-dev/SKILL.md) for the full reference.
+`everything-dev` is the canonical runtime package and CLI. `bos` is a command alias for the same tool. See the framework skills at [.opencode/skills/everything-dev/](.opencode/skills/everything-dev/) — `dev-workflow/SKILL.md` for the dev cycle and `publish-sync/SKILL.md` for deployment, sync, and upgrade flows.
 
 ### Development
 
@@ -83,16 +111,14 @@ everything-dev start --no-interactive   # All remotes, production URLs
 
 ```bash
 bos build               # Build all packages (updates bos.config.json)
-bos publish             # Publish config to the temporary dev.everything.near registry
+bos publish             # Publish config to the FastKV registry under `account`
 bos publish --deploy    # Build/deploy all workspaces, then publish
 bun run publish         # Same publish command via root script
-bos sync                # Sync from production (every.near/everything.dev)
 ```
 
 ### Project Management
 
 ```bash
-bos create project <name>   # Scaffold new project
 bos info                    # Show configuration
 bos status                  # Check remote health
 bos clean                   # Clean build artifacts
@@ -104,7 +130,7 @@ bos clean                   # Clean build artifacts
 
 - **UI Changes**: Edit `ui/src/` → hot reload automatically → publish with `bos publish --deploy`
 - **API Changes**: Edit `api/src/` → hot reload automatically → publish with `bos publish --deploy`
-- **Host Changes**: Edit `host/src/` or `bos.config.json` → publish with `bos publish --deploy`
+- **Runtime Config**: Edit `bos.config.json` → publish with `bos publish --deploy` (the host is remote — see Architecture)
 
 ### Before Committing
 
@@ -116,26 +142,10 @@ bun typecheck   # Type check all packages
 bun lint        # Run linting (see lint setup below)
 ```
 
-### Changesets
-
-We use [Changesets](https://github.com/changesets/changesets) for versioning:
-
-**When to add a changeset:**
-- Any user-facing change (features, fixes, deprecations)
-- Breaking changes
-- Skip for: docs-only changes, internal refactors, test-only changes
-
-**Create a changeset:**
-```bash
-bun run changeset
-# Follow prompts to select packages and describe changes
-```
-
-The release workflow (`.github/workflows/release.yml`) handles versioning and GitHub releases automatically on merge to main.
-
 ### Git Workflow
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines including:
+
 - Branch naming conventions
 - Semantic commit format
 - Pull request process
@@ -149,11 +159,11 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines in
 
 ## Architecture
 
-**Module Federation monorepo** with runtime-loaded configuration:
+**Module Federation monorepo** with runtime-loaded configuration. The host is **remote** (loaded via `bos.config.json`'s `extends`); this repo owns `ui/` and `api/` only.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                  host (Server)                          │
+│              Host (Remote — not in this repo)           │
 │  Hono.js + oRPC + bos.config.json loader                │
 │  ┌──────────────────┐      ┌──────────────────┐         │
 │  │ Module Federation│      │ every-plugin     │         │
@@ -171,8 +181,9 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines in
 ```
 
 **Key Features:**
+
 - ✅ **Runtime Configuration** - All URLs from `bos.config.json` (no rebuild needed)
-- ✅ **Independent Deployment** - UI, API, and Host deploy separately
+- ✅ **Independent Deployment** - UI and API deploy separately
 - ✅ **Type Safety** - End-to-end with oRPC contracts
 - ✅ **UI Runtime Boundary** - `everything-dev/ui/client` and `/server` own router/runtime glue
 - ✅ **CDN-Ready** - Module Federation with [Zephyr Cloud](https://zephyr-cloud.io/)
@@ -183,55 +194,24 @@ All runtime configuration lives in `bos.config.json`. The shape used by this rep
 
 ```json
 {
-  "account": "dev.everything.near",
-  "domain": "agency",
-  "repository": "https://github.com/nearbuilders/everything-dev",
-  "staging": {
-    "domain": "staging.dev.everything.dev"
-  },
-  "plugins": {
-    "template": {
-      "development": "local:plugins/_template"
-    },
-    "registry": {
-      "development": "local:plugins/registry",
-      "variables": {
-        "registryNamespace": "dev.everything.near"
-      }
-    }
-  },
+  "account": "agency.near",
+  "extends": "bos://dev.everything.near/everything.dev",
+  "domain": "multiagency.ai",
+  "testnet": "agency.testnet",
+  "staging": { "domain": "dev.multiagency.ai" },
+  "repository": "https://github.com/MultiAgency/dashboard",
+  "plugins": {},
   "app": {
-    "host": { "name": "host", "development": "local:host" },
+    "host": { "development": "local:host" },
     "ui": { "name": "ui", "development": "local:ui" },
     "api": { "name": "api", "development": "local:api", "secrets": [] }
-  },
-  "testnet": "dev.allthethings.testnet",
-  "shared": { "ui": {} },
-  "extends": "bos://dev.everything.near/everything.dev"
+  }
 }
 ```
 
-The full `bos.config.json` also stages plugin entries for `projects` and `opencode`, which are placeholders for surfaces under development — those plugin directories are not yet present in the repo, and the entries above are the resolvable subset.
+No plugins currently registered; the agency surface lives in `api/`. See `AGENTS.md` for the forward-looking plugin model.
 
-The temporary publish registry currently points at `dev.everything.near`, and `bos publish --deploy` is the release path when you want Zephyr URLs refreshed first.
-
-### Railway
-
-Use the repo `Dockerfile` for the service, and treat the GHCR image as the deployable artifact.
-
-- Image source: `ghcr.io/<lowercased github.repository>:latest`
-- Staging: `ghcr.io/<lowercased github.repository>:staging`
-- Preview: `ghcr.io/<lowercased github.repository>:pr-<number>`
-
-All configuration derives from `bos.config.json` (baked into the image). Only secrets need to be set as environment variables.
-
-Required runtime vars:
-- `APP_ENV` - `production` or `staging` (derives domain from `bos.config.json`)
-- `BETTER_AUTH_SECRET` - Session encryption key
-- `BETTER_AUTH_URL` - Auth callback URL (defaults to host URL from config)
-- `HOST_DATABASE_URL` - Database connection string
-- `HOST_DATABASE_AUTH_TOKEN` - Database auth token
-- `CORS_ORIGIN` - Comma-separated allowed origins (defaults to host + UI URLs from config)
+`bos publish --deploy` is the release path when you want Zephyr URLs refreshed before publishing the config.
 
 ## Lint Setup
 
@@ -253,16 +233,19 @@ Biome is configured in `biome.json` at the project root. Generated files (like `
 ## Tech Stack
 
 **Frontend:**
+
 - React 19 + TanStack Router (file-based) + TanStack Query
 - Tailwind CSS v4 + shadcn/ui components
 - Module Federation for microfrontend architecture
 
 **Backend:**
+
 - Hono.js server + oRPC (type-safe RPC + OpenAPI)
 - [every-plugin](https://plugin.everything.dev/) architecture for modular APIs
 - Effect-TS for service composition
 
 **Database & Auth:**
+
 - SQLite (libsql) + Drizzle ORM
 - Better-Auth with NEAR Protocol support
 

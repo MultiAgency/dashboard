@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,28 +10,30 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { organizationsQueryOptions, sessionQueryOptions, signOut } from "@/lib/session";
+import { connectNear, sessionQueryOptions, signOut } from "@/lib/session";
 
 export function UserNav() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: session } = useQuery(sessionQueryOptions());
   const user = session?.user;
-  const { data: organizations } = useQuery({
-    ...organizationsQueryOptions(),
-    enabled: !!user,
-  });
-  const activeOrgId = session?.session?.activeOrganizationId;
 
-  const activeOrg = useMemo(() => {
-    return organizations?.find((org) => org.id === activeOrgId);
-  }, [organizations, activeOrgId]);
+  const connectMutation = useMutation({
+    mutationFn: connectNear,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
+      navigate({ to: "/home" });
+    },
+    onError: (error: { message?: string }) => {
+      toast.error(error.message || "Failed to connect NEAR wallet");
+    },
+  });
 
   const signOutMutation = useMutation({
     mutationFn: async () => {
       await signOut();
       await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
-      await queryClient.invalidateQueries({ queryKey: organizationsQueryOptions().queryKey });
     },
     onSuccess: () => {
       if (typeof window !== "undefined") {
@@ -46,29 +48,20 @@ export function UserNav() {
   if (!user) {
     return (
       <div className="flex items-center gap-2">
-        <Button asChild variant="outline" size="sm">
-          <Link to="/login">connect</Link>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => connectMutation.mutate()}
+          disabled={connectMutation.isPending}
+        >
+          {connectMutation.isPending ? "connecting..." : "connect"}
         </Button>
-        <DotControl />
       </div>
     );
   }
 
   return (
     <div className="flex items-center gap-2">
-      {activeOrg && (
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="hidden sm:flex max-w-[120px] text-xs text-muted-foreground"
-        >
-          <Link to="/home">
-            <span className="truncate">{activeOrg.name}</span>
-          </Link>
-        </Button>
-      )}
-
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -102,25 +95,5 @@ export function UserNav() {
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-  );
-}
-
-function DotControl() {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="w-6 h-6 rounded-full bg-foreground transition-all duration-200 ease-out hover:shadow-lg hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          title="actions"
-        />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">navigate</DropdownMenuLabel>
-        <DropdownMenuItem asChild>
-          <Link to="/login">connect</Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

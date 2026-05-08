@@ -19,6 +19,7 @@
     "@libsql/client": "catalog:",
     "@orpc/contract": "^1.13.4",
     "@orpc/server": "^1.13.4",
+    "better-auth": "catalog:",
     "drizzle-kit": "catalog:",
     "drizzle-orm": "catalog:"
   },
@@ -39,7 +40,7 @@
     "build": "bun run build:types && rspack build",
     "build:types": "tsc -p tsconfig.contract.json",
     "deploy": "bun run build:types && DEPLOY=true rspack build",
-    "dev": "bun run build:types && rspack serve",
+    "dev": "bun run build:types && bun --bun rspack serve",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",

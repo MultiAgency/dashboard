@@ -1,5 +1,5 @@
-import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
+import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -31,7 +31,7 @@ function DropdownMenuContent({
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         className={cn(
-          "bg-popover text-popover-foreground z-50 min-w-[8rem] border-2 border-outset border-[rgb(51,51,51)] p-1 dark:border-[rgb(100,100,100)]",
+          "bg-popover text-popover-foreground z-50 min-w-[8rem] border-2 border-outset border-border p-1",
           className,
         )}
         {...props}
