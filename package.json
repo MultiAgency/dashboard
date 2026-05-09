@@ -16,8 +16,8 @@
       "drizzle-orm": "^0.45.1",
       "drizzle-kit": "^0.31.8",
       "better-auth": "1.6.9",
-      "better-near-auth": "^0.5.2",
-      "every-plugin": "^2.2.6",
+      "better-near-auth": "^1.2.1",
+      "every-plugin": "^2.5.5",
       "typescript": "^5.9.3",
       "vitest": "^4.0.17",
       "@libsql/client": "0.17.0",
@@ -67,8 +67,8 @@
   "dependencies": {
     "@libsql/client": "^0.17.0",
     "@orpc/contract": "^1.13.14",
-    "every-plugin": "^2.2.6",
-    "everything-dev": "^1.4.1"
+    "every-plugin": "^2.5.5",
+    "everything-dev": "^1.11.0"
   },
   "overrides": {
     "axios": "1.13.6",

@@ -28,7 +28,6 @@ export function Markdown({ content, className }: MarkdownProps) {
         "prose-hr:border-border",
         className,
       )}
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: Trusted markdown parser output
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

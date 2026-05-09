@@ -1,4 +1,3 @@
-import type { Auth } from "better-auth";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { createPlugin } from "every-plugin";
 import { Effect } from "every-plugin/effect";
@@ -128,9 +127,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
   initialize: (config, plugins) =>
     Effect.gen(function* () {
-      const db = yield* Effect.promise(() =>
-        createDatabase(config.secrets.API_DATABASE_URL),
-      );
+      const db = yield* Effect.promise(() => createDatabase(config.secrets.API_DATABASE_URL));
       const migrations = yield* Effect.promise(() => loadMigrations());
       yield* Effect.promise(() => migrate(db, migrations));
       yield* Effect.promise(() =>
@@ -278,7 +275,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
             organizationId: context.organizationId,
             organizationRole: context.organizationRole,
             reqHeaders: context.reqHeaders,
-            auth: context.auth!,
           } as AuthContext,
         });
       });

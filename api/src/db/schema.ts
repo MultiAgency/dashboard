@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  index,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { index, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const applications = pgTable(
   "applications",
@@ -23,9 +16,7 @@ export const applications = pgTable(
       .default("new"),
     reviewedBy: text("reviewed_by"),
     reviewedAt: timestamp("reviewed_at", { withTimezone: false }),
-    createdAt: timestamp("created_at", { withTimezone: false })
-      .notNull()
-      .default(sql`now()`),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     cursor: index("applications_cursor").on(t.createdAt, t.id),
@@ -51,12 +42,8 @@ export const projects = pgTable(
     visibility: text("visibility", { enum: ["public", "private"] })
       .notNull()
       .default("private"),
-    createdAt: timestamp("created_at", { withTimezone: false })
-      .notNull()
-      .default(sql`now()`),
-    updatedAt: timestamp("updated_at", { withTimezone: false })
-      .notNull()
-      .default(sql`now()`),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     ownerSlug: uniqueIndex("projects_owner_slug").on(t.ownerId, t.slug),
@@ -76,12 +63,8 @@ export const contributors = pgTable("contributors", {
   })
     .notNull()
     .default("pending"),
-  createdAt: timestamp("created_at", { withTimezone: false })
-    .notNull()
-    .default(sql`now()`),
-  updatedAt: timestamp("updated_at", { withTimezone: false })
-    .notNull()
-    .default(sql`now()`),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
 });
 
 export type Contributor = typeof contributors.$inferSelect;
@@ -97,9 +80,7 @@ export const projectContributors = pgTable(
       .notNull()
       .references(() => contributors.id, { onDelete: "cascade" }),
     role: text("role"),
-    createdAt: timestamp("created_at", { withTimezone: false })
-      .notNull()
-      .default(sql`now()`),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.projectId, t.contributorId] }),
@@ -118,9 +99,7 @@ export const allocations = pgTable(
     note: text("note"),
     actorAccountId: text("actor_account_id").notNull(),
     relatedAllocationId: text("related_allocation_id"),
-    createdAt: timestamp("created_at", { withTimezone: false })
-      .notNull()
-      .default(sql`now()`),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     cursor: index("allocations_cursor").on(t.createdAt, t.id),
@@ -144,9 +123,7 @@ export const billings = pgTable(
     amount: text("amount").notNull(),
     proposalId: text("proposal_id").notNull(),
     note: text("note"),
-    createdAt: timestamp("created_at", { withTimezone: false })
-      .notNull()
-      .default(sql`now()`),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     cursor: index("billings_cursor").on(t.createdAt, t.id),
@@ -172,9 +149,7 @@ export const agencySettings = pgTable("agency_settings", {
   adminRoleName: text("admin_role_name").default("Admin"),
   approverRoleName: text("approver_role_name").default("Approver"),
   requestorRoleName: text("requestor_role_name").default("Requestor"),
-  updatedAt: timestamp("updated_at", { withTimezone: false })
-    .notNull()
-    .default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
 });
 
 export type AgencySettings = typeof agencySettings.$inferSelect;
