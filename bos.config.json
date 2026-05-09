@@ -7,6 +7,18 @@
     "domain": "dev.multiagency.ai"
   },
   "repository": "https://github.com/MultiAgency/dashboard",
+  "app": {
+    "ui": {
+      "name": "ui",
+      "development": "local:ui"
+    },
+    "api": {
+      "name": "api",
+      "development": "local:api",
+      "secrets": []
+    }
+  },
+  "plugins": {},
   "shared": {
     "ui": {
       "effect": {
@@ -23,21 +35,6 @@
         "strictVersion": false,
         "shareScope": "default"
       }
-    }
-  },
-  "plugins": {},
-  "app": {
-    "host": {
-      "development": "local:host"
-    },
-    "ui": {
-      "name": "ui",
-      "development": "local:ui"
-    },
-    "api": {
-      "name": "api",
-      "development": "local:api",
-      "secrets": []
     }
   }
 }

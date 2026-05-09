@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { authClient } from "@/app";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { Field } from "@/components/admin-form";
-import { sessionQueryOptions } from "@/lib/session";
+import { sessionQueryOptions, signOut } from "@/lib/session";
 import { useApiClient } from "@/lib/use-api-client";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/settings")({
@@ -36,8 +36,7 @@ function Settings() {
 
   const signOutMutation = useMutation({
     mutationFn: async () => {
-      await authClient.signOut();
-      await authClient.near.disconnect().catch(() => {});
+      await signOut();
       await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
     },
     onSuccess: () => {

@@ -1,48 +1,40 @@
-import { queryOptions } from "@tanstack/react-query";
-import { authClient } from "./auth-client";
+import type { ClientRuntimeConfig } from "@/app";
+import { getAuthClient, type SessionData } from "@/app";
 
-export type SessionData = typeof authClient.$Infer.Session;
-export type User = SessionData["user"];
-export type SessionInfo = SessionData["session"];
+export type { SessionData };
 
-export const sessionQueryOptions = (initialSession?: SessionData | null) =>
-  queryOptions({
-    queryKey: ["session"],
-    queryFn: async () => {
-      const { data: session } = await authClient.getSession();
-      return session ?? null;
-    },
-    staleTime: 60 * 1000,
-    gcTime: 10 * 60 * 1000,
-    initialData: initialSession,
-  });
+export const sessionQueryKey = ["session"] as const;
 
-export function getSessionFromData(session: SessionData | null | undefined) {
-  if (!session?.user) {
-    return {
-      isAuthenticated: false,
-      user: null,
-      session: null,
-    };
-  }
+export const sessionQueryOptions = (
+  initialSession?: SessionData | null,
+  runtimeConfig?: Partial<ClientRuntimeConfig>,
+) => ({
+  queryKey: sessionQueryKey,
+  queryFn: async () => {
+    const { data: session } = await getAuthClient(runtimeConfig).getSession();
+    return session ?? null;
+  },
+  staleTime: 60 * 1000,
+  gcTime: 10 * 60 * 1000,
+  initialData: initialSession,
+});
 
+export function getSessionFromData(session: SessionData | null) {
+  const isAuthenticated = !!session?.user;
   return {
-    isAuthenticated: true,
-    user: session.user,
-    session: session.session,
+    isAuthenticated,
+    user: session?.user ?? null,
+    session: session?.session ?? null,
   };
 }
 
-export async function signOut() {
-  await authClient.signOut();
-  await authClient.near.disconnect().catch(() => {});
+export async function connectNear() {
+  const client = getAuthClient();
+  await client.near.signIn();
 }
 
-export function connectNear(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    authClient.signIn.near({
-      onSuccess: () => resolve(),
-      onError: (error: unknown) => reject(error),
-    });
-  });
+export async function signOut() {
+  const client = getAuthClient();
+  await client.signOut();
+  await client.near.disconnect().catch(() => {});
 }
