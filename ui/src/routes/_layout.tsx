@@ -1,5 +1,5 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { Building2, FolderKanban, Globe, Home, Settings } from "lucide-react";
+import { Building2, Globe, Home, Settings } from "lucide-react";
 import { getAppName } from "@/app";
 import builtOn from "@/assets/built_on.png";
 import builtOnRev from "@/assets/built_on_rev.png";
@@ -28,7 +28,6 @@ export const Route = createFileRoute("/_layout")({
 const authenticatedSidebarItems = [
   { icon: Home, label: "home", to: "/" as const },
   { icon: Globe, label: "apps", to: "/apps" as const },
-  { icon: FolderKanban, label: "projects", to: "/projects" as const },
   { icon: Building2, label: "organizations", to: "/organizations" as const },
   { icon: Settings, label: "settings", to: "/settings" as const },
 ];

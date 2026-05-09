@@ -83,17 +83,9 @@ function Landing() {
               browse apps
             </Link>
           </Button>
-          <div className="group relative flex flex-col items-center">
-            <Button asChild variant="outline">
-              <Link to="/about">about</Link>
-            </Button>
-            <a
-              href="/skill.md"
-              className="absolute top-full mt-1 text-[11px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:text-foreground whitespace-nowrap font-mono"
-            >
-              for your agent: skill.md
-            </a>
-          </div>
+          <Button asChild variant="outline">
+            <a href="/skill.md">about</a>
+          </Button>
           <Button asChild variant="outline">
             <a href={buildRuntimeHref("/config", runtimeConfig)}>config</a>
           </Button>

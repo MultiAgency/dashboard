@@ -2,7 +2,6 @@ import { createPlugin } from "every-plugin";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
-import type { Auth } from "host/src/services/auth";
 import { contract } from "./contract";
 import type { PluginsClient } from "./plugins-client.gen";
 
@@ -18,7 +17,6 @@ export interface AuthContext {
   organizationId?: string;
   organizationRole?: string;
   reqHeaders?: Headers;
-  auth: Auth;
 }
 
 export default createPlugin.withPlugins<PluginsClient>()({
@@ -53,7 +51,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
     organizationRole: z.string().optional(),
     reqHeaders: z.custom<Headers>().optional(),
     getRawBody: z.custom<() => Promise<string>>().optional(),
-    auth: z.custom<Auth>().optional(),
   }),
 
   contract,
@@ -86,8 +83,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           organizationId: context.organizationId,
           organizationRole: context.organizationRole,
           reqHeaders: context.reqHeaders,
-          auth: context.auth!,
-        } as AuthContext,
+        } satisfies AuthContext,
       });
     });
 

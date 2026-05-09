@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { authClient } from "@/app";
+import { getAuthClient } from "@/app";
 import { Badge, Button, Card, CardContent, UnderConstruction } from "@/components";
 import {
   addPasskey,
@@ -29,11 +29,12 @@ export const Route = createFileRoute("/_layout/_authenticated/settings")({
 });
 
 function Settings() {
-  const { data: session } = useQuery(sessionQueryOptions());
-  const { data: passkeys = [] } = useQuery(passkeysQueryOptions());
+  const { runtimeConfig } = Route.useRouteContext();
+  const { data: session } = useQuery(sessionQueryOptions(undefined, runtimeConfig));
+  const { data: passkeys = [] } = useQuery(passkeysQueryOptions(runtimeConfig));
 
   const user = session?.user;
-  const nearAccountId = authClient.near.getAccountId();
+  const nearAccountId = getAuthClient(runtimeConfig).near.getAccountId();
 
   if (!user) {
     return (
@@ -91,26 +92,33 @@ function Settings() {
         </Card>
       </section>
 
-      <ProfileSection user={user} />
-      <AuthMethodsSection user={user} passkeys={passkeys} nearAccountId={nearAccountId} />
-      <SecuritySection user={user} />
+      <ProfileSection user={user} runtimeConfig={runtimeConfig} />
+      <AuthMethodsSection
+        user={user}
+        passkeys={passkeys}
+        nearAccountId={nearAccountId}
+        runtimeConfig={runtimeConfig}
+      />
+      <SecuritySection user={user} runtimeConfig={runtimeConfig} />
     </div>
   );
 }
 
 function ProfileSection({
   user,
+  runtimeConfig,
 }: {
   user: { id: string; email?: string; name?: string; isAnonymous?: boolean | null };
+  runtimeConfig?: Partial<import("@/app").ClientRuntimeConfig>;
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(user.name || "");
 
   const updateMutation = useMutation({
-    mutationFn: () => updateProfile(name),
+    mutationFn: () => updateProfile(name, runtimeConfig),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: sessionQueryOptions().queryKey,
+        queryKey: sessionQueryOptions(undefined, runtimeConfig).queryKey,
       });
       toast.success("Profile updated");
     },
@@ -182,18 +190,20 @@ function AuthMethodsSection({
   user,
   passkeys,
   nearAccountId,
+  runtimeConfig,
 }: {
   user: { email?: string; isAnonymous?: boolean | null };
   passkeys: Array<{ id: string; name?: string }>;
   nearAccountId: string | null;
+  runtimeConfig?: Partial<import("@/app").ClientRuntimeConfig>;
 }) {
   const queryClient = useQueryClient();
 
   const addPasskeyMutation = useMutation({
-    mutationFn: addPasskey,
+    mutationFn: () => addPasskey(runtimeConfig),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: passkeysQueryOptions().queryKey,
+        queryKey: passkeysQueryOptions(runtimeConfig).queryKey,
       });
       toast.success("Passkey added");
     },
@@ -201,10 +211,10 @@ function AuthMethodsSection({
   });
 
   const removePasskeyMutation = useMutation({
-    mutationFn: (passkeyId: string) => removePasskey(passkeyId),
+    mutationFn: (passkeyId: string) => removePasskey(passkeyId, runtimeConfig),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: passkeysQueryOptions().queryKey,
+        queryKey: passkeysQueryOptions(runtimeConfig).queryKey,
       });
       toast.success("Passkey removed");
     },
@@ -212,10 +222,10 @@ function AuthMethodsSection({
   });
 
   const linkNearMutation = useMutation({
-    mutationFn: linkNearWallet,
+    mutationFn: () => linkNearWallet(runtimeConfig),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: sessionQueryOptions().queryKey,
+        queryKey: sessionQueryOptions(undefined, runtimeConfig).queryKey,
       });
       toast.success("NEAR wallet linked");
     },
@@ -295,7 +305,13 @@ function AuthMethodsSection({
   );
 }
 
-function SecuritySection({ user }: { user: { email?: string; isAnonymous?: boolean | null } }) {
+function SecuritySection({
+  user,
+  runtimeConfig,
+}: {
+  user: { email?: string; isAnonymous?: boolean | null };
+  runtimeConfig?: Partial<import("@/app").ClientRuntimeConfig>;
+}) {
   const queryClient = useQueryClient();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -309,7 +325,7 @@ function SecuritySection({ user }: { user: { email?: string; isAnonymous?: boole
       if (newPassword.length < 8) {
         throw new Error("Password must be at least 8 characters");
       }
-      return changePassword(currentPassword, newPassword);
+      return changePassword(currentPassword, newPassword, runtimeConfig);
     },
     onSuccess: () => {
       toast.success("Password changed");
@@ -321,17 +337,19 @@ function SecuritySection({ user }: { user: { email?: string; isAnonymous?: boole
   });
 
   const revokeSessionsMutation = useMutation({
-    mutationFn: revokeOtherSessions,
+    mutationFn: () => revokeOtherSessions(runtimeConfig),
     onSuccess: () => toast.success("Other sessions revoked"),
     onError: (err: Error) => toast.error(err.message),
   });
 
   const signOutMutation = useMutation({
     mutationFn: async () => {
-      await authClient.signOut();
-      await authClient.near.disconnect().catch(() => {});
+      await getAuthClient(runtimeConfig).signOut();
+      await getAuthClient(runtimeConfig)
+        .near.disconnect()
+        .catch(() => {});
       await queryClient.invalidateQueries({
-        queryKey: sessionQueryOptions().queryKey,
+        queryKey: sessionQueryOptions(undefined, runtimeConfig).queryKey,
       });
     },
     onSuccess: () => {

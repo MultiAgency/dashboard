@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { authClient } from "@/app";
+import { getAuthClient } from "@/app";
 import { Badge, Button, Card, CardContent } from "@/components";
 import { Input } from "@/components/ui/input";
 import { sessionQueryOptions } from "@/lib/session";
@@ -26,22 +26,20 @@ export const Route = createFileRoute("/_layout/apps/$accountId/$gatewayId")({
 
 function AppDetailPage() {
   const { accountId, gatewayId } = Route.useParams();
+  const { runtimeConfig } = Route.useRouteContext();
   const queryClient = useQueryClient();
   const apiClient = useApiClient();
+  const authClient = getAuthClient(runtimeConfig);
   const detailQuery = useQuery({
     queryKey: ["registry-app", accountId, gatewayId],
     queryFn: () => apiClient.registry.getRegistryApp({ accountId, gatewayId }),
-  });
-  const projectsQuery = useQuery({
-    queryKey: ["app-projects", accountId, gatewayId],
-    queryFn: () => apiClient.projects.listProjectsForApp({ accountId, gatewayId }),
   });
   const registryStatusQuery = useQuery({
     queryKey: ["registry-status"],
     queryFn: () => apiClient.registry.getRegistryStatus(),
     staleTime: 60_000,
   });
-  const sessionQuery = useQuery(sessionQueryOptions());
+  const sessionQuery = useQuery(sessionQueryOptions(undefined, runtimeConfig));
 
   const nearAccountId = authClient.near.getAccountId();
   const [title, setTitle] = useState("");
@@ -87,7 +85,7 @@ function AppDetailPage() {
     }, 4_000);
 
     return () => window.clearTimeout(timer);
-  }, [detailQuery, pendingRefreshUntil, app?.metadata?.updatedAt]);
+  }, [detailQuery, pendingRefreshUntil]);
 
   useEffect(() => {
     if (!pendingRefreshUntil || !app?.metadata?.updatedAt) {
@@ -405,66 +403,6 @@ function AppDetailPage() {
           ) : (
             <div className="rounded-sm border border-border bg-muted/10 p-4 text-sm text-muted-foreground">
               No FastKV metadata has been published for this runtime yet.
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card id="projects">
-        <CardContent className="p-6 space-y-4">
-          <div className="space-y-1">
-            <h2 className="text-lg font-semibold tracking-tight">In Projects</h2>
-            <p className="text-sm text-muted-foreground">Projects that include this app.</p>
-          </div>
-
-          {projectsQuery.isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading projects...</div>
-          ) : projectsQuery.data?.data && projectsQuery.data.data.length > 0 ? (
-            <div className="space-y-3">
-              {projectsQuery.data.data.map((project: (typeof projectsQuery.data.data)[number]) => (
-                <div
-                  key={project.id}
-                  className="rounded-sm border border-border bg-muted/10 p-4 flex items-start justify-between gap-4"
-                >
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant={
-                          project.status === "active"
-                            ? "default"
-                            : project.status === "paused"
-                              ? "secondary"
-                              : "destructive"
-                        }
-                      >
-                        {project.status}
-                      </Badge>
-                      <Badge variant="outline">{project.visibility}</Badge>
-                    </div>
-                    <Link
-                      to="/projects/$id"
-                      params={{ id: project.id }}
-                      className="font-medium hover:underline break-all"
-                    >
-                      {project.title}
-                    </Link>
-                    {project.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-2">
-                        {project.description}
-                      </p>
-                    )}
-                  </div>
-                  <Button asChild variant="outline" size="sm">
-                    <Link to="/projects/$id" params={{ id: project.id }}>
-                      view
-                    </Link>
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-sm text-muted-foreground">
-              This app is not included in any projects yet.
             </div>
           )}
         </CardContent>

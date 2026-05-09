@@ -20,17 +20,22 @@ export const Route = createFileRoute("/_layout/_authenticated/organizations/new"
 function NewOrganization() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { runtimeConfig } = Route.useRouteContext();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const data = await createOrganization(name, slug);
+      const data = await createOrganization(name, slug, runtimeConfig);
       return data;
     },
     onSuccess: async (data) => {
-      await queryClient.invalidateQueries({ queryKey: organizationsQueryOptions().queryKey });
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
+      await queryClient.invalidateQueries({
+        queryKey: organizationsQueryOptions(runtimeConfig).queryKey,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: sessionQueryOptions(undefined, runtimeConfig).queryKey,
+      });
       toast.success(`Organization "${data?.name}" created`);
       if (data?.id) {
         await router.navigate({

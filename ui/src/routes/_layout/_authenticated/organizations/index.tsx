@@ -22,17 +22,20 @@ export const Route = createFileRoute("/_layout/_authenticated/organizations/")({
 
 function OrganizationsList() {
   const queryClient = useQueryClient();
+  const { runtimeConfig } = Route.useRouteContext();
 
-  const { data: session } = useQuery(sessionQueryOptions());
-  const { data: organizations = [] } = useQuery(organizationsQueryOptions());
+  const { data: session } = useQuery(sessionQueryOptions(undefined, runtimeConfig));
+  const { data: organizations = [] } = useQuery(organizationsQueryOptions(runtimeConfig));
 
   const user = session?.user;
   const activeOrgId = session?.session?.activeOrganizationId;
 
   const switchOrgMutation = useMutation({
-    mutationFn: (orgId: string) => setActiveOrganization(orgId),
+    mutationFn: (orgId: string) => setActiveOrganization(orgId, runtimeConfig),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
+      await queryClient.invalidateQueries({
+        queryKey: sessionQueryOptions(undefined, runtimeConfig).queryKey,
+      });
       toast.success("Switched organization");
     },
     onError: (error: Error) => {

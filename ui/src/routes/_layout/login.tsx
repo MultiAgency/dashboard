@@ -1,18 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  createFileRoute,
-  Navigate,
-  redirect,
-  useNavigate,
-  useRouter,
-} from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Navigate, redirect, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { authClient } from "@/app";
+import { type ClientRuntimeConfig, getAuthClient } from "@/app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UnderConstruction } from "@/components/under-construction";
-import { organizationsQueryOptions, sessionQueryOptions } from "@/lib/session";
+import { sessionQueryOptions } from "@/lib/session";
 
 type SearchParams = {
   redirect?: string;
@@ -21,6 +15,7 @@ type SearchParams = {
 type AuthMethod = "near" | "email" | "phone" | "passkey" | "anonymous" | "github";
 
 export const Route = createFileRoute("/_layout/login")({
+  ssr: false,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
   }),
@@ -28,7 +23,8 @@ export const Route = createFileRoute("/_layout/login")({
     const { queryClient } = context;
     const initialSession = context.session;
     const session =
-      initialSession ?? queryClient.getQueryData(sessionQueryOptions(initialSession).queryKey);
+      initialSession ??
+      queryClient.getQueryData(sessionQueryOptions(initialSession, context.runtimeConfig).queryKey);
 
     if (session?.user) {
       const redirectTo = search.redirect?.startsWith("/") ? search.redirect : "/home";
@@ -38,17 +34,21 @@ export const Route = createFileRoute("/_layout/login")({
   loader: ({ context }) => {
     const initialSession = context.session;
 
-    void context.queryClient.prefetchQuery(sessionQueryOptions(initialSession));
+    void context.queryClient.prefetchQuery(
+      sessionQueryOptions(initialSession, context.runtimeConfig),
+    );
   },
   component: LoginPage,
 });
 
 function LoginPage() {
   const navigate = useNavigate();
-  const router = useRouter();
-  const queryClient = useQueryClient();
+  const { runtimeConfig } = Route.useRouteContext() as {
+    runtimeConfig?: Partial<ClientRuntimeConfig>;
+  };
+  const auth = getAuthClient(runtimeConfig);
+  const { data: session } = useQuery(sessionQueryOptions(undefined, runtimeConfig));
   const { redirect } = Route.useSearch();
-  const { data: session } = useQuery(sessionQueryOptions());
   const [authMethod, setAuthMethod] = useState<AuthMethod>("anonymous");
 
   const [email, setEmail] = useState("");
@@ -59,200 +59,212 @@ function LoginPage() {
   const [otpCode, setOtpCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
 
+  const [isPending, setIsPending] = useState(false);
+  const queryClient = useQueryClient();
+
   const handleSuccess = async (message: string) => {
-    await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
-    await queryClient.invalidateQueries({ queryKey: organizationsQueryOptions().queryKey });
-    router.invalidate();
     const redirectTo = redirect?.startsWith("/") ? redirect : "/home";
-    navigate({ to: redirectTo, replace: true, search: {} });
     toast.success(message);
+    const { data: freshSession } = await auth.getSession();
+    if (freshSession) {
+      queryClient.setQueryData(["session"], freshSession);
+    }
+    await queryClient.invalidateQueries({ queryKey: ["session"] });
+    navigate({ to: redirectTo, replace: true, search: {} });
   };
 
-  const nearMutation = useMutation({
-    mutationFn: async () => {
-      return new Promise<void>((resolve, reject) => {
-        authClient.signIn.near({
-          onSuccess: () => resolve(),
-          onError: (error) => reject(error),
-        });
-      });
-    },
-    onSuccess: () => handleSuccess("Signed in with NEAR"),
-    onError: (error: { code?: string; message?: string }) => {
-      if (error.code === "UNAUTHORIZED_NONCE_REPLAY") {
-        toast.error("Sign-in already used");
-      } else if (error.code === "UNAUTHORIZED_INVALID_SIGNATURE") {
-        toast.error("Invalid signature");
-      } else if (error.code === "SIGNER_NOT_AVAILABLE") {
-        toast.error("NEAR wallet not available");
-      } else {
-        toast.error(error.message || "Failed to sign in");
-      }
-    },
-  });
+  const handleError = (error: { code?: string; message?: string } | Error) => {
+    const code = "code" in error ? error.code : undefined;
+    const message = "message" in error ? error.message : "Failed to sign in";
 
-  const passkeyMutation = useMutation({
-    mutationFn: async () => {
-      return new Promise<void>((resolve, reject) => {
-        authClient.signIn.passkey({
-          autoFill: false,
-          fetchOptions: {
-            onSuccess: () => resolve(),
-            onError: (ctx) => reject(new Error(ctx.error?.message || "Passkey sign in failed")),
+    if (code === "UNAUTHORIZED_NONCE_REPLAY") {
+      toast.error("Sign-in already used");
+    } else if (code === "UNAUTHORIZED_INVALID_SIGNATURE") {
+      toast.error("Invalid signature");
+    } else if (code === "SIGNER_NOT_AVAILABLE") {
+      toast.error("NEAR wallet not available");
+    } else {
+      toast.error(message || "Failed to sign in");
+    }
+  };
+
+  const handleNear = async () => {
+    setIsPending(true);
+    await auth.signIn.near({
+      onSuccess: async () => {
+        setIsPending(false);
+        await handleSuccess("Signed in with NEAR");
+      },
+      onError: (error: { code?: string; message?: string }) => {
+        setIsPending(false);
+        handleError(error);
+      },
+    });
+  };
+
+  const handlePasskey = async () => {
+    setIsPending(true);
+    try {
+      await auth.signIn.passkey({
+        autoFill: false,
+        fetchOptions: {
+          onSuccess: async () => {
+            setIsPending(false);
+            await handleSuccess("Signed in with passkey");
           },
-        });
-      });
-    },
-    onSuccess: () => handleSuccess("Signed in with passkey"),
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const anonymousMutation = useMutation({
-    mutationFn: async () => {
-      return new Promise<void>((resolve, reject) => {
-        authClient.signIn.anonymous({
-          fetchOptions: {
-            onSuccess: () => resolve(),
-            onError: (ctx) => reject(new Error(ctx.error?.message || "Anonymous sign in failed")),
+          onError: (ctx: { error?: { message?: string } }) => {
+            setIsPending(false);
+            handleError(new Error(ctx.error?.message || "Passkey sign in failed"));
           },
-        });
+        },
       });
-    },
-    onSuccess: () => handleSuccess("Started anonymous session"),
-    onError: (error: Error) => toast.error(error.message),
-  });
+    } catch {
+      setIsPending(false);
+    }
+  };
 
-  const emailSignInMutation = useMutation({
-    mutationFn: async () => {
-      return new Promise<void>((resolve, reject) => {
-        authClient.signIn.email({
-          email,
-          password,
-          fetchOptions: {
-            onSuccess: () => resolve(),
-            onError: (ctx: { error?: { message?: string } }) =>
-              reject(new Error(ctx.error?.message || "Sign in failed")),
+  const handleAnonymous = async () => {
+    setIsPending(true);
+    try {
+      await auth.signIn.anonymous({
+        fetchOptions: {
+          onSuccess: async () => {
+            setIsPending(false);
+            await handleSuccess("Started anonymous session");
           },
-        });
-      });
-    },
-    onSuccess: () => handleSuccess("Signed in successfully"),
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const emailSignUpMutation = useMutation({
-    mutationFn: async () => {
-      return new Promise<void>((resolve, reject) => {
-        authClient.signUp.email({
-          email,
-          password,
-          name: email.split("@")[0],
-          fetchOptions: {
-            onSuccess: () => resolve(),
-            onError: (ctx) => reject(new Error(ctx.error?.message || "Sign up failed")),
+          onError: (ctx: { error?: { message?: string } }) => {
+            setIsPending(false);
+            handleError(new Error(ctx.error?.message || "Anonymous sign in failed"));
           },
-        });
+        },
       });
-    },
-    onSuccess: () => handleSuccess("Account created! Check your email to verify."),
-    onError: (error: Error) => toast.error(error.message),
-  });
+    } catch {
+      setIsPending(false);
+    }
+  };
 
-  const sendOtpMutation = useMutation({
-    mutationFn: async () => {
-      return new Promise<void>((resolve, reject) => {
-        authClient.phoneNumber.sendOtp({
-          phoneNumber,
-          fetchOptions: {
-            onSuccess: () => resolve(),
-            onError: (ctx) => reject(new Error(ctx.error?.message || "Failed to send code")),
-          },
-        });
-      });
-    },
-    onSuccess: () => {
-      setOtpSent(true);
-      toast.success("Verification code sent!");
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const verifyOtpMutation = useMutation({
-    mutationFn: async () => {
-      return new Promise<void>((resolve, reject) => {
-        authClient.phoneNumber.verify({
-          phoneNumber,
-          code: otpCode,
-          fetchOptions: {
-            onSuccess: () => resolve(),
-            onError: (ctx: { error?: { message?: string } }) =>
-              reject(new Error(ctx.error?.message || "Invalid code")),
-          },
-        });
-      });
-    },
-    onSuccess: () => handleSuccess("Signed in with phone"),
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const githubMutation = useMutation({
-    mutationFn: async () => {
-      return new Promise<void>((resolve, reject) => {
-        authClient.signIn.social({
-          provider: "github",
-          callbackURL: redirect?.startsWith("/") ? redirect : "/home",
-          fetchOptions: {
-            onSuccess: () => resolve(),
-            onError: (ctx) => reject(new Error(ctx.error?.message || "GitHub sign in failed")),
-          },
-        });
-      });
-    },
-    onSuccess: () => handleSuccess("Signed in with GitHub"),
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const handleEmailSubmit = () => {
+  const handleEmailSignIn = async () => {
     if (!email || !password) {
       toast.error("Please enter email and password");
       return;
     }
-    if (isSignUp && password.length < 8) {
-      toast.error("Password must be at least 8 characters");
-      return;
-    }
-    if (isSignUp) {
-      emailSignUpMutation.mutate();
-    } else {
-      emailSignInMutation.mutate();
+    setIsPending(true);
+    try {
+      await auth.signIn.email({
+        email,
+        password,
+        fetchOptions: {
+          onSuccess: async () => {
+            setIsPending(false);
+            await handleSuccess("Signed in successfully");
+          },
+          onError: (ctx: { error?: { message?: string } }) => {
+            setIsPending(false);
+            handleError(new Error(ctx.error?.message || "Sign in failed"));
+          },
+        },
+      });
+    } catch {
+      setIsPending(false);
     }
   };
 
-  const handleSendOtp = () => {
+  const handleEmailSignUp = async () => {
+    if (!email || !password) {
+      toast.error("Please enter email and password");
+      return;
+    }
+    if (password.length < 8) {
+      toast.error("Password must be at least 8 characters");
+      return;
+    }
+    setIsPending(true);
+    try {
+      await auth.signUp.email({
+        email,
+        password,
+        name: email.split("@")[0],
+        fetchOptions: {
+          onSuccess: async () => {
+            setIsPending(false);
+            await handleSuccess("Account created! Check your email to verify.");
+          },
+          onError: (ctx: { error?: { message?: string } }) => {
+            setIsPending(false);
+            handleError(new Error(ctx.error?.message || "Sign up failed"));
+          },
+        },
+      });
+    } catch {
+      setIsPending(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
     if (!phoneNumber || phoneNumber.length < 10) {
       toast.error("Please enter a valid phone number");
       return;
     }
-    sendOtpMutation.mutate();
+    setIsPending(true);
+    try {
+      await auth.phoneNumber.sendOtp({
+        phoneNumber,
+        fetchOptions: {
+          onSuccess: () => {
+            setOtpSent(true);
+            toast.success("Verification code sent!");
+          },
+          onError: (ctx: { error?: { message?: string } }) =>
+            handleError(new Error(ctx.error?.message || "Failed to send code")),
+        },
+      });
+    } finally {
+      setIsPending(false);
+    }
   };
 
-  const handleVerifyOtp = () => {
+  const handleVerifyOtp = async () => {
     if (!otpCode || otpCode.length < 4) {
       toast.error("Please enter the verification code");
       return;
     }
-    verifyOtpMutation.mutate();
+    setIsPending(true);
+    try {
+      await auth.phoneNumber.verify({
+        phoneNumber,
+        code: otpCode,
+        fetchOptions: {
+          onSuccess: async () => {
+            setIsPending(false);
+            await handleSuccess("Signed in with phone");
+          },
+          onError: (ctx: { error?: { message?: string } }) => {
+            setIsPending(false);
+            handleError(new Error(ctx.error?.message || "Invalid code"));
+          },
+        },
+      });
+    } catch {
+      setIsPending(false);
+    }
   };
 
-  const isPending =
-    nearMutation.isPending ||
-    passkeyMutation.isPending ||
-    anonymousMutation.isPending ||
-    emailSignInMutation.isPending ||
-    emailSignUpMutation.isPending ||
-    sendOtpMutation.isPending ||
-    verifyOtpMutation.isPending ||
-    githubMutation.isPending;
+  const handleGithub = async () => {
+    setIsPending(true);
+    try {
+      await auth.signIn.social({
+        provider: "github",
+        callbackURL: redirect?.startsWith("/") ? redirect : "/home",
+        fetchOptions: {
+          onSuccess: () => handleSuccess("Signed in with GitHub"),
+          onError: (ctx: { error?: { message?: string } }) =>
+            handleError(new Error(ctx.error?.message || "GitHub sign in failed")),
+        },
+      });
+    } finally {
+      setIsPending(false);
+    }
+  };
 
   if (session?.user) {
     const redirectTo = redirect?.startsWith("/") ? redirect : "/home";
@@ -267,8 +279,8 @@ function LoginPage() {
             <p className="text-xs text-muted-foreground text-center leading-relaxed">
               Connect your NEAR wallet for on-chain identity
             </p>
-            <Button onClick={() => nearMutation.mutate()} disabled={isPending} className="w-full">
-              {nearMutation.isPending ? "connecting..." : "connect NEAR wallet"}
+            <Button onClick={handleNear} disabled={isPending} className="w-full">
+              {isPending ? "connecting..." : "connect NEAR wallet"}
             </Button>
             <p className="text-xs text-muted-foreground text-center">
               Recommended for blockchain features
@@ -287,12 +299,8 @@ function LoginPage() {
             <p className="text-xs text-muted-foreground text-center leading-relaxed">
               Use Face ID, Touch ID, or security key
             </p>
-            <Button
-              onClick={() => passkeyMutation.mutate()}
-              disabled={isPending}
-              className="w-full"
-            >
-              {passkeyMutation.isPending ? "authenticating..." : "sign in with passkey"}
+            <Button onClick={handlePasskey} disabled={isPending} className="w-full">
+              {isPending ? "authenticating..." : "sign in with passkey"}
             </Button>
           </div>
         );
@@ -303,12 +311,8 @@ function LoginPage() {
             <p className="text-xs text-muted-foreground text-center leading-relaxed">
               Start without creating an account or saving persistent data
             </p>
-            <Button
-              onClick={() => anonymousMutation.mutate()}
-              disabled={isPending}
-              className="w-full"
-            >
-              {anonymousMutation.isPending ? "starting..." : "continue anonymously"}
+            <Button onClick={handleAnonymous} disabled={isPending} className="w-full">
+              {isPending ? "starting..." : "continue anonymously"}
             </Button>
             <p className="text-xs text-muted-foreground text-center">
               Your session will not persist after you sign out
@@ -336,8 +340,12 @@ function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="password"
             />
-            <Button onClick={handleEmailSubmit} disabled={isPending} className="w-full">
-              {emailSignInMutation.isPending || emailSignUpMutation.isPending
+            <Button
+              onClick={isSignUp ? handleEmailSignUp : handleEmailSignIn}
+              disabled={isPending}
+              className="w-full"
+            >
+              {isPending
                 ? isSignUp
                   ? "creating..."
                   : "signing in..."
@@ -373,7 +381,7 @@ function LoginPage() {
                   placeholder="+1 (555) 123-4567"
                 />
                 <Button onClick={handleSendOtp} disabled={isPending} className="w-full">
-                  {sendOtpMutation.isPending ? "sending..." : "send code"}
+                  {isPending ? "sending..." : "send code"}
                 </Button>
                 <p className="text-xs text-muted-foreground text-center">
                   Enter your phone number to receive a verification code
@@ -390,7 +398,7 @@ function LoginPage() {
                   className="text-center tracking-widest"
                 />
                 <Button onClick={handleVerifyOtp} disabled={isPending} className="w-full">
-                  {verifyOtpMutation.isPending ? "verifying..." : "verify & sign in"}
+                  {isPending ? "verifying..." : "verify & sign in"}
                 </Button>
                 <Button
                   variant="ghost"
@@ -419,8 +427,8 @@ function LoginPage() {
             <p className="text-xs text-muted-foreground text-center leading-relaxed">
               Sign in with your GitHub account
             </p>
-            <Button onClick={() => githubMutation.mutate()} disabled={isPending} className="w-full">
-              {githubMutation.isPending ? "redirecting..." : "sign in with GitHub"}
+            <Button onClick={handleGithub} disabled={isPending} className="w-full">
+              {isPending ? "redirecting..." : "sign in with GitHub"}
             </Button>
           </div>
         );

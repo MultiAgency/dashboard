@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { authClient } from "@/app";
+import { getAuthClient } from "@/app";
 import { Badge, Button, Card, CardContent, UnderConstruction } from "@/components";
 import {
   getActiveOrganization,
@@ -22,13 +22,14 @@ export const Route = createFileRoute("/_layout/_authenticated/home")({
 });
 
 function Home() {
-  const { data: session } = useQuery(sessionQueryOptions());
-  const { data: organizations = [] } = useQuery(organizationsQueryOptions());
-  const { data: passkeys = [] } = useQuery(passkeysQueryOptions());
+  const { runtimeConfig } = Route.useRouteContext();
+  const { data: session } = useQuery(sessionQueryOptions(undefined, runtimeConfig));
+  const { data: organizations = [] } = useQuery(organizationsQueryOptions(runtimeConfig));
+  const { data: passkeys = [] } = useQuery(passkeysQueryOptions(runtimeConfig));
   const user = session?.user;
 
   const activeOrgId = session?.session?.activeOrganizationId;
-  const nearAccountId = authClient.near.getAccountId();
+  const nearAccountId = getAuthClient(runtimeConfig).near.getAccountId();
 
   const activeOrg = useMemo(
     () => getActiveOrganization(organizations, activeOrgId),

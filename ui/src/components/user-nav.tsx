@@ -12,13 +12,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { organizationsQueryOptions, sessionQueryOptions, signOut } from "@/lib/session";
 
-export function UserNav() {
+export function UserNav({
+  runtimeConfig,
+}: {
+  runtimeConfig?: Partial<import("@/app").ClientRuntimeConfig>;
+}) {
   const queryClient = useQueryClient();
 
-  const { data: session } = useQuery(sessionQueryOptions());
+  const { data: session } = useQuery(sessionQueryOptions(undefined, runtimeConfig));
   const user = session?.user;
   const { data: organizations } = useQuery({
-    ...organizationsQueryOptions(),
+    ...organizationsQueryOptions(runtimeConfig),
     enabled: !!user,
   });
   const activeOrgId = session?.session?.activeOrganizationId;
@@ -29,9 +33,13 @@ export function UserNav() {
 
   const signOutMutation = useMutation({
     mutationFn: async () => {
-      await signOut();
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
-      await queryClient.invalidateQueries({ queryKey: organizationsQueryOptions().queryKey });
+      await signOut(runtimeConfig);
+      await queryClient.invalidateQueries({
+        queryKey: sessionQueryOptions(undefined, runtimeConfig).queryKey,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: organizationsQueryOptions(runtimeConfig).queryKey,
+      });
     },
     onSuccess: () => {
       if (typeof window !== "undefined") {

@@ -35,7 +35,7 @@ function createAuthClient(config?: Partial<ClientRuntimeConfig>) {
 
 let _authClient: ReturnType<typeof createAuthClient> | undefined;
 
-export function getAuthClient(config?: Partial<ClientRuntimeConfig>) {
+export function getAuthClient(config?: Partial<ClientRuntimeConfig>): AuthClient {
   if (config) {
     return createAuthClient(config);
   }
