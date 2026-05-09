@@ -7,6 +7,8 @@ import { z } from "every-plugin/zod";
 import { contract } from "./contract";
 import { createDatabase, type Database } from "./db";
 import { cursorOf, cursorWhere } from "./db/cursor";
+import { loadMigrations } from "./db/load-migrations";
+import { migrate } from "./db/migrator";
 import {
   agencySettings,
   allocations,
@@ -126,10 +128,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
   initialize: (config, plugins) =>
     Effect.gen(function* () {
-      const db = createDatabase(
-        config.secrets.API_DATABASE_URL,
-        config.secrets.API_DATABASE_AUTH_TOKEN,
+      const db = yield* Effect.promise(() =>
+        createDatabase(config.secrets.API_DATABASE_URL),
       );
+      const migrations = yield* Effect.promise(() => loadMigrations());
+      yield* Effect.promise(() => migrate(db, migrations));
       yield* Effect.promise(() =>
         db
           .insert(agencySettings)
