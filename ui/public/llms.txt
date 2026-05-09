@@ -5,6 +5,7 @@ It is composed at runtime from public configuration rather than built as one fix
 
 Core architecture:
 - host: runtime shell, auth boundary, request handling, runtime config loader
+- auth: authentication plugin loaded through every-plugin (Better-Auth, NEAR SIWN, organizations, API keys)
 - ui: remote interface loaded through Module Federation
 - api: remote backend loaded through every-plugin
 
@@ -22,7 +23,6 @@ Useful public paths:
 - /
 - /about
 - /apps
-- /opencode
 - /README.md
 - /skill.md
 - /manifest.json

@@ -1,13 +1,8 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import {
-  getSessionFromData,
-  organizationsQueryOptions,
-  type SessionData,
-  sessionQueryOptions,
-} from "@/lib/session";
+import { getAuthClient, type Organization, type SessionData } from "@/app";
+import { sessionQueryOptions } from "@/lib/session";
 
-// Auth context provided to child routes
-export interface AuthContext {
+interface AuthContext {
   isAuthenticated: boolean;
   user: SessionData["user"] | null;
   session: SessionData["session"] | null;
@@ -20,13 +15,13 @@ export interface AuthContext {
 export const Route = createFileRoute("/_layout/_authenticated")({
   beforeLoad: async ({ context, location }) => {
     const { queryClient } = context;
+    const runtimeConfig = context.runtimeConfig;
 
-    // Get session from cache or fetch
-    const session = await queryClient.ensureQueryData(sessionQueryOptions(context.session));
+    const session = await queryClient.ensureQueryData(
+      sessionQueryOptions(context.session, runtimeConfig),
+    );
 
-    const auth = getSessionFromData(session);
-
-    if (!auth.isAuthenticated) {
+    if (!session?.user) {
       throw redirect({
         to: "/login",
         search: {
@@ -35,16 +30,31 @@ export const Route = createFileRoute("/_layout/_authenticated")({
       });
     }
 
-    if (auth.isBanned) {
-      // Redirect banned users to login with error info in hash
+    if (session.user.banned) {
       throw redirect({
         to: "/login",
         hash: "banned",
       });
     }
 
-    // Preload organizations for authenticated users
-    await queryClient.ensureQueryData(organizationsQueryOptions());
+    const auth: AuthContext = {
+      isAuthenticated: true,
+      user: session.user,
+      session: session.session,
+      activeOrganizationId: session.session?.activeOrganizationId || null,
+      isAnonymous: session.user.isAnonymous || false,
+      isAdmin: session.user.role === "admin",
+      isBanned: session.user.banned || false,
+    };
+
+    await queryClient.ensureQueryData({
+      queryKey: ["organizations"],
+      queryFn: async () => {
+        const { data } = await getAuthClient(runtimeConfig).organization.list();
+        return (data || []) as Organization[];
+      },
+      staleTime: 30 * 1000,
+    });
 
     return {
       auth,

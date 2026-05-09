@@ -12,7 +12,7 @@ bun db:migrate           # Run database migrations
 bos dev --host remote    # Start development (typical workflow)
 ```
 
-Visit http://localhost:3002 (UI) and http://localhost:3014 (API).
+Visit http://localhost:3003 (UI), http://localhost:3001 (API), and http://localhost:3002 (Auth).
 
 **Need more details?** See [README.md](./README.md) for architecture and [AGENTS.md](./AGENTS.md) for the agent operational guide.
 
@@ -55,6 +55,7 @@ Secrets go in `.env` (see [.env.example](./.env.example) for required variables)
 
 ### Project Documentation
 
+- **[AGENTS.md](./AGENTS.md)** - Operational guide for AI agents
 - **[README.md](./README.md)** - Architecture, tech stack, and quick start
 - **[AGENTS.md](./AGENTS.md)** - Operational guide for AI agents
 - **[ui/public/README.md](./ui/public/README.md)** - Public-facing description of the maintainer's reference deployment
@@ -175,7 +176,7 @@ Added new endpoint for user profiles
 - Ensure type safety (no `any` types unless absolutely necessary)
 - Write descriptive commit messages
 - Add tests for new features
-- Use semantic Tailwind classes
+- Use semantic Tailwind classes (see LLM.txt for style guide)
 - No code comments in implementation (code should be self-documenting)
 
 ### Linting
@@ -197,12 +198,12 @@ Use [GitHub Issues](https://github.com/MultiAgency/dashboard/issues) with:
 - **Expected behavior** vs **actual behavior**
 - **Environment details** (OS, Node/Bun version, browser, etc.)
 
-For issues with the upstream runtime itself, file at [NEARBuilders/everything-dev](https://github.com/NEARBuilders/everything-dev/issues).
-
 ## Getting Help
 
 - Check [AGENTS.md](./AGENTS.md) for agent operational guidance
 - Check the [README](./README.md) for architecture and setup
+- Read the [LLM.txt](./LLM.txt) for technical details
+- Review workspace READMEs for specific documentation
 - Ask questions in GitHub Issues or Discussions
 
 ---

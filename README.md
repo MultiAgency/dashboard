@@ -51,8 +51,8 @@ bos dev --host remote   # Start development (typical workflow)
 
 This will start serving the UI, the API, and mounting it on a universally shared (remote) HOST application's build.
 
-- UI: http://localhost:3002
-- API: http://localhost:3014
+- Host: http://localhost:3000
+- API: http://localhost:3000/api
 
 This maintains a flexible, well-typed architecture that connects the entirity of the application, it's operating system, and a cli to interact with it. It is a perpetually in-development model for the [Blockchain Operating System (BOS)](https://near.social/#/)
 
@@ -160,11 +160,11 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines in
 │  │ Runtime          │      │ Runtime          │         │
 │  └────────┬─────────┘      └────────┬─────────┘         │
 │           ↓                         ↓                   │
-│  Loads UI Runtime          Loads API Plugins            │
+│  Loads UI Runtime          Loads API + Auth Plugins     │
 └───────────┬─────────────────────────┬───────────────────┘
             ↓                         ↓
 ┌───────────────────────┐ ┌───────────────────────┐
-│    ui/ (Runtime)      │ │   api/ (Plugin)       │
+│    ui/ (Runtime)      │ │   api/ + plugins/     │
 │  React + TanStack     │ │  oRPC + Effect        │
 │  ui/src/app.ts        │ │  remoteEntry.js       │
 └───────────────────────┘ └───────────────────────┘
@@ -177,41 +177,6 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines in
 - ✅ **UI Runtime Boundary** - `everything-dev/ui/client` and `/server` own router/runtime glue
 - ✅ **CDN-Ready** - Module Federation with [Zephyr Cloud](https://zephyr-cloud.io/)
 
-## Configuration
-
-All runtime configuration lives in `bos.config.json`. The shape used by this repo:
-
-```json
-{
-  "account": "dev.everything.near",
-  "domain": "agency",
-  "repository": "https://github.com/nearbuilders/everything-dev",
-  "staging": {
-    "domain": "staging.dev.everything.dev"
-  },
-  "plugins": {
-    "template": {
-      "development": "local:plugins/_template"
-    },
-    "registry": {
-      "development": "local:plugins/registry",
-      "variables": {
-        "registryNamespace": "dev.everything.near"
-      }
-    }
-  },
-  "app": {
-    "host": { "name": "host", "development": "local:host" },
-    "ui": { "name": "ui", "development": "local:ui" },
-    "api": { "name": "api", "development": "local:api", "secrets": [] }
-  },
-  "testnet": "dev.allthethings.testnet",
-  "shared": { "ui": {} },
-  "extends": "bos://dev.everything.near/everything.dev"
-}
-```
-
-The full `bos.config.json` also stages plugin entries for `projects` and `opencode`, which are placeholders for surfaces under development — those plugin directories are not yet present in the repo, and the entries above are the resolvable subset.
 
 The temporary publish registry currently points at `dev.everything.near`, and `bos publish --deploy` is the release path when you want Zephyr URLs refreshed first.
 
@@ -232,6 +197,8 @@ Required runtime vars:
 - `HOST_DATABASE_URL` - Database connection string
 - `HOST_DATABASE_AUTH_TOKEN` - Database auth token
 - `CORS_ORIGIN` - Comma-separated allowed origins (defaults to host + UI URLs from config)
+
+See [LLM.txt](./LLM.txt) for the complete schema and configuration reference.
 
 ## Lint Setup
 
@@ -263,7 +230,7 @@ Biome is configured in `biome.json` at the project root. Generated files (like `
 - Effect-TS for service composition
 
 **Database & Auth:**
-- SQLite (libsql) + Drizzle ORM
+- PostgreSQL + Drizzle ORM
 - Better-Auth with NEAR Protocol support
 
 ## Related Projects
@@ -271,7 +238,21 @@ Biome is configured in `biome.json` at the project root. Generated files (like `
 - **[everything.dev](https://github.com/NEARBuilders/everything-dev)** - Upstream foundation: the runtime this template is built on
 - **[every-plugin](https://github.com/near-everything/every-plugin)** - Plugin framework for modular APIs
 - **[near-kit](https://kit.near.tools)** - Unified NEAR Protocol SDK
-- **[better-near-auth](https://github.com/elliotBraem/better-near-auth)** - NEAR authentication for Better-Auth
+- **[better-near-auth](https://github.com/elliotBraem/better-near-auth)** - NEAR SIWN + gasless relay for Better-Auth (cryptographic identity, verifiable on-chain actions)
+- **[TanStack Intent](https://tanstack.com/intent)** - Agent skills shipped as npm package artifacts (compositional knowledge versioned with code)
+
+## NEAR Ecosystem
+
+everything.dev sits within a broader ecosystem building a verifiable internet on NEAR:
+
+- **[BOS](https://near.social/)** — Composable on-chain frontend components
+- **[web4](https://web4.near.page)** — Web apps as verifiable on-chain smart contracts
+- **[near-dns](https://github.com/frol/near-dns)** — Blockchain-backed DNS resolution
+- **[NameSky](https://namesky.app)** — Named accounts as tradeable on-chain assets
+- **[OutLayer](https://outlayer.fastnear.com)** — TEE-attested verifiable off-chain computation
+- **[NEAR Intents](https://intents.near.org)** — Intent-based cross-chain settlement ($15B+ volume)
+- **[Trezu](https://trezu.org)** — Multi-chain treasury management ($72M AUM)
+- **[NEAR AI Cloud](https://near.ai/cloud)** — Confidential inference with hardware attestation
 
 ## License
 

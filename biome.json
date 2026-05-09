@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.14/schema.json",
   "assist": {
     "actions": {
       "source": {
@@ -50,7 +50,8 @@
       "!!**/ui/src/routeTree.gen.ts",
       "!!**/plugins/**/types/**/*.d.ts",
       "!!**/env.d.ts",
-      "!!**/virtual-modules.d.ts"
+      "!!**/virtual-modules.d.ts",
+      "!!bos.config.json"
     ],
     "ignoreUnknown": true
   },

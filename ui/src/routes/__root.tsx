@@ -13,7 +13,6 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import type { RouterContext } from "@/app";
 import { getAppName, getBaseStyles, getRuntimeBasePath } from "@/app";
-import { sessionQueryOptions } from "@/lib/session";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 
 export const Route = createRootRouteWithContext<RouterContext>()({
@@ -32,7 +31,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
     // Pre-populate session cache from SSR data
     if (session && queryClient) {
-      queryClient.setQueryData(sessionQueryOptions(session).queryKey, session);
+      queryClient.setQueryData(["session"], session);
     }
 
     return {

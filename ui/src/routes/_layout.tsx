@@ -1,22 +1,34 @@
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { Building2, Globe, Home, Settings } from "lucide-react";
+import { Building2, FolderKanban, Globe, Home, Settings } from "lucide-react";
 import { getAppName } from "@/app";
 import builtOn from "@/assets/built_on.png";
 import builtOnRev from "@/assets/built_on_rev.png";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useClientValue } from "@/hooks/use-client";
+import { sessionQueryOptions } from "@/lib/session";
 import { ThemeToggle } from "../components/theme-toggle";
 import { UserNav } from "../components/user-nav";
-import { sessionQueryOptions } from "../lib/session";
 
 export const Route = createFileRoute("/_layout")({
+  beforeLoad: async ({ context }) => {
+    const { queryClient } = context;
+    const session = await queryClient.ensureQueryData(
+      sessionQueryOptions(context.session, context.runtimeConfig),
+    );
+
+    return {
+      assetsUrl: context.assetsUrl || "",
+      runtimeConfig: context.runtimeConfig,
+      session,
+    };
+  },
   component: Layout,
 });
 
 const authenticatedSidebarItems = [
   { icon: Home, label: "home", to: "/" as const },
   { icon: Globe, label: "apps", to: "/apps" as const },
+  { icon: FolderKanban, label: "projects", to: "/projects" as const },
   { icon: Building2, label: "organizations", to: "/organizations" as const },
   { icon: Settings, label: "settings", to: "/settings" as const },
 ];
@@ -24,7 +36,7 @@ const authenticatedSidebarItems = [
 function Layout() {
   const pathname = useClientValue(() => window.location.pathname, "/");
   const appName = useClientValue(() => getAppName(), "app");
-  const { data: session } = useQuery(sessionQueryOptions());
+  const { session, runtimeConfig } = Route.useRouteContext();
   const isAuthenticated = !!session?.user;
 
   const isActive = (item: (typeof authenticatedSidebarItems)[number]) => {
@@ -122,7 +134,7 @@ function Layout() {
                     <ThemeToggle />
                   </div>
                 )}
-                <UserNav />
+                <UserNav runtimeConfig={runtimeConfig} />
               </div>
             </div>
           </header>

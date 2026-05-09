@@ -1,34 +1,46 @@
-import { createClient } from "@libsql/client";
-import { drizzle } from "drizzle-orm/libsql";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
 
-export const createDatabase = (url: string, authToken?: string) => {
-  const client = createClient({
-    url,
-    authToken,
-  });
+export type ApiDatabase = PgDatabase<PgQueryResultHKT, typeof schema>;
 
-  return drizzle({ client, schema });
-};
+export interface DatabaseDriver {
+  readonly db: ApiDatabase;
+  close(): Promise<void>;
+}
 
-let apiDatabaseUrl: string | null = null;
-let apiDatabaseAuthToken: string | undefined;
-let cachedDatabase: ReturnType<typeof createDatabase> | null = null;
-
-export const setApiDatabaseConfig = (url: string, authToken?: string) => {
-  apiDatabaseUrl = url;
-  apiDatabaseAuthToken = authToken;
-};
-
-export const getDatabase = () => {
-  if (!cachedDatabase) {
-    if (!apiDatabaseUrl) {
-      throw new Error("API database URL not configured. Call setApiDatabaseConfig() first.");
+export async function createDatabaseDriver(url: string): Promise<DatabaseDriver> {
+  if (url.startsWith("pglite:") || url === ":memory:") {
+    const { drizzle } = await import("drizzle-orm/pglite");
+    const rawDir = url === ":memory:" ? ":memory:" : url.replace("pglite:", "");
+    const dataDir = rawDir.endsWith("/:memory:") || rawDir === ":memory:" ? ":memory:" : rawDir;
+    if (dataDir !== ":memory:") {
+      mkdirSync(dirname(dataDir), { recursive: true });
     }
-    cachedDatabase = createDatabase(apiDatabaseUrl, apiDatabaseAuthToken);
+    const db = drizzle(dataDir, { schema });
+    const pglite = (db as any).$client;
+    return {
+      db,
+      close: async () => {
+        await pglite?.close?.();
+      },
+    };
   }
 
-  return cachedDatabase;
-};
-
-export type Database = ReturnType<typeof createDatabase>;
+  const { Pool } = await import("pg");
+  const { drizzle } = await import("drizzle-orm/node-postgres");
+  const pool = new Pool({
+    connectionString: url,
+    ssl:
+      url.includes("localhost") || url.includes("127.0.0.1")
+        ? false
+        : { rejectUnauthorized: false },
+  });
+  return {
+    db: drizzle(pool, { schema }),
+    close: async () => {
+      await pool.end();
+    },
+  };
+}
