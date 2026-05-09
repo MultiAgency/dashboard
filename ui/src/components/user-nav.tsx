@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { connectNear, sessionQueryOptions, signOut } from "@/lib/session";
+import { connectNear, sessionQueryKey, sessionQueryOptions, signOut } from "@/lib/session";
 
 export function UserNav() {
   const queryClient = useQueryClient();
@@ -31,14 +31,11 @@ export function UserNav() {
   });
 
   const signOutMutation = useMutation({
-    mutationFn: async () => {
-      await signOut();
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
-    },
-    onSuccess: () => {
-      if (typeof window !== "undefined") {
-        window.location.assign("/");
-      }
+    mutationFn: signOut,
+    onSuccess: async () => {
+      queryClient.setQueryData(sessionQueryKey, null);
+      await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+      navigate({ to: "/", replace: true });
     },
     onError: (error: Error) => {
       console.error("Sign out error:", error);

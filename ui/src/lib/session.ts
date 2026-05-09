@@ -35,6 +35,9 @@ export async function connectNear() {
 
 export async function signOut() {
   const client = getAuthClient();
-  await client.signOut();
+  const { error } = await client.signOut();
+  if (error) {
+    throw new Error(error.message || "Failed to sign out");
+  }
   await client.near.disconnect().catch(() => {});
 }
