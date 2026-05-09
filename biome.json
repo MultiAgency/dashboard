@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.14/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
   "assist": {
     "actions": {
       "source": {
@@ -48,10 +48,8 @@
     "includes": [
       "**",
       "!!**/ui/src/routeTree.gen.ts",
-      "!!**/plugins/**/types/**/*.d.ts",
-      "!!**/env.d.ts",
-      "!!**/virtual-modules.d.ts",
-      "!!bos.config.json"
+      "!!**/ui/src/styles.css",
+      "!!**/api/src/db/migrations"
     ],
     "ignoreUnknown": true
   },

@@ -1,28 +1,27 @@
-everything.dev is an open runtime for apps on NEAR.
+This site is MultiAgency's reference deployment of the Agency Dashboard Template — a customizable dashboard for on-chain agencies on NEAR.
 
-The site is published from every.near/everything.dev.
-It is composed at runtime from public configuration rather than built as one fixed application bundle.
+The template is a fork of the everything.dev runtime, shaped into a dashboard that integrates with Trezu (Sputnik DAO treasury) and NEARN (contributor sourcing). Off-chain ledger surfaces (allocations, billings) mirror agency decisions; the Sputnik DAO contract is the source of truth for funds and governance.
 
-Core architecture:
+Architecture:
 - host: runtime shell, auth boundary, request handling, runtime config loader
-- auth: authentication plugin loaded through every-plugin (Better-Auth, NEAR SIWN, organizations, API keys)
 - ui: remote interface loaded through Module Federation
 - api: remote backend loaded through every-plugin
 
-Canonical runtime model:
-- bos.config.json is the source of truth for runtime composition
-- config can inherit from other published records through bos:// references
-- metadata can be layered on top, but does not replace the runtime manifest
-
-Why it matters:
-- sites can share the same host while varying UI and API composition
-- runtime can change through published config instead of rebuild-only deployment
-- software remains more portable, inspectable, and extensible over time
-
-Useful public paths:
-- /
-- /about
-- /apps
+Public surface:
+- / — landing
+- /projects — projects directory (enriched live from NEARN where linked)
+- /apply — express-interest form (replicate or contributor)
 - /README.md
 - /skill.md
 - /manifest.json
+- /llms.txt
+
+Authenticated surface (DAO members only):
+- /home — workspace landing
+- /admin/projects, /admin/contributors, /admin/allocations, /admin/billings, /admin/applications — gated server-side by Sputnik DAO role membership
+- /settings — agency identity + DAO configuration
+
+Useful assumptions:
+- The agency's treasury IS a Sputnik DAO contract; this dashboard observes via NEAR RPC
+- Payment proposals are submitted from NEARN's Sponsor Dashboard ("Pay with NEAR Treasury") or directly via Trezu — never from this dashboard
+- The underlying template lives at github.com/MultiAgency/dashboard; fork to deploy your own agency

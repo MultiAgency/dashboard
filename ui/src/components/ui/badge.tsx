@@ -1,5 +1,5 @@
-import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Slot as SlotPrimitive } from "radix-ui";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -9,13 +9,10 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default:
-          "border-outset border-[rgb(51,51,51)] bg-[rgb(245,245,245)] text-[rgb(51,51,51)] dark:border-[rgb(200,200,200)] dark:bg-[rgb(60,60,60)] dark:text-[rgb(230,230,230)]",
-        secondary: "border-outset border-[rgb(180,180,180)] bg-secondary text-secondary-foreground",
-        destructive:
-          "border-outset border-[rgb(180,50,40)] bg-destructive text-destructive-foreground",
-        outline:
-          "border-outset border-[rgb(51,51,51)] bg-background text-foreground dark:border-[rgb(200,200,200)]",
+        default: "border-outset border-border bg-secondary text-secondary-foreground",
+        secondary: "border-outset border-border bg-secondary text-secondary-foreground",
+        destructive: "border-outset border-destructive bg-destructive text-destructive-foreground",
+        outline: "border-outset border-border bg-background text-foreground",
       },
     },
     defaultVariants: {
@@ -30,7 +27,7 @@ function Badge({
   asChild = false,
   ...props
 }: React.ComponentProps<"span"> & VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
-  const Comp = asChild ? Slot : "span";
+  const Comp = asChild ? SlotPrimitive.Slot : "span";
 
   return (
     <Comp data-slot="badge" className={cn(badgeVariants({ variant }), className)} {...props} />

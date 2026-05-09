@@ -1,49 +1,12 @@
 {
+  "account": "agency.near",
   "extends": "bos://dev.everything.near/everything.dev",
-  "account": "multiagency.near",
   "domain": "multiagency.ai",
+  "testnet": "agency.testnet",
   "staging": {
-    "domain": "staging.dev.everything.dev"
+    "domain": "dev.multiagency.ai"
   },
   "repository": "https://github.com/MultiAgency/dashboard",
-  "app": {
-    "ui": {
-      "name": "ui",
-      "development": "local:ui",
-      "production": "https://elliot-braem-3295-ui-everything-dev-nearbuilders-83df01697-ze.zephyrcloud.app",
-      "integrity": "sha384-7J4gJDPwq+jFHCvcirSH48Wz0yP+Ykm/qt+DAgK3PqO5T1zESPqUvD4uQsJM8RBp",
-      "ssr": "https://elliot-braem-3296-ui-everything-dev-nearbuilders-4876cd6ec-ze.zephyrcloud.app"
-    },
-    "api": {
-      "name": "api",
-      "development": "local:api",
-      "secrets": [],
-      "production": "https://elliot-braem-3297-api-everything-dev-nearbuilders-20172eea3-ze.zephyrcloud.app",
-      "integrity": "sha384-886T+ViOsxZ7tXYFoTf2RQoFXb8XywaRa54Tz7t7iZEEbB+VslIquBhVPu0P3jHd"
-    }
-  },
-  "plugins": {
-    "template": {
-      "development": "local:plugins/_template",
-      "production": "https://elliot-braem-3298-every-plugin-template-everythin-31c803110-ze.zephyrcloud.app",
-      "integrity": "sha384-4P3mfZ9oh3bnAF/sj3XwFGaYwh6L01f6RewpKe3SIMiZo9aSLmkXtQWU8cDLP7SE",
-      "routes": [
-        "ui/src/routes/_layout/_authenticated/settings.tsx"
-      ]
-    },
-    "registry": {
-      "development": "local:plugins/registry",
-      "variables": {
-        "registryNamespace": "dev.everything.near"
-      },
-      "production": "https://elliot-braem-3299-everything-dev-registry-plugin--a51f8ca03-ze.zephyrcloud.app",
-      "integrity": "sha384-45vLXaiVc5OhHsrPi/5P6pDJnejEMSoJ8/65FO1W7WGbz/YoafA6xYU7JRrGIsmu",
-      "routes": [
-        "ui/src/routes/_layout/apps/**",
-        "ui/src/routes/_layout/about.tsx"
-      ]
-    }
-  },
   "shared": {
     "ui": {
       "effect": {
@@ -59,22 +22,22 @@
         "singleton": true,
         "strictVersion": false,
         "shareScope": "default"
-      },
-      "@orpc/contract": {
-        "version": "1.13.14",
-        "requiredVersion": "^1.13.14",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "better-auth": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
       }
+    }
+  },
+  "plugins": {},
+  "app": {
+    "host": {
+      "development": "local:host"
     },
-    "plugins": {}
+    "ui": {
+      "name": "ui",
+      "development": "local:ui"
+    },
+    "api": {
+      "name": "api",
+      "development": "local:api",
+      "secrets": []
+    }
   }
 }

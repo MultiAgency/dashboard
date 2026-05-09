@@ -23,7 +23,7 @@ Understand and interact with this Agency Dashboard deployment as a runtime-compo
 
 - The bootstrap site is published from `dev.everything.near/everything.dev`.
 - This site extends the everything.dev bootstrap (`bos://dev.everything.near/everything.dev`).
-- The site is in active development; agency-specific surfaces (projects, contributors, treasury, billings, applications) are planned but not yet built.
+- Agency-specific surfaces — public projects directory, apply form, and the authenticated admin workspace (projects, contributors, allocations, billings, applications, settings) — are wired end-to-end via the API plugin. Admin routes are gated server-side by Sputnik DAO role membership.
 - Multiple sites may share the same host configuration.
 - Host URLs can stay stable while published runtime records change over time.
 - The project is meant to be continuously built over and around.
@@ -37,10 +37,9 @@ Understand and interact with this Agency Dashboard deployment as a runtime-compo
 
 ## Public entry points
 
-- `/`
-- `/about`
-- `/apps`
-- `/opencode`
+- `/` — landing
+- `/projects` — projects directory (enriched live from NEARN where linked)
+- `/apply` — express-interest form (replicate or contributor)
 - `/README.md`
 - `/skill.md`
 - `/llms.txt`

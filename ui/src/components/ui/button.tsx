@@ -1,5 +1,5 @@
-import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
+import { Slot as SlotPrimitive } from "radix-ui";
 import type * as React from "react";
 
 import { cn } from "@/lib/utils";
@@ -10,11 +10,11 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-foreground text-background border-2 border-outset border-[rgb(51,51,51)] dark:border-[rgb(100,100,100)] shadow-sm hover:shadow-md hover:opacity-90 active:border-inset active:shadow-none",
+          "bg-foreground text-background border-2 border-outset border-border shadow-sm hover:shadow-md hover:opacity-90 active:border-inset active:shadow-none",
         destructive:
           "bg-destructive text-destructive-foreground border-2 border-outset border-destructive shadow-sm hover:shadow-md hover:opacity-90 active:border-inset active:shadow-none",
         outline:
-          "bg-card text-foreground border-2 border-outset border-[rgb(51,51,51)] dark:border-[rgb(100,100,100)] shadow-sm hover:shadow-md hover:bg-muted active:border-inset active:shadow-none",
+          "bg-card text-foreground border-2 border-outset border-border shadow-sm hover:shadow-md hover:bg-muted active:border-inset active:shadow-none",
         secondary:
           "bg-secondary text-secondary-foreground border-2 border-outset border-border shadow-sm hover:shadow-md hover:opacity-90 active:border-inset active:shadow-none",
         ghost: "hover:bg-muted hover:text-accent-foreground",
@@ -46,7 +46,7 @@ function Button({
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
   }) {
-  const Comp = asChild ? Slot : "button";
+  const Comp = asChild ? SlotPrimitive.Slot : "button";
 
   return (
     <Comp
