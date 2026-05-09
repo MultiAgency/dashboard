@@ -1,18 +1,35 @@
-import { drizzle } from "drizzle-orm/node-postgres";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { Pool } from "pg";
 import * as schema from "./schema";
 
 export type Database = PgDatabase<PgQueryResultHKT, typeof schema>;
 
-export async function createDatabase(url: string): Promise<Database> {
+export interface DatabaseDriver {
+  readonly db: Database;
+  close(): Promise<void>;
+}
+
+export async function createDatabaseDriver(url: string): Promise<DatabaseDriver> {
   if (url.startsWith("pglite:") || url === ":memory:") {
-    const { drizzle: pgliteDrizzle } = await import("drizzle-orm/pglite");
-    const dataDir =
-      url === ":memory:" || url.endsWith("/:memory:") ? ":memory:" : url.replace("pglite:", "");
-    return pgliteDrizzle(dataDir, { schema }) as unknown as Database;
+    const { drizzle } = await import("drizzle-orm/pglite");
+    const rawDir = url === ":memory:" ? ":memory:" : url.replace("pglite:", "");
+    const dataDir = rawDir.endsWith("/:memory:") || rawDir === ":memory:" ? ":memory:" : rawDir;
+    if (dataDir !== ":memory:") {
+      mkdirSync(dirname(dataDir), { recursive: true });
+    }
+    const db = drizzle(dataDir, { schema });
+    const pglite = (db as any).$client;
+    return {
+      db,
+      close: async () => {
+        await pglite?.close?.();
+      },
+    };
   }
 
+  const { Pool } = await import("pg");
+  const { drizzle } = await import("drizzle-orm/node-postgres");
   const pool = new Pool({
     connectionString: url,
     ssl:
@@ -20,5 +37,10 @@ export async function createDatabase(url: string): Promise<Database> {
         ? false
         : { rejectUnauthorized: false },
   });
-  return drizzle(pool, { schema });
+  return {
+    db: drizzle(pool, { schema }),
+    close: async () => {
+      await pool.end();
+    },
+  };
 }

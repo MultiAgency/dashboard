@@ -29,6 +29,7 @@ export async function migrate(db: Database, migrations: Migration[]): Promise<vo
 
   for (const migration of migrations) {
     if (appliedHashes.has(migration.hash)) continue;
+
     console.log(`[API] Applying migration: ${migration.tag}`);
 
     await db.transaction(async (tx: Database) => {
