@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
-import { useApiClient } from "@/lib/use-api-client";
+import { useApiClient } from "@/lib/api";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/contributors")({
   head: () => ({

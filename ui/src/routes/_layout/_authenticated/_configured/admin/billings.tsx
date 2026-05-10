@@ -4,9 +4,9 @@ import { useState } from "react";
 import { Badge, Button, Card, CardContent } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
+import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { trezuProposalUrl } from "@/lib/trezu";
-import { useApiClient } from "@/lib/use-api-client";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/billings")({
   head: () => ({

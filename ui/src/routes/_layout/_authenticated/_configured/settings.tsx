@@ -5,8 +5,8 @@ import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { Field } from "@/components/admin-form";
+import { useApiClient } from "@/lib/api";
 import { sessionQueryKey, sessionQueryOptions, signOut } from "@/lib/auth";
-import { useApiClient } from "@/lib/use-api-client";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/settings")({
   head: () => ({

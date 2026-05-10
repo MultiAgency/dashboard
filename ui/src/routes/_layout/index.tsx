@@ -4,8 +4,8 @@ import { ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Button, Card, CardContent } from "@/components";
+import { useApiClient } from "@/lib/api";
 import { connectNear, sessionQueryOptions } from "@/lib/auth";
-import { useApiClient } from "@/lib/use-api-client";
 
 const FALLBACK = {
   name: "Agency",

@@ -1,6 +1,5 @@
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { passkeyClient } from "@better-auth/passkey/client";
-import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import {
   adminClient,
@@ -11,18 +10,19 @@ import {
 } from "better-auth/client/plugins";
 import { createAuthClient as createBetterAuthClient } from "better-auth/react";
 import { siwnClient } from "better-near-auth/client";
-import { getAccount, getHostUrl, getNetworkId } from "@/app";
-import type { Auth } from "../auth-types.gen";
+import type { ClientRuntimeConfig } from "everything-dev/types";
+import { getAccount, getHostUrl, getNetworkId } from "everything-dev/ui/runtime";
+import type { Auth } from "./auth-types.gen";
 
-export function createAuthClient() {
+export function createAuthClient(config?: Partial<ClientRuntimeConfig>) {
   return createBetterAuthClient({
-    baseURL: getHostUrl(),
+    baseURL: getHostUrl(config),
     fetchOptions: { credentials: "include" },
     plugins: [
       inferAdditionalFields<Auth>(),
       siwnClient({
-        recipient: getAccount(),
-        networkId: getNetworkId(),
+        recipient: getAccount(config),
+        networkId: getNetworkId(config),
       }),
       adminClient(),
       anonymousClient(),
@@ -35,17 +35,12 @@ export function createAuthClient() {
 }
 
 export type AuthClient = ReturnType<typeof createAuthClient>;
+type OrganizationListResult = Awaited<ReturnType<AuthClient["organization"]["list"]>>;
+type PasskeyListResult = Awaited<ReturnType<AuthClient["passkey"]["listUserPasskeys"]>>;
+
 export type SessionData = AuthClient["$Infer"]["Session"];
-
-type UnwrapListResponse<T> = T extends (...args: any[]) => Promise<{
-  data: (infer U)[] | null;
-  error: any;
-}>
-  ? U
-  : never;
-
-export type Organization = UnwrapListResponse<AuthClient["organization"]["list"]>;
-export type Passkey = UnwrapListResponse<AuthClient["passkey"]["listUserPasskeys"]>;
+export type Organization = NonNullable<OrganizationListResult["data"]>[number];
+export type Passkey = NonNullable<PasskeyListResult["data"]>[number];
 
 export function useAuthClient(): AuthClient {
   return useRouter().options.context.authClient;
@@ -54,7 +49,7 @@ export function useAuthClient(): AuthClient {
 export const sessionQueryKey = ["session"] as const;
 
 export function sessionQueryOptions(authClient: AuthClient, initialSession?: SessionData | null) {
-  return {
+  const baseOptions = {
     queryKey: sessionQueryKey,
     queryFn: async () => {
       const { data: session } = await authClient.getSession();
@@ -62,42 +57,30 @@ export function sessionQueryOptions(authClient: AuthClient, initialSession?: Ses
     },
     staleTime: 60 * 1000,
     gcTime: 10 * 60 * 1000,
-    initialData: initialSession,
   };
+
+  return initialSession === undefined
+    ? baseOptions
+    : { ...baseOptions, initialData: initialSession };
+}
+
+export function connectNear(authClient: AuthClient): Promise<void> {
+  return new Promise((resolve, reject) => {
+    authClient.signIn.near({
+      onSuccess: () => resolve(),
+      onError: (error) => reject(error),
+    });
+  });
+}
+
+export async function signOut(authClient: AuthClient): Promise<void> {
+  await authClient.signOut();
 }
 
 export function getSessionFromData(session: SessionData | null) {
-  const isAuthenticated = !!session?.user;
   return {
-    isAuthenticated,
+    isAuthenticated: !!session?.user,
     user: session?.user ?? null,
     session: session?.session ?? null,
   };
-}
-
-export async function connectNear(authClient: AuthClient) {
-  await authClient.signIn.near();
-}
-
-export async function signOut(authClient: AuthClient) {
-  const { error } = await authClient.signOut();
-  if (error) {
-    throw new Error(error.message || "Failed to sign out");
-  }
-  await authClient.near.disconnect().catch(() => {});
-}
-
-export function useRelayHistory(authClient: AuthClient, session: any) {
-  return useQuery({
-    queryKey: ["relay-history"],
-    queryFn: async () => {
-      const res = await authClient.near.relayHistory();
-      if (res.error) {
-        console.error("relayHistory error:", res.error);
-      }
-      return res?.data?.transactions ?? [];
-    },
-    enabled: !!session,
-    refetchInterval: 2000,
-  });
 }

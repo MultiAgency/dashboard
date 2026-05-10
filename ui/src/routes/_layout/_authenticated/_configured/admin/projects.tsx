@@ -5,9 +5,9 @@ import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass, textareaClass } from "@/components/admin-form";
+import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingUrl } from "@/lib/nearn";
-import { useApiClient } from "@/lib/use-api-client";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/projects")({
   head: () => ({
