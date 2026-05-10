@@ -64,7 +64,7 @@
     "jsdom": "^27.2.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.1.17",
-    "typescript": "^5.9.3",
+    "typescript": "^6.0.3",
     "vitest": "^4.0.17",
     "zephyr-rsbuild-plugin": "^1.0.1"
   }
