@@ -16,6 +16,9 @@
         "noExplicitAny": "off",
         "noTsIgnore": "off"
       },
+      "security": {
+        "noDangerouslySetInnerHtml": "off"
+      },
       "style": {
         "noNonNullAssertion": "off"
       }

@@ -16,6 +16,8 @@
     "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist/types"
   },
   "dependencies": {
+    "@better-auth/api-key": "^1.6.10",
+    "@better-auth/passkey": "^1.6.10",
     "@hot-labs/near-connect": "catalog:",
     "@orpc/client": "^1.12.3",
     "@orpc/contract": "^1.13.4",
@@ -25,7 +27,7 @@
     "@tanstack/react-router": "1.157.16",
     "@tanstack/react-router-devtools": "^1.139.14",
     "better-auth": "1.6.9",
-    "better-near-auth": "^1.1.0",
+    "better-near-auth": "^1.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.544.0",

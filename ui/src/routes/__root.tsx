@@ -13,7 +13,7 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import type { RouterContext } from "@/app";
 import { getAppName, getBaseStyles, getRuntimeBasePath } from "@/app";
-import { sessionQueryKey } from "@/lib/session";
+import { sessionQueryKey } from "@/lib/auth";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 
 export const Route = createRootRouteWithContext<RouterContext>()({

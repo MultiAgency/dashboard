@@ -15,17 +15,11 @@
     "api": {
       "name": "api",
       "development": "local:api",
-      "secrets": [
-        "API_DATABASE_URL"
-      ]
+      "secrets": ["API_DATABASE_URL"]
     },
     "auth": {
       "name": "everything-dev_auth-plugin",
-      "secrets": [
-        "AUTH_DATABASE_URL",
-        "BETTER_AUTH_SECRET",
-        "CORS_ORIGIN"
-      ]
+      "secrets": ["AUTH_DATABASE_URL", "BETTER_AUTH_SECRET", "CORS_ORIGIN"]
     }
   },
   "plugins": {},

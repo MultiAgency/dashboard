@@ -33,8 +33,8 @@ export {
 import type { ApiClient, ApiContract } from "./lib/api-client";
 
 export { createApiClient } from "./lib/api-client";
-export type { SessionData } from "./lib/auth-client";
-export { authClient, getAuthClient } from "./lib/auth-client";
+export type { AuthClient, SessionData } from "./lib/auth";
+export { createAuthClient, useAuthClient } from "./lib/auth";
 export type { ApiClient, ApiContract };
 
 export function getAppName(config?: Parameters<typeof getAccount>[0]): string {
@@ -46,7 +46,7 @@ import type {
   RenderOptions as BaseRenderOptions,
   RouterContextWithApi as BaseRouterContextWithApi,
 } from "everything-dev/ui/types";
-import type { SessionData } from "./lib/auth-client";
+import type { AuthClient, SessionData } from "./lib/auth";
 
 export type {
   ClientRuntimeConfig,
@@ -63,6 +63,7 @@ export type {
 
 export interface RouterContext extends BaseRouterContextWithApi<ApiClient, SessionData> {
   apiClient: ApiClient;
+  authClient: AuthClient;
 }
 
 export interface CreateRouterOptions
@@ -73,4 +74,5 @@ export interface CreateRouterOptions
 export interface RenderOptions extends Omit<BaseRenderOptions<SessionData>, "runtimeConfig"> {
   runtimeConfig: BaseRenderOptions<SessionData>["runtimeConfig"];
   apiClient: ApiClient;
+  authClient: AuthClient;
 }

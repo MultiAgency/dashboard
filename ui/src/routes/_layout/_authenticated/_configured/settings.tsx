@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { authClient } from "@/app";
+import { useAuthClient } from "@/app";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { Field } from "@/components/admin-form";
-import { sessionQueryKey, sessionQueryOptions, signOut } from "@/lib/session";
+import { sessionQueryKey, sessionQueryOptions, signOut } from "@/lib/auth";
 import { useApiClient } from "@/lib/use-api-client";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/settings")({
@@ -22,7 +22,8 @@ function Settings() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const apiClient = useApiClient();
-  const { data: session } = useQuery(sessionQueryOptions());
+  const authClient = useAuthClient();
+  const { data: session } = useQuery(sessionQueryOptions(authClient));
 
   const user = session?.user;
   const nearAccountId = authClient.near.getAccountId();
@@ -36,7 +37,7 @@ function Settings() {
   const isAdmin = !!settingsQuery.data;
 
   const signOutMutation = useMutation({
-    mutationFn: signOut,
+    mutationFn: () => signOut(authClient),
     onSuccess: async () => {
       queryClient.setQueryData(sessionQueryKey, null);
       await queryClient.invalidateQueries({ queryKey: sessionQueryKey });

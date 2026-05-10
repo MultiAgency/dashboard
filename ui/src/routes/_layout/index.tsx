@@ -2,8 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight } from "lucide-react";
 import { toast } from "sonner";
+import { useAuthClient } from "@/app";
 import { Button, Card, CardContent } from "@/components";
-import { connectNear, sessionQueryOptions } from "@/lib/session";
+import { connectNear, sessionQueryOptions } from "@/lib/auth";
 import { useApiClient } from "@/lib/use-api-client";
 
 const FALLBACK = {
@@ -62,6 +63,7 @@ function Landing() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const apiClient = useApiClient();
+  const authClient = useAuthClient();
 
   const settingsQuery = useQuery({
     queryKey: ["settings", "public"],
@@ -86,9 +88,9 @@ function Landing() {
     : UPSTREAM_DOCS;
 
   const connectMutation = useMutation({
-    mutationFn: connectNear,
+    mutationFn: () => connectNear(authClient),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
+      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey });
       navigate({ to: "/home" });
     },
     onError: (error: { code?: string; message?: string }) => {
