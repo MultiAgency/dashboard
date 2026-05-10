@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "every-plugin/effect";
-import type { DatabaseDriver } from "./index";
+import type { ApiDatabase } from "./index";
 
-export class DatabaseTag extends Context.Tag("api/Database")<DatabaseDriver, DatabaseDriver>() {}
+export class DatabaseTag extends Context.Tag("api/Database")<ApiDatabase, ApiDatabase>() {}
 
 export const DatabaseLive = (url: string) =>
   Layer.scoped(
@@ -10,11 +10,8 @@ export const DatabaseLive = (url: string) =>
       Effect.promise(async () => {
         const { createDatabaseDriver } = await import("./index");
         const driver = await createDatabaseDriver(url);
-        return driver;
+        return driver.db;
       }),
-      (driver) =>
-        Effect.promise(async () => {
-          await driver.close();
-        }),
+      () => Effect.void,
     ),
   );

@@ -11,13 +11,13 @@
       "react-dom": "19.2.4",
       "@tanstack/react-query": "5.90.20",
       "@tanstack/react-router": "1.157.16",
-      "near-kit": "^0.12.0",
+      "near-kit": "^0.14.0",
       "@hot-labs/near-connect": "^0.11.0",
       "drizzle-orm": "^0.45.1",
       "drizzle-kit": "^0.31.8",
       "better-auth": "1.6.9",
-      "better-near-auth": "^1.2.1",
-      "every-plugin": "^2.5.5",
+      "better-near-auth": "^1.1.0",
+      "every-plugin": "^2.5.6",
       "typescript": "^5.9.3",
       "vitest": "^4.0.17",
       "@libsql/client": "0.17.0",
@@ -53,8 +53,8 @@
     "db:studio": "bun run --cwd api drizzle-kit studio",
     "db:generate": "bun run --cwd api drizzle-kit generate",
     "db:migrate": "bun run --cwd api drizzle-kit migrate",
-    "types:gen": "bun node_modules/.bin/bos types gen",
-    "postinstall": "bun run types:gen"
+    "types:gen": "node_modules/.bin/bos types gen",
+    "postinstall": "node_modules/.bin/bos types gen || true"
   },
   "packageManager": "bun@1.2.20",
   "type": "module",
@@ -69,8 +69,8 @@
   "dependencies": {
     "@libsql/client": "^0.17.0",
     "@orpc/contract": "^1.13.14",
-    "every-plugin": "^2.5.5",
-    "everything-dev": "^1.11.0"
+    "every-plugin": "^2.5.6",
+    "everything-dev": "^1.11.3"
   },
   "overrides": {
     "axios": "1.13.6",
