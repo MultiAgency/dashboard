@@ -64,7 +64,10 @@ export function sessionQueryOptions(authClient: AuthClient, initialSession?: Ses
     : { ...baseOptions, initialData: initialSession };
 }
 
-export function connectNear(authClient: AuthClient): Promise<void> {
+export async function connectNear(authClient: AuthClient): Promise<void> {
+  if (authClient.near.isWalletConnected()) {
+    await authClient.near.disconnect();
+  }
   return new Promise((resolve, reject) => {
     authClient.signIn.near({
       onSuccess: () => resolve(),
