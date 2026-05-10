@@ -57,7 +57,7 @@
   "packageManager": "bun@1.2.20",
   "type": "module",
   "devDependencies": {
-    "@biomejs/biome": "2.4.14",
+    "@biomejs/biome": "2.4.15",
     "@types/bun": "latest",
     "dotenv": "^17.3.1",
     "tsx": "^4.21.0",

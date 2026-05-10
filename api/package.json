@@ -24,7 +24,7 @@
     "drizzle-orm": "^0.45.1"
   },
   "devDependencies": {
-    "@effect/language-service": "^0.84.3",
+    "@effect/language-service": "^0.85.1",
     "@module-federation/node": "^2.7.40",
     "@rspack/cli": "^1.6.8",
     "@rspack/core": "^1.6.8",
