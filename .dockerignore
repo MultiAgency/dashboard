@@ -1,0 +1,30 @@
+# Build artifacts and runtime state — must not enter the build context
+node_modules/
+**/node_modules/
+.bos/generated/
+.bos/logs/
+.bos/sync-backup/
+.bos/pids.json
+auth-local.db/
+
+# Local dev artifacts
+**/dist/
+**/.cache/
+
+# VCS / editor / OS
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+.DS_Store
+
+# Secrets — never bake into image
+.env
+.env.local
+.env.*.local
+
+# Docs / changelogs that don't affect runtime (keeps build context small)
+*.md
+.changeset/
+patches/

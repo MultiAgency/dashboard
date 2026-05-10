@@ -77,9 +77,9 @@ Load-bearing facts for any agent making changes:
 
 ### Typical Session
 1. `bun run dev` to start development
-2. UI at http://localhost:3002; API on a dynamic port assigned by `bos dev` (see the `[API ✓ ready]` line in the startup output)
+2. UI at http://localhost:3003; API at http://localhost:3001 (default ports from upstream's `service-descriptor.ts`; rsbuild/rspack auto-bump up if a parallel session is on those ports — host on 3000 has no auto-bump and will fail with EADDRINUSE if taken)
 3. Check `.bos/logs/` for process logs if issues occur
-4. Use `bos kill` to clean up processes when done
+4. Stop with Ctrl+C in the dev terminal (no `bos kill` subcommand exists in v1.9.x); if processes persist, `lsof -i :3000-3004 -P | grep LISTEN` and `kill <PID>` the stragglers
 
 ### Debugging Issues
 
@@ -137,7 +137,11 @@ The API plugin receives typed client factories for all other plugins via `create
 
 **Two-phase loading**: The host loads non-API plugins first (Phase 1), creates a `pluginsClient` map, then loads the API with that map injected (Phase 2). The host is generic — no plugin-specific code.
 
-**Generated types**: `api/src/plugins-client.gen.ts` and `ui/src/api-contract.gen.ts` are gitignored generated files — regenerated from `bos.config.json` during dev/build.
+**Generated types** (`api/src/plugins-client.gen.ts`, `ui/src/api-contract.gen.ts`, `ui/src/auth-types.gen.ts`) are gitignored. No install-time hook — `bos types gen` emits broken imports when `auth.development` is a `local:` path not checked out on disk. `bos dev` loads auth remotely from `auth.production` without touching these files; treat the gen files as stable once present. To regenerate when upstream auth's contract changes, temporarily point `auth.development` at the same URL as `auth.production`, run `bos types gen`, then revert.
+
+### Workspace Dependency Versions
+
+`api/package.json` and `ui/package.json` use literal version specifiers (e.g. `"better-auth": "1.6.9"`), not `catalog:` refs — that's upstream's template default, and these files are template-tracked. Don't "fix" workspace deps to `catalog:` refs; the next `bos sync` overwrites the change. The root `workspaces.catalog` still pins canonical versions for `overrides` and root deps; workspaces just don't reference it.
 
 ## Testing & Quality
 
@@ -195,9 +199,9 @@ const appName = getAppName(runtimeConfig) || "app";
 
 **Process won't start:**
 ```bash
-bos kill        # Kill all tracked processes
-bun install     # Ensure dependencies
-bun run dev     # Restart
+lsof -i :3000-3004 -P | grep LISTEN  # Find stragglers, then `kill <PID>`
+bun install                          # Ensure dependencies
+bun run dev                          # Restart
 ```
 
 **Module Federation errors:**
@@ -218,6 +222,11 @@ bun run db:studio   # Open Drizzle Studio
 - `.env` - Secrets (see `.env.example`)
 - `bos.config.json` - Runtime configuration (committed)
 
-**Key ports:**
-- 3002 - UI dev server
-- API runs on a dynamic port assigned by `bos dev` (3010+ range per upstream's port table); read the `[API ✓ ready]` line in the dev startup output
+**Key ports** (defaults from upstream's `service-descriptor.ts`):
+- 3000 - host
+- 3001 - api
+- 3002 - auth
+- 3003 - ui
+- 3010+ - plugins
+
+UI/API auto-bump up if a parallel session occupies their slot (rsbuild/rspack handle EADDRINUSE themselves). Host has no auto-bump and fails outright if 3000 is taken — coordinate with parallel sessions or override via `app.host.development: "http://localhost:<port>"` in `bos.config.json`.

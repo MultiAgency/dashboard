@@ -133,7 +133,7 @@ function RootComponent() {
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <head>
         <HeadContent />
-        <style dangerouslySetInnerHTML={{ __html: getBaseStyles() }} />
+        <style>{getBaseStyles()}</style>
       </head>
       <body>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
