@@ -33,3 +33,14 @@ export const authClient: ReturnType<typeof createAuthClient> = new Proxy(
     },
   },
 );
+
+export type AuthClient = ReturnType<typeof createAuthClient>;
+export type SessionData = AuthClient["$Infer"]["Session"];
+
+// Agency stubs Organization/Passkey as `never`; siwnClient is the only plugin used.
+export type Organization = never;
+export type Passkey = never;
+
+export function isAuthAvailable(): boolean {
+  return true;
+}

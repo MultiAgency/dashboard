@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
-import { authClient } from "./auth-client";
+import { authClient, type SessionData } from "./auth-client";
 
-export type SessionData = typeof authClient.$Infer.Session;
+export type { SessionData };
 export type User = SessionData["user"];
 export type SessionInfo = SessionData["session"];
 

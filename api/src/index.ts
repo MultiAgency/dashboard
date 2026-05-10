@@ -1,4 +1,3 @@
-import type { Auth } from "better-auth";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { createPlugin } from "every-plugin";
 import { Effect } from "every-plugin/effect";
@@ -74,6 +73,19 @@ export async function claimDaoConfig(args: {
   return { ok: true };
 }
 
+const nearIdentitySchema = z.object({
+  accountId: z.string(),
+  network: z.string(),
+  publicKey: z.string(),
+  isPrimary: z.boolean(),
+});
+
+const nearCapabilitiesSchema = z.object({
+  primaryAccountId: z.string().nullable(),
+  linkedAccounts: z.array(nearIdentitySchema),
+  hasNearAccount: z.boolean(),
+});
+
 export interface AuthContext {
   userId: string;
   user: {
@@ -82,11 +94,8 @@ export interface AuthContext {
     email?: string;
     name?: string;
   };
-  nearAccountId?: string;
-  organizationId?: string;
-  organizationRole?: string;
+  nearAccountId: string;
   reqHeaders?: Headers;
-  auth: Auth;
 }
 
 export default createPlugin.withPlugins<PluginsClient>()({
@@ -107,21 +116,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
         name: z.string().optional(),
       })
       .optional(),
-    nearAccountId: z.string().optional(),
-    nearAccounts: z
-      .array(
-        z.object({
-          accountId: z.string(),
-          network: z.string(),
-          isPrimary: z.boolean(),
-        }),
-      )
-      .optional(),
-    organizationId: z.string().optional(),
-    organizationRole: z.string().optional(),
+    near: nearCapabilitiesSchema.optional(),
     reqHeaders: z.custom<Headers>().optional(),
     getRawBody: z.custom<() => Promise<string>>().optional(),
-    auth: z.custom<Auth>().optional(),
   }),
 
   contract,
@@ -151,29 +148,18 @@ export default createPlugin.withPlugins<PluginsClient>()({
   createRouter: (services, builder) => {
     const { db } = services;
 
-    // Upstream host drops nearAccountId from plugin context; fetch via better-near-auth's list-accounts.
-    const nearAccountIdCache = new Map<string, { accountId: string; expiresAt: number }>();
-    const NEAR_ACCOUNT_TTL_MS = 60_000;
-
-    if (process.env.NODE_ENV === "production" && !process.env.HOST_URL) {
-      throw new Error("HOST_URL must be set in production");
-    }
     const hostUrl = process.env.HOST_URL ?? `http://localhost:${process.env.PORT ?? "3000"}`;
 
-    const resolveNearAccountId = async (context: {
-      nearAccountId?: string;
-      userId?: string;
-      reqHeaders?: Headers;
-    }): Promise<string | undefined> => {
-      if (context.nearAccountId) return context.nearAccountId;
-      if (!context.userId || !context.reqHeaders) return undefined;
+    const getCookie = (reqHeaders: unknown): string | undefined => {
+      if (!reqHeaders) return undefined;
+      if (reqHeaders instanceof Headers) return reqHeaders.get("cookie") ?? undefined;
+      const obj = reqHeaders as Record<string, string>;
+      return obj.cookie ?? obj.Cookie;
+    };
 
-      const cached = nearAccountIdCache.get(context.userId);
-      if (cached && cached.expiresAt > Date.now()) return cached.accountId;
-
-      const cookie = context.reqHeaders.get("cookie") ?? "";
+    const resolveNearAccountId = async (reqHeaders: unknown): Promise<string | undefined> => {
+      const cookie = getCookie(reqHeaders);
       if (!cookie) return undefined;
-
       try {
         const res = await fetch(`${hostUrl}/api/auth/near/list-accounts`, {
           headers: { cookie },
@@ -184,13 +170,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         };
         const accounts = data.accounts ?? [];
         const primary = accounts.find((a) => a.isPrimary) ?? accounts[0];
-        if (!primary?.accountId) return undefined;
-
-        nearAccountIdCache.set(context.userId, {
-          accountId: primary.accountId,
-          expiresAt: Date.now() + NEAR_ACCOUNT_TTL_MS,
-        });
-        return primary.accountId;
+        return primary?.accountId;
       } catch (err) {
         console.warn("[API] Failed to resolve nearAccountId:", (err as Error).message);
         return undefined;
@@ -201,7 +181,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       if (!context.user || !context.userId) {
         throw new ORPCError("UNAUTHORIZED", { message: "Authentication required" });
       }
-      const nearAccountId = await resolveNearAccountId(context);
+      const nearAccountId = await resolveNearAccountId(context.reqHeaders);
       if (!nearAccountId) {
         throw new ORPCError("FORBIDDEN", {
           message: "NEAR account required for this action",
@@ -212,10 +192,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           userId: context.userId,
           user: context.user,
           nearAccountId,
-          organizationId: context.organizationId,
-          organizationRole: context.organizationRole,
           reqHeaders: context.reqHeaders,
-          auth: context.auth!,
         } as AuthContext,
       });
     });
@@ -244,7 +221,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         if (!context.user || !context.userId) {
           throw new ORPCError("UNAUTHORIZED", { message: "Authentication required" });
         }
-        const nearAccountId = await resolveNearAccountId(context);
+        const nearAccountId = await resolveNearAccountId(context.reqHeaders);
         if (!nearAccountId) {
           throw new ORPCError("FORBIDDEN", {
             message: "NEAR account required for this action",
@@ -275,10 +252,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
             userId: context.userId,
             user: context.user,
             nearAccountId,
-            organizationId: context.organizationId,
-            organizationRole: context.organizationRole,
             reqHeaders: context.reqHeaders,
-            auth: context.auth!,
           } as AuthContext,
         });
       });

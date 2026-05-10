@@ -11,13 +11,13 @@
       "react-dom": "19.2.4",
       "@tanstack/react-query": "5.90.20",
       "@tanstack/react-router": "1.157.16",
-      "near-kit": "^0.12.0",
-      "@hot-labs/near-connect": "^0.11.0",
+      "near-kit": "^0.14.0",
+      "@hot-labs/near-connect": "0.11.2",
       "drizzle-orm": "^0.45.1",
       "drizzle-kit": "^0.31.8",
       "better-auth": "1.6.9",
-      "better-near-auth": "^0.5.2",
-      "every-plugin": "^2.2.6",
+      "better-near-auth": "^1.1.0",
+      "every-plugin": "^2.5.4",
       "typescript": "^5.9.3",
       "vitest": "^4.0.17",
       "@libsql/client": "0.17.0",
@@ -57,7 +57,7 @@
   "packageManager": "bun@1.2.20",
   "type": "module",
   "devDependencies": {
-    "@biomejs/biome": "2.4.10",
+    "@biomejs/biome": "2.4.14",
     "@types/bun": "latest",
     "dotenv": "^17.3.1",
     "tsx": "^4.21.0",
@@ -65,17 +65,16 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.4.5",
     "@libsql/client": "^0.17.0",
-    "@orpc/contract": "^1.13.14",
-    "every-plugin": "^2.2.6",
-    "everything-dev": "^1.4.1"
+    "@orpc/contract": "^1.14.2",
+    "every-plugin": "^2.5.4",
+    "everything-dev": "^1.9.2"
   },
   "overrides": {
     "axios": "1.13.6",
     "effect": "3.21.0",
-    "zod": "4.3.6",
-    "@tanstack/router-generator>zod": "^3.24.2",
-    "@orpc/contract": "1.13.14",
-    "@orpc/server": "1.13.14"
+    "@orpc/contract": "1.14.2",
+    "@orpc/server": "1.14.2"
   }
 }

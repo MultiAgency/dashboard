@@ -15,3 +15,28 @@ CONTRIBUTING.md
 
 # Plugins — this fork ships none of upstream's scaffolds (_template, registry, auth, etc.)
 plugins/**
+
+# Workspace deps & lockfile — agency carries its own upgrade pins, catalog versions, and overrides;
+# bos sync's package.json merger lets template win on conflicting dep versions, so excluding is
+# the only way to preserve agency's deliberate fork upgrades (@orpc 1.14.2, etc.)
+package.json
+bun.lock
+api/package.json
+ui/package.json
+
+# API build config — agency uses libsql instead of pg/pglite; rspack externals + plugin set differ
+api/rspack.config.js
+
+# Auth surface divergence — agency stubs Organization/Passkey as never and uses SIWN-only
+ui/src/app.ts
+ui/src/lib/auth-client.ts
+ui/src/lib/session.ts
+
+# Agency-owned services & data model paths — fork business logic, not in upstream's exclude
+api/src/services/**
+api/src/db/migrations/**
+ui/src/lib/format-amount.ts
+
+# Generated bridge files — regenerated locally at `bun run dev` startup
+api/src/plugins-client.gen.ts
+ui/src/routeTree.gen.ts

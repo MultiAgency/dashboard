@@ -30,14 +30,14 @@ function updateHostConfig(name, url, integrity) {
 
     config.app.api.production = url;
     if (integrity) {
-      config.app.api.productionIntegrity = integrity;
+      config.app.api.integrity = integrity;
     } else {
-      delete config.app.api.productionIntegrity;
+      delete config.app.api.integrity;
     }
     fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
     console.log(`   ✅ Updated bos.config.json: app.api.production`);
     if (integrity) {
-      console.log(`   ✅ Updated bos.config.json: app.api.productionIntegrity`);
+      console.log(`   ✅ Updated bos.config.json: app.api.integrity`);
     }
   } catch (err) {
     console.error("   ❌ Failed to update bos.config.json:", err.message);
@@ -46,6 +46,7 @@ function updateHostConfig(name, url, integrity) {
 
 const baseConfig = {
   externals: [/^@libsql\/.*/],
+  devtool: shouldDeploy ? false : "source-map",
   plugins: [
     new EmitPluginManifest(),
     new EveryPluginDevServer({ dts: false }),

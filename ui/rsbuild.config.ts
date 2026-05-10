@@ -32,7 +32,7 @@ function updateBosConfig(field: "production" | "ssr", url: string, integrity?: s
     }
 
     config.app.ui[field] = url;
-    const integrityField = field === "production" ? "productionIntegrity" : "ssrIntegrity";
+    const integrityField = field === "production" ? "integrity" : "ssrIntegrity";
     if (integrity) {
       config.app.ui[integrityField] = integrity;
     } else {
@@ -104,7 +104,7 @@ function createClientConfig() {
       },
     },
     server: {
-      port: isServerBuild ? 3003 : 3002,
+      port: isServerBuild ? 3004 : 3003,
       printUrls: ({ urls }) => urls.filter((url) => url.includes("localhost")),
       headers: {
         "Access-Control-Allow-Origin": "*",
@@ -172,7 +172,7 @@ function createServerConfig() {
       },
     },
     server: {
-      port: 3003,
+      port: 3004,
       printUrls: ({ urls }) => urls.filter((url) => url.includes("localhost")),
       headers: {
         "Access-Control-Allow-Origin": "*",

@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { authClient } from "@/app";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { Field } from "@/components/admin-form";
+import { authClient } from "@/lib/auth-client";
 import { sessionQueryOptions } from "@/lib/session";
 import { useApiClient } from "@/lib/use-api-client";
 
