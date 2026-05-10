@@ -7,82 +7,8 @@
     "domain": "dev.multiagency.ai"
   },
   "repository": "https://github.com/MultiAgency/dashboard",
-  "app": {
-    "host": {
-      "development": "local:host"
-    },
-    "ui": {
-      "name": "ui",
-      "development": "local:ui"
-    },
-    "api": {
-      "name": "api",
-      "development": "local:api",
-      "secrets": []
-    }
-  },
-  "plugins": {},
-  "shared": {
-    "ui": {
-      "effect": {
-        "version": "3.21.0",
-        "requiredVersion": "^3.21.0",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "zod": {
-        "version": "4.3.6",
-        "requiredVersion": "^4.3.6",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "@orpc/contract": {
-        "version": "1.13.14",
-        "requiredVersion": "^1.13.14",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "better-auth": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "better-near-auth": {
-        "version": "1.4.2",
-        "requiredVersion": "^1.4.2",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "@better-auth/api-key": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "@better-auth/passkey": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      }
-    },
-    "plugins": {}
-  },
   "plugins": {},
   "app": {
-    "host": {
-      "development": "local:host",
-      "production": "https://elliot-braem-3498-host-everything-dev-nearbuilder-71d5f7f4d-ze.zephyrcloud.app",
-      "integrity": "sha384-Tsu6qanLw+Pn81PyT0VmuOM6bcae5ki20tZ09x1AUPMygsYj7QwoV2eGG299Zj+T"
-    },
     "ui": {
       "name": "ui",
       "development": "local:ui",
@@ -96,13 +22,6 @@
       "production": "https://elliot-braem-3502-api-better-near-auth-elliotbrae-d5dbf820d-ze.zephyrcloud.app",
       "integrity": "sha384-Frlp3C9pY+JoV+iKtSxPL0UD3E2WTR/qkdeVz4UVsOlwOI4Z4pxcI4q+uJ6moAPr",
       "secrets": ["API_DATABASE_URL"]
-    },
-    "auth": {
-      "name": "everything-dev_auth-plugin",
-      "development": "local:plugins/auth",
-      "production": "https://elliot-braem-3503-everything-dev-auth-plugin-bett-7fee0d475-ze.zephyrcloud.app",
-      "integrity": "sha384-2/XoU0888rz8jb9s20IgzCP8buf3buTECG1fSAyzTLDwFMLNNKeAQ3KGEKbRlwh2",
-      "secrets": ["AUTH_DATABASE_URL", "BETTER_AUTH_SECRET", "CORS_ORIGIN"]
     }
   }
 }
