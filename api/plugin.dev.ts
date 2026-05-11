@@ -5,7 +5,7 @@ import type Plugin from "./src/index";
 
 export default {
   pluginId: packageJson.name,
-  port: Number(process.env.PORT) || 3014,
+  port: Number(process.env.PORT) || 3001,
   config: {
     variables: {},
     secrets: {

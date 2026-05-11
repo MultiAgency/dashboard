@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.14/schema.json",
   "assist": {
     "actions": {
       "source": {
@@ -15,9 +15,6 @@
         "noConsole": "off",
         "noExplicitAny": "off",
         "noTsIgnore": "off"
-      },
-      "security": {
-        "noDangerouslySetInnerHtml": "off"
       },
       "style": {
         "noNonNullAssertion": "off"
@@ -51,8 +48,10 @@
     "includes": [
       "**",
       "!!**/ui/src/routeTree.gen.ts",
-      "!!**/ui/src/styles.css",
-      "!!**/api/src/db/migrations"
+      "!!**/plugins/**/types/**/*.d.ts",
+      "!!**/env.d.ts",
+      "!!**/virtual-modules.d.ts",
+      "!!bos.config.json"
     ],
     "ignoreUnknown": true
   },

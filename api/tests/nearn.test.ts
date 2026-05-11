@@ -79,13 +79,13 @@ describe("listNearnBountiesForSponsor — response-shape regression", () => {
     });
     const result = await listNearnBountiesForSponsor("sponsor-mixed");
     expect(result).toHaveLength(1);
-    expect(result[0].slug).toBe("valid");
+    expect(result[0]!.slug).toBe("valid");
   });
 
   test("calls the trailing-slash URL (avoids 308 redirect)", async () => {
     enqueue({ bounties: [] });
     await listNearnBountiesForSponsor("sponsor-url-check");
 
-    expect(calls[0][0]).toBe("https://nearn.io/api/listings/sponsor/");
+    expect(calls[0]![0]).toBe("https://nearn.io/api/listings/sponsor/");
   });
 });

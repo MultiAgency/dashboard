@@ -196,12 +196,8 @@
           "name": "allocations_project_id_projects_id_fk",
           "tableFrom": "allocations",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -412,12 +408,8 @@
           "name": "billings_project_id_projects_id_fk",
           "tableFrom": "billings",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -425,12 +417,8 @@
           "name": "billings_contributor_id_contributors_id_fk",
           "tableFrom": "billings",
           "tableTo": "contributors",
-          "columnsFrom": [
-            "contributor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["contributor_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -535,12 +523,8 @@
           "name": "project_contributors_project_id_projects_id_fk",
           "tableFrom": "project_contributors",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -548,12 +532,8 @@
           "name": "project_contributors_contributor_id_contributors_id_fk",
           "tableFrom": "project_contributors",
           "tableTo": "contributors",
-          "columnsFrom": [
-            "contributor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["contributor_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -561,10 +541,7 @@
       "compositePrimaryKeys": {
         "project_contributors_project_id_contributor_id_pk": {
           "name": "project_contributors_project_id_contributor_id_pk",
-          "columns": [
-            "project_id",
-            "contributor_id"
-          ]
+          "columns": ["project_id", "contributor_id"]
         }
       },
       "uniqueConstraints": {},

@@ -83,7 +83,7 @@ describe("claimDaoConfig — bootstrap DAO claim handler", () => {
     expect(result).toEqual({ ok: true });
 
     const [row] = await db.select().from(agencySettings).where(eq(agencySettings.id, "default"));
-    expect(row.daoAccountId).toBe("agency.sputnik-dao.near");
+    expect(row!.daoAccountId).toBe("agency.sputnik-dao.near");
   });
 
   test("passes daoAccountId, nearAccountId, and effective role to the admin probe", async () => {
@@ -126,7 +126,7 @@ describe("claimDaoConfig — bootstrap DAO claim handler", () => {
       .select()
       .from(agencySettings)
       .where(eq(agencySettings.id, "default"));
-    expect(overridden.adminRoleName).toBe("council");
+    expect(overridden!.adminRoleName).toBe("council");
 
     await db
       .update(agencySettings)
@@ -143,6 +143,6 @@ describe("claimDaoConfig — bootstrap DAO claim handler", () => {
       .select()
       .from(agencySettings)
       .where(eq(agencySettings.id, "default"));
-    expect(defaulted.adminRoleName).toBe("Admin");
+    expect(defaulted!.adminRoleName).toBe("Admin");
   });
 });
