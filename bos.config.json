@@ -1,60 +1,12 @@
 {
+  "account": "multiagentic.near",
   "extends": "bos://auth.everything.near/everything.dev",
-  "account": "agency.near",
   "domain": "multiagency.ai",
   "testnet": "agency.testnet",
   "staging": {
     "domain": "dev.multiagency.ai"
   },
   "repository": "https://github.com/MultiAgency/dashboard",
-  "app": {
-    "ui": {
-      "name": "ui",
-      "development": "local:ui",
-      "production": "https://elliot-braem-3500-ui-better-near-auth-elliotbraem-f60ef19e3-ze.zephyrcloud.app",
-      "integrity": "sha384-3dYGVEmNwdYyD7HELvDCnXCAU1+5Tv10mxqMn4yTBR4tkh2Yy0c2kpzkqBtbv47T",
-      "ssr": "https://elliot-braem-3501-ui-better-near-auth-elliotbraem-460bf7786-ze.zephyrcloud.app"
-    },
-    "api": {
-      "name": "api",
-      "development": "local:api",
-      "production": "https://elliot-braem-3502-api-better-near-auth-elliotbrae-d5dbf820d-ze.zephyrcloud.app",
-      "integrity": "sha384-Frlp3C9pY+JoV+iKtSxPL0UD3E2WTR/qkdeVz4UVsOlwOI4Z4pxcI4q+uJ6moAPr",
-      "secrets": [
-        "API_DATABASE_URL"
-      ]
-    },
-    "host": {
-      "development": "local:host",
-      "production": "https://elliot-braem-3561-host-everything-dev-nearbuilder-9c493ed16-ze.zephyrcloud.app",
-      "integrity": "sha384-Tsu6qanLw+Pn81PyT0VmuOM6bcae5ki20tZ09x1AUPMygsYj7QwoV2eGG299Zj+T"
-    },
-    "auth": {
-      "name": "everything-dev_auth-plugin",
-      "development": "local:plugins/auth",
-      "production": "https://elliot-braem-3451-everything-dev-auth-plugin-bett-e5165f8e4-ze.zephyrcloud.app",
-      "integrity": "sha384-n7jDrAEpRArwIBMWAxwk47Yor5YC//OJJ+eGWLROjNHezNlJow92IYi30HXCdToh",
-      "secrets": [
-        "AUTH_DATABASE_URL",
-        "BETTER_AUTH_SECRET",
-        "CORS_ORIGIN"
-      ]
-    }
-  },
-  "plugins": {
-    "projects": {
-      "development": "local:plugins/projects",
-      "production": "https://elliot-braem-3560-everything-dev-projects-plugin--0039ec9c5-ze.zephyrcloud.app",
-      "integrity": "sha384-Fq3b3KS1D0nt3hIgvJ8cu/JzDJj/F+rKLJEOauT3hHY4DocvDavZYaitERjD7mPU",
-      "secrets": [
-        "PROJECTS_DATABASE_URL"
-      ],
-      "routes": [
-        "ui/src/routes/_layout/_authenticated/organizations/**",
-        "ui/src/routes/_layout/_authenticated/projects/**"
-      ]
-    }
-  },
   "shared": {
     "ui": {
       "effect": {
@@ -72,15 +24,15 @@
         "shareScope": "default"
       },
       "@orpc/contract": {
-        "version": "1.13.14",
-        "requiredVersion": "^1.13.14",
+        "version": "1.14.3",
+        "requiredVersion": "^1.14.3",
         "singleton": true,
         "strictVersion": false,
         "shareScope": "default"
       },
       "better-auth": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
+        "version": "1.6.10",
+        "requiredVersion": "^1.6.10",
         "singleton": true,
         "strictVersion": false,
         "shareScope": "default"
@@ -93,20 +45,68 @@
         "shareScope": "default"
       },
       "@better-auth/api-key": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
+        "version": "1.6.10",
+        "requiredVersion": "^1.6.10",
         "singleton": true,
         "strictVersion": false,
         "shareScope": "default"
       },
       "@better-auth/passkey": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
+        "version": "1.6.10",
+        "requiredVersion": "^1.6.10",
         "singleton": true,
         "strictVersion": false,
         "shareScope": "default"
       }
     },
     "plugins": {}
+  },
+  "plugins": {
+    "projects": {
+      "development": "local:plugins/projects",
+      "production": "https://elliot-braem-3560-everything-dev-projects-plugin--0039ec9c5-ze.zephyrcloud.app",
+      "integrity": "sha384-Fq3b3KS1D0nt3hIgvJ8cu/JzDJj/F+rKLJEOauT3hHY4DocvDavZYaitERjD7mPU",
+      "secrets": [
+        "PROJECTS_DATABASE_URL"
+      ],
+      "routes": [
+        "ui/src/routes/_layout/_authenticated/organizations/**",
+        "ui/src/routes/_layout/_authenticated/projects/**"
+      ]
+    }
+  },
+  "app": {
+    "host": {
+      "development": "local:host",
+      "production": "https://elliot-braem-3561-host-everything-dev-nearbuilder-9c493ed16-ze.zephyrcloud.app",
+      "integrity": "sha384-Tsu6qanLw+Pn81PyT0VmuOM6bcae5ki20tZ09x1AUPMygsYj7QwoV2eGG299Zj+T"
+    },
+    "ui": {
+      "name": "ui",
+      "development": "local:ui",
+      "production": "https://elliot-braem-3500-ui-better-near-auth-elliotbraem-f60ef19e3-ze.zephyrcloud.app",
+      "integrity": "sha384-3dYGVEmNwdYyD7HELvDCnXCAU1+5Tv10mxqMn4yTBR4tkh2Yy0c2kpzkqBtbv47T",
+      "ssr": "https://multiagentic-1-ui-dashboard-multiagency-e5dd06cc6-ze.zephyrcloud.app"
+    },
+    "api": {
+      "name": "api",
+      "development": "local:api",
+      "production": "https://multiagentic-2-api-dashboard-multiagency-a26cc9370-ze.zephyrcloud.app",
+      "integrity": "sha384-VQWcchs6heOXr97R164pdcRJl9euGN3Z5WJF7p2fm6ryNisySTYzAlpDIfOwvENi",
+      "secrets": [
+        "API_DATABASE_URL"
+      ]
+    },
+    "auth": {
+      "name": "everything-dev_auth-plugin",
+      "development": "local:plugins/auth",
+      "production": "https://elliot-braem-3451-everything-dev-auth-plugin-bett-e5165f8e4-ze.zephyrcloud.app",
+      "integrity": "sha384-n7jDrAEpRArwIBMWAxwk47Yor5YC//OJJ+eGWLROjNHezNlJow92IYi30HXCdToh",
+      "secrets": [
+        "AUTH_DATABASE_URL",
+        "BETTER_AUTH_SECRET",
+        "CORS_ORIGIN"
+      ]
+    }
   }
 }
