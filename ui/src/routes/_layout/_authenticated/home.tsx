@@ -14,8 +14,8 @@ import {
   Skeleton,
 } from "@/components";
 import { Field } from "@/components/admin-form";
-import { sessionQueryOptions, useAuthClient } from "@/lib/auth";
 import { useApiClient } from "@/lib/api";
+import { sessionQueryOptions, useAuthClient } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/home")({
   head: () => ({
@@ -121,9 +121,7 @@ function Home() {
           <CardContent className="p-6 pt-6 space-y-4">
             <div className="flex items-center gap-3">
               <Avatar className="border-2 border-foreground rounded-none size-11">
-                <AvatarFallback className="rounded-none text-base">
-                  {initials}
-                </AvatarFallback>
+                <AvatarFallback className="rounded-none text-base">{initials}</AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
                 <div className="font-display text-xl uppercase tracking-tight font-extrabold truncate leading-tight">
@@ -340,8 +338,8 @@ function SetupYourAgency() {
           <Separator className="bg-foreground" />
           <p className="font-mono text-xs leading-relaxed text-muted-foreground">
             point this dashboard at your sputnik dao to get started. you must be admin on the
-            destination dao. once configured, the rest of the agency identity (name, taglines,
-            nearn slug) is editable from settings.
+            destination dao. once configured, the rest of the agency identity (name, taglines, nearn
+            slug) is editable from settings.
           </p>
         </div>
 

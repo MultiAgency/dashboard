@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "catalog:",
-    "@libsql/client": "0.17.0",
     "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
     "better-auth": "1.6.9",
