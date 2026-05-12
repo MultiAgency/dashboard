@@ -16,7 +16,6 @@ export async function hydrate() {
     console.log("[Hydrate] Starting...");
 
     const runtimeConfig = getRuntimeConfig();
-    console.log("[Hydrate] runtimeConfig.repository:", runtimeConfig.repository);
 
     const { QueryClientProvider } = await import("@tanstack/react-query");
     const { createRouter } = await import("./router");

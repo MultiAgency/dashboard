@@ -17,10 +17,9 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "catalog:",
-    "@libsql/client": "0.17.0",
     "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
-    "better-auth": "1.6.9",
+    "better-auth": "1.6.10",
     "drizzle-kit": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
@@ -29,11 +28,11 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@effect/language-service": "^0.85.1",
+    "@effect/language-service": "^0.86.1",
     "@module-federation/node": "catalog:",
     "@proj-airi/unplugin-drizzle-orm-migrations": "^0.1.4",
-    "@rspack/cli": "^1.6.8",
-    "@rspack/core": "^1.6.8",
+    "@rspack/cli": "^2.0.3",
+    "@rspack/core": "^2.0.3",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "dotenv": "^17.2.3",

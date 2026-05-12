@@ -24,13 +24,14 @@ bun.lock
 api/package.json
 ui/package.json
 
-# API build config — agency uses libsql instead of pg/pglite; rspack externals + plugin set differ
+# API build config — rspack externals + plugin set differ from upstream
 api/rspack.config.js
 
-# Auth surface divergence — agency stubs Organization/Passkey as never and uses SIWN-only
+# Container build — fork doesn't have packages/* monorepo workspaces; needs simpler shape
+Dockerfile
+
+# Auth surface — agency owns app.ts (RouterContext + auth re-exports)
 ui/src/app.ts
-ui/src/lib/auth-client.ts
-ui/src/lib/session.ts
 
 # Agency-owned services & data model paths — fork business logic, not in upstream's exclude
 api/src/services/**
@@ -40,3 +41,6 @@ ui/src/lib/format-amount.ts
 # Generated bridge files — regenerated locally at `bun run dev` startup
 api/src/plugins-client.gen.ts
 ui/src/routeTree.gen.ts
+
+# Fork theme overrides — agency's WORKSITE hi-vis palette and Big Shoulders display font
+ui/src/agency-theme.css

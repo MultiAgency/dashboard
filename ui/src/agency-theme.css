@@ -1,0 +1,117 @@
+@import url("https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&display=swap");
+
+:root {
+  --background: #f4efe0;
+  --foreground: #0a0a0a;
+  --card: #fbf8ef;
+  --card-foreground: #0a0a0a;
+  --popover: #fbf8ef;
+  --popover-foreground: #0a0a0a;
+  --primary: #0a0a0a;
+  --primary-foreground: #ffd60a;
+  --secondary: #ebe5d2;
+  --secondary-foreground: #0a0a0a;
+  --muted: #ebe5d2;
+  --muted-foreground: #6b6960;
+  --accent: #ffd60a;
+  --accent-foreground: #0a0a0a;
+  --destructive: #d12c00;
+  --destructive-foreground: #fbf8ef;
+  --border: #0a0a0a;
+  --input: #0a0a0a;
+  --ring: #ffd60a;
+  --caution: #ff6b00;
+  --link: #0a0a0a;
+  --link-visited: #6b21a8;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #f4efe0;
+  --card: #141413;
+  --card-foreground: #f4efe0;
+  --popover: #141413;
+  --popover-foreground: #f4efe0;
+  --primary: #ffd60a;
+  --primary-foreground: #0a0a0a;
+  --secondary: #1a1a1a;
+  --secondary-foreground: #f4efe0;
+  --muted: #1a1a1a;
+  --muted-foreground: #8a8780;
+  --accent: #ffd60a;
+  --accent-foreground: #0a0a0a;
+  --destructive: #ef4444;
+  --destructive-foreground: #0a0a0a;
+  --border: #2a2a28;
+  --input: #2a2a28;
+  --ring: #ffd60a;
+  --caution: #ff8a3d;
+}
+
+@theme inline {
+  --color-caution: var(--caution);
+  --font-display: "Big Shoulders Display", "Impact", "Arial Black", sans-serif;
+}
+
+@layer utilities {
+  .hazard-stripe {
+    background-image: repeating-linear-gradient(
+      45deg,
+      var(--color-foreground) 0,
+      var(--color-foreground) 8px,
+      var(--color-accent) 8px,
+      var(--color-accent) 16px
+    );
+  }
+
+  .stamp {
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    background-color: var(--color-accent);
+    color: var(--color-accent-foreground);
+    border: 2px solid var(--color-foreground);
+    font-family: var(--font-display);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    transform: rotate(-2deg);
+    transform-origin: center;
+  }
+
+  .stamp-caution {
+    background-color: var(--color-caution);
+    color: var(--color-foreground);
+  }
+
+  .stamp-muted {
+    background-color: var(--color-muted);
+    color: var(--color-muted-foreground);
+    border-color: var(--color-muted-foreground);
+  }
+
+  .border-style-solid {
+    border-style: solid;
+  }
+}
+
+@keyframes caution-shimmer {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 32px 0;
+  }
+}
+
+.skeleton-hazard {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--color-muted) 0,
+    var(--color-muted) 8px,
+    color-mix(in oklab, var(--color-accent) 30%, var(--color-muted)) 8px,
+    color-mix(in oklab, var(--color-accent) 30%, var(--color-muted)) 16px
+  );
+  background-size: 32px 32px;
+  animation: caution-shimmer 2.5s linear infinite;
+}
