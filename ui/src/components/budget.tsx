@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
-import type { ApiClient } from "@/lib/api-client";
+import type { ApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 
 type TokenBudget = Awaited<ReturnType<ApiClient["projects"]["getBudget"]>>["budgets"][number];

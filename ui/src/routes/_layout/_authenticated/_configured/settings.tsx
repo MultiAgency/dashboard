@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useAuthClient } from "@/app";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { Field } from "@/components/admin-form";
-import { authClient } from "@/lib/auth-client";
-import { sessionQueryOptions } from "@/lib/session";
-import { useApiClient } from "@/lib/use-api-client";
+import { useApiClient } from "@/lib/api";
+import { sessionQueryKey, sessionQueryOptions, signOut } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/settings")({
   head: () => ({
@@ -20,8 +20,10 @@ export const Route = createFileRoute("/_layout/_authenticated/_configured/settin
 
 function Settings() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const apiClient = useApiClient();
-  const { data: session } = useQuery(sessionQueryOptions());
+  const authClient = useAuthClient();
+  const { data: session } = useQuery(sessionQueryOptions(authClient));
 
   const user = session?.user;
   const nearAccountId = authClient.near.getAccountId();
@@ -35,13 +37,11 @@ function Settings() {
   const isAdmin = !!settingsQuery.data;
 
   const signOutMutation = useMutation({
-    mutationFn: async () => {
-      await authClient.signOut();
-      await authClient.near.disconnect().catch(() => {});
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
-    },
-    onSuccess: () => {
-      window.location.href = "/";
+    mutationFn: () => signOut(authClient),
+    onSuccess: async () => {
+      queryClient.setQueryData(sessionQueryKey, null);
+      await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+      navigate({ to: "/", replace: true });
     },
     onError: (err: Error) => toast.error(err.message),
   });

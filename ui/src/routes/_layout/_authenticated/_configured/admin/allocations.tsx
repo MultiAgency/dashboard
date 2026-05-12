@@ -10,8 +10,8 @@ import {
   deriveBaseAmount,
   TokenAmountFields,
 } from "@/components/token-amount-fields";
+import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
-import { useApiClient } from "@/lib/use-api-client";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/allocations")({
   head: () => ({

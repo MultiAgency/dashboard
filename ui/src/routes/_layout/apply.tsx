@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { Field } from "@/components/admin-form";
-import { useApiClient } from "@/lib/use-api-client";
+import { useApiClient } from "@/lib/api";
 
 type Kind = "replicate" | "contributor";
 

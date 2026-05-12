@@ -1,40 +1,42 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Client, createClient } from "@libsql/client";
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/libsql";
+import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { agencySettings } from "../src/db/schema";
 import { claimDaoConfig } from "../src/index";
 
 const PLACEHOLDER_DAO = "multiagency.sputnik-dao.near";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const MIGRATION = readFileSync(resolve(HERE, "../src/db/migrations/0000_initial.sql"), "utf8");
+const MIGRATIONS_DIR = resolve(HERE, "../src/db/migrations");
+const MIGRATION_FILE = readdirSync(MIGRATIONS_DIR).find((f) => f.endsWith(".sql"))!;
+const MIGRATION = readFileSync(resolve(MIGRATIONS_DIR, MIGRATION_FILE), "utf8");
 
-async function applyMigration(client: Client) {
+async function applyMigration(pg: any) {
   for (const stmt of MIGRATION.split("--> statement-breakpoint")) {
     const trimmed = stmt.trim();
-    if (trimmed) await client.execute(trimmed);
+    if (trimmed) await pg.query(trimmed);
   }
 }
 
 describe("claimDaoConfig — bootstrap DAO claim handler", () => {
-  let client: Client;
+  let pg: any;
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
-    client = createClient({ url: ":memory:" });
-    await applyMigration(client);
-    db = drizzle(client);
+    const { PGlite } = await import("@electric-sql/pglite");
+    pg = new PGlite(`:memory:${crypto.randomUUID()}`);
+    await applyMigration(pg);
+    db = drizzle(pg);
     await db.insert(agencySettings).values({
       id: "default",
       daoAccountId: PLACEHOLDER_DAO,
     });
   });
 
-  afterEach(() => {
-    client.close();
+  afterEach(async () => {
+    await pg.close();
   });
 
   test("rejects with BAD_REQUEST when row is already configured", async () => {
@@ -81,7 +83,7 @@ describe("claimDaoConfig — bootstrap DAO claim handler", () => {
     expect(result).toEqual({ ok: true });
 
     const [row] = await db.select().from(agencySettings).where(eq(agencySettings.id, "default"));
-    expect(row.daoAccountId).toBe("agency.sputnik-dao.near");
+    expect(row!.daoAccountId).toBe("agency.sputnik-dao.near");
   });
 
   test("passes daoAccountId, nearAccountId, and effective role to the admin probe", async () => {
@@ -124,7 +126,7 @@ describe("claimDaoConfig — bootstrap DAO claim handler", () => {
       .select()
       .from(agencySettings)
       .where(eq(agencySettings.id, "default"));
-    expect(overridden.adminRoleName).toBe("council");
+    expect(overridden!.adminRoleName).toBe("council");
 
     await db
       .update(agencySettings)
@@ -141,6 +143,6 @@ describe("claimDaoConfig — bootstrap DAO claim handler", () => {
       .select()
       .from(agencySettings)
       .where(eq(agencySettings.id, "default"));
-    expect(defaulted.adminRoleName).toBe("Admin");
+    expect(defaulted!.adminRoleName).toBe("Admin");
   });
 });

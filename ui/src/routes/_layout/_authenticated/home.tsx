@@ -2,11 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useAuthClient } from "@/app";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { Field } from "@/components/admin-form";
-import { authClient } from "@/lib/auth-client";
-import { sessionQueryOptions } from "@/lib/session";
-import { useApiClient } from "@/lib/use-api-client";
+import { useApiClient } from "@/lib/api";
+import { sessionQueryOptions } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/home")({
   head: () => ({
@@ -20,7 +20,8 @@ export const Route = createFileRoute("/_layout/_authenticated/home")({
 
 function Home() {
   const apiClient = useApiClient();
-  const { data: session } = useQuery(sessionQueryOptions());
+  const authClient = useAuthClient();
+  const { data: session } = useQuery(sessionQueryOptions(authClient));
   const settingsQuery = useQuery({
     queryKey: ["settings", "public"],
     queryFn: () => apiClient.settings.getPublic(),

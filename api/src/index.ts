@@ -4,8 +4,10 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 import { contract } from "./contract";
-import { createDatabase, type Database } from "./db";
+import { createDatabaseDriver, type Database } from "./db";
 import { cursorOf, cursorWhere } from "./db/cursor";
+import { loadMigrations } from "./db/load-migrations";
+import { migrate } from "./db/migrator";
 import {
   agencySettings,
   allocations,
@@ -102,8 +104,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({}),
 
   secrets: z.object({
-    API_DATABASE_URL: z.string().default("file:./api.db"),
-    API_DATABASE_AUTH_TOKEN: z.string().optional(),
+    API_DATABASE_URL: z.string().default("pglite:.bos/api/:memory:"),
   }),
 
   context: z.object({
@@ -124,26 +125,28 @@ export default createPlugin.withPlugins<PluginsClient>()({
   contract,
 
   initialize: (config, plugins) =>
-    Effect.gen(function* () {
-      const db = createDatabase(
-        config.secrets.API_DATABASE_URL,
-        config.secrets.API_DATABASE_AUTH_TOKEN,
-      );
-      yield* Effect.promise(() =>
-        db
-          .insert(agencySettings)
-          .values({
-            id: SETTINGS_ID,
-            daoAccountId: process.env.AGENCY_DAO_ACCOUNT ?? DEFAULT_DAO_ACCOUNT,
-          })
-          .onConflictDoNothing(),
-      );
+    Effect.promise(async () => {
+      const driver = await createDatabaseDriver(config.secrets.API_DATABASE_URL);
+      const db = driver.db;
+      const migrations = await loadMigrations();
+      await migrate(db, migrations);
+      await db
+        .insert(agencySettings)
+        .values({
+          id: SETTINGS_ID,
+          daoAccountId: process.env.AGENCY_DAO_ACCOUNT ?? DEFAULT_DAO_ACCOUNT,
+        })
+        .onConflictDoNothing();
       console.log("[API] Services Initialized");
       console.log("[API] Plugins available:", Object.keys(plugins).join(", ") || "none");
-      return { db, plugins };
+      return { db, driver, plugins };
     }),
 
-  shutdown: () => Effect.log("[API] Shutdown"),
+  shutdown: (services) =>
+    Effect.promise(async () => {
+      console.log("[API] Shutdown");
+      await (services as any).driver?.close?.();
+    }),
 
   createRouter: (services, builder) => {
     const { db } = services;
@@ -193,7 +196,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           user: context.user,
           nearAccountId,
           reqHeaders: context.reqHeaders,
-        } as AuthContext,
+        } satisfies AuthContext,
       });
     });
 

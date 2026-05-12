@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { useAuthClient } from "@/app";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,19 +11,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { connectNear, sessionQueryOptions, signOut } from "@/lib/session";
+import { connectNear, sessionQueryKey, sessionQueryOptions, signOut } from "@/lib/auth";
 
 export function UserNav() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const authClient = useAuthClient();
 
-  const { data: session } = useQuery(sessionQueryOptions());
+  const { data: session } = useQuery(sessionQueryOptions(authClient));
   const user = session?.user;
 
   const connectMutation = useMutation({
-    mutationFn: connectNear,
+    mutationFn: () => connectNear(authClient),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
+      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey });
       navigate({ to: "/home" });
     },
     onError: (error: { message?: string }) => {
@@ -31,14 +33,11 @@ export function UserNav() {
   });
 
   const signOutMutation = useMutation({
-    mutationFn: async () => {
-      await signOut();
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions().queryKey });
-    },
-    onSuccess: () => {
-      if (typeof window !== "undefined") {
-        window.location.assign("/");
-      }
+    mutationFn: () => signOut(authClient),
+    onSuccess: async () => {
+      queryClient.setQueryData(sessionQueryKey, null);
+      await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+      navigate({ to: "/", replace: true });
     },
     onError: (error: Error) => {
       console.error("Sign out error:", error);

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Badge, Card, CardContent } from "@/components";
-import { useApiClient } from "@/lib/use-api-client";
+import { useApiClient } from "@/lib/api";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/team")({
   head: () => ({

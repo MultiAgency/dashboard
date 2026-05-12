@@ -1,14 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { Home, Settings } from "lucide-react";
-import { getAppName } from "@/app";
+import { getAppName, useAuthClient } from "@/app";
 import builtOn from "@/assets/built_on.png";
 import builtOnRev from "@/assets/built_on_rev.png";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useClientValue } from "@/hooks/use-client";
 import { ThemeToggle } from "../components/theme-toggle";
 import { UserNav } from "../components/user-nav";
-import { sessionQueryOptions } from "../lib/session";
+import { sessionQueryOptions } from "../lib/auth";
 import { Route as RootRoute } from "./__root";
 
 export const Route = createFileRoute("/_layout")({
@@ -24,7 +24,8 @@ function Layout() {
   const pathname = useClientValue(() => window.location.pathname, "/");
   const { runtimeConfig } = RootRoute.useLoaderData() ?? {};
   const appName = getAppName(runtimeConfig) || "app";
-  const { data: session } = useQuery(sessionQueryOptions());
+  const authClient = useAuthClient();
+  const { data: session } = useQuery(sessionQueryOptions(authClient));
   const isAuthenticated = !!session?.user;
 
   const isActive = (item: (typeof authenticatedSidebarItems)[number]) => {

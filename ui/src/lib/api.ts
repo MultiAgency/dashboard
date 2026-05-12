@@ -1,7 +1,8 @@
 import { createORPCClient, onError } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
-import type { ApiContract } from "../api-contract";
+import { useRouter } from "@tanstack/react-router";
+import type { ApiContract } from "./api-types.gen";
 
 export type { ApiContract };
 export type ApiClient = ContractRouterClient<ApiContract>;
@@ -66,4 +67,8 @@ export function createApiClient(runtimeConfig: { hostUrl: string; rpcBase: strin
   }
 
   return client;
+}
+
+export function useApiClient(): ApiClient {
+  return useRouter().options.context.apiClient;
 }
