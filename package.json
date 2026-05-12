@@ -20,7 +20,6 @@
       "every-plugin": "^2.5.8",
       "typescript": "^5.9.3",
       "vitest": "^4.0.17",
-      "@libsql/client": "0.17.0",
       "@types/node": "^25.0.3",
       "@types/react": "^19.2.7",
       "@types/react-dom": "^19.2.3",
@@ -93,7 +92,6 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "catalog:",
-    "@libsql/client": "^0.17.0",
     "@orpc/contract": "^1.13.14",
     "better-near-auth": "catalog:",
     "every-plugin": "catalog:",

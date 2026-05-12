@@ -30,7 +30,7 @@ import {
 } from "./services/sputnik";
 import { KNOWN_TOKENS } from "./services/tokens";
 
-const DEFAULT_DAO_ACCOUNT = "multiagency.sputnik-dao.near";
+const DEFAULT_DAO_ACCOUNT = "PLACEHOLDER.sputnik-dao.near";
 const SETTINGS_ID = "default";
 const DEFAULT_ADMIN_ROLE = "Admin";
 
@@ -145,7 +145,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
   shutdown: (services) =>
     Effect.promise(async () => {
       console.log("[API] Shutdown");
-      await (services as any).driver?.close?.();
+      await services.driver.close();
     }),
 
   createRouter: (services, builder) => {

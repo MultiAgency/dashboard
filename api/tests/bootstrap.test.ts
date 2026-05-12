@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { agencySettings } from "../src/db/schema";
 import { claimDaoConfig } from "../src/index";
 
-const PLACEHOLDER_DAO = "multiagency.sputnik-dao.near";
+const PLACEHOLDER_DAO = "PLACEHOLDER.sputnik-dao.near";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(HERE, "../src/db/migrations");
 const MIGRATION_FILE = readdirSync(MIGRATIONS_DIR).find((f) => f.endsWith(".sql"))!;

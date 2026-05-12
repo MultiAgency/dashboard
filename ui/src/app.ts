@@ -1,37 +1,3 @@
-/**
- * Public UI surface — thin barrel only.
- *
- * This file re-exports everything that UI route code needs.
- * Do not create clients, add app logic, or define types here.
- *
- * Framework file roles (understand this boundary — don't dig into host):
- *
- *   hydrate.tsx       — Client bootstrap. Creates browser-side QueryClient,
- *                        Router, and browser-side auth/API clients once.
- *                        Called from the host-rendered HTML shell.
- *
- *   router.tsx        — Client router factory. Consumes the context set up
- *                        during hydration. Uses browser history.
- *
- *   router.server.tsx — SSR router factory. Creates request-scoped server
- *                        router and server-side API/auth clients per request.
- *                        Mirrors client router shape for hydration consistency.
- *
- *   routes/__root.tsx — HTML shell, head/scripts/styles, runtime config
- *                        handoff. Root boundary between host-rendered
- *                        document and the UI application.
- *
- *   app.ts            — This file. Re-exports the minimal shared runtime
- *                        helpers plus public client surfaces from ./lib/api
- *                        and ./lib/auth. Also re-exports router-facing
- *                        public types.
- *
- * Boundary rule: The host loads UI remotely via Module Federation and
- * provides runtime config + auth/API routing. Work within the typed
- * surface exported here. Only investigate host internals if something
- * is genuinely broken and a host PR is warranted.
- */
-
 export { getBaseStyles } from "everything-dev/ui/head";
 
 import {
