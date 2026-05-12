@@ -82,12 +82,12 @@
   "packageManager": "bun@1.2.20",
   "type": "module",
   "devDependencies": {
-    "@biomejs/biome": "2.4.14",
+    "@biomejs/biome": "2.4.15",
     "@types/bun": "latest",
     "dotenv": "^17.3.1",
     "tsx": "^4.21.0",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^4.0.18",
+    "vitest": "^4.1.6",
     "@changesets/cli": "^2.29.8"
   },
   "dependencies": {
