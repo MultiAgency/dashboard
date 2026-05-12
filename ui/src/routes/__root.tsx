@@ -1,3 +1,5 @@
+import "@/agency-theme.css";
+
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import {
   ClientOnly,
@@ -12,7 +14,8 @@ import { getSocialImageMeta } from "everything-dev/ui/metadata";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import type { RouterContext } from "@/app";
-import { getBaseStyles } from "@/app";
+import { getAppName, getBaseStyles } from "@/app";
+import { sessionQueryKey } from "@/lib/auth";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 
 export const Route = createRootRouteWithContext<RouterContext>()({
@@ -31,7 +34,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
     // Pre-populate session cache from SSR data
     if (session && queryClient) {
-      queryClient.setQueryData(["session"], session);
+      queryClient.setQueryData(sessionQueryKey, session);
     }
 
     return {
@@ -47,7 +50,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     const siteUrl = runtimeConfig?.hostUrl
       ? `${runtimeConfig.hostUrl}${runtimeBasePath === "/" ? "" : runtimeBasePath}`
       : "";
-    const title = runtimeConfig?.runtime?.title ?? runtimeConfig?.account ?? "every.near";
+    const title = getAppName(runtimeConfig);
     const description =
       "Open runtime for apps on NEAR, composed from published config and loaded through a shared host, UI, and API runtime.";
     const siteName = title;

@@ -27,9 +27,8 @@ ui/package.json
 # API build config — agency uses libsql instead of pg/pglite; rspack externals + plugin set differ
 api/rspack.config.js
 
-# Auth surface divergence — agency stubs Organization/Passkey as never and uses SIWN-only
+# Auth surface — agency owns app.ts (RouterContext + auth re-exports) and session.ts (NEAR signOut/connectNear helpers)
 ui/src/app.ts
-ui/src/lib/auth-client.ts
 ui/src/lib/session.ts
 
 # Agency-owned services & data model paths — fork business logic, not in upstream's exclude
@@ -40,3 +39,6 @@ ui/src/lib/format-amount.ts
 # Generated bridge files — regenerated locally at `bun run dev` startup
 api/src/plugins-client.gen.ts
 ui/src/routeTree.gen.ts
+
+# Fork theme overrides — agency's WORKSITE hi-vis palette and Big Shoulders display font
+ui/src/agency-theme.css
