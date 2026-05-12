@@ -17,10 +17,10 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "catalog:",
-    "@libsql/client": "0.17.0",
+    "@libsql/client": "0.17.3",
     "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
-    "better-auth": "1.6.9",
+    "better-auth": "1.6.10",
     "drizzle-kit": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",

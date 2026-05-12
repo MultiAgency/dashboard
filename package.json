@@ -93,14 +93,14 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "catalog:",
-    "@libsql/client": "^0.17.0",
+    "@libsql/client": "^0.17.3",
     "@orpc/contract": "^1.13.14",
     "better-near-auth": "catalog:",
     "every-plugin": "catalog:",
     "everything-dev": "catalog:",
     "@better-auth/api-key": "catalog:",
     "@better-auth/passkey": "catalog:",
-    "@hot-labs/near-connect": "0.11.2",
+    "@hot-labs/near-connect": "0.11.4",
     "@orpc/server": "^1.13.14",
     "better-auth": "catalog:",
     "drizzle-orm": "^0.45.1",
@@ -113,7 +113,7 @@
     "effect": "3.21.0",
     "@orpc/contract": "1.13.14",
     "@orpc/server": "1.13.14",
-    "@hot-labs/near-connect": "0.11.2"
+    "@hot-labs/near-connect": "0.11.4"
   },
   "module": "index.ts",
   "peerDependencies": {
