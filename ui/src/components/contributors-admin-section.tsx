@@ -1,18 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
-
-export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/contributors")({
-  head: () => ({
-    meta: [{ title: "Admin · Contributors" }],
-  }),
-  component: AdminContributors,
-});
 
 type OnboardingStatus = "pending" | "complete" | "expired";
 
@@ -24,7 +16,7 @@ type Contributor = {
   onboardingStatus: OnboardingStatus;
 };
 
-function AdminContributors() {
+export function ContributorsAdminSection() {
   const apiClient = useApiClient();
   const contributorsQuery = useQuery({
     queryKey: ["admin", "contributors", "list"],
@@ -41,15 +33,12 @@ function AdminContributors() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Contributors</h1>
-          <p className="text-sm text-muted-foreground">
-            Add contributors and track onboarding status. Assign them to projects from the projects
-            page.
-          </p>
-        </div>
-        <Button onClick={() => setCreating((v) => !v)} variant={creating ? "outline" : "default"}>
+      <header className="flex flex-wrap items-center justify-end gap-3">
+        <Button
+          onClick={() => setCreating((v) => !v)}
+          variant={creating ? "outline" : "default"}
+          className="font-display uppercase tracking-wide"
+        >
           {creating ? "cancel" : "+ new contributor"}
         </Button>
       </header>
@@ -99,7 +88,9 @@ function ContributorRow({
                 {contributor.onboardingStatus}
               </Badge>
             </div>
-            <div className="font-semibold tracking-tight break-all">{contributor.name}</div>
+            <div className="font-display text-lg uppercase tracking-tight font-extrabold leading-tight break-all">
+              {contributor.name}
+            </div>
             {contributor.nearAccountId && (
               <div className="text-xs font-mono text-muted-foreground">
                 {contributor.nearAccountId}
@@ -240,7 +231,9 @@ function ContributorEditForm({ contributor }: { contributor: Contributor }) {
 
   return (
     <div className="grid gap-4">
-      <h3 className="font-semibold tracking-tight">Edit</h3>
+      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        edit
+      </div>
       <Field label="name" htmlFor={`edit-name-${contributor.id}`}>
         <Input
           id={`edit-name-${contributor.id}`}

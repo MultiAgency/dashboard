@@ -3,7 +3,7 @@ import { createPlugin } from "every-plugin";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
-import { contract } from "./contract";
+import { contract, type proposalPublicItem } from "./contract";
 import { createDatabaseDriver, type Database } from "./db";
 import { cursorOf, cursorWhere } from "./db/cursor";
 import { loadMigrations } from "./db/load-migrations";
@@ -33,6 +33,55 @@ import { KNOWN_TOKENS } from "./services/tokens";
 const DEFAULT_DAO_ACCOUNT = "PLACEHOLDER.sputnik-dao.near";
 const SETTINGS_ID = "default";
 const DEFAULT_ADMIN_ROLE = "Admin";
+
+// MAX_ITERATIONS bounds RPC cost when the recent window is governance-only.
+const PROPOSAL_FETCH_PAGE_SIZE = 100;
+const PROPOSAL_FETCH_MAX_ITERATIONS = 5;
+
+async function fetchTransferProposals(
+  daoAccountId: string,
+  fromIndex: number | undefined,
+  limit: number,
+): Promise<{ transfers: DaoProposal[]; lastProposalId: number; nextFromIndex: number | null }> {
+  const lastProposalId = await getLastProposalId(daoAccountId);
+  if (lastProposalId === 0) {
+    return { transfers: [], lastProposalId: 0, nextFromIndex: null };
+  }
+  const transfers: DaoProposal[] = [];
+  let cursor = fromIndex ?? lastProposalId;
+  let iterations = 0;
+  while (transfers.length < limit && cursor > 0 && iterations < PROPOSAL_FETCH_MAX_ITERATIONS) {
+    const startIndex = Math.max(0, cursor - PROPOSAL_FETCH_PAGE_SIZE);
+    const fetched = await getProposals(daoAccountId, startIndex, cursor - startIndex);
+    for (const p of fetched.slice().reverse()) {
+      if (p.kind.type === "Transfer") {
+        transfers.push(p);
+        if (transfers.length >= limit) break;
+      }
+    }
+    cursor = startIndex;
+    iterations++;
+  }
+  return {
+    transfers,
+    lastProposalId,
+    nextFromIndex: cursor > 0 ? cursor : null,
+  };
+}
+
+function toProposalPublicItem(p: DaoProposal): z.infer<typeof proposalPublicItem> {
+  const transfer = p.kind.type === "Transfer" ? p.kind : null;
+  return {
+    proposalId: String(p.id),
+    proposer: p.proposer,
+    description: p.description,
+    status: p.status,
+    tokenId: transfer ? (transfer.tokenId === "" ? "near" : transfer.tokenId) : "",
+    receiverId: transfer?.receiverId ?? "",
+    amount: transfer?.amount ?? "0",
+    submissionTime: p.submissionTime,
+  };
+}
 
 export async function claimDaoConfig(args: {
   db: Database;
@@ -104,7 +153,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({}),
 
   secrets: z.object({
-    API_DATABASE_URL: z.string().default("pglite:.bos/api/:memory:"),
+    API_DATABASE_URL: z.string().default("pglite:memory://"),
   }),
 
   context: z.object({
@@ -392,161 +441,167 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }),
       },
 
-      projects: {
-        list: builder.projects.list.handler(async () => {
-          const orgId = await getOrgId();
-          const rows = await db
-            .select()
-            .from(projects)
-            .where(
-              and(
-                eq(projects.organizationId, orgId),
-                eq(projects.visibility, "public"),
-                eq(projects.status, "active"),
-              ),
-            )
-            .orderBy(desc(projects.updatedAt));
-          const enriched = await Promise.all(
-            rows.map(async (p) => {
-              if (!p.nearnListingId) return { ...p, nearnListing: null };
-              try {
-                const listing = await getNearnListing(p.nearnListingId);
-                return { ...p, nearnListing: listing };
-              } catch (err) {
-                console.warn(
-                  `[API] NEARN listing fetch failed for slug=${p.nearnListingId}:`,
-                  (err as Error).message,
-                );
-                return { ...p, nearnListing: null };
-              }
-            }),
-          );
-          return { data: enriched };
-        }),
-
-        adminGet: builder.projects.adminGet
-          .use(requireSession)
-          .handler(async ({ context, input }) => {
+      agency: {
+        projects: {
+          list: builder.agency.projects.list.handler(async () => {
             const orgId = await getOrgId();
-            const projectRows = await db
+            const rows = await db
               .select()
               .from(projects)
-              .where(and(eq(projects.organizationId, orgId), eq(projects.slug, input.slug)))
-              .limit(1);
-            const projectRow = projectRows[0];
-            if (!projectRow) {
-              throw new ORPCError("NOT_FOUND", { message: "Project not found" });
-            }
-            const contributorRows = await db
-              .select({
-                id: contributors.id,
-                name: contributors.name,
-                nearAccountId: contributors.nearAccountId,
-                role: projectContributors.role,
-              })
-              .from(projectContributors)
-              .innerJoin(contributors, eq(projectContributors.contributorId, contributors.id))
-              .where(eq(projectContributors.projectId, projectRow.id))
-              .orderBy(desc(projectContributors.createdAt));
+              .where(
+                and(
+                  eq(projects.organizationId, orgId),
+                  eq(projects.visibility, "public"),
+                  eq(projects.status, "active"),
+                ),
+              )
+              .orderBy(desc(projects.updatedAt));
+            const enriched = await Promise.all(
+              rows.map(async (p) => {
+                if (!p.nearnListingId) return { ...p, nearnListing: null };
+                try {
+                  const listing = await getNearnListing(p.nearnListingId);
+                  return { ...p, nearnListing: listing };
+                } catch (err) {
+                  console.warn(
+                    `[API] NEARN listing fetch failed for slug=${p.nearnListingId}:`,
+                    (err as Error).message,
+                  );
+                  return { ...p, nearnListing: null };
+                }
+              }),
+            );
+            return { data: enriched };
+          }),
 
-            const settingsRows = await db
-              .select()
-              .from(agencySettings)
-              .where(eq(agencySettings.id, SETTINGS_ID))
-              .limit(1);
-            const settings = settingsRows[0];
-            if (!settings) {
-              throw new ORPCError("INTERNAL_SERVER_ERROR", {
-                message: "Agency settings not initialized",
-              });
-            }
-            const adminRole = resolveRoleName("admin", settings);
-            const approverRole = resolveRoleName("approver", settings);
-            const requestorRole = resolveRoleName("requestor", settings);
-            const [admin, approver, requestor] = await Promise.all([
-              userInRole(orgId, context.nearAccountId!, adminRole),
-              userInRole(orgId, context.nearAccountId!, approverRole),
-              userInRole(orgId, context.nearAccountId!, requestorRole),
-            ]);
-            if (!admin && !approver && !requestor) {
-              const isAssigned = contributorRows.some(
-                (c) => c.nearAccountId && c.nearAccountId === context.nearAccountId,
-              );
-              if (!isAssigned) {
-                throw new ORPCError("FORBIDDEN", {
-                  message: `Project access requires ${adminRole}/${approverRole}/${requestorRole} role or contributor assignment`,
+          adminGet: builder.agency.projects.adminGet
+            .use(requireSession)
+            .handler(async ({ context, input }) => {
+              const orgId = await getOrgId();
+              const projectRows = await db
+                .select()
+                .from(projects)
+                .where(and(eq(projects.organizationId, orgId), eq(projects.slug, input.slug)))
+                .limit(1);
+              const projectRow = projectRows[0];
+              if (!projectRow) {
+                throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+              }
+              const contributorRows = await db
+                .select({
+                  id: contributors.id,
+                  name: contributors.name,
+                  nearAccountId: contributors.nearAccountId,
+                  role: projectContributors.role,
+                })
+                .from(projectContributors)
+                .innerJoin(contributors, eq(projectContributors.contributorId, contributors.id))
+                .where(eq(projectContributors.projectId, projectRow.id))
+                .orderBy(desc(projectContributors.createdAt));
+
+              const settingsRows = await db
+                .select()
+                .from(agencySettings)
+                .where(eq(agencySettings.id, SETTINGS_ID))
+                .limit(1);
+              const settings = settingsRows[0];
+              if (!settings) {
+                throw new ORPCError("INTERNAL_SERVER_ERROR", {
+                  message: "Agency settings not initialized",
                 });
               }
-            }
+              const adminRole = resolveRoleName("admin", settings);
+              const approverRole = resolveRoleName("approver", settings);
+              const requestorRole = resolveRoleName("requestor", settings);
+              const [admin, approver, requestor] = await Promise.all([
+                userInRole(orgId, context.nearAccountId!, adminRole),
+                userInRole(orgId, context.nearAccountId!, approverRole),
+                userInRole(orgId, context.nearAccountId!, requestorRole),
+              ]);
+              if (!admin && !approver && !requestor) {
+                const isAssigned = contributorRows.some(
+                  (c) => c.nearAccountId && c.nearAccountId === context.nearAccountId,
+                );
+                if (!isAssigned) {
+                  throw new ORPCError("FORBIDDEN", {
+                    message: `Project access requires ${adminRole}/${approverRole}/${requestorRole} role or contributor assignment`,
+                  });
+                }
+              }
 
-            return { project: projectRow, contributors: contributorRows };
-          }),
+              return { project: projectRow, contributors: contributorRows };
+            }),
 
-        getBudget: builder.projects.getBudget.use(gates.approver).handler(async ({ input }) => {
-          const orgId = await getOrgId();
-          const projectExists = await db
-            .select({ id: projects.id })
-            .from(projects)
-            .where(and(eq(projects.id, input.projectId), eq(projects.organizationId, orgId)))
-            .limit(1);
-          if (projectExists.length === 0)
-            throw new ORPCError("NOT_FOUND", { message: "Project not found" });
-          return { budgets: await computeBudget(input.projectId) };
-        }),
+          getBudget: builder.agency.projects.getBudget
+            .use(gates.approver)
+            .handler(async ({ input }) => {
+              const orgId = await getOrgId();
+              const projectExists = await db
+                .select({ id: projects.id })
+                .from(projects)
+                .where(and(eq(projects.id, input.projectId), eq(projects.organizationId, orgId)))
+                .limit(1);
+              if (projectExists.length === 0)
+                throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+              return { budgets: await computeBudget(input.projectId) };
+            }),
 
-        adminList: builder.projects.adminList.use(gates.member).handler(async () => {
-          const orgId = await getOrgId();
-          const rows = await db
-            .select()
-            .from(projects)
-            .where(eq(projects.organizationId, orgId))
-            .orderBy(desc(projects.updatedAt));
-          return { data: rows };
-        }),
-
-        adminCreate: builder.projects.adminCreate
-          .use(gates.operator)
-          .handler(async ({ context, input }) => {
+          adminList: builder.agency.projects.adminList.use(gates.member).handler(async () => {
             const orgId = await getOrgId();
-            const id = crypto.randomUUID();
-            const now = new Date();
-            const insertResult = await db
-              .insert(projects)
-              .values({
-                id,
-                ownerId: context.nearAccountId!,
-                organizationId: orgId,
-                slug: input.slug,
-                title: input.title,
-                description: input.description ?? null,
-                nearnListingId: input.nearnListingId ?? null,
-                status: input.status,
-                visibility: input.visibility,
-                createdAt: now,
-                updatedAt: now,
-              })
-              .returning();
-            const row = insertResult[0];
-            if (!row) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Insert failed" });
-            return { project: row };
+            const rows = await db
+              .select()
+              .from(projects)
+              .where(eq(projects.organizationId, orgId))
+              .orderBy(desc(projects.updatedAt));
+            return { data: rows };
           }),
 
-        adminUpdate: builder.projects.adminUpdate.use(gates.operator).handler(async ({ input }) => {
-          const orgId = await getOrgId();
-          const { id, ...patch } = input;
-          const updates: Record<string, unknown> = { updatedAt: new Date() };
-          for (const [k, v] of Object.entries(patch)) {
-            if (v !== undefined) updates[k] = v;
-          }
-          const result = await db
-            .update(projects)
-            .set(updates)
-            .where(and(eq(projects.id, id), eq(projects.organizationId, orgId)))
-            .returning();
-          const row = result[0];
-          if (!row) throw new ORPCError("NOT_FOUND", { message: "Project not found" });
-          return { project: row };
-        }),
+          adminCreate: builder.agency.projects.adminCreate
+            .use(gates.operator)
+            .handler(async ({ context, input }) => {
+              const orgId = await getOrgId();
+              const id = crypto.randomUUID();
+              const now = new Date();
+              const insertResult = await db
+                .insert(projects)
+                .values({
+                  id,
+                  ownerId: context.nearAccountId!,
+                  organizationId: orgId,
+                  slug: input.slug,
+                  title: input.title,
+                  description: input.description ?? null,
+                  nearnListingId: input.nearnListingId ?? null,
+                  status: input.status,
+                  visibility: input.visibility,
+                  createdAt: now,
+                  updatedAt: now,
+                })
+                .returning();
+              const row = insertResult[0];
+              if (!row) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Insert failed" });
+              return { project: row };
+            }),
+
+          adminUpdate: builder.agency.projects.adminUpdate
+            .use(gates.operator)
+            .handler(async ({ input }) => {
+              const orgId = await getOrgId();
+              const { id, ...patch } = input;
+              const updates: Record<string, unknown> = { updatedAt: new Date() };
+              for (const [k, v] of Object.entries(patch)) {
+                if (v !== undefined) updates[k] = v;
+              }
+              const result = await db
+                .update(projects)
+                .set(updates)
+                .where(and(eq(projects.id, id), eq(projects.organizationId, orgId)))
+                .returning();
+              const row = result[0];
+              if (!row) throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+              return { project: row };
+            }),
+        },
       },
 
       contributors: {
@@ -930,29 +985,35 @@ export default createPlugin.withPlugins<PluginsClient>()({
       },
 
       proposals: {
+        list: builder.proposals.list.handler(async ({ input }) => {
+          const daoAccountId = await getOrgId();
+          if (daoAccountId === DEFAULT_DAO_ACCOUNT) {
+            return { data: [], lastProposalId: 0, nextFromIndex: null };
+          }
+          try {
+            const { transfers, lastProposalId, nextFromIndex } = await fetchTransferProposals(
+              daoAccountId,
+              input.fromIndex,
+              input.limit,
+            );
+            return {
+              data: transfers.map(toProposalPublicItem),
+              lastProposalId,
+              nextFromIndex,
+            };
+          } catch {
+            // RPC failures degrade to empty for public visitors; admins see errors.
+            return { data: [], lastProposalId: 0, nextFromIndex: null };
+          }
+        }),
+
         adminList: builder.proposals.adminList.use(gates.operator).handler(async ({ input }) => {
           const orgId = await getOrgId();
-          const lastProposalId = await getLastProposalId(orgId);
-
-          // MAX_ITERATIONS bounds RPC cost when the recent window is governance-only.
-          const PAGE_SIZE = 100;
-          const MAX_ITERATIONS = 5;
-          const transfers: DaoProposal[] = [];
-          let cursor = input.fromIndex ?? lastProposalId;
-          let iterations = 0;
-          while (transfers.length < input.limit && cursor > 0 && iterations < MAX_ITERATIONS) {
-            const fromIndex = Math.max(0, cursor - PAGE_SIZE);
-            const fetched = await getProposals(orgId, fromIndex, cursor - fromIndex);
-            for (const p of fetched.slice().reverse()) {
-              if (p.kind.type === "Transfer") {
-                transfers.push(p);
-                if (transfers.length >= input.limit) break;
-              }
-            }
-            cursor = fromIndex;
-            iterations++;
-          }
-          const nextFromIndex = cursor > 0 ? cursor : null;
+          const { transfers, lastProposalId, nextFromIndex } = await fetchTransferProposals(
+            orgId,
+            input.fromIndex,
+            input.limit,
+          );
 
           const proposalIdStrs = transfers.map((p) => String(p.id));
           const localBillings =
@@ -972,29 +1033,42 @@ export default createPlugin.withPlugins<PluginsClient>()({
           const mappingByProposal = new Map(localBillings.map((b) => [b.proposalId, b]));
 
           const data = transfers.map((p) => {
-            const transfer = p.kind.type === "Transfer" ? p.kind : null;
-            const mapping = mappingByProposal.get(String(p.id)) ?? null;
+            const m = mappingByProposal.get(String(p.id));
             return {
-              proposalId: String(p.id),
-              proposer: p.proposer,
-              description: p.description,
-              status: p.status,
-              tokenId: transfer ? (transfer.tokenId === "" ? "near" : transfer.tokenId) : "",
-              receiverId: transfer?.receiverId ?? "",
-              amount: transfer?.amount ?? "0",
-              submissionTime: p.submissionTime,
-              mapping: mapping
+              ...toProposalPublicItem(p),
+              mapping: m
                 ? {
-                    billingId: mapping.billingId,
-                    projectId: mapping.projectId,
-                    projectSlug: mapping.projectSlug,
-                    projectTitle: mapping.projectTitle,
+                    billingId: m.billingId,
+                    projectId: m.projectId,
+                    projectSlug: m.projectSlug,
+                    projectTitle: m.projectTitle,
                   }
                 : null,
             };
           });
 
           return { data, lastProposalId, nextFromIndex };
+        }),
+
+        getPublicSummary: builder.proposals.getPublicSummary.handler(async () => {
+          const daoAccountId = await getOrgId();
+          if (daoAccountId === DEFAULT_DAO_ACCOUNT) {
+            return { openCount: 0, totalCount: 0 };
+          }
+          try {
+            const lastProposalId = await getLastProposalId(daoAccountId);
+            if (lastProposalId === 0) return { openCount: 0, totalCount: 0 };
+            const pageSize = Math.min(100, lastProposalId);
+            const recent = await getProposals(
+              daoAccountId,
+              Math.max(0, lastProposalId - pageSize),
+              pageSize,
+            );
+            const openCount = recent.filter((p) => p.status === "InProgress").length;
+            return { openCount, totalCount: lastProposalId };
+          } catch {
+            return { openCount: 0, totalCount: 0 };
+          }
         }),
       },
 
@@ -1030,12 +1104,35 @@ export default createPlugin.withPlugins<PluginsClient>()({
       },
 
       tokens: {
-        list: builder.tokens.list.use(gates.member).handler(async () => {
+        list: builder.tokens.list.handler(async () => {
           return { tokens: KNOWN_TOKENS };
         }),
       },
 
       treasury: {
+        getPublicBalances: builder.treasury.getPublicBalances.handler(async ({ input }) => {
+          const daoAccountId = await getOrgId();
+          if (daoAccountId === DEFAULT_DAO_ACCOUNT) {
+            return {
+              balances: input.tokenIds.map((tokenId) => ({ tokenId, balance: "0" })),
+            };
+          }
+          try {
+            const balances = await getTreasuryBalances(daoAccountId, input.tokenIds);
+            return {
+              balances: input.tokenIds.map((tokenId) => ({
+                tokenId,
+                balance: balances[tokenId] ?? "0",
+              })),
+            };
+          } catch {
+            // RPC failures degrade to zero balances for public visitors; admins see errors.
+            return {
+              balances: input.tokenIds.map((tokenId) => ({ tokenId, balance: "0" })),
+            };
+          }
+        }),
+
         getBalances: builder.treasury.getBalances.use(gates.approver).handler(async ({ input }) => {
           const orgId = await getOrgId();
           const [balances, allocationRows] = await Promise.all([
@@ -1057,6 +1154,20 @@ export default createPlugin.withPlugins<PluginsClient>()({
               totalAllocated: (totals.get(tokenId) ?? 0n).toString(),
             })),
           };
+        }),
+
+        getPublicSummary: builder.treasury.getPublicSummary.handler(async () => {
+          const daoAccountId = await getOrgId();
+          if (daoAccountId === DEFAULT_DAO_ACCOUNT) {
+            return { nearBalance: "0", ftTokens: 0 };
+          }
+          try {
+            const balances = await getTreasuryBalances(daoAccountId, ["near"]);
+            const ftTokens = KNOWN_TOKENS.filter((t) => t.tokenId !== "near").length;
+            return { nearBalance: balances.near ?? "0", ftTokens };
+          } catch {
+            return { nearBalance: "0", ftTokens: 0 };
+          }
         }),
       },
 
@@ -1099,13 +1210,67 @@ export default createPlugin.withPlugins<PluginsClient>()({
               .orderBy(desc(projects.updatedAt));
             return { data: rows };
           }),
+
+        roles: builder.me.roles.use(requireSession).handler(async ({ context }) => {
+          const fallback = { isAdmin: false, isApprover: false, isRequestor: false };
+          try {
+            const daoAccountId = await getOrgId();
+            if (daoAccountId === DEFAULT_DAO_ACCOUNT) {
+              return fallback;
+            }
+            const settingsRows = await db
+              .select()
+              .from(agencySettings)
+              .where(eq(agencySettings.id, SETTINGS_ID))
+              .limit(1);
+            const settings = settingsRows[0];
+            if (!settings) {
+              return fallback;
+            }
+            const adminRole = resolveRoleName("admin", settings);
+            const approverRole = resolveRoleName("approver", settings);
+            const requestorRole = resolveRoleName("requestor", settings);
+            const [isAdmin, isApprover, isRequestor] = await Promise.all([
+              userInRole(daoAccountId, context.nearAccountId!, adminRole),
+              userInRole(daoAccountId, context.nearAccountId!, approverRole),
+              userInRole(daoAccountId, context.nearAccountId!, requestorRole),
+            ]);
+            return { isAdmin, isApprover, isRequestor };
+          } catch {
+            return fallback;
+          }
+        }),
       },
 
       team: {
-        list: builder.team.list.use(requireSession).handler(async () => {
-          const orgId = await getOrgId();
-          const roles = await getRoles(orgId);
-          return { roles };
+        list: builder.team.list.handler(async () => {
+          const daoAccountId = await getOrgId();
+          if (daoAccountId === DEFAULT_DAO_ACCOUNT) {
+            return { roles: [] };
+          }
+          try {
+            const roles = await getRoles(daoAccountId);
+            return { roles };
+          } catch {
+            return { roles: [] };
+          }
+        }),
+
+        getPublicSummary: builder.team.getPublicSummary.handler(async () => {
+          const daoAccountId = await getOrgId();
+          if (daoAccountId === DEFAULT_DAO_ACCOUNT) {
+            return { roleCount: 0, memberCount: 0 };
+          }
+          try {
+            const roles = await getRoles(daoAccountId);
+            const uniqueMembers = new Set<string>();
+            for (const role of roles) {
+              if (!role.isEveryone) for (const m of role.members) uniqueMembers.add(m);
+            }
+            return { roleCount: roles.length, memberCount: uniqueMembers.size };
+          } catch {
+            return { roleCount: 0, memberCount: 0 };
+          }
         }),
       },
 
@@ -1116,6 +1281,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
               name: agencySettings.name,
               headline: agencySettings.headline,
               tagline: agencySettings.tagline,
+              description: agencySettings.description,
               contactEmail: agencySettings.contactEmail,
               nearnAccountId: agencySettings.nearnAccountId,
               websiteUrl: agencySettings.websiteUrl,
@@ -1126,15 +1292,18 @@ export default createPlugin.withPlugins<PluginsClient>()({
             .where(eq(agencySettings.id, SETTINGS_ID))
             .limit(1);
           const row = rows[0];
+          const daoAccountId = row?.daoAccountId ?? DEFAULT_DAO_ACCOUNT;
           return {
             name: row?.name ?? "",
             headline: row?.headline ?? null,
             tagline: row?.tagline ?? null,
+            description: row?.description ?? null,
             contactEmail: row?.contactEmail ?? null,
             nearnAccountId: row?.nearnAccountId ?? null,
             websiteUrl: row?.websiteUrl ?? null,
             docsUrl: row?.docsUrl ?? null,
-            isPlaceholder: (row?.daoAccountId ?? DEFAULT_DAO_ACCOUNT) === DEFAULT_DAO_ACCOUNT,
+            daoAccountId,
+            isPlaceholder: daoAccountId === DEFAULT_DAO_ACCOUNT,
           };
         }),
 

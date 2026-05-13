@@ -2,7 +2,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { ApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 
-type TokenBudget = Awaited<ReturnType<ApiClient["projects"]["getBudget"]>>["budgets"][number];
+type TokenBudget = Awaited<
+  ReturnType<ApiClient["agency"]["projects"]["getBudget"]>
+>["budgets"][number];
 
 export function Budget({ budget }: { budget: TokenBudget }) {
   return (
@@ -27,7 +29,7 @@ function Tile({ label, value }: { label: string; value: string }) {
       <CardContent className="p-4 space-y-1">
         <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
         <div
-          className={`text-lg font-semibold tracking-tight break-all ${
+          className={`font-display text-lg uppercase tracking-tight font-extrabold tabular-nums break-all ${
             isNegative ? "text-destructive" : ""
           }`}
         >

@@ -16,6 +16,11 @@ ui/src/routes/**
 api/src/contract.ts
 api/src/index.ts
 
+# Database driver, dev plugin, and migration config
+api/src/db/index.ts
+api/plugin.dev.ts
+api/drizzle.config.ts
+
 # Database schema — agency defines its own data model
 api/src/db/schema.ts
 

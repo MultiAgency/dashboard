@@ -1,20 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Card, CardContent, Input } from "@/components";
+import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Empty, Field, Loading, selectClass, textareaClass } from "@/components/admin-form";
+import {
+  Empty as AdminEmpty,
+  Field,
+  Loading,
+  selectClass,
+  textareaClass,
+} from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingUrl } from "@/lib/nearn";
-
-export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/projects")({
-  head: () => ({
-    meta: [{ title: "Admin · Projects" }],
-  }),
-  component: AdminProjects,
-});
 
 type ProjectStatus = "active" | "paused" | "archived";
 type Visibility = "public" | "private";
@@ -31,11 +30,11 @@ type Project = {
   visibility: Visibility;
 };
 
-function AdminProjects() {
+export function ProjectsAdminSection() {
   const apiClient = useApiClient();
   const projectsQuery = useQuery({
     queryKey: ["admin", "projects", "list"],
-    queryFn: () => apiClient.projects.adminList(),
+    queryFn: () => apiClient.agency.projects.adminList(),
     retry: false,
   });
 
@@ -53,14 +52,12 @@ function AdminProjects() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Projects</h1>
-          <p className="text-sm text-muted-foreground">
-            Create projects, edit their details, and assign contributors.
-          </p>
-        </div>
-        <Button onClick={() => setCreating((v) => !v)} variant={creating ? "outline" : "default"}>
+      <header className="flex flex-wrap items-center justify-end gap-3">
+        <Button
+          onClick={() => setCreating((v) => !v)}
+          variant={creating ? "outline" : "default"}
+          className="font-display uppercase tracking-wide"
+        >
           {creating ? "cancel" : "+ new project"}
         </Button>
       </header>
@@ -91,7 +88,7 @@ function AdminProjects() {
           ))}
         </div>
       ) : (
-        <Empty label="No projects yet. Create your first one above." />
+        <AdminEmpty label="No projects yet. Create your first one above." />
       )}
 
       <NearnSponsorBountiesPanel
@@ -127,7 +124,7 @@ function ProjectRow({
   const apiClient = useApiClient();
   const budgetQuery = useQuery({
     queryKey: ["admin", "projects", "budget", project.id],
-    queryFn: () => apiClient.projects.getBudget({ projectId: project.id }),
+    queryFn: () => apiClient.agency.projects.getBudget({ projectId: project.id }),
     staleTime: 30_000,
   });
   const fundingBadge = formatFundingBadge(budgetQuery.data?.budgets);
@@ -148,7 +145,9 @@ function ProjectRow({
                 </Badge>
               )}
             </div>
-            <div className="font-semibold tracking-tight break-all">{project.title}</div>
+            <div className="font-display text-lg uppercase tracking-tight font-extrabold leading-tight break-all">
+              {project.title}
+            </div>
             <div className="text-xs font-mono text-muted-foreground">@{project.slug}</div>
           </button>
           <div className="flex items-center gap-2 shrink-0">
@@ -228,7 +227,7 @@ function ProjectCreateForm({
 
   const createMutation = useMutation({
     mutationFn: async () =>
-      apiClient.projects.adminCreate({
+      apiClient.agency.projects.adminCreate({
         slug: slug.trim(),
         title: title.trim(),
         description: description.trim() || undefined,
@@ -345,7 +344,7 @@ function ProjectEditForm({ project }: { project: Project }) {
 
   const updateMutation = useMutation({
     mutationFn: async () =>
-      apiClient.projects.adminUpdate({
+      apiClient.agency.projects.adminUpdate({
         id: project.id,
         title: title.trim(),
         description: description.trim() || null,
@@ -365,7 +364,9 @@ function ProjectEditForm({ project }: { project: Project }) {
 
   return (
     <div className="grid gap-4">
-      <h3 className="font-semibold tracking-tight">Edit</h3>
+      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        edit
+      </div>
       <Field label="title" htmlFor={`edit-title-${project.id}`}>
         <Input
           id={`edit-title-${project.id}`}
@@ -487,7 +488,9 @@ function AssignmentsSection({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-3">
-      <h3 className="font-semibold tracking-tight">Contributors</h3>
+      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        contributors
+      </div>
       {assigned.length === 0 ? (
         <p className="text-xs text-muted-foreground">No contributors assigned.</p>
       ) : (
@@ -554,8 +557,8 @@ function AssignmentsSection({ projectId }: { projectId: string }) {
         allContributors.length === 0 && (
           <p className="text-xs text-muted-foreground">
             No contributors yet. Create some on{" "}
-            <Link to="/admin/contributors" className="underline">
-              the contributors page
+            <Link to="/team" className="underline">
+              the team page
             </Link>
             .
           </p>
@@ -664,18 +667,25 @@ function NearnSponsorBountiesPanel({
   }
   const unlinked = data.bounties.filter((b) => !linkedSlugs.has(b.slug));
   return (
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold tracking-tight">Unlinked NEARN bounties</h2>
-      <p className="text-sm text-muted-foreground max-w-2xl">
-        Active NEARN bounties for <span className="font-mono">@{data.sponsorSlug}</span> not yet
-        linked to a project here.
-      </p>
+    <section className="space-y-3 pt-4">
+      <div className="space-y-1">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          nearn · sponsor
+        </div>
+        <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-tight">
+          Unlinked Bounties
+        </h2>
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          Active NEARN bounties for <span className="font-mono">@{data.sponsorSlug}</span> not yet
+          linked to a project here.
+        </p>
+      </div>
       {unlinked.length === 0 ? (
-        <Card>
-          <CardContent className="p-5 text-sm text-muted-foreground">
+        <Empty className="border-2 border-dashed border-border/40">
+          <EmptyTitle className="font-mono text-sm font-normal text-muted-foreground">
             All current NEARN bounties are linked.
-          </CardContent>
-        </Card>
+          </EmptyTitle>
+        </Empty>
       ) : (
         <div className="space-y-2">
           {unlinked.map((b) => (

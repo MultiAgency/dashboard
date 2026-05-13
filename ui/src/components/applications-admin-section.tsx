@@ -1,18 +1,10 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
-
-export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/applications")({
-  head: () => ({
-    meta: [{ title: "Admin · Applications" }],
-  }),
-  component: AdminApplications,
-});
 
 type ApplicationKind = "replicate" | "contributor";
 type ApplicationStatus = "new" | "reviewing" | "accepted" | "declined";
@@ -31,7 +23,7 @@ type Application = {
   createdAt: Date;
 };
 
-function AdminApplications() {
+export function ApplicationsAdminSection() {
   const apiClient = useApiClient();
   const [filterKind, setFilterKind] = useState<ApplicationKind | "">("");
   const [filterStatus, setFilterStatus] = useState<ApplicationStatus | "">("new");
@@ -58,15 +50,6 @@ function AdminApplications() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Applications</h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Submissions from the public <span className="font-mono">/apply</span> form. Review the
-          message and metadata, then transition status to track the review lifecycle. Submissions
-          themselves are immutable.
-        </p>
-      </header>
-
       <Card>
         <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_auto]">
           <Field label="kind" htmlFor="filter-kind">
@@ -176,7 +159,9 @@ function ApplicationCard({ application }: { application: Application }) {
                 {new Date(application.createdAt).toISOString().slice(0, 10)}
               </span>
             </div>
-            <div className="font-semibold tracking-tight break-all">{application.name}</div>
+            <div className="font-display text-lg uppercase tracking-tight font-extrabold leading-tight break-all">
+              {application.name}
+            </div>
             <div className="text-xs text-muted-foreground space-y-0.5">
               <div className="font-mono break-all">{application.email}</div>
               {application.nearAccountId && (

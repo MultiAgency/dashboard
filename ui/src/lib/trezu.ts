@@ -2,6 +2,10 @@ export function trezuProposalUrl(daoAccountId: string, proposalId: string): stri
   return `https://trezu.app/${daoAccountId}/requests/${proposalId}`;
 }
 
+export function trezuTreasuryUrl(daoAccountId: string): string {
+  return `https://trezu.app/${daoAccountId}`;
+}
+
 export function trezuPaymentUrl(
   daoAccountId: string,
   options: {

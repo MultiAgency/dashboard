@@ -195,12 +195,12 @@ All runtime configuration lives in `bos.config.json`. The shape used by this rep
 ```json
 {
   "account": "agency.near",
-  "extends": "bos://dev.everything.near/everything.dev",
+  "extends": "bos://auth.everything.near/everything.dev",
   "domain": "multiagency.ai",
   "testnet": "agency.testnet",
   "staging": { "domain": "dev.multiagency.ai" },
   "repository": "https://github.com/MultiAgency/dashboard",
-  "plugins": {},
+  "plugins": { /* upstream projects plugin; see bos.config.json */ },
   "app": {
     "host": { "development": "local:host" },
     "ui": { "name": "ui", "development": "local:ui" },
@@ -209,7 +209,7 @@ All runtime configuration lives in `bos.config.json`. The shape used by this rep
 }
 ```
 
-No plugins currently registered; the agency surface lives in `api/`. See `AGENTS.md` for the forward-looking plugin model.
+The agency surface lives in `api/`. The upstream `projects` plugin is registered for host loading but not yet consumed by this fork (no UI route surfaces or `apiClient.projects.*` callers). See `AGENTS.md` for the plugin model.
 
 `bos publish --deploy` is the release path when you want Zephyr URLs refreshed before publishing the config.
 

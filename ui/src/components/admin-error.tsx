@@ -29,7 +29,7 @@ export function AdminError({ error }: { error: unknown }) {
           </pre>
         )}
         <Button asChild variant="outline" size="sm">
-          <Link to="/home">back to workspace</Link>
+          <Link to="/">back to home</Link>
         </Button>
       </CardContent>
     </Card>

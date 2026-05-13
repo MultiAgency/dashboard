@@ -72,7 +72,7 @@
     "version": "changeset version",
     "release": "echo 'Packages versioned - skipping npm publish'",
     "test": "bun run test:api && bun run test:e2e",
-    "test:api": "cd api && bun run test tests/integration/ tests/unit/",
+    "test:api": "cd api && bun run test",
     "test:integration": "cd api && bun run test tests/integration/",
     "test:e2e": "bun run --cwd host test:e2e",
     "dev:postgres": "docker compose up -d --wait && bun run dev",
@@ -109,6 +109,7 @@
   "overrides": {
     "axios": "1.13.6",
     "effect": "3.21.0",
+    "zod": "4.3.6",
     "@orpc/contract": "1.14.3",
     "@orpc/server": "1.14.3",
     "@hot-labs/near-connect": "0.11.4"

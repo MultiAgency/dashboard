@@ -26,7 +26,7 @@ describe("claimDaoConfig — bootstrap DAO claim handler", () => {
 
   beforeEach(async () => {
     const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite(`:memory:${crypto.randomUUID()}`);
+    pg = new PGlite("memory://");
     await applyMigration(pg);
     db = drizzle(pg);
     await db.insert(agencySettings).values({

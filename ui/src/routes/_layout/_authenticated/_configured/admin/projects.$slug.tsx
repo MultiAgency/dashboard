@@ -1,9 +1,19 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { ArrowUpRight } from "lucide-react";
+import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Badge, Budget, Button, Card, CardContent, Input } from "@/components";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Badge,
+  Budget,
+  Button,
+  Card,
+  CardContent,
+  Input,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass, textareaClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
@@ -47,14 +57,14 @@ function AdminProjectDetail() {
 
   const projectQuery = useQuery({
     queryKey: ["admin", "projects", "detail", slug],
-    queryFn: () => apiClient.projects.adminGet({ slug }),
+    queryFn: () => apiClient.agency.projects.adminGet({ slug }),
     retry: false,
   });
 
   const projectId = projectQuery.data?.project.id;
   const budgetQuery = useQuery({
     queryKey: ["admin", "projects", "budget", projectId],
-    queryFn: () => apiClient.projects.getBudget({ projectId: projectId! }),
+    queryFn: () => apiClient.agency.projects.getBudget({ projectId: projectId! }),
     enabled: !!projectId,
     staleTime: 30_000,
   });
@@ -74,7 +84,7 @@ function AdminProjectDetail() {
     <div className="space-y-6">
       <div>
         <Link
-          to="/admin/projects"
+          to="/work"
           className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
         >
           ← all projects
@@ -284,6 +294,14 @@ function BillingCreateForm({
   });
   const tokens = tokensQuery.data?.tokens ?? [];
 
+  const allContributorsQuery = useQuery({
+    queryKey: ["admin", "contributors", "list"],
+    queryFn: () => apiClient.contributors.adminList(),
+  });
+  const onboardingById = new Map(
+    (allContributorsQuery.data?.data ?? []).map((c) => [c.id, c.onboardingStatus]),
+  );
+
   const payableContributors = contributors.filter((c) => c.nearAccountId);
   const [prefillContributorId, setPrefillContributorId] = useState<string>(
     () => payableContributors[0]?.id ?? "",
@@ -292,6 +310,17 @@ function BillingCreateForm({
 
   const prefillContributor = payableContributors.find((c) => c.id === prefillContributorId);
   const prefillToken = tokens.find((t) => t.tokenId === prefillTokenId);
+
+  const targetContributorId = contributorIdOverride.trim() || prefillContributorId;
+  const targetOnboardingStatus = targetContributorId
+    ? onboardingById.get(targetContributorId)
+    : undefined;
+  const showOnboardingWarning =
+    targetOnboardingStatus !== undefined && targetOnboardingStatus !== "complete";
+  const targetContributorName =
+    contributors.find((c) => c.id === targetContributorId)?.name ??
+    allContributorsQuery.data?.data.find((c) => c.id === targetContributorId)?.name ??
+    "this contributor";
 
   const trezuPrefillUrl =
     daoAccountId &&
@@ -420,6 +449,25 @@ function BillingCreateForm({
             className={textareaClass}
           />
         </Field>
+        {showOnboardingWarning && (
+          <Alert>
+            <AlertTriangle />
+            <AlertTitle>
+              Onboarding {targetOnboardingStatus} for {targetContributorName}
+            </AlertTitle>
+            <AlertDescription>
+              Confirm signed services agreement and tax form (W-9 or W-8BEN) are on file before
+              recording a payout.{" "}
+              <Link
+                to="/docs/$slug"
+                params={{ slug: "contributors" }}
+                className="underline underline-offset-2"
+              >
+                onboarding flow ↗
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="flex gap-2">
           <Button onClick={() => createMutation.mutate()} disabled={!canSubmit} size="sm">
             {isPending ? "recording..." : "record billing"}

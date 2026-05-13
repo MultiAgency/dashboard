@@ -11,11 +11,13 @@ export interface DatabaseDriver {
 }
 
 export async function createDatabaseDriver(url: string): Promise<DatabaseDriver> {
-  if (url.startsWith("pglite:") || url === ":memory:") {
+  if (url.startsWith("pglite:") || url === ":memory:" || url === "memory://") {
     const { drizzle } = await import("drizzle-orm/pglite");
-    const rawDir = url === ":memory:" ? ":memory:" : url.replace("pglite:", "");
-    const dataDir = rawDir.endsWith("/:memory:") || rawDir === ":memory:" ? ":memory:" : rawDir;
-    if (dataDir !== ":memory:") {
+    const stripped = url === ":memory:" ? ":memory:" : url.replace(/^pglite:/, "");
+    const isInMemory =
+      stripped === ":memory:" || stripped === "memory://" || stripped.endsWith("/:memory:");
+    const dataDir = isInMemory ? "memory://" : stripped;
+    if (!isInMemory) {
       mkdirSync(dirname(dataDir), { recursive: true });
     }
     const db = drizzle(dataDir, { schema });

@@ -133,10 +133,12 @@ describe("settings.getPublic — placeholder signal", () => {
       name: "MultiAgency",
       headline: null,
       tagline: null,
+      description: null,
       contactEmail: null,
       nearnAccountId: null,
       websiteUrl: null,
       docsUrl: null,
+      daoAccountId: "PLACEHOLDER.sputnik-dao.near",
       isPlaceholder: true,
     });
     expect(parsed?.success).toBe(true);

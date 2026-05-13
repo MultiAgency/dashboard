@@ -5,6 +5,7 @@ import {
   ClientOnly,
   createRootRouteWithContext,
   HeadContent,
+  Link,
   Outlet,
   Scripts,
 } from "@tanstack/react-router";
@@ -73,7 +74,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         },
         { title },
         { name: "description", content: description },
-        { name: "theme-color", content: "#ffffff" },
+        { name: "theme-color", content: "#ffff33" },
         { name: "color-scheme", content: "light dark" },
         { name: "application-name", content: siteName },
         { name: "mobile-web-app-capable", content: "yes" },
@@ -89,7 +90,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
           description,
           siteName,
           siteUrl,
-          alt: "app preview",
+          alt: "MultiAgency - always open, always building.",
         }),
       ],
       links: [
@@ -100,10 +101,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
           href: "https://fonts.gstatic.com",
           crossOrigin: "anonymous",
         },
-        { rel: "shortcut icon", href: `${assetsUrl}/favicon.ico` },
         { rel: "icon", type: "image/svg+xml", href: `${assetsUrl}/icon.svg` },
-        { rel: "icon", type: "image/png", sizes: "32x32", href: `${assetsUrl}/favicon-32x32.png` },
-        { rel: "icon", type: "image/png", sizes: "16x16", href: `${assetsUrl}/favicon-16x16.png` },
         {
           rel: "apple-touch-icon",
           sizes: "180x180",
@@ -128,7 +126,34 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     };
   },
   component: RootComponent,
+  notFoundComponent: NotFound,
 });
+
+function NotFound() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background text-foreground px-6">
+      <div className="text-center space-y-6 max-w-md">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          agency · 404
+        </div>
+        <h1 className="font-display text-5xl sm:text-6xl font-black uppercase leading-none tracking-tight">
+          no record
+        </h1>
+        <p className="text-base leading-relaxed text-muted-foreground">
+          That route isn't wired. Head back to home.
+        </p>
+        <div className="pt-2">
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center font-display uppercase tracking-wide border-2 border-foreground bg-card text-foreground hover:bg-foreground hover:text-background transition-colors duration-150 h-10 px-4 text-sm"
+          >
+            ← back to home
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function RootComponent() {
   return (
@@ -138,7 +163,7 @@ function RootComponent() {
         <style dangerouslySetInnerHTML={{ __html: getBaseStyles() }} />
       </head>
       <body>
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <div id="root">
             <Outlet />
           </div>

@@ -19,44 +19,53 @@ async function fetchPolicy(daoAccountId: string): Promise<SputnikPolicy> {
   const cached = policyCache.get(daoAccountId);
   if (cached && cached.expiresAt > Date.now()) return cached.policy;
 
-  const response = await fetchWithTimeout(NEAR_RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: "policy",
-      method: "query",
-      params: {
-        request_type: "call_function",
-        finality: "final",
-        account_id: daoAccountId,
-        method_name: "get_policy",
-        args_base64: btoa("{}"),
-      },
-    }),
-  });
+  try {
+    const response = await fetchWithTimeout(NEAR_RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "policy",
+        method: "query",
+        params: {
+          request_type: "call_function",
+          finality: "final",
+          account_id: daoAccountId,
+          method_name: "get_policy",
+          args_base64: btoa("{}"),
+        },
+      }),
+    });
 
-  if (!response.ok) {
-    throw new Error(`NEAR RPC failed: ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`NEAR RPC failed: ${response.status}`);
+    }
+
+    const json = (await response.json()) as {
+      error?: unknown;
+      result?: { result: number[] };
+    };
+
+    if (json.error) {
+      throw new Error(`NEAR RPC error: ${JSON.stringify(json.error)}`);
+    }
+    if (!json.result?.result) {
+      throw new Error("NEAR RPC returned no result");
+    }
+
+    const text = new TextDecoder().decode(new Uint8Array(json.result.result));
+    const policy = JSON.parse(text) as SputnikPolicy;
+
+    policyCache.set(daoAccountId, { policy, expiresAt: Date.now() + POLICY_TTL_MS });
+    return policy;
+  } catch (err) {
+    // Stale-while-error: serve last successful policy when RPC fails (rate limits, transient downtime).
+    if (cached) {
+      console.warn("[API] fetchPolicy using stale cache:", daoAccountId, (err as Error).message);
+      return cached.policy;
+    }
+    throw err;
   }
-
-  const json = (await response.json()) as {
-    error?: unknown;
-    result?: { result: number[] };
-  };
-
-  if (json.error) {
-    throw new Error(`NEAR RPC error: ${JSON.stringify(json.error)}`);
-  }
-  if (!json.result?.result) {
-    throw new Error("NEAR RPC returned no result");
-  }
-
-  const text = new TextDecoder().decode(new Uint8Array(json.result.result));
-  const policy = JSON.parse(text) as SputnikPolicy;
-
-  policyCache.set(daoAccountId, { policy, expiresAt: Date.now() + POLICY_TTL_MS });
-  return policy;
 }
 
 export interface DaoRole {
@@ -289,16 +298,26 @@ async function fetchFtBalance(accountId: string, tokenContractId: string): Promi
 async function getCachedBalance(cacheKey: string, fetcher: () => Promise<string>): Promise<string> {
   const cached = balanceCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.balance;
-  const balance = await fetcher();
-  balanceCache.set(cacheKey, { balance, expiresAt: Date.now() + BALANCE_TTL_MS });
-  return balance;
+  try {
+    const balance = await fetcher();
+    balanceCache.set(cacheKey, { balance, expiresAt: Date.now() + BALANCE_TTL_MS });
+    return balance;
+  } catch (err) {
+    // Stale-while-error: serve last successful balance when RPC fails (rate limits, transient downtime).
+    if (cached) {
+      console.warn("[API] getCachedBalance using stale cache:", cacheKey, (err as Error).message);
+      return cached.balance;
+    }
+    throw err;
+  }
 }
 
 export async function getTreasuryBalances(
   daoAccountId: string,
   tokenIds: string[],
 ): Promise<Record<string, string>> {
-  const entries = await Promise.all(
+  // allSettled so one token's RPC failure (rate limit, missing contract) doesn't crash the batch.
+  const settled = await Promise.allSettled(
     tokenIds.map(async (tokenId) => {
       const isNative = tokenId === "near" || tokenId === "NEAR";
       const cacheKey = `${daoAccountId}::${tokenId}`;
@@ -308,5 +327,20 @@ export async function getTreasuryBalances(
       return [tokenId, balance] as const;
     }),
   );
-  return Object.fromEntries(entries);
+  const result: Record<string, string> = {};
+  tokenIds.forEach((tokenId, i) => {
+    const outcome = settled[i];
+    if (outcome && outcome.status === "fulfilled") {
+      result[tokenId] = outcome.value[1];
+    } else {
+      const reason = outcome && outcome.status === "rejected" ? outcome.reason : undefined;
+      console.warn(
+        "[API] getTreasuryBalances skipped token:",
+        tokenId,
+        (reason as Error)?.message ?? reason,
+      );
+      result[tokenId] = "0";
+    }
+  });
+  return result;
 }

@@ -8,7 +8,7 @@ export const Route = createFileRoute("/_layout/_authenticated/_configured")({
       staleTime: 5 * 60_000,
     });
     if (settings.isPlaceholder) {
-      throw redirect({ to: "/home" });
+      throw redirect({ to: "/settings" });
     }
   },
   component: ConfiguredLayout,

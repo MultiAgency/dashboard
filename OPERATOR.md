@@ -53,9 +53,9 @@ Required:
 - **DAO account** — should already be set from `AGENCY_DAO_ACCOUNT` env
 
 Recommended:
-- **Headline** — large H2 on the landing (default: "Always building. Always open.")
-- **Tagline** — subtitle below the headline
-- **Contact email** — surfaces in the landing footer
+- **Headline** — big poster line under the agency wordmark (default: "Open Books · Open Source · Open Doors")
+- **Tagline** — short descriptor used as the browser tab / share title; not displayed on the landing (default: "The future of work is near…")
+- **Contact email** — surfaces in the landing footer (default: "multiagentic@gmail.com")
 - **Website URL** — your standalone marketing site if you have one
 - **Docs URL** — your external docs site (appears as a card in the landing's Docs section)
 - **NEARN sponsor slug** — enables "unlinked bounties" surfacing on `/admin/projects`

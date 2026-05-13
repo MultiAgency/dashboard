@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent } from "@/components";
@@ -38,13 +38,6 @@ function formatSubmissionDate(nanoseconds: string): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/proposals")({
-  head: () => ({
-    meta: [{ title: "Admin · Proposals" }],
-  }),
-  component: AdminProposals,
-});
-
 type ProposalRow = {
   proposalId: string;
   proposer: string;
@@ -64,7 +57,7 @@ type ProposalRow = {
 
 type ProjectSummary = { id: string; slug: string; title: string };
 
-function AdminProposals() {
+export function ProposalsAdminSection() {
   const apiClient = useApiClient();
   const [showOnlyUnmapped, setShowOnlyUnmapped] = useState(true);
 
@@ -78,7 +71,7 @@ function AdminProposals() {
   });
   const projectsQuery = useQuery({
     queryKey: ["admin", "projects", "list"],
-    queryFn: () => apiClient.projects.adminList(),
+    queryFn: () => apiClient.agency.projects.adminList(),
     retry: false,
   });
   const settingsQuery = useQuery({
@@ -103,15 +96,6 @@ function AdminProposals() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Proposals</h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Recent Sputnik DAO Transfer proposals on the agency's connected NEAR Treasury. Unmapped
-          proposals haven't been recorded as billings yet — assign them to a project below.
-          Non-Transfer proposals (governance, member changes, etc.) are filtered out.
-        </p>
-      </header>
-
       <Card>
         <CardContent className="p-5 flex items-center gap-3">
           <input
@@ -235,7 +219,10 @@ function ProposalCard({
           )}
         </div>
         <div className="font-mono text-sm break-all">
-          {formatTokenAmount(proposal.amount, proposal.tokenId)} → {proposal.receiverId}
+          <span className="tabular-nums">
+            {formatTokenAmount(proposal.amount, proposal.tokenId)}
+          </span>{" "}
+          → {proposal.receiverId}
         </div>
         <div className="text-xs text-muted-foreground">
           filed {formatSubmissionDate(proposal.submissionTime)} by {proposal.proposer}

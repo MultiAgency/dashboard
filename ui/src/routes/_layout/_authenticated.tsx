@@ -9,7 +9,7 @@ export interface AuthContext {
 
 export const Route = createFileRoute("/_layout/_authenticated")({
   beforeLoad: async ({ context }) => {
-    const { queryClient } = context;
+    const { queryClient, apiClient } = context;
 
     const session = await queryClient.ensureQueryData(
       sessionQueryOptions(context.authClient, context.session),
@@ -20,6 +20,14 @@ export const Route = createFileRoute("/_layout/_authenticated")({
     if (!auth.isAuthenticated) {
       throw redirect({ to: "/" });
     }
+
+    // Prefetch role flags so operator sections render without a flash.
+    await queryClient.ensureQueryData({
+      queryKey: ["me", "roles"],
+      queryFn: () => apiClient.me.roles(),
+      staleTime: 60_000,
+      retry: false,
+    });
 
     return {
       auth,

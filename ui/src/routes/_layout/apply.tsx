@@ -1,54 +1,56 @@
-import { useMutation } from "@tanstack/react-query";
+import { useForm } from "@tanstack/react-form";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Card, CardContent, Input } from "@/components";
-import { Field } from "@/components/admin-form";
+import { z } from "zod";
+import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { useApiClient } from "@/lib/api";
-
-type Kind = "replicate" | "contributor";
-
-const KIND_DESCRIPTIONS: Record<Kind, { title: string; body: string }> = {
-  replicate: {
-    title: "Launch your own agency",
-    body: "Replicate the framework — LLC pattern, Trezu treasury, NEARN contributors, this dashboard. Tell us about the opportunity you'd run.",
-  },
-  contributor: {
-    title: "Join as a contributor",
-    body: "We source contributors through NEARN. Tell us what you can build, and we'll get back to you when there's a fit.",
-  },
-};
+import { nearnSponsorUrl } from "@/lib/nearn";
 
 export const Route = createFileRoute("/_layout/apply")({
   head: () => ({
     meta: [
-      { title: "Express Interest" },
-      {
-        name: "description",
-        content: "Apply to launch your own agency or join our agency as a contributor.",
-      },
+      { title: "Join MultiAgency" },
+      { name: "description", content: "Apply to join MultiAgency as a contributor." },
     ],
   }),
   component: ApplyPage,
 });
 
+const applySchema = z.object({
+  name: z.string().trim().min(1, "name required"),
+  email: z.string().trim().min(1, "email required").email("not a valid email"),
+  nearAccountId: z.string().trim().optional(),
+  message: z.string().trim().optional(),
+});
+
+type ApplyValues = z.infer<typeof applySchema>;
+
+const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
+const ERROR_CLS = "text-sm text-destructive";
+
 function ApplyPage() {
   const apiClient = useApiClient();
-  const [kind, setKind] = useState<Kind>("contributor");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [nearAccountId, setNearAccountId] = useState("");
-  const [message, setMessage] = useState("");
+  const settingsQuery = useQuery({
+    queryKey: ["settings", "public"],
+    queryFn: () => apiClient.settings.getPublic(),
+    staleTime: 5 * 60_000,
+  });
+  const nearnUrl = settingsQuery.data?.nearnAccountId
+    ? nearnSponsorUrl(settingsQuery.data.nearnAccountId)
+    : null;
+
   const [submitted, setSubmitted] = useState(false);
 
   const submitMutation = useMutation({
-    mutationFn: async () =>
+    mutationFn: async (values: ApplyValues) =>
       apiClient.applications.create({
-        kind,
-        name: name.trim(),
-        email: email.trim(),
-        nearAccountId: nearAccountId.trim() || undefined,
-        message: message.trim() || undefined,
+        kind: "contributor",
+        name: values.name,
+        email: values.email,
+        nearAccountId: values.nearAccountId || undefined,
+        message: values.message || undefined,
       }),
     onSuccess: () => {
       setSubmitted(true);
@@ -58,23 +60,44 @@ function ApplyPage() {
     },
   });
 
+  const form = useForm({
+    defaultValues: {
+      name: "",
+      email: "",
+      nearAccountId: "",
+      message: "",
+    } as ApplyValues,
+    validators: { onChange: applySchema },
+    onSubmit: async ({ value }) => {
+      await submitMutation.mutateAsync(value);
+    },
+  });
+
   const isPending = submitMutation.isPending;
-  const canSubmit = name.trim().length > 0 && email.trim().length > 0 && !isPending;
 
   if (submitted) {
     return (
-      <div className="max-w-xl mx-auto space-y-6 pt-8">
-        <Card>
+      <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
+        <Card variant="hi-vis">
           <CardContent className="p-8 space-y-4 text-center">
-            <Badge variant="outline">received</Badge>
-            <h1 className="text-2xl font-semibold tracking-tight">Thanks — we'll be in touch.</h1>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Your interest is logged. We review applications regularly and respond when there's a
-              clear next step.
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+              agency · application received
+            </div>
+            <h1 className="font-display text-3xl sm:text-4xl uppercase tracking-tight font-extrabold leading-[0.95]">
+              Thanks! Let's build.
+            </h1>
+            <p className="font-mono text-xs leading-relaxed text-muted-foreground">
+              Your application was received. We'll email next steps — a short contractor agreement
+              and a tax form (W-9 or W-8BEN) — before any work or payout.
             </p>
-            <div>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/">back to home</Link>
+            <div className="pt-2">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="font-display uppercase tracking-wide"
+              >
+                <Link to="/">← back to home</Link>
               </Button>
             </div>
           </CardContent>
@@ -83,101 +106,149 @@ function ApplyPage() {
     );
   }
 
-  const description = KIND_DESCRIPTIONS[kind];
-
   return (
-    <div className="max-w-xl mx-auto space-y-6 pt-4">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Express interest</h1>
-        <p className="text-sm text-muted-foreground">
-          Two paths. Pick the one that fits, then tell us a bit about you.
-        </p>
+    <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
+      <header className="space-y-3 text-center">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          agency · join
+        </div>
+        <h1 className="font-display text-4xl sm:text-5xl uppercase tracking-tight font-black leading-[0.95]">
+          Join MultiAgency
+        </h1>
       </header>
 
-      <div className="grid gap-2 sm:grid-cols-2">
-        {(Object.keys(KIND_DESCRIPTIONS) as Kind[]).map((k) => {
-          const active = k === kind;
-          return (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setKind(k)}
-              className={`text-left p-4 rounded-sm border-2 transition-colors ${
-                active
-                  ? "border-foreground bg-muted/30"
-                  : "border-border bg-card hover:border-foreground/40"
-              }`}
-            >
-              <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                {k === "replicate" ? "Replicate" : "Contribute"}
-              </div>
-              <div className="font-semibold text-sm mt-1">{KIND_DESCRIPTIONS[k].title}</div>
-            </button>
-          );
-        })}
-      </div>
-
       <Card>
-        <CardContent className="p-6 space-y-4">
-          <p className="text-sm text-muted-foreground leading-relaxed">{description.body}</p>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Tell us who you are and what you build. We will follow up.{" "}
+            <Link
+              to="/docs/$slug"
+              params={{ slug: "contributors" }}
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              how onboarding works →
+            </Link>
+          </p>
+          {nearnUrl && (
+            <a
+              href={nearnUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              find opportunities via nearn →
+            </a>
+          )}
 
           <form
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              if (canSubmit) submitMutation.mutate();
+              e.stopPropagation();
+              form.handleSubmit();
             }}
           >
-            <Field label="name" htmlFor="apply-name">
-              <Input
-                id="apply-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="your name"
-                required
-                disabled={isPending}
-              />
-            </Field>
-            <Field label="email" htmlFor="apply-email">
-              <Input
-                id="apply-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="email@example.com"
-                required
-                disabled={isPending}
-              />
-            </Field>
-            <Field label="near account (optional)" htmlFor="apply-near">
-              <Input
-                id="apply-near"
-                value={nearAccountId}
-                onChange={(e) => setNearAccountId(e.target.value)}
-                placeholder="account.near"
-                disabled={isPending}
-              />
-            </Field>
-            <Field
-              label={kind === "replicate" ? "what would you run?" : "what would you build?"}
-              htmlFor="apply-message"
+            <form.Field name="name">
+              {(field) => (
+                <div className="space-y-2">
+                  <label htmlFor={field.name} className={LABEL_CLS}>
+                    name
+                  </label>
+                  <Input
+                    id={field.name}
+                    name={field.name}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="your name"
+                    disabled={isPending}
+                  />
+                  {field.state.meta.errors[0] && (
+                    <p className={ERROR_CLS}>{fieldErrorMessage(field.state.meta.errors[0])}</p>
+                  )}
+                </div>
+              )}
+            </form.Field>
+            <form.Field name="email">
+              {(field) => (
+                <div className="space-y-2">
+                  <label htmlFor={field.name} className={LABEL_CLS}>
+                    email
+                  </label>
+                  <Input
+                    id={field.name}
+                    name={field.name}
+                    type="email"
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="email@example.com"
+                    disabled={isPending}
+                  />
+                  {field.state.meta.errors[0] && (
+                    <p className={ERROR_CLS}>{fieldErrorMessage(field.state.meta.errors[0])}</p>
+                  )}
+                </div>
+              )}
+            </form.Field>
+            <form.Field name="nearAccountId">
+              {(field) => (
+                <div className="space-y-2">
+                  <label htmlFor={field.name} className={LABEL_CLS}>
+                    near account (optional)
+                  </label>
+                  <Input
+                    id={field.name}
+                    name={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    placeholder="account.near"
+                    disabled={isPending}
+                  />
+                </div>
+              )}
+            </form.Field>
+            <form.Field name="message">
+              {(field) => (
+                <div className="space-y-2">
+                  <label htmlFor={field.name} className={LABEL_CLS}>
+                    what would you build?
+                  </label>
+                  <Textarea
+                    id={field.name}
+                    name={field.name}
+                    value={field.state.value ?? ""}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    rows={5}
+                    placeholder="a few sentences"
+                    disabled={isPending}
+                  />
+                </div>
+              )}
+            </form.Field>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={isPending}
+              className="w-full font-display uppercase tracking-wide"
             >
-              <textarea
-                id="apply-message"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={5}
-                disabled={isPending}
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="a few sentences"
-              />
-            </Field>
-            <Button type="submit" disabled={!canSubmit} className="w-full">
-              {isPending ? "submitting..." : "submit"}
+              {isPending && <Spinner />}
+              {isPending ? "submitting..." : "submit →"}
             </Button>
           </form>
         </CardContent>
       </Card>
     </div>
   );
+}
+
+function fieldErrorMessage(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object" && "message" in err) {
+    const msg = (err as { message?: unknown }).message;
+    return typeof msg === "string" ? msg : "invalid";
+  }
+  return "invalid";
 }

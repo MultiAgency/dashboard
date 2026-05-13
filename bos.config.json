@@ -63,7 +63,7 @@
   },
   "plugins": {
     "projects": {
-      "development": "local:plugins/projects",
+      "development": "https://elliot-braem-3560-everything-dev-projects-plugin--0039ec9c5-ze.zephyrcloud.app",
       "production": "https://elliot-braem-3560-everything-dev-projects-plugin--0039ec9c5-ze.zephyrcloud.app",
       "integrity": "sha384-Fq3b3KS1D0nt3hIgvJ8cu/JzDJj/F+rKLJEOauT3hHY4DocvDavZYaitERjD7mPU",
       "secrets": [
@@ -84,14 +84,14 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://elliot-braem-3500-ui-better-near-auth-elliotbraem-f60ef19e3-ze.zephyrcloud.app",
-      "integrity": "sha384-3dYGVEmNwdYyD7HELvDCnXCAU1+5Tv10mxqMn4yTBR4tkh2Yy0c2kpzkqBtbv47T",
-      "ssr": "https://multiagentic-1-ui-dashboard-multiagency-e5dd06cc6-ze.zephyrcloud.app"
+      "production": "https://multiagentic-8-ui-dashboard-multiagency-eadc644a1-ze.zephyrcloud.app",
+      "integrity": "sha384-aoGGgUMvc96BOTUQeYRDYuLAdENh4cvdy4txUqrtntWS/5TU5qoIu+Qlb9+BjvrS",
+      "ssr": "https://multiagentic-6-ui-dashboard-multiagency-fd670d83c-ze.zephyrcloud.app"
     },
     "api": {
       "name": "api",
       "development": "local:api",
-      "production": "https://multiagentic-2-api-dashboard-multiagency-a26cc9370-ze.zephyrcloud.app",
+      "production": "https://multiagentic-7-api-dashboard-multiagency-d9e93ee1a-ze.zephyrcloud.app",
       "integrity": "sha384-VQWcchs6heOXr97R164pdcRJl9euGN3Z5WJF7p2fm6ryNisySTYzAlpDIfOwvENi",
       "secrets": [
         "API_DATABASE_URL"

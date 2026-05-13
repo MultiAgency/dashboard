@@ -2,12 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -25,7 +25,7 @@ export function UserNav() {
     mutationFn: () => connectNear(authClient),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey });
-      navigate({ to: "/home" });
+      navigate({ to: "/treasury" });
     },
     onError: (error: { message?: string }) => {
       toast.error(error.message || "Failed to connect NEAR wallet");
@@ -65,20 +65,24 @@ export function UserNav() {
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="w-6 h-6 rounded-full bg-foreground transition-all duration-200 ease-out hover:shadow-lg hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="cursor-pointer rounded-sm hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             title="menu"
-          />
+          >
+            <Avatar className="size-8 rounded-full">
+              {user.image && (
+                <AvatarImage src={user.image} alt={user.name || user.email || user.id} />
+              )}
+              <AvatarFallback className="bg-muted text-foreground border-0 text-xs font-medium">
+                {(user.name || user.email || user.id).charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">signed in as</p>
-              <p className="truncate text-sm font-normal">{user.email || user.id}</p>
-            </div>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
+        <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem asChild>
-            <Link to="/home">workspace</Link>
+            <Link to="/profile" className="font-mono text-xs uppercase tracking-wide">
+              profile
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -88,6 +92,7 @@ export function UserNav() {
               signOutMutation.mutate();
             }}
             disabled={signOutMutation.isPending}
+            className="font-mono text-xs uppercase tracking-wide"
           >
             {signOutMutation.isPending ? "signing out..." : "sign out"}
           </DropdownMenuItem>

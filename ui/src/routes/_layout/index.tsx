@@ -1,199 +1,388 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowUpRight } from "lucide-react";
-import { toast } from "sonner";
-import { useAuthClient } from "@/app";
-import { Button, Card, CardContent } from "@/components";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect } from "react";
+import nearnLogo from "@/assets/brand/nearn.svg";
+import trezuLogo from "@/assets/brand/trezu.svg";
+import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
+import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
+import { ReactionDiffusionField } from "@/components/reaction-diffusion-field";
 import { useApiClient } from "@/lib/api";
-import { connectNear, sessionQueryOptions } from "@/lib/auth";
-
-const FALLBACK = {
-  name: "Agency",
-  headline: "Always building. Always open.",
-  tagline: "Join our agency. Hire us. Launch your own.",
-  contactEmail: null as string | null,
-};
+import { nearnSponsorUrl } from "@/lib/nearn";
+import { getRepoUrl } from "@/lib/repo";
+import { trezuTreasuryUrl } from "@/lib/trezu";
 
 const META_DESCRIPTION = "Human-led, AI-native agencies for hire.";
 
-const operatingModel = [
-  {
-    title: "Structure",
-    body: "A registered company with owners, admins, and contributors.",
-  },
-  {
-    title: "Treasury",
-    body: "Funds are held on-chain in a Sputnik DAO contract. Every allocation is publicly approved by the finance group.",
-  },
-  {
-    title: "Payouts",
-    body: "Opportunities are listed and assigned through NEARN. Payments are budgeted and tracked in this dashboard, managed via Trezu.",
-  },
-];
-
-const UPSTREAM_DOCS = [
-  {
-    title: "Trezu",
-    body: "How the DAO holds funds and authorizes operators.",
-    links: [
-      { label: "site", url: "https://trezu.app/" },
-      { label: "docs", url: "https://docs.trezu.org/" },
-      { label: "skill", url: "/skills/trezu.md" },
-    ],
-  },
-  {
-    title: "NEARN",
-    body: "Contributor listings, compliance, and payout flow.",
-    links: [
-      { label: "site", url: "https://nearn.io/" },
-      { label: "docs", url: "https://docs.nearn.io/" },
-      { label: "skill", url: "/skills/nearn.md" },
-    ],
-  },
-];
+const FALLBACK = {
+  name: "MultiAgency",
+  headline: "Open Books · Open Source · Open Doors",
+  tagline: "The future of work is near…",
+};
 
 export const Route = createFileRoute("/_layout/")({
   head: () => ({
-    meta: [{ title: "Home" }, { name: "description", content: META_DESCRIPTION }],
+    meta: [{ name: "description", content: META_DESCRIPTION }],
   }),
   component: Landing,
 });
 
+type LandingProject = {
+  id: string;
+  slug: string;
+  title: string;
+  nearnListing: unknown | null;
+};
+
 function Landing() {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
 
   const settingsQuery = useQuery({
     queryKey: ["settings", "public"],
     queryFn: () => apiClient.settings.getPublic(),
     staleTime: 5 * 60_000,
   });
+
+  const projectsQuery = useQuery({
+    queryKey: ["projects", "public"],
+    queryFn: () => apiClient.agency.projects.list(),
+    staleTime: 60_000,
+  });
+
   const s = settingsQuery.data;
+  const agencyName = s?.name?.trim() || FALLBACK.name;
   const headline = s?.headline?.trim() || FALLBACK.headline;
   const tagline = s?.tagline?.trim() || FALLBACK.tagline;
-  const contactEmail = s?.contactEmail?.trim() || FALLBACK.contactEmail;
-  const agencyName = s?.name?.trim() || FALLBACK.name;
-  const agencyDocsUrl = s?.docsUrl?.trim() || null;
-  const docs = agencyDocsUrl
-    ? [
-        {
-          title: agencyName,
-          body: "Entity structure, ownership, and contributor contracts.",
-          links: [{ label: "docs", url: agencyDocsUrl }],
-        },
-        ...UPSTREAM_DOCS,
-      ]
-    : UPSTREAM_DOCS;
 
-  const connectMutation = useMutation({
-    mutationFn: () => connectNear(authClient),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey });
-      navigate({ to: "/home" });
-    },
-    onError: (error: { code?: string; message?: string }) => {
-      toast.error(error.message || "Failed to connect NEAR wallet");
-    },
-  });
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const prev = document.title;
+    document.title = `${agencyName} — ${tagline}`;
+    return () => {
+      document.title = prev;
+    };
+  }, [agencyName, tagline]);
+  const description = s?.description?.trim() || null;
+  const contactEmail = s?.contactEmail?.trim() || null;
+  const docsUrl = s?.docsUrl?.trim() || null;
+  const isPlaceholder = !!s?.isPlaceholder;
+  const treasuryUrl = s?.daoAccountId ? trezuTreasuryUrl(s.daoAccountId) : null;
+  const repositoryUrl = getRepoUrl();
+  const sponsorUrl = s?.nearnAccountId ? nearnSponsorUrl(s.nearnAccountId) : null;
+
+  if (isPlaceholder) {
+    return <UnclaimedState />;
+  }
+
+  const projects = (projectsQuery.data?.data ?? []) as LandingProject[];
+  const visibleProjects = projects.slice(0, 6);
+  const hasMore = projects.length > 6;
 
   return (
     <div className="space-y-16 pb-12 animate-fade-in">
-      <section className="flex flex-col items-center text-center pt-8 sm:pt-16">
-        <h1
-          className="text-5xl font-semibold tracking-tight sm:text-7xl"
-          style={{
-            textShadow: "rgba(0,0,0,0.08) 1px 1px 1px, rgba(0,0,0,0.06) 3px 3px 3px",
-          }}
-        >
-          {agencyName}
-        </h1>
-        <h2 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">{headline}</h2>
-        <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-          {tagline}
-        </p>
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-          <Button asChild>
-            <Link to="/projects">view projects</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/apply">express interest</Link>
-          </Button>
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div className="text-center">
-          <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">Operating Model</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            How accountability, funds, and payouts work.
-          </p>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {operatingModel.map((pillar) => (
-            <Card key={pillar.title}>
-              <CardContent className="p-5 space-y-3">
-                <h3 className="font-semibold tracking-tight">{pillar.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{pillar.body}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div className="text-center">
-          <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight">Docs</h2>
-          <p className="mt-2 text-sm text-muted-foreground">How the agency operates end-to-end.</p>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {docs.map((doc) => (
-            <Card key={doc.title} className="h-full">
-              <CardContent className="p-5 space-y-3">
-                <h3 className="font-semibold tracking-tight">{doc.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{doc.body}</p>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  {doc.links.map((link) => (
-                    <a
-                      key={link.url}
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-xs font-mono text-muted-foreground hover:text-foreground underline"
-                    >
-                      {link.label}
-                      <ArrowUpRight className="w-3 h-3" />
-                    </a>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
-
-      <section className="flex flex-col items-center text-center gap-3">
-        <p className="text-sm text-muted-foreground">
-          Operating {agencyName}? Connect a NEAR wallet to enter the admin console.
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => connectMutation.mutate()}
-            disabled={connectMutation.isPending}
-          >
-            {connectMutation.isPending ? "connecting..." : "connect NEAR"}
-          </Button>
-          {contactEmail && (
-            <a
-              href={`mailto:${contactEmail}`}
-              className="text-sm text-muted-foreground hover:text-foreground"
+      <section className="relative min-h-[70vh] flex flex-col justify-center -mt-6 sm:-mt-10 py-12 sm:py-16 overflow-hidden -mx-4 sm:-mx-6 px-4 sm:px-6">
+        <ReactionDiffusionField />
+        <div className="relative flex flex-col items-start space-y-6 text-left">
+          <div className="w-full pl-3 pr-3">
+            <div className="pb-1 font-mono font-semibold text-[11px] uppercase tracking-[0.22em] text-accent">
+              {tagline}
+            </div>
+            <h1
+              className="font-black uppercase leading-[0.88] break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl"
+              style={{
+                fontFamily: '"Bungee", "Impact", "Arial Black", sans-serif',
+                letterSpacing: "-0.04em",
+                fontFeatureSettings: '"kern", "liga"',
+                WebkitFontSmoothing: "subpixel-antialiased",
+                MozOsxFontSmoothing: "auto",
+                textRendering: "geometricPrecision",
+              }}
             >
-              {contactEmail}
-            </a>
+              {agencyName}
+            </h1>
+            <div className="mt-3 flex items-center gap-3">
+              <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-[0.22em] text-accent">
+                Build Agencies Together
+              </span>
+              <div className="flex-1 h-px bg-accent/80" />
+              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] text-accent tabular-nums">
+                v0.1
+              </span>
+            </div>
+          </div>
+          <p className="max-w-2xl pl-3 font-display text-xl sm:text-2xl uppercase font-extrabold tracking-tight leading-tight">
+            {headline}
+          </p>
+          {description && (
+            <p className="max-w-2xl pl-3 text-sm leading-relaxed text-foreground/80">
+              {description}
+            </p>
           )}
+          <div className="flex flex-wrap items-center gap-3 pl-3 pt-2">
+            <Button asChild variant="outline" className="font-display uppercase tracking-wide">
+              <Link to="/apply">join →</Link>
+            </Button>
+            <Button asChild variant="primary" className="font-display uppercase tracking-wide">
+              <Link to="/contact">hire →</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="relative -mt-16 bg-foreground text-background -mx-4 sm:-mx-6 px-4 sm:px-6 py-10 sm:py-14">
+        <div className="space-y-4 pl-3 pr-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-background/70">
+              template
+            </span>
+            <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] bg-accent text-accent-foreground px-2 py-0.5">
+              coming soon
+            </span>
+          </div>
+          <h2 className="font-display text-4xl sm:text-6xl uppercase tracking-tight font-black leading-[0.92]">
+            Launch Your Own Agency
+          </h2>
+          <p className="max-w-2xl text-base leading-relaxed text-background/80 sm:text-lg">
+            Same playbook — entity, treasury, projects, dashboard.
+          </p>
+          <div className="pt-2">
+            <Button asChild variant="primary" className="font-display uppercase tracking-wide">
+              <Link to="/launch">register →</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-6">
+        <div className="pl-3 pr-3 space-y-2">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            opportunities
+          </div>
+          <h2 className="font-display text-3xl sm:text-5xl font-black uppercase tracking-tight">
+            Our Work
+          </h2>
+        </div>
+        {projectsQuery.isLoading ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {[0, 1].map((i) => (
+              <ProjectCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : projects.length === 0 ? (
+          <Empty className="border-2 border-dashed border-border/40">
+            <EmptyTitle className="font-display text-lg uppercase tracking-tight text-muted-foreground">
+              no public projects yet
+            </EmptyTitle>
+          </Empty>
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {visibleProjects.map((p) => (
+                <ProjectCard key={p.id} project={p} />
+              ))}
+            </div>
+            {hasMore && (
+              <div className="flex justify-center pt-2">
+                <Button asChild variant="outline" className="font-display uppercase tracking-wide">
+                  <Link to="/work">explore →</Link>
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
+      <section className="space-y-6">
+        <div className="pl-3 pr-3 space-y-2">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            apparatus
+          </div>
+          <h2 className="font-display text-3xl sm:text-5xl font-black uppercase tracking-tight">
+            Featuring
+          </h2>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <StackCard
+            label="treasury"
+            tag="on-chain"
+            name="Trezu"
+            iconSrc={trezuSymbol}
+            logoSrc={trezuLogo}
+            logoAlt="Trezu"
+            body="Manage your team's capital in minutes from a single dashboard without ever giving up your keys."
+            url="https://trezu.app/"
+            host="trezu.app"
+          />
+          <StackCard
+            label="bounties"
+            tag="live listings"
+            name="NEARN"
+            logoSrc={nearnLogo}
+            logoAlt="NEARN"
+            logoHeightClass="h-9"
+            body="NEARN connects projects (sponsors) with skilled contributors to complete bounties, projects, and tasks in the NEAR ecosystem."
+            url="https://nearn.io/"
+            host="nearn.io"
+          />
+        </div>
+      </section>
+
+      <footer className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 pt-8 border-t-2 border-foreground/15">
+        {treasuryUrl && <FooterLink href={treasuryUrl}>open books →</FooterLink>}
+        <FooterLink href={repositoryUrl}>open source →</FooterLink>
+        {sponsorUrl && <FooterLink href={sponsorUrl}>open doors →</FooterLink>}
+        <Link
+          to="/docs"
+          className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
+        >
+          docs →
+        </Link>
+        <FooterLink href="https://x.com/_multiagency">x →</FooterLink>
+        {docsUrl && <FooterLink href={docsUrl}>docs site →</FooterLink>}
+        {contactEmail && (
+          <a
+            href={`mailto:${contactEmail}`}
+            className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
+          >
+            {contactEmail}
+          </a>
+        )}
+      </footer>
+    </div>
+  );
+}
+
+function ProjectCard({ project }: { project: LandingProject }) {
+  const hasBounty = !!project.nearnListing;
+  return (
+    <Card className="flex flex-col border-2 border-foreground">
+      <CardContent className="p-4 flex-1 flex flex-col gap-3">
+        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <span className="truncate">@{project.slug}</span>
+          <span>project</span>
+        </div>
+        <h3 className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
+          {project.title}
+        </h3>
+        {hasBounty && <Badge variant="accent">bounty</Badge>}
+        <div className="mt-auto pt-2">
+          <Button asChild variant="outline" className="w-full font-display uppercase tracking-wide">
+            <Link to="/work">open →</Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProjectCardSkeleton() {
+  return (
+    <Card className="flex flex-col border-2 border-foreground">
+      <CardContent className="p-4 flex-1 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+        <Skeleton className="h-6 w-3/4" />
+        <div className="mt-auto pt-2">
+          <Skeleton className="h-10 w-full" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StackCard({
+  label,
+  tag,
+  name,
+  iconSrc,
+  logoSrc,
+  logoAlt,
+  logoHeightClass = "h-7",
+  body,
+  url,
+  host,
+}: {
+  label: string;
+  tag: string;
+  name: string;
+  iconSrc?: string;
+  logoSrc?: string;
+  logoAlt?: string;
+  logoHeightClass?: string;
+  body: string;
+  url: string;
+  host: string;
+}) {
+  return (
+    <Card className="flex flex-col border-2 border-foreground">
+      <CardContent className="p-4 flex-1 flex flex-col gap-4">
+        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <span>{label}</span>
+          <span>{tag}</span>
+        </div>
+        {logoSrc ? (
+          <h3 className="h-12 flex items-center gap-3 leading-none">
+            {iconSrc && <img src={iconSrc} alt="" className="h-12 w-12 shrink-0" />}
+            <img
+              src={logoSrc}
+              alt={logoAlt ?? name}
+              className={`${logoHeightClass} w-auto dark:invert`}
+            />
+          </h3>
+        ) : (
+          <h3 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+            {name}
+          </h3>
+        )}
+        <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
+        <div className="mt-auto pt-2">
+          <Button asChild variant="outline" className="font-display uppercase tracking-wide w-full">
+            <a href={url} target="_blank" rel="noopener noreferrer">
+              {host} →
+            </a>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
+    >
+      {children}
+    </a>
+  );
+}
+
+function UnclaimedState() {
+  return (
+    <div className="space-y-12 pb-12 animate-fade-in">
+      <section className="pt-8 sm:pt-16">
+        <div className="flex flex-col items-center text-center space-y-6">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            template instance · unclaimed
+          </div>
+          <h1 className="font-display text-5xl font-black uppercase leading-none tracking-tight sm:text-7xl">
+            MultiAgency
+          </h1>
+          <p className="max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+            This dashboard hasn't been pointed at a Sputnik DAO yet. Fork the template to deploy
+            your own agency.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <Button asChild className="font-display uppercase tracking-wide">
+              <a href={getRepoUrl()} target="_blank" rel="noopener noreferrer">
+                clone the template →
+              </a>
+            </Button>
+          </div>
         </div>
       </section>
     </div>

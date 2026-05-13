@@ -1,10 +1,11 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Budget, Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field, selectClass } from "@/components/admin-form";
+import { allocationVerb, VerbTag } from "@/components/allocation-verb";
 import {
   CUSTOM_TOKEN,
   deriveBaseAmount,
@@ -13,18 +14,11 @@ import {
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 
-export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/allocations")({
-  head: () => ({
-    meta: [{ title: "Admin · Allocations" }],
-  }),
-  component: AdminAllocations,
-});
-
-function AdminAllocations() {
+export function AllocationsManager() {
   const apiClient = useApiClient();
   const projectsQuery = useQuery({
     queryKey: ["admin", "projects", "list"],
-    queryFn: () => apiClient.projects.adminList(),
+    queryFn: () => apiClient.agency.projects.adminList(),
     retry: false,
   });
 
@@ -39,16 +33,6 @@ function AdminAllocations() {
 
   return (
     <div className="space-y-6">
-      <header className="space-y-2">
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Allocations</h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Allocate Trezu treasury into a project's budget. Each allocation is recorded with the
-          actor's NEAR account and a timestamp — the row list is the audit log.
-        </p>
-      </header>
-
-      <Treasury />
-
       <Card>
         <CardContent className="p-5">
           {projectsQuery.isLoading ? (
@@ -56,7 +40,7 @@ function AdminAllocations() {
           ) : projects.length === 0 ? (
             <div className="text-sm text-muted-foreground">
               No projects yet. Create one on{" "}
-              <Link to="/admin/projects" className="underline">
+              <Link to="/work" className="underline">
                 the projects page
               </Link>
               .
@@ -125,7 +109,9 @@ function AgencyAuditLogPanel({
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold tracking-tight">Agency audit log</h2>
+      <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+        Agency audit log
+      </h2>
       <p className="text-sm text-muted-foreground max-w-2xl">
         All allocation events across projects, newest first. Transfers between projects appear as
         two linked rows.
@@ -192,17 +178,19 @@ function AgencyAuditLogPanel({
                   <div className="text-xs font-mono text-muted-foreground">
                     {new Date(a.createdAt).toISOString().slice(0, 19).replace("T", " ")}
                   </div>
-                  <div className="text-sm break-all">
-                    <div className="font-mono tabular-nums">
-                      {formatTokenAmount(a.amount, a.tokenId)}
+                  <div className="text-sm break-all space-y-1">
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <VerbTag verb={allocationVerb(a.amount, a.relatedAllocationId)} />
+                      <span className="font-mono tabular-nums">
+                        {formatTokenAmount(a.amount, a.tokenId)}
+                      </span>
                     </div>
-                    <div className="text-xs text-muted-foreground font-mono mt-1">
+                    <div className="text-xs text-muted-foreground font-mono">
                       project: {project ? `${project.title} (@${project.slug})` : a.projectId}
                     </div>
                     {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
-                    <div className="text-xs text-muted-foreground font-mono mt-1">
+                    <div className="text-xs text-muted-foreground font-mono">
                       by {a.actorAccountId}
-                      {a.relatedAllocationId ? " · linked transfer" : ""}
                     </div>
                   </div>
                 </div>
@@ -261,13 +249,13 @@ function TransferPanel({
 
   const fromBudgetQuery = useQuery({
     queryKey: ["admin", "projects", "budget", fromProjectId],
-    queryFn: () => apiClient.projects.getBudget({ projectId: fromProjectId }),
+    queryFn: () => apiClient.agency.projects.getBudget({ projectId: fromProjectId }),
     enabled: fromProjectId !== "",
     staleTime: 30_000,
   });
   const toBudgetQuery = useQuery({
     queryKey: ["admin", "projects", "budget", toProjectId],
-    queryFn: () => apiClient.projects.getBudget({ projectId: toProjectId }),
+    queryFn: () => apiClient.agency.projects.getBudget({ projectId: toProjectId }),
     enabled: toProjectId !== "",
     staleTime: 30_000,
   });
@@ -324,7 +312,9 @@ function TransferPanel({
 
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-semibold tracking-tight">Transfer between projects</h2>
+      <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+        Transfer between projects
+      </h2>
       <Card>
         <CardContent className="p-5 grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -450,7 +440,7 @@ function ProjectAllocationPanel({ projectId }: { projectId: string }) {
 
   const budgetQuery = useQuery({
     queryKey: ["admin", "projects", "budget", projectId],
-    queryFn: () => apiClient.projects.getBudget({ projectId }),
+    queryFn: () => apiClient.agency.projects.getBudget({ projectId }),
   });
   const allocsQuery = useInfiniteQuery({
     queryKey: ["admin", "allocations", projectId],
@@ -534,7 +524,9 @@ function ProjectAllocationPanel({ projectId }: { projectId: string }) {
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold tracking-tight">Budget</h2>
+        <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+          Budget
+        </h2>
         {budgetQuery.isLoading ? (
           <div className="text-sm text-muted-foreground">Loading budget...</div>
         ) : budgetQuery.data && budgetQuery.data.budgets.length > 0 ? (
@@ -549,7 +541,9 @@ function ProjectAllocationPanel({ projectId }: { projectId: string }) {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold tracking-tight">New allocation</h2>
+        <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+          New allocation
+        </h2>
         <Card>
           <CardContent className="p-5 grid gap-4">
             <TokenAmountFields
@@ -610,7 +604,9 @@ function ProjectAllocationPanel({ projectId }: { projectId: string }) {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold tracking-tight">Audit log</h2>
+        <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+          Audit log
+        </h2>
         {allocsQuery.isLoading ? (
           <div className="text-sm text-muted-foreground">Loading allocations...</div>
         ) : allocs.length > 0 ? (
@@ -619,17 +615,20 @@ function ProjectAllocationPanel({ projectId }: { projectId: string }) {
               {allocs.map((a) => (
                 <div
                   key={a.id}
-                  className="rounded-sm border border-border bg-muted/10 p-3 grid gap-1 sm:grid-cols-[140px_1fr_auto] sm:gap-4"
+                  className="rounded-sm border border-border bg-muted/10 p-3 grid gap-1 sm:grid-cols-[140px_1fr] sm:gap-4"
                 >
                   <div className="text-xs font-mono text-muted-foreground">
                     {new Date(a.createdAt).toISOString().slice(0, 19).replace("T", " ")}
                   </div>
-                  <div className="text-sm break-all">
-                    <div className="font-mono tabular-nums">
-                      {formatTokenAmount(a.amount, a.tokenId)}
+                  <div className="text-sm break-all space-y-1">
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <VerbTag verb={allocationVerb(a.amount, a.relatedAllocationId)} />
+                      <span className="font-mono tabular-nums">
+                        {formatTokenAmount(a.amount, a.tokenId)}
+                      </span>
                     </div>
                     {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
-                    <div className="text-xs text-muted-foreground font-mono mt-1">
+                    <div className="text-xs text-muted-foreground font-mono">
                       by {a.actorAccountId}
                     </div>
                   </div>
@@ -658,86 +657,5 @@ function ProjectAllocationPanel({ projectId }: { projectId: string }) {
         )}
       </section>
     </div>
-  );
-}
-
-function Treasury() {
-  const apiClient = useApiClient();
-  const tokensQuery = useQuery({
-    queryKey: ["admin", "tokens"],
-    queryFn: () => apiClient.tokens.list(),
-    staleTime: 60 * 60_000,
-  });
-  const tokens = tokensQuery.data?.tokens ?? [];
-  const tokenIds = tokens.map((t) => t.tokenId);
-  const balancesQuery = useQuery({
-    queryKey: ["admin", "treasury", "balances", [...tokenIds].sort().join(",")],
-    queryFn: () => apiClient.treasury.getBalances({ tokenIds }),
-    enabled: tokenIds.length > 0,
-    retry: false,
-  });
-
-  if (tokens.length === 0) return null;
-
-  return (
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold tracking-tight">Treasury</h2>
-      <p className="text-sm text-muted-foreground max-w-2xl">
-        Live balances on the agency's Sputnik DAO contract, with the agency's allocated total per
-        token across all projects.
-      </p>
-      {balancesQuery.isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading treasury…</div>
-      ) : balancesQuery.isError ? (
-        <div className="text-sm text-muted-foreground">Treasury unavailable.</div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {tokens.map((t) => {
-            const row = balancesQuery.data?.balances.find((b) => b.tokenId === t.tokenId);
-            const balance = row?.balance ?? "0";
-            const allocated = row?.totalAllocated ?? "0";
-            const free = (BigInt(balance) - BigInt(allocated)).toString();
-            const overAllocated = BigInt(allocated) > BigInt(balance);
-            return (
-              <Card key={t.tokenId} className={overAllocated ? "border-destructive/60" : undefined}>
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <div className="font-semibold">{t.symbol}</div>
-                    <div className="text-xs text-muted-foreground font-mono">{t.tokenId}</div>
-                  </div>
-                  <div className="grid gap-1 text-xs text-muted-foreground">
-                    <div className="flex justify-between gap-3">
-                      <span>balance</span>
-                      <span className="font-mono text-foreground">
-                        {formatTokenAmount(balance, t.tokenId)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span>allocated</span>
-                      <span
-                        className={`font-mono ${overAllocated ? "text-destructive" : "text-foreground"}`}
-                      >
-                        {formatTokenAmount(allocated, t.tokenId)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <span>free</span>
-                      <span
-                        className={`font-mono ${overAllocated ? "text-destructive" : "text-foreground"}`}
-                      >
-                        {formatTokenAmount(free, t.tokenId)}
-                      </span>
-                    </div>
-                    {overAllocated && (
-                      <div className="text-destructive">⚠ allocated exceeds balance</div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </section>
   );
 }
