@@ -6,6 +6,7 @@ import trezuLogo from "@/assets/brand/trezu.svg";
 import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
 import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
 import { ReactionDiffusionField } from "@/components/reaction-diffusion-field";
+import { UnclaimedState } from "@/components/unclaimed-state";
 import { useApiClient } from "@/lib/api";
 import { nearnSponsorUrl } from "@/lib/nearn";
 import { getRepoUrl } from "@/lib/repo";
@@ -77,7 +78,11 @@ function Landing() {
   const sponsorUrl = s?.nearnAccountId ? nearnSponsorUrl(s.nearnAccountId) : null;
 
   if (isPlaceholder) {
-    return <UnclaimedState />;
+    return (
+      <UnclaimedState title="MultiAgency">
+        Fork the template to deploy your own agency.
+      </UnclaimedState>
+    );
   }
 
   const projects = (projectsQuery.data?.data ?? []) as LandingProject[];
@@ -389,33 +394,5 @@ function FooterLink({ href, children }: { href: string; children: React.ReactNod
     >
       {children}
     </a>
-  );
-}
-
-function UnclaimedState() {
-  return (
-    <div className="space-y-12 pb-12 animate-fade-in">
-      <section className="pt-8 sm:pt-16">
-        <div className="flex flex-col items-center text-center space-y-6">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            template instance · unclaimed
-          </div>
-          <h1 className="font-display text-5xl font-black uppercase leading-none tracking-tight sm:text-7xl">
-            MultiAgency
-          </h1>
-          <p className="max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            This dashboard hasn't been pointed at a Sputnik DAO yet. Fork the template to deploy
-            your own agency.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <Button asChild className="font-display uppercase tracking-wide">
-              <a href={getRepoUrl()} target="_blank" rel="noopener noreferrer">
-                clone the template →
-              </a>
-            </Button>
-          </div>
-        </div>
-      </section>
-    </div>
   );
 }

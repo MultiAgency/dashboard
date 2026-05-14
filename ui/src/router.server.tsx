@@ -13,7 +13,7 @@ import type {
   RenderResult,
   RouterContext,
 } from "./app";
-import { createApiClient, createAuthClient } from "./app";
+import { createApiClient, createAuthClient, createServerApiClient } from "./app";
 import { routeTree } from "./routeTree.gen";
 
 export type { CreateRouterOptions, HeadData, RenderOptions, RenderResult, RouterContext };
@@ -123,6 +123,12 @@ const getRouteHead = async (pathname: string, context?: Partial<RouterContext>) 
 const renderToStream = async (request: Request, renderOptions: RenderOptions) => {
   const url = new URL(request.url);
   const history = createMemoryHistory({ initialEntries: [url.pathname + url.search] });
+  const { hostUrl, rpcBase } = renderOptions.runtimeConfig;
+  if (!hostUrl || !rpcBase) {
+    throw new Error("Missing runtime config for SSR render");
+  }
+  // Build our own request-scoped client; the host-provided one can arrive empty.
+  const apiClient = createServerApiClient({ hostUrl, rpcBase }, request.headers.get("cookie"));
   let queryClientRef: QueryClient | null = null;
 
   const handler = createRequestHandler({
@@ -147,7 +153,7 @@ const renderToStream = async (request: Request, renderOptions: RenderOptions) =>
           queryClient: localQueryClient,
           assetsUrl: renderOptions.assetsUrl,
           runtimeConfig: renderOptions.runtimeConfig,
-          apiClient: renderOptions.apiClient,
+          apiClient,
           authClient: createAuthClient(renderOptions.runtimeConfig),
           session: renderOptions.session,
         },

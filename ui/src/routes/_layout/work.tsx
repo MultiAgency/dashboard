@@ -175,7 +175,11 @@ function ProjectCard({ project }: { project: ProjectListItem }) {
         </div>
         {nearnHref && (
           <div className="mt-auto pt-2">
-            <Button asChild className="w-full font-display uppercase tracking-wide">
+            <Button
+              asChild
+              variant="outline"
+              className="w-full font-display uppercase tracking-wide"
+            >
               <a href={nearnHref} target="_blank" rel="noopener noreferrer">
                 open →
               </a>

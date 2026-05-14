@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
-import { BookOpen, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 import builtOn from "@/assets/built_on.png";
 import builtOnRev from "@/assets/built_on_rev.png";
@@ -24,15 +24,16 @@ const SETTINGS_ITEM: NavItem = { to: "/settings", label: "settings" };
 
 export const Route = createFileRoute("/_layout")({
   beforeLoad: async ({ context }) => {
-    // Conditional prefetch: warm meRoles cache for signed-in visitors on public routes
-    // so operator sections don't flash. Skipped for visitors (no session, wasted RPC).
+    // Non-fatal prefetch — warms meRoles so the operator UI doesn't flash on hydration.
     if (context.session) {
-      await context.queryClient.ensureQueryData({
-        queryKey: ["me", "roles"],
-        queryFn: () => context.apiClient.me.roles(),
-        staleTime: 60_000,
-        retry: false,
-      });
+      await context.queryClient
+        .ensureQueryData({
+          queryKey: ["me", "roles"],
+          queryFn: () => context.apiClient.me.roles(),
+          staleTime: 60_000,
+          retry: false,
+        })
+        .catch(() => {});
     }
   },
   component: Layout,
@@ -51,7 +52,7 @@ function Layout() {
 export function Shell({ children }: { children: ReactNode }) {
   const pathname = useClientValue(() => window.location.pathname, "/");
   const apiClient = useApiClient();
-  const { isAuthenticated, isAdmin, isOperator } = useMeRoles();
+  const { isAuthenticated, isAdmin } = useMeRoles();
 
   const publicSettingsQuery = useQuery({
     queryKey: ["settings", "public"],
@@ -60,14 +61,7 @@ export function Shell({ children }: { children: ReactNode }) {
   });
   const brandName = publicSettingsQuery.data?.name?.trim() || "MultiAgency";
 
-  const primaryNav: NavItem[] = [
-    { to: "/work", label: "work" },
-    { to: "/team", label: "team" },
-    { to: "/payouts", label: "payouts" },
-    { to: "/treasury", label: "treasury" },
-  ];
-  if (!isAuthenticated) primaryNav.push({ to: "/apply", label: "join" });
-  if (!isOperator) primaryNav.push({ to: "/contact", label: "hire" });
+  const primaryNav: NavItem[] = [];
 
   const linkActive = (to: string) => pathname === to;
 
@@ -89,13 +83,6 @@ export function Shell({ children }: { children: ReactNode }) {
                 <NavLink key={item.to} item={item} active={linkActive(item.to)} />
               ))}
               {isAdmin && <NavLink item={SETTINGS_ITEM} active={linkActive(SETTINGS_ITEM.to)} />}
-              <Link
-                to="/docs"
-                aria-label="docs"
-                className={`transition-colors duration-150 ${linkActive("/docs") ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                <BookOpen className="size-4" />
-              </Link>
               <a
                 href={getRepoUrl()}
                 target="_blank"
@@ -132,11 +119,6 @@ export function Shell({ children }: { children: ReactNode }) {
                       </Link>
                     </DropdownMenuItem>
                   ))}
-                  <DropdownMenuItem asChild>
-                    <Link to="/docs" className="font-mono text-xs uppercase tracking-wide">
-                      docs
-                    </Link>
-                  </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <a
                       href={getRepoUrl()}

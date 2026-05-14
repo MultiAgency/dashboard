@@ -38,7 +38,7 @@ Understand and interact with this Agency Dashboard deployment as a runtime-compo
 ## Public entry points
 
 - `/` — landing
-- `/projects` — projects directory (enriched live from NEARN where linked)
+- `/work` — projects directory (enriched live from NEARN where linked)
 - `/apply` — express-interest form (replicate or contributor)
 - `/README.md`
 - `/skill.md`

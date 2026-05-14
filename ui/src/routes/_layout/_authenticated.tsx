@@ -21,13 +21,15 @@ export const Route = createFileRoute("/_layout/_authenticated")({
       throw redirect({ to: "/" });
     }
 
-    // Prefetch role flags so operator sections render without a flash.
-    await queryClient.ensureQueryData({
-      queryKey: ["me", "roles"],
-      queryFn: () => apiClient.me.roles(),
-      staleTime: 60_000,
-      retry: false,
-    });
+    // Non-fatal prefetch — warms meRoles so operator sections don't flash on hydration.
+    await queryClient
+      .ensureQueryData({
+        queryKey: ["me", "roles"],
+        queryFn: () => apiClient.me.roles(),
+        staleTime: 60_000,
+        retry: false,
+      })
+      .catch(() => {});
 
     return {
       auth,

@@ -53,16 +53,20 @@ function DocPage() {
   }
 
   const eyebrow = doc.section === "skills" ? "handbook · skill" : "handbook · model";
+  // fall back to the registry title only when the markdown has no leading "# ..."
+  const showRegistryTitle = contentQuery.isSuccess && !/^\s*#\s/.test(contentQuery.data ?? "");
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8 animate-fade-in">
+    <div className="max-w-3xl mx-auto space-y-2 animate-fade-in">
       <header className="space-y-2">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
           {eyebrow}
         </div>
-        <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-          {doc.title}
-        </h1>
+        {showRegistryTitle && (
+          <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
+            {doc.title}
+          </h1>
+        )}
       </header>
 
       {contentQuery.isLoading ? (
@@ -80,19 +84,19 @@ function DocPage() {
             rehypePlugins={[rehypeHighlight]}
             components={{
               h1: ({ children }) => (
-                <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-tight mt-8 first:mt-0 mb-3">
+                <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight mt-0 mb-2">
+                  {children}
+                </h1>
+              ),
+              h2: ({ children }) => (
+                <h2 className="font-display text-xl uppercase tracking-tight font-bold leading-tight mt-8 mb-2 border-b border-border pb-1">
                   {children}
                 </h2>
               ),
-              h2: ({ children }) => (
-                <h3 className="font-display text-xl uppercase tracking-tight font-bold leading-tight mt-8 mb-2 border-b border-border pb-1">
+              h3: ({ children }) => (
+                <h3 className="font-display text-base uppercase tracking-tight font-bold leading-tight mt-6 mb-2">
                   {children}
                 </h3>
-              ),
-              h3: ({ children }) => (
-                <h4 className="font-display text-base uppercase tracking-tight font-bold leading-tight mt-6 mb-2">
-                  {children}
-                </h4>
               ),
               p: ({ children }) => (
                 <p className="text-sm leading-relaxed text-foreground/90">{children}</p>

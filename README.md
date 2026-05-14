@@ -61,7 +61,7 @@ The plugin's `initialize` seeds `agency_settings.daoAccountId` from the env var 
 
 **Path B — claim through the UI after deploy (fallback):**
 
-Deploy without setting the env var. Sign in with NEAR; `/home` renders a "Set up your agency" affordance. Submit your DAO account ID (and admin role name if your DAO uses something other than `Admin`, e.g. raw Sputnik's `council`). The handler verifies you're admin on the destination DAO before writing the row. Useful for PaaS hosts where env injection happens after deploy.
+Deploy without setting the env var. Sign in with NEAR; admin routes redirect to `/settings`, which renders a "Set up your worksite" affordance. Submit your DAO account ID (and admin role name if your DAO uses something other than `Admin`, e.g. raw Sputnik's `council`). The handler verifies you're admin on the destination DAO before writing the row. Useful for PaaS hosts where env injection happens after deploy.
 
 **Verification:** after either path, `/settings` shows your DAO account id and the admin nav appears. If admin endpoints return FORBIDDEN, the dashboard is still pointed at the placeholder DAO — re-run with the env var set, or use the claim flow.
 

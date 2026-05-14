@@ -3,10 +3,10 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button, Card, CardContent, Empty, EmptyContent, EmptyTitle, Skeleton } from "@/components";
 import { AllocationsManager } from "@/components/allocations-manager";
 import { RecentActivitySection } from "@/components/recent-activity-section";
+import { UnclaimedState } from "@/components/unclaimed-state";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
-import { getRepoUrl } from "@/lib/repo";
 
 export const Route = createFileRoute("/_layout/treasury")({
   head: () => ({
@@ -56,7 +56,11 @@ function TreasuryPage() {
   });
 
   if (settingsQuery.data?.isPlaceholder) {
-    return <UnclaimedState />;
+    return (
+      <UnclaimedState title="Treasury">
+        Once configured, on-chain balances appear here live from the contract.
+      </UnclaimedState>
+    );
   }
 
   const isLoading = tokensQuery.isLoading || (tokenIds.length > 0 && balancesQuery.isLoading);
@@ -174,33 +178,5 @@ function TokenCard({ token, balance }: { token: Token; balance: string }) {
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function UnclaimedState() {
-  return (
-    <div className="space-y-12 pb-12 animate-fade-in">
-      <section className="pt-8 sm:pt-16">
-        <div className="flex flex-col items-center text-center space-y-6">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            template instance · unclaimed
-          </div>
-          <h1 className="font-display text-5xl font-black uppercase leading-none tracking-tight sm:text-7xl">
-            Treasury
-          </h1>
-          <p className="max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-            This dashboard hasn't been pointed at a Sputnik DAO yet. Once configured, on-chain
-            balances appear here live from the contract.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-            <Button asChild className="font-display uppercase tracking-wide">
-              <a href={getRepoUrl()} target="_blank" rel="noopener noreferrer">
-                clone the template →
-              </a>
-            </Button>
-          </div>
-        </div>
-      </section>
-    </div>
   );
 }

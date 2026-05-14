@@ -33,6 +33,12 @@ Dockerfile
 # Auth surface — agency owns app.ts (RouterContext + auth re-exports)
 ui/src/app.ts
 
+# SSR render path — fork builds a request-scoped, cookie-forwarding apiClient
+# (createServerApiClient) so SSR route guards resolve session-gated procedures;
+# upstream's renderToStream passes the host's partial client. Pending upstream fix.
+ui/src/router.server.tsx
+ui/src/lib/api.ts
+
 # Agency-owned services & data model paths — fork business logic, not in upstream's exclude
 api/src/services/**
 api/src/db/migrations/**

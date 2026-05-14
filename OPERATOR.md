@@ -24,7 +24,7 @@ AGENCY_DAO_ACCOUNT=<your-dao>.sputnik-dao.near
 
 Add this to your deployment environment (hosting provider's env-var settings, `.env` file, etc.) before running `bos publish --deploy`.
 
-If missing, the dashboard ships pointed at `multiagency.sputnik-dao.near` (the maintainer's DAO). Admin surfaces will return FORBIDDEN until you repoint — see [Recover from missing env var](#recover-from-missing-env-var) below.
+If missing, the dashboard ships pointed at `PLACEHOLDER.sputnik-dao.near` (a non-routable placeholder). Admin surfaces stay locked until you repoint — see [Recover from missing env var](#recover-from-missing-env-var) below.
 
 ### 2. Deploy
 
@@ -34,13 +34,13 @@ bun run db:migrate
 bos publish --deploy
 ```
 
-Verify: visit the deployed URL, sign in with NEAR (using an account that's Admin on your DAO), confirm the admin navigation appears in the sidebar.
+Verify: visit the deployed URL, sign in with NEAR (using an account that's Admin on your DAO), confirm the admin navigation appears in the header.
 
 ### 3. Recover from missing env var
 
 When the `AGENCY_DAO_ACCOUNT` env var wasn't set at deploy time, the dashboard ships pointed at the placeholder DAO. Three recovery paths:
 
-- **Bootstrap claim flow (recommended)** — sign in with a NEAR account that's Admin on your destination DAO. Because `agency_settings.daoAccountId` still equals the placeholder, the `_authenticated/_configured.tsx` layout redirects all admin routes to `/home`, which renders a "Set up your agency" affordance. Submit your DAO account ID (and admin role name override if your DAO doesn't use `Admin`). The handler verifies you're admin on the destination DAO via `userInRole` (`get_policy` over NEAR RPC) before writing the row. After claim, normal admin gating applies and the affordance disappears; further calls reject with BAD_REQUEST.
+- **Bootstrap claim flow (recommended)** — sign in with a NEAR account that's Admin on your destination DAO. Because `agency_settings.daoAccountId` still equals the placeholder, the `_authenticated/_configured.tsx` layout redirects all admin routes to `/settings`, which renders a "Set up your worksite" affordance. Submit your DAO account ID (and admin role name override if your DAO doesn't use `Admin`). The handler verifies you're admin on the destination DAO via `userInRole` (`get_policy` over NEAR RPC) before writing the row. After claim, normal admin gating applies and the affordance disappears; further calls reject with BAD_REQUEST.
 - **Redeploy with the env var set** — clean state; useful when you can re-trigger deployment with the right env injected.
 - **Direct DB edit** — `UPDATE agency_settings SET dao_account_id = '<your-dao>.sputnik-dao.near' WHERE id = 'default';` Last-resort emergency option when neither claim flow nor redeploy is available.
 
@@ -55,10 +55,10 @@ Required:
 Recommended:
 - **Headline** — big poster line under the agency wordmark (default: "Open Books · Open Source · Open Doors")
 - **Tagline** — short descriptor used as the browser tab / share title; not displayed on the landing (default: "The future of work is near…")
-- **Contact email** — surfaces in the landing footer (default: "multiagentic@gmail.com")
+- **Contact email** — powers the `/contact` page's mailto CTA (default: "multiagentic@gmail.com")
 - **Website URL** — your standalone marketing site if you have one
 - **Docs URL** — your external docs site (appears as a card in the landing's Docs section)
-- **NEARN sponsor slug** — enables "unlinked bounties" surfacing on `/admin/projects`
+- **NEARN sponsor slug** — enables "unlinked bounties" surfacing in the Manage Projects section on `/work`
 
 Optional (advanced):
 - **Admin / Approver / Requestor role-name overrides** — only needed if your DAO uses non-Trezu role names (e.g., Sputnik's `default_policy()` uses `all`/`council`)
@@ -70,17 +70,15 @@ Save. The landing page reflects changes on next visit (5-minute query stale time
 
 Day-to-day operations happen at:
 
+Admin surfaces are sections embedded in the public routes — they appear once you sign in with the right DAO role.
+
 | Surface | What it does |
 |---|---|
-| `/home` | Workspace + your assigned projects |
-| `/admin/projects` | Create/edit projects, link to NEARN bounties, surface unlinked bounties |
+| `/work` | Public projects directory; operators get an embedded Manage Projects section — create/edit projects, link to NEARN bounties, surface unlinked bounties |
 | `/admin/projects/$slug` | Per-project budget rollup, contributors, NEARN snapshot |
-| `/admin/contributors` | Agency-internal vendor records (compliance docs, payment terms) |
-| `/admin/allocations` | Allocate treasury into project budgets, transfer between projects, agency audit log |
-| `/admin/billings` | Record payments tied to Sputnik DAO proposals |
-| `/admin/applications` | Review interest captures from `/apply` |
-| `/admin/proposals` | Observe DAO proposal activity (read-only; vote via Trezu) |
-| `/team` | DAO roles, members, and permissions (read from chain) |
+| `/team` | DAO roles, members, and permissions (read from chain); admins get embedded Contributors (vendor records — onboarding status, payment terms) and Applications review (interest captures from `/apply` + `/launch`) sections |
+| `/treasury` | Treasury balances and recent activity; operators get an embedded Allocations section — allocate treasury into project budgets, transfer between projects, agency audit log |
+| `/payouts` | DAO proposal / payout history; operators get an embedded Billings Audit section (record payments tied to Sputnik DAO proposals) and a proposals map |
 
 Detailed playbooks for each surface live at [docs.multiagency.ai](https://docs.multiagency.ai) (planned).
 
@@ -101,10 +99,10 @@ You're signed in but not admin on the configured DAO. Verify:
 1. `agency_settings.dao_account_id` matches your DAO
 2. Your NEAR account is in the Admin role on that DAO's `get_policy`
 
-**`/projects` shows no projects.**
-Either no projects exist yet (create one at `/admin/projects`) or all projects are private (`visibility=private` is admin-only).
+**`/work` shows no projects.**
+Either no projects exist yet (create one in the Manage Projects section on `/work`) or all projects are private (`visibility=private` is admin-only).
 
-**NEARN listing fetch fails on `/projects`.**
+**NEARN listing fetch fails on `/work`.**
 NEARN's listing API is undocumented and unversioned; transient failures are expected. The card degrades to local title + status. If persistent, check NEARN status.
 
 **Treasury balance shows "unavailable".**
