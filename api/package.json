@@ -19,7 +19,7 @@
     "@electric-sql/pglite": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
-    "better-auth": "1.6.10",
+    "better-auth": "1.6.11",
     "drizzle-kit": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
