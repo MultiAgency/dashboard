@@ -19,6 +19,13 @@ const FALLBACK = {
   tagline: "The future of work is near…",
 };
 
+const APPROACH = [
+  { label: "Fork, don't build", note: "the full console ships in the repo" },
+  { label: "Configure, don't code", note: "identity & dao live in /settings" },
+  { label: "Connect, don't construct", note: "treasury & bounties already exist" },
+  { label: "Bring the entity", note: "you supply the llc, not the software" },
+];
+
 export const Route = createFileRoute("/_layout/")({
   head: () => ({
     meta: [{ name: "description", content: META_DESCRIPTION }],
@@ -83,9 +90,6 @@ function Landing() {
         <ReactionDiffusionField />
         <div className="relative flex flex-col items-start space-y-6 text-left">
           <div className="w-full pl-3 pr-3">
-            <div className="pb-1 font-mono font-semibold text-[11px] uppercase tracking-[0.22em] text-accent">
-              {tagline}
-            </div>
             <h1
               className="font-black uppercase leading-[0.88] break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl"
               style={{
@@ -129,25 +133,50 @@ function Landing() {
       </section>
 
       <section className="relative -mt-16 bg-foreground text-background -mx-4 sm:-mx-6 px-4 sm:px-6 py-10 sm:py-14">
-        <div className="space-y-4 pl-3 pr-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-background/70">
-              template
-            </span>
-            <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] bg-accent text-accent-foreground px-2 py-0.5">
-              coming soon
-            </span>
+        <div className="grid gap-8 lg:grid-cols-2 lg:items-start pl-3 pr-3">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-background/70">
+                template
+              </span>
+              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] bg-accent text-accent-foreground px-2 py-0.5">
+                coming soon
+              </span>
+            </div>
+            <h2 className="font-display text-4xl sm:text-6xl uppercase tracking-tight font-black leading-[0.92]">
+              Launch Your Own Agency
+            </h2>
+            <div className="h-px w-full bg-background/25" />
+            <p className="max-w-md text-base leading-relaxed text-background/80 sm:text-lg">
+              Same playbook — entity, treasury, projects, dashboard.
+            </p>
+            <div className="pt-2">
+              <Button asChild variant="primary" className="font-display uppercase tracking-wide">
+                <Link to="/launch">register →</Link>
+              </Button>
+            </div>
           </div>
-          <h2 className="font-display text-4xl sm:text-6xl uppercase tracking-tight font-black leading-[0.92]">
-            Launch Your Own Agency
-          </h2>
-          <p className="max-w-2xl text-base leading-relaxed text-background/80 sm:text-lg">
-            Same playbook — entity, treasury, projects, dashboard.
-          </p>
-          <div className="pt-2">
-            <Button asChild variant="primary" className="font-display uppercase tracking-wide">
-              <Link to="/launch">register →</Link>
-            </Button>
+          <div className="border-2 border-background">
+            <div className="border-b-2 border-background bg-accent text-accent-foreground px-4 py-2 font-mono font-semibold text-[11px] uppercase tracking-[0.22em]">
+              standard issue
+            </div>
+            <div className="divide-y-2 divide-background">
+              {APPROACH.map((item, i) => (
+                <div key={item.label} className="flex items-center gap-4 px-4 py-4">
+                  <span className="font-display text-3xl sm:text-4xl font-black tabular-nums leading-none text-background/25 shrink-0 w-12">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <div className="space-y-1">
+                    <div className="font-display text-lg uppercase tracking-tight font-extrabold leading-none">
+                      {item.label}
+                    </div>
+                    <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-background/55">
+                      {item.note}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -175,7 +204,9 @@ function Landing() {
           </Empty>
         ) : (
           <>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div
+              className={`grid gap-4 ${visibleProjects.length > 1 ? "sm:grid-cols-2" : "sm:grid-cols-1 sm:max-w-md"}`}
+            >
               {visibleProjects.map((p) => (
                 <ProjectCard key={p.id} project={p} />
               ))}

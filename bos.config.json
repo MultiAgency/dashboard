@@ -24,8 +24,8 @@
         "shareScope": "default"
       },
       "@orpc/contract": {
-        "version": "1.14.3",
-        "requiredVersion": "^1.14.3",
+        "version": "1.13.14",
+        "requiredVersion": "^1.13.14",
         "singleton": true,
         "strictVersion": false,
         "shareScope": "default"
@@ -84,15 +84,15 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-8-ui-dashboard-multiagency-eadc644a1-ze.zephyrcloud.app",
-      "integrity": "sha384-aoGGgUMvc96BOTUQeYRDYuLAdENh4cvdy4txUqrtntWS/5TU5qoIu+Qlb9+BjvrS",
-      "ssr": "https://multiagentic-6-ui-dashboard-multiagency-fd670d83c-ze.zephyrcloud.app"
+      "production": "https://multiagentic-14-ui-dashboard-multiagency-dd77db4a7-ze.zephyrcloud.app",
+      "integrity": "sha384-CQcjVSvMDVWJqsdnGsWV8RxFpK3EY1/fhSVSQ1+uke9KYlIe8FyU67hRWSZcopHg",
+      "ssr": "https://multiagentic-15-ui-dashboard-multiagency-aed67f6db-ze.zephyrcloud.app"
     },
     "api": {
       "name": "api",
       "development": "local:api",
-      "production": "https://multiagentic-7-api-dashboard-multiagency-d9e93ee1a-ze.zephyrcloud.app",
-      "integrity": "sha384-VQWcchs6heOXr97R164pdcRJl9euGN3Z5WJF7p2fm6ryNisySTYzAlpDIfOwvENi",
+      "production": "https://multiagentic-16-api-dashboard-multiagency-633bc1777-ze.zephyrcloud.app",
+      "integrity": "sha384-TesaIuHa4/XFqwKr8Pe0T7EcOFQjIW5Tj9DkYQaOmdPEwX8TwJmLumwCzY8GwxuJ",
       "secrets": [
         "API_DATABASE_URL"
       ]

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { BookOpen, Menu } from "lucide-react";
+import type { ReactNode } from "react";
 import builtOn from "@/assets/built_on.png";
 import builtOnRev from "@/assets/built_on_rev.png";
 import { GithubIcon, XIcon } from "@/components/icons";
@@ -35,9 +36,19 @@ export const Route = createFileRoute("/_layout")({
     }
   },
   component: Layout,
+  // In-subtree not-found (e.g. /work/junk); top-level misses hit __root's handler.
+  notFoundComponent: NotFound,
 });
 
 function Layout() {
+  return (
+    <Shell>
+      <Outlet />
+    </Shell>
+  );
+}
+
+export function Shell({ children }: { children: ReactNode }) {
   const pathname = useClientValue(() => window.location.pathname, "/");
   const apiClient = useApiClient();
   const { isAuthenticated, isAdmin, isOperator } = useMeRoles();
@@ -163,11 +174,11 @@ function Layout() {
           </div>
         </header>
 
-        <main className="flex-1 w-full min-h-0 overflow-auto scroll-smooth">
+        <main className="w-full">
           <div
             className={`w-full mx-auto px-4 sm:px-6 py-6 sm:py-10 animate-fade-in-up ${isAuthenticated ? "max-w-5xl" : "max-w-4xl"}`}
           >
-            <Outlet />
+            {children}
           </div>
         </main>
 
@@ -203,5 +214,31 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     >
       {item.label}
     </Link>
+  );
+}
+
+export function NotFound() {
+  return (
+    <div className="min-h-[70vh] flex items-center justify-center">
+      <div className="text-center space-y-6 max-w-md">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          agency · 404
+        </div>
+        <h1 className="font-display text-5xl sm:text-6xl font-black uppercase leading-none tracking-tight">
+          no record
+        </h1>
+        <p className="text-base leading-relaxed text-muted-foreground">
+          That route isn't wired. Head back to home.
+        </p>
+        <div className="pt-2">
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center font-display uppercase tracking-wide border-2 border-foreground bg-card text-foreground hover:bg-foreground hover:text-background transition-colors duration-150 h-10 px-4 text-sm"
+          >
+            ← back to home
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }

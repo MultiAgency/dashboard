@@ -14,6 +14,7 @@ import {
 } from "@/components";
 import { Field } from "@/components/admin-form";
 import { SetupYourAgency } from "@/components/setup-agency";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 
 export const Route = createFileRoute("/_layout/_authenticated/settings")({
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/_layout/_authenticated/settings")({
 
 function SettingsPage() {
   const apiClient = useApiClient();
+  const { isAdmin } = useMeRoles();
 
   const publicSettingsQuery = useQuery({
     queryKey: ["settings", "public"],
@@ -39,7 +41,6 @@ function SettingsPage() {
   });
 
   const isPlaceholder = !!publicSettingsQuery.data?.isPlaceholder;
-  const isAdmin = !!adminSettingsQuery.data;
 
   if (isPlaceholder) {
     return (

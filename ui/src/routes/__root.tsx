@@ -5,7 +5,6 @@ import {
   ClientOnly,
   createRootRouteWithContext,
   HeadContent,
-  Link,
   Outlet,
   Scripts,
 } from "@tanstack/react-router";
@@ -18,6 +17,7 @@ import type { RouterContext } from "@/app";
 import { getAppName, getBaseStyles } from "@/app";
 import { sessionQueryKey } from "@/lib/auth";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
+import { NotFound, Shell } from "./_layout";
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   beforeLoad: async ({ context }) => {
@@ -126,34 +126,12 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     };
   },
   component: RootComponent,
-  notFoundComponent: NotFound,
+  notFoundComponent: () => (
+    <Shell>
+      <NotFound />
+    </Shell>
+  ),
 });
-
-function NotFound() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background text-foreground px-6">
-      <div className="text-center space-y-6 max-w-md">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          agency · 404
-        </div>
-        <h1 className="font-display text-5xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-          no record
-        </h1>
-        <p className="text-base leading-relaxed text-muted-foreground">
-          That route isn't wired. Head back to home.
-        </p>
-        <div className="pt-2">
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center font-display uppercase tracking-wide border-2 border-foreground bg-card text-foreground hover:bg-foreground hover:text-background transition-colors duration-150 h-10 px-4 text-sm"
-          >
-            ← back to home
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function RootComponent() {
   return (

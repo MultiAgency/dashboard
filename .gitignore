@@ -321,6 +321,3 @@ node_modules/.federation
 *.css
 .tanstack
 .agent-browser/
-
-# TEMPORARY
-ui/public/docs
