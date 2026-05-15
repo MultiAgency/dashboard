@@ -7,6 +7,7 @@ import { UnclaimedState } from "@/components/unclaimed-state";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
+import { publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/payouts")({
   head: () => ({
@@ -42,11 +43,7 @@ function PayoutsPage() {
   const apiClient = useApiClient();
   const { isOperator, isLoaded } = useMeRoles();
 
-  const settingsQuery = useQuery({
-    queryKey: ["settings", "public"],
-    queryFn: () => apiClient.settings.getPublic(),
-    staleTime: 5 * 60_000,
-  });
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
 
   const proposalsQuery = useInfiniteQuery({
     queryKey: ["proposals", "list"],

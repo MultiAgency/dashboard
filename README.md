@@ -25,7 +25,7 @@ This fork is shaped as the template described above. Phase 0 cleanup removed the
 
 - Landing — operating model + docs links + CTAs
 - Projects directory (title + status + slug per row; full project listings live on NEARN, not this dashboard)
-- Express interest form (replicate / contributor)
+- Express interest forms (founder / contributor / client)
 - Connect (NEAR sign-in via `better-near-auth` SIWN — only auth method)
 
 **Authenticated workspace:**

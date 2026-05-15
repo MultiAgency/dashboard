@@ -5,6 +5,11 @@ import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
+import {
+  adminContributorsListQueryOptions,
+  adminProjectsListQueryOptions,
+  adminSettingsQueryOptions,
+} from "@/lib/queries";
 import { trezuProposalUrl } from "@/lib/trezu";
 
 type ProposalStatus =
@@ -48,19 +53,9 @@ type ContributorSummary = { id: string; name: string };
 export function BillingsAdminSection() {
   const apiClient = useApiClient();
 
-  const projectsQuery = useQuery({
-    queryKey: ["admin", "projects", "list"],
-    queryFn: () => apiClient.agency.projects.adminList(),
-    retry: false,
-  });
-  const contributorsQuery = useQuery({
-    queryKey: ["admin", "contributors", "list"],
-    queryFn: () => apiClient.contributors.adminList(),
-  });
-  const settingsQuery = useQuery({
-    queryKey: ["settings", "adminGet"],
-    queryFn: () => apiClient.settings.adminGet(),
-  });
+  const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
+  const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
+  const settingsQuery = useQuery(adminSettingsQueryOptions(apiClient));
   const daoAccountId = settingsQuery.data?.settings.daoAccountId ?? null;
 
   const [filterProject, setFilterProject] = useState<string>("");

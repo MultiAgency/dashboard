@@ -7,6 +7,7 @@ import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
+import { adminProjectsListQueryOptions, adminSettingsQueryOptions } from "@/lib/queries";
 import { trezuProposalUrl } from "@/lib/trezu";
 
 type ProposalStatus =
@@ -69,15 +70,8 @@ export function ProposalsAdminSection() {
     getNextPageParam: (last) => last.nextFromIndex ?? undefined,
     refetchOnWindowFocus: false,
   });
-  const projectsQuery = useQuery({
-    queryKey: ["admin", "projects", "list"],
-    queryFn: () => apiClient.agency.projects.adminList(),
-    retry: false,
-  });
-  const settingsQuery = useQuery({
-    queryKey: ["settings", "adminGet"],
-    queryFn: () => apiClient.settings.adminGet(),
-  });
+  const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
+  const settingsQuery = useQuery(adminSettingsQueryOptions(apiClient));
   const daoAccountId = settingsQuery.data?.settings.daoAccountId ?? null;
 
   if (proposalsQuery.isError) {

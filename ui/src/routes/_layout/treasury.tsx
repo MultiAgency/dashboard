@@ -7,6 +7,7 @@ import { UnclaimedState } from "@/components/unclaimed-state";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
+import { publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/treasury")({
   head: () => ({
@@ -31,11 +32,7 @@ function TreasuryPage() {
   const apiClient = useApiClient();
   const { isOperator, isAdmin, isLoaded } = useMeRoles();
 
-  const settingsQuery = useQuery({
-    queryKey: ["settings", "public"],
-    queryFn: () => apiClient.settings.getPublic(),
-    staleTime: 5 * 60_000,
-  });
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
 
   const tokensQuery = useQuery({
     queryKey: ["tokens", "list"],
@@ -67,6 +64,16 @@ function TreasuryPage() {
   const balanceByToken = new Map(
     (balancesQuery.data?.balances ?? []).map((b) => [b.tokenId, b.balance]),
   );
+  const isNonZero = (raw: string) => {
+    try {
+      return BigInt(raw) > 0n;
+    } catch {
+      return false;
+    }
+  };
+  const visibleTokens = isOperator
+    ? tokens
+    : tokens.filter((t) => isNonZero(balanceByToken.get(t.tokenId) ?? "0"));
 
   return (
     <div className="space-y-12 pb-12 animate-fade-in">
@@ -99,9 +106,20 @@ function TreasuryPage() {
             </Button>
           </EmptyContent>
         </Empty>
+      ) : visibleTokens.length === 0 ? (
+        <Empty className="border-2 border-dashed border-border/40">
+          <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
+            empty treasury
+          </EmptyTitle>
+          <EmptyContent>
+            <Button asChild variant="outline" className="font-display uppercase tracking-wide">
+              <Link to="/payouts">view payouts →</Link>
+            </Button>
+          </EmptyContent>
+        </Empty>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
-          {tokens.map((token) => (
+          {visibleTokens.map((token) => (
             <TokenCard
               key={token.tokenId}
               token={token}

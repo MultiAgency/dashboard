@@ -14,6 +14,12 @@ import {
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingUrl } from "@/lib/nearn";
+import {
+  adminContributorsListQueryOptions,
+  adminProjectsListQueryKey,
+  adminProjectsListQueryOptions,
+  projectsListQueryKey,
+} from "@/lib/queries";
 
 type ProjectStatus = "active" | "paused" | "archived";
 type Visibility = "public" | "private";
@@ -32,11 +38,7 @@ type Project = {
 
 export function ProjectsAdminSection() {
   const apiClient = useApiClient();
-  const projectsQuery = useQuery({
-    queryKey: ["admin", "projects", "list"],
-    queryFn: () => apiClient.agency.projects.adminList(),
-    retry: false,
-  });
+  const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
 
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -236,7 +238,10 @@ function ProjectCreateForm({
         visibility: vis,
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["admin", "projects", "list"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminProjectsListQueryKey }),
+        queryClient.invalidateQueries({ queryKey: projectsListQueryKey }),
+      ]);
       toast.success("Project created");
       onDone();
     },
@@ -353,7 +358,10 @@ function ProjectEditForm({ project }: { project: Project }) {
         visibility: vis,
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["admin", "projects", "list"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminProjectsListQueryKey }),
+        queryClient.invalidateQueries({ queryKey: projectsListQueryKey }),
+      ]);
       toast.success("Project updated");
     },
     onError: (err: Error) => toast.error(err.message || "Failed to update project"),
@@ -447,10 +455,7 @@ function AssignmentsSection({ projectId }: { projectId: string }) {
     queryKey: ["admin", "assignments", projectId],
     queryFn: () => apiClient.assignments.adminList({ projectId }),
   });
-  const contributorsQuery = useQuery({
-    queryKey: ["admin", "contributors", "list"],
-    queryFn: () => apiClient.contributors.adminList(),
-  });
+  const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
 
   const [contributorId, setContributorId] = useState("");
   const [role, setRole] = useState("");

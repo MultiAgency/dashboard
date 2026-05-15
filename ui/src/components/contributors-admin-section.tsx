@@ -5,6 +5,7 @@ import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
+import { adminContributorsListQueryKey, adminContributorsListQueryOptions } from "@/lib/queries";
 
 type OnboardingStatus = "pending" | "complete" | "expired";
 
@@ -18,11 +19,7 @@ type Contributor = {
 
 export function ContributorsAdminSection() {
   const apiClient = useApiClient();
-  const contributorsQuery = useQuery({
-    queryKey: ["admin", "contributors", "list"],
-    queryFn: () => apiClient.contributors.adminList(),
-    retry: false,
-  });
+  const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
 
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -127,7 +124,7 @@ function ContributorCreateForm({ onDone }: { onDone: () => void }) {
         onboardingStatus,
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["admin", "contributors", "list"] });
+      await queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
       toast.success("Contributor created");
       onDone();
     },
@@ -221,7 +218,7 @@ function ContributorEditForm({ contributor }: { contributor: Contributor }) {
         onboardingStatus,
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["admin", "contributors", "list"] });
+      await queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
       toast.success("Contributor updated");
     },
     onError: (err: Error) => toast.error(err.message || "Failed to update contributor"),

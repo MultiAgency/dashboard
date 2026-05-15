@@ -5,7 +5,7 @@ export const applications = pgTable(
   "applications",
   {
     id: text("id").primaryKey(),
-    kind: text("kind", { enum: ["replicate", "contributor"] }).notNull(),
+    kind: text("kind", { enum: ["founder", "contributor", "client"] }).notNull(),
     name: text("name").notNull(),
     email: text("email").notNull(),
     nearAccountId: text("near_account_id"),

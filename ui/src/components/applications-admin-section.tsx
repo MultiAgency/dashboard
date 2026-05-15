@@ -6,7 +6,7 @@ import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 
-type ApplicationKind = "replicate" | "contributor";
+type ApplicationKind = "founder" | "contributor" | "client";
 type ApplicationStatus = "new" | "reviewing" | "accepted" | "declined";
 
 type Application = {
@@ -60,8 +60,9 @@ export function ApplicationsAdminSection() {
               className={selectClass}
             >
               <option value="">all kinds</option>
-              <option value="replicate">replicate</option>
+              <option value="founder">founder</option>
               <option value="contributor">contributor</option>
+              <option value="client">client</option>
             </select>
           </Field>
           <Field label="status" htmlFor="filter-status">

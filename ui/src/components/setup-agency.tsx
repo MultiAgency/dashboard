@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button, Card, CardContent, Input, Separator } from "@/components";
 import { Field } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
+import { adminSettingsQueryKey, publicSettingsQueryKey } from "@/lib/queries";
 
 export function SetupYourAgency() {
   const apiClient = useApiClient();
@@ -22,7 +23,8 @@ export function SetupYourAgency() {
         ...(adminRoleName.trim() ? { adminRoleName: adminRoleName.trim() } : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings", "public"] });
+      queryClient.invalidateQueries({ queryKey: publicSettingsQueryKey });
+      queryClient.invalidateQueries({ queryKey: adminSettingsQueryKey });
       toast.success("Agency claimed");
       navigate({ to: "/settings" });
     },

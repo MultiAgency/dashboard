@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuthClient } from "@/app";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
+import { meRolesQueryOptions } from "@/lib/queries";
 
 export function useMeRoles() {
   const authClient = useAuthClient();
@@ -9,13 +10,7 @@ export function useMeRoles() {
   const isAuthenticated = !!session?.user;
   const apiClient = useApiClient();
 
-  const query = useQuery({
-    queryKey: ["me", "roles"],
-    queryFn: () => apiClient.me.roles(),
-    enabled: isAuthenticated,
-    staleTime: 60_000,
-    retry: false,
-  });
+  const query = useQuery({ ...meRolesQueryOptions(apiClient), enabled: isAuthenticated });
 
   const isAdmin = !!query.data?.isAdmin;
   const isApprover = !!query.data?.isApprover;

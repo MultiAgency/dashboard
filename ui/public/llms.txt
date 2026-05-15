@@ -9,16 +9,22 @@ Architecture:
 
 Public surface:
 - / — landing
-- /projects — projects directory (enriched live from NEARN where linked)
-- /apply — express-interest form (replicate or contributor)
+- /work — projects directory (enriched live from NEARN where linked)
+- /team — DAO roles, members, permissions (read from chain)
+- /treasury — live on-chain treasury balances
+- /payouts — DAO proposal / payout history
+- /docs — handbook (models, skills, legal docs)
+- /apply — express-interest form (contributor)
+- /register — express-interest form (founder)
+- /contact — express-interest form (client)
 - /README.md
 - /skill.md
 - /manifest.json
 - /llms.txt
 
 Authenticated surface (DAO members only):
-- /home — workspace landing
-- /admin/projects, /admin/contributors, /admin/allocations, /admin/billings, /admin/applications — gated server-side by Sputnik DAO role membership
+- Same routes as public surface — operator sections (Manage Projects, Allocations, Contributors, Applications, Billings, Proposals) are revealed inline on /work, /treasury, /team, /payouts when the signed-in NEAR account holds an operator role on the DAO
+- /admin/projects/$slug — per-project deep dive (budget, contributors, NEARN snapshot)
 - /settings — agency identity + DAO configuration
 
 Useful assumptions:

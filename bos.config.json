@@ -84,16 +84,20 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-17-ui-dashboard-multiagency-a79c72f8c-ze.zephyrcloud.app",
-      "ssr": "https://multiagentic-18-ui-dashboard-multiagency-681568eff-ze.zephyrcloud.app"
+      "production": "https://multiagentic-20-ui-dashboard-multiagency-0c0a2d1bc-ze.zephyrcloud.app",
+      "integrity": "sha384-tlzBFYZAIiOZU71OnLAdv3+XdHlwLEiJ67NW3p2gj+TDocCTCwBGzFuhI7K0MZtl",
+      "ssr": "https://multiagentic-21-ui-dashboard-multiagency-247c37cad-ze.zephyrcloud.app"
     },
     "api": {
       "name": "api",
       "development": "local:api",
-      "production": "https://multiagentic-19-api-dashboard-multiagency-2623f390a-ze.zephyrcloud.app",
-      "integrity": "sha384-TesaIuHa4/XFqwKr8Pe0T7EcOFQjIW5Tj9DkYQaOmdPEwX8TwJmLumwCzY8GwxuJ",
+      "production": "https://multiagentic-22-api-dashboard-multiagency-1b2e5198e-ze.zephyrcloud.app",
+      "integrity": "sha384-WKTXEKzQI77FpYkZC6PdMRm6L4oPmDunWoKemdUa7fgEcHQwwGd6qhrx1a3vujeR",
       "secrets": [
-        "API_DATABASE_URL"
+        "API_DATABASE_URL",
+        "APPLICATIONS_WEBHOOK_URL",
+        "RESEND_API_KEY",
+        "NOTIFY_FROM_EMAIL"
       ]
     },
     "auth": {

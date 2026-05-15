@@ -11,8 +11,9 @@ function normalizeRows<T>(result: unknown): T[] {
 }
 
 export async function migrate(db: Database, migrations: Migration[]): Promise<void> {
+  await db.execute(sql`CREATE SCHEMA IF NOT EXISTS "drizzle"`);
   await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS "drizzle_migrations" (
+    CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations" (
       id SERIAL PRIMARY KEY,
       hash text NOT NULL,
       created_at bigint
@@ -23,7 +24,7 @@ export async function migrate(db: Database, migrations: Migration[]): Promise<vo
     hash: string;
   }
 
-  const rawResult = await db.execute(sql`SELECT hash FROM "drizzle_migrations"`);
+  const rawResult = await db.execute(sql`SELECT hash FROM "drizzle"."__drizzle_migrations"`);
   const appliedRows = normalizeRows<MigrationRow>(rawResult);
   const appliedHashes = new Set(appliedRows.map((r) => r.hash));
 
@@ -36,7 +37,7 @@ export async function migrate(db: Database, migrations: Migration[]): Promise<vo
         await tx.execute(sql.raw(statement));
       }
       await tx.execute(
-        sql`INSERT INTO "drizzle_migrations" (hash, created_at) VALUES (${migration.hash}, ${Date.now()})`,
+        sql`INSERT INTO "drizzle"."__drizzle_migrations" (hash, created_at) VALUES (${migration.hash}, ${Date.now()})`,
       );
     });
   }

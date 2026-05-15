@@ -19,6 +19,7 @@ import {
 } from "./db/schema";
 import type { PluginsClient } from "./plugins-client.gen";
 import { getNearnListing, listNearnBountiesForSponsor } from "./services/nearn";
+import { notifyNewApplication } from "./services/notify";
 import {
   type DaoProposal,
   getLastProposalId,
@@ -154,6 +155,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
   secrets: z.object({
     API_DATABASE_URL: z.string().default("pglite:memory://"),
+    APPLICATIONS_WEBHOOK_URL: z.string().optional(),
+    RESEND_API_KEY: z.string().optional(),
+    NOTIFY_FROM_EMAIL: z.string().optional(),
   }),
 
   context: z.object({
@@ -179,16 +183,36 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const db = driver.db;
       const migrations = await loadMigrations();
       await migrate(db, migrations);
-      await db
+      // Ensure a settings row; reconcile env over the placeholder, never over admin-set values.
+      const envDao = process.env.AGENCY_DAO_ACCOUNT;
+      const inserted = await db
         .insert(agencySettings)
         .values({
           id: SETTINGS_ID,
-          daoAccountId: process.env.AGENCY_DAO_ACCOUNT ?? DEFAULT_DAO_ACCOUNT,
+          daoAccountId: envDao ?? DEFAULT_DAO_ACCOUNT,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ id: agencySettings.id });
+
+      if (inserted.length === 0 && envDao && envDao !== DEFAULT_DAO_ACCOUNT) {
+        await db
+          .update(agencySettings)
+          .set({ daoAccountId: envDao, updatedAt: new Date() })
+          .where(
+            and(
+              eq(agencySettings.id, SETTINGS_ID),
+              eq(agencySettings.daoAccountId, DEFAULT_DAO_ACCOUNT),
+            ),
+          );
+      }
       console.log("[API] Services Initialized");
       console.log("[API] Plugins available:", Object.keys(plugins).join(", ") || "none");
-      return { db, driver, plugins };
+      const notifyConfig = {
+        webhookUrl: config.secrets.APPLICATIONS_WEBHOOK_URL,
+        resendApiKey: config.secrets.RESEND_API_KEY,
+        fromEmail: config.secrets.NOTIFY_FROM_EMAIL,
+      };
+      return { db, driver, plugins, notifyConfig };
     }),
 
   shutdown: (services) =>
@@ -198,7 +222,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
     }),
 
   createRouter: (services, builder) => {
-    const { db } = services;
+    const { db, notifyConfig } = services;
 
     const hostUrl = process.env.HOST_URL ?? `http://localhost:${process.env.PORT ?? "3000"}`;
 
@@ -399,6 +423,22 @@ export default createPlugin.withPlugins<PluginsClient>()({
             message: input.message ?? null,
             metadata: input.metadata ? JSON.stringify(input.metadata) : null,
           });
+          const [settings] = await db
+            .select({ contactEmail: agencySettings.contactEmail })
+            .from(agencySettings)
+            .where(eq(agencySettings.id, SETTINGS_ID))
+            .limit(1);
+          await notifyNewApplication(
+            {
+              id,
+              kind: input.kind,
+              name: input.name,
+              email: input.email,
+              nearAccountId: input.nearAccountId ?? null,
+              message: input.message ?? null,
+            },
+            { ...notifyConfig, contactEmail: settings?.contactEmail ?? null },
+          );
           return { id, status: "new" as const };
         }),
 

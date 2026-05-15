@@ -9,6 +9,7 @@ import { ReactionDiffusionField } from "@/components/reaction-diffusion-field";
 import { UnclaimedState } from "@/components/unclaimed-state";
 import { useApiClient } from "@/lib/api";
 import { nearnSponsorUrl } from "@/lib/nearn";
+import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
 import { getRepoUrl } from "@/lib/repo";
 import { trezuTreasuryUrl } from "@/lib/trezu";
 
@@ -20,17 +21,23 @@ const FALLBACK = {
   tagline: "The future of work is near…",
 };
 
-const APPROACH = [
-  { label: "Fork, don't build", note: "the full console ships in the repo" },
-  { label: "Configure, don't code", note: "identity & dao live in /settings" },
-  { label: "Connect, don't construct", note: "treasury & bounties already exist" },
-  { label: "Bring the entity", note: "you supply the llc, not the software" },
+const STANDARD = [
+  { label: "Website", note: "landing, work, contact" },
+  { label: "Treasury", note: "payouts, permissions, policies" },
+  { label: "Projects", note: "nearn listings, live" },
+  { label: "Dashboard", note: "applications, contributors, billing" },
 ];
 
 export const Route = createFileRoute("/_layout/")({
   head: () => ({
     meta: [{ name: "description", content: META_DESCRIPTION }],
   }),
+  beforeLoad: async ({ context }) => {
+    // Non-fatal prefetch — landing page projects, so SSR renders cards or the empty state.
+    await context.queryClient
+      .ensureQueryData(projectsListQueryOptions(context.apiClient))
+      .catch(() => {});
+  },
   component: Landing,
 });
 
@@ -44,17 +51,8 @@ type LandingProject = {
 function Landing() {
   const apiClient = useApiClient();
 
-  const settingsQuery = useQuery({
-    queryKey: ["settings", "public"],
-    queryFn: () => apiClient.settings.getPublic(),
-    staleTime: 5 * 60_000,
-  });
-
-  const projectsQuery = useQuery({
-    queryKey: ["projects", "public"],
-    queryFn: () => apiClient.agency.projects.list(),
-    staleTime: 60_000,
-  });
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
 
   const s = settingsQuery.data;
   const agencyName = s?.name?.trim() || FALLBACK.name;
@@ -153,11 +151,11 @@ function Landing() {
             </h2>
             <div className="h-px w-full bg-background/25" />
             <p className="max-w-md text-base leading-relaxed text-background/80 sm:text-lg">
-              Same playbook — entity, treasury, projects, dashboard.
+              Same blueprint. One command. Your business.
             </p>
             <div className="pt-2">
               <Button asChild variant="primary" className="font-display uppercase tracking-wide">
-                <Link to="/launch">register →</Link>
+                <Link to="/register">register →</Link>
               </Button>
             </div>
           </div>
@@ -166,7 +164,7 @@ function Landing() {
               standard issue
             </div>
             <div className="divide-y-2 divide-background">
-              {APPROACH.map((item, i) => (
+              {STANDARD.map((item, i) => (
                 <div key={item.label} className="flex items-center gap-4 px-4 py-4">
                   <span className="font-display text-3xl sm:text-4xl font-black tabular-nums leading-none text-background/25 shrink-0 w-12">
                     {String(i + 1).padStart(2, "0")}

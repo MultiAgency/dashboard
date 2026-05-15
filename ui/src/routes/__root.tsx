@@ -14,10 +14,10 @@ import { getSocialImageMeta } from "everything-dev/ui/metadata";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import type { RouterContext } from "@/app";
-import { getAppName, getBaseStyles } from "@/app";
+import { getBaseStyles } from "@/app";
+import { NotFound, RouteError, Shell } from "@/components/shell";
 import { sessionQueryKey } from "@/lib/auth";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
-import { NotFound, Shell } from "./_layout";
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   beforeLoad: async ({ context }) => {
@@ -51,9 +51,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     const siteUrl = runtimeConfig?.hostUrl
       ? `${runtimeConfig.hostUrl}${runtimeBasePath === "/" ? "" : runtimeBasePath}`
       : "";
-    const title = getAppName(runtimeConfig);
-    const description =
-      "Open runtime for apps on NEAR, composed from published config and loaded through a shared host, UI, and API runtime.";
+    const title = "MultiAgency";
+    const description = "Human-led, AI-native agencies for hire.";
     const siteName = title;
     const ogImage = `${assetsUrl}/metadata.png`;
 
@@ -90,7 +89,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
           description,
           siteName,
           siteUrl,
-          alt: "MultiAgency - always open, always building.",
+          alt: "MultiAgency — human-led, AI-native agencies for hire.",
         }),
       ],
       links: [
@@ -129,6 +128,11 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   notFoundComponent: () => (
     <Shell>
       <NotFound />
+    </Shell>
+  ),
+  errorComponent: () => (
+    <Shell>
+      <RouteError />
     </Shell>
   ),
 });

@@ -26,6 +26,14 @@ Add this to your deployment environment (hosting provider's env-var settings, `.
 
 If missing, the dashboard ships pointed at `PLACEHOLDER.sputnik-dao.near` (a non-routable placeholder). Admin surfaces stay locked until you repoint — see [Recover from missing env var](#recover-from-missing-env-var) below.
 
+Optional notification channels for new-application submissions (`/apply`, `/register`, `/contact`) — each no-ops if unset:
+
+```bash
+APPLICATIONS_WEBHOOK_URL=  # Discord/Slack/Zapier incoming webhook
+RESEND_API_KEY=            # Resend API token
+NOTIFY_FROM_EMAIL=         # sender on a Resend-verified domain; recipient is agency_settings.contactEmail
+```
+
 ### 2. Deploy
 
 ```bash
@@ -76,11 +84,28 @@ Admin surfaces are sections embedded in the public routes — they appear once y
 |---|---|
 | `/work` | Public projects directory; operators get an embedded Manage Projects section — create/edit projects, link to NEARN bounties, surface unlinked bounties |
 | `/admin/projects/$slug` | Per-project budget rollup, contributors, NEARN snapshot |
-| `/team` | DAO roles, members, and permissions (read from chain); admins get embedded Contributors (vendor records — onboarding status, payment terms) and Applications review (interest captures from `/apply` + `/launch`) sections |
+| `/team` | DAO roles, members, and permissions (read from chain); admins get embedded Contributors (vendor records — onboarding status, payment terms) and Applications review (interest captures from `/apply` + `/register` + `/contact`) sections |
 | `/treasury` | Treasury balances and recent activity; operators get an embedded Allocations section — allocate treasury into project budgets, transfer between projects, agency audit log |
 | `/payouts` | DAO proposal / payout history; operators get an embedded Billings Audit section (record payments tied to Sputnik DAO proposals) and a proposals map |
 
 Detailed playbooks for each surface live at [docs.multiagency.ai](https://docs.multiagency.ai) (planned).
+
+## Re-deploying after a schema reset
+
+When a migration history is squashed (`api/src/db/migrations/` rewritten), the production DB needs to be wiped — the runtime migrator skips already-applied hashes, so a new initial migration against an existing schema would `CREATE TABLE` against tables that already exist and fail. Sequence:
+
+1. `bun run deploy` — uploads new bundles; production still serving the old bundle URLs
+2. Compute SHA-384 of the new UI bundle's `remoteEntry.js` and write it to `bos.config.json` `app.ui.integrity` (the deploy tool's SRI step strips it; absent integrity drops `crossOrigin="anonymous"` on the script tag, breaking the Module Federation container handshake — host retries 10x then logs "Container not found")
+3. Wipe the prod DB from the hosting provider's postgres console:
+   ```sql
+   DROP SCHEMA IF EXISTS drizzle CASCADE;
+   DROP SCHEMA public CASCADE;
+   CREATE SCHEMA public;
+   ```
+4. `bos publish` — registry cutover; new bundles activate; the API plugin's `initialize` runs the migrator against the empty DB and seeds `agency_settings` from `AGENCY_DAO_ACCOUNT`
+5. Wait ~100s for propagation; smoke-test the cold-visitor + operator flows
+
+The wipe step in (3) drops both schemas because drizzle-kit (local dev) tracks in `drizzle.__drizzle_migrations` and the runtime migrator tracks in the same location — wiping public alone leaves stale hashes.
 
 ## Customizing visual identity
 

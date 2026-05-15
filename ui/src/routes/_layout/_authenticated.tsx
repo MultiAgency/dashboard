@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { getSessionFromData, type SessionData, sessionQueryOptions } from "@/lib/auth";
+import { meRolesQueryOptions } from "@/lib/queries";
 
 export interface AuthContext {
   isAuthenticated: boolean;
@@ -22,14 +23,7 @@ export const Route = createFileRoute("/_layout/_authenticated")({
     }
 
     // Non-fatal prefetch — warms meRoles so operator sections don't flash on hydration.
-    await queryClient
-      .ensureQueryData({
-        queryKey: ["me", "roles"],
-        queryFn: () => apiClient.me.roles(),
-        staleTime: 60_000,
-        retry: false,
-      })
-      .catch(() => {});
+    await queryClient.ensureQueryData(meRolesQueryOptions(apiClient)).catch(() => {});
 
     return {
       auth,

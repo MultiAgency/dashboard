@@ -39,7 +39,9 @@ Understand and interact with this Agency Dashboard deployment as a runtime-compo
 
 - `/` — landing
 - `/work` — projects directory (enriched live from NEARN where linked)
-- `/apply` — express-interest form (replicate or contributor)
+- `/apply` — express-interest form (contributor)
+- `/register` — express-interest form (founder)
+- `/contact` — express-interest form (client)
 - `/README.md`
 - `/skill.md`
 - `/llms.txt`

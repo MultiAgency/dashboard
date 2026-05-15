@@ -16,6 +16,12 @@ import { Field } from "@/components/admin-form";
 import { SetupYourAgency } from "@/components/setup-agency";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
+import {
+  adminSettingsQueryKey,
+  adminSettingsQueryOptions,
+  publicSettingsQueryKey,
+  publicSettingsQueryOptions,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/settings")({
   head: () => ({
@@ -28,17 +34,9 @@ function SettingsPage() {
   const apiClient = useApiClient();
   const { isAdmin } = useMeRoles();
 
-  const publicSettingsQuery = useQuery({
-    queryKey: ["settings", "public"],
-    queryFn: () => apiClient.settings.getPublic(),
-    staleTime: 5 * 60_000,
-  });
+  const publicSettingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
 
-  const adminSettingsQuery = useQuery({
-    queryKey: ["settings", "adminGet"],
-    queryFn: () => apiClient.settings.adminGet(),
-    retry: false,
-  });
+  const adminSettingsQuery = useQuery(adminSettingsQueryOptions(apiClient));
 
   const isPlaceholder = !!publicSettingsQuery.data?.isPlaceholder;
 
@@ -162,8 +160,8 @@ function AgencyConfigSections({ initial }: { initial: Settings }) {
         requestorRoleName: requestorRoleName.trim() || null,
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["settings", "adminGet"] });
-      await queryClient.invalidateQueries({ queryKey: ["settings", "public"] });
+      await queryClient.invalidateQueries({ queryKey: adminSettingsQueryKey });
+      await queryClient.invalidateQueries({ queryKey: publicSettingsQueryKey });
       toast.success("Agency configuration saved");
     },
     onError: (err: Error) => toast.error(err.message || "Failed to save"),
@@ -349,7 +347,7 @@ function AgencyConfigSections({ initial }: { initial: Settings }) {
             <Field
               label="contact email"
               htmlFor="settings-contact-email"
-              helper="Public inbox shown on /contact. If empty, /contact shows an `apply →` CTA pointing visitors to the apply form."
+              helper="Optional. Recipient for new-application notification emails sent via Resend. No-ops without `RESEND_API_KEY` and `NOTIFY_FROM_EMAIL` configured."
             >
               <Input
                 id="settings-contact-email"

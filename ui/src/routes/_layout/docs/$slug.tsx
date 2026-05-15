@@ -3,7 +3,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-import { Button, Card, CardContent } from "@/components";
+import { Button } from "@/components";
+import { UnknownDoc } from "@/components/shell";
 import { findDoc } from "@/lib/docs-registry";
 import { Route as RootRoute } from "../../__root";
 
@@ -38,18 +39,7 @@ function DocPage() {
   });
 
   if (!doc) {
-    return (
-      <div className="max-w-3xl mx-auto space-y-6 pt-4 animate-fade-in">
-        <Card>
-          <CardContent className="p-8 space-y-4 text-center">
-            <div className="font-display text-2xl uppercase tracking-tight">unknown doc</div>
-            <Button asChild variant="outline" className="font-display uppercase tracking-wide">
-              <Link to="/docs">← back to docs</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <UnknownDoc />;
   }
 
   const eyebrow = doc.section === "skills" ? "handbook · skill" : "handbook · model";

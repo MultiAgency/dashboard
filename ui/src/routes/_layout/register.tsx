@@ -6,37 +6,38 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { useApiClient } from "@/lib/api";
+import { getRepoUrl } from "@/lib/repo";
 
-export const Route = createFileRoute("/_layout/launch")({
+export const Route = createFileRoute("/_layout/register")({
   head: () => ({
     meta: [
-      { title: "Launch Your Own Agency" },
-      { name: "description", content: "Replicate the MultiAgency model." },
+      { title: "Register for Updates" },
+      { name: "description", content: "Build your agency with us." },
     ],
   }),
-  component: LaunchPage,
+  component: RegisterPage,
 });
 
-const launchSchema = z.object({
+const registerSchema = z.object({
   name: z.string().trim().min(1, "name required"),
   email: z.string().trim().min(1, "email required").email("not a valid email"),
   nearAccountId: z.string().trim().optional(),
   message: z.string().trim().optional(),
 });
 
-type LaunchValues = z.infer<typeof launchSchema>;
+type RegisterValues = z.infer<typeof registerSchema>;
 
 const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
 const ERROR_CLS = "text-sm text-destructive";
 
-function LaunchPage() {
+function RegisterPage() {
   const apiClient = useApiClient();
   const [submitted, setSubmitted] = useState(false);
 
   const submitMutation = useMutation({
-    mutationFn: async (values: LaunchValues) =>
+    mutationFn: async (values: RegisterValues) =>
       apiClient.applications.create({
-        kind: "replicate",
+        kind: "founder",
         name: values.name,
         email: values.email,
         nearAccountId: values.nearAccountId || undefined,
@@ -56,8 +57,8 @@ function LaunchPage() {
       email: "",
       nearAccountId: "",
       message: "",
-    } as LaunchValues,
-    validators: { onChange: launchSchema },
+    } as RegisterValues,
+    validators: { onChange: registerSchema },
     onSubmit: async ({ value }) => {
       await submitMutation.mutateAsync(value);
     },
@@ -71,15 +72,21 @@ function LaunchPage() {
         <Card variant="hi-vis">
           <CardContent className="p-8 space-y-4 text-center">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-              agency · interest received
+              agency · contacted
             </div>
             <h1 className="font-display text-3xl sm:text-4xl uppercase tracking-tight font-extrabold leading-[0.95]">
-              Thanks — we'll be in touch.
+              Thanks! Let's build.
             </h1>
             <p className="font-mono text-xs leading-relaxed text-muted-foreground">
-              Message received. We'll follow up by email with the agency setup playbook and the
-              template documents.
+              Message received. Stay tuned!
             </p>
+            <Link
+              to="/docs/$slug"
+              params={{ slug: "entity" }}
+              className="inline-block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              how this agency works →
+            </Link>
             <div className="pt-2">
               <Button
                 asChild
@@ -100,18 +107,17 @@ function LaunchPage() {
     <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
       <header className="space-y-3 text-center">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          agency · launch
+          agency · register
         </div>
         <h1 className="font-display text-4xl sm:text-5xl uppercase tracking-tight font-black leading-[0.95]">
-          Launch Your Own Agency
+          Tell us about your agency.
         </h1>
       </header>
 
       <Card>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Same stack — LLC, Sputnik DAO, NEARN, this dashboard. Tell us what you'd run. We will
-            follow up.
+            Why are you interested? We follow up by email.
           </p>
 
           <form
@@ -187,7 +193,7 @@ function LaunchPage() {
               {(field) => (
                 <div className="space-y-2">
                   <label htmlFor={field.name} className={LABEL_CLS}>
-                    what would you run?
+                    message
                   </label>
                   <Textarea
                     id={field.name}
@@ -209,9 +215,17 @@ function LaunchPage() {
               className="w-full font-display uppercase tracking-wide"
             >
               {isPending && <Spinner />}
-              {isPending ? "submitting..." : "submit →"}
+              {isPending ? "submitting..." : "send →"}
             </Button>
           </form>
+          <a
+            href={getRepoUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            if you'd rather browse the template directly →
+          </a>
         </CardContent>
       </Card>
     </div>

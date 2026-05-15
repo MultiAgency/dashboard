@@ -1,5 +1,5 @@
 {
-  "id": "daffa555-e4eb-4842-911e-7a0447150af5",
+  "id": "1c286be1-f912-45a2-a522-e5baf5d86a95",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -38,20 +38,21 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false,
-          "default": "'Always building. Always open.'"
+          "default": "'Open Books · Open Source · Open Doors'"
         },
         "tagline": {
           "name": "tagline",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
-          "default": "'Join our agency. Hire us. Launch your own.'"
+          "default": "'The future of work is near…'"
         },
         "contact_email": {
           "name": "contact_email",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": false,
+          "default": "'multiagentic@gmail.com'"
         },
         "website_url": {
           "name": "website_url",

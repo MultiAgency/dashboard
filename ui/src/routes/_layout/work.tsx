@@ -14,6 +14,7 @@ import { ProjectsAdminSection } from "@/components/projects-admin-section";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { nearnListingUrl, nearnSponsorUrl } from "@/lib/nearn";
+import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/work")({
   head: () => ({
@@ -42,15 +43,10 @@ function WorkIndex() {
   const apiClient = useApiClient();
   const { isOperator, isAdmin, isLoaded } = useMeRoles();
   const projectsQuery = useQuery({
-    queryKey: ["projects", "list"],
-    queryFn: () => apiClient.agency.projects.list(),
+    ...projectsListQueryOptions(apiClient),
     staleTime: 30_000,
   });
-  const settingsQuery = useQuery({
-    queryKey: ["settings", "public"],
-    queryFn: () => apiClient.settings.getPublic(),
-    staleTime: 5 * 60_000,
-  });
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
 
   const nearnUrl = settingsQuery.data?.nearnAccountId
     ? nearnSponsorUrl(settingsQuery.data.nearnAccountId)
@@ -149,7 +145,7 @@ function ProjectCard({ project }: { project: ProjectListItem }) {
   const n = project.nearnListing;
   const nearnHref = project.nearnListingId ? nearnListingUrl(project.nearnListingId) : null;
   return (
-    <Card className="flex flex-col">
+    <Card className="flex flex-col border-2 border-foreground">
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
         <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
           <span className="truncate">@{project.slug}</span>
@@ -193,7 +189,7 @@ function ProjectCard({ project }: { project: ProjectListItem }) {
 
 function ProjectCardSkeleton() {
   return (
-    <Card className="flex flex-col">
+    <Card className="flex flex-col border-2 border-foreground">
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <Skeleton className="h-3 w-24" />

@@ -2,14 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
+import { adminTokensQueryOptions } from "@/lib/queries";
 
 export function TreasuryBalances() {
   const apiClient = useApiClient();
-  const tokensQuery = useQuery({
-    queryKey: ["admin", "tokens"],
-    queryFn: () => apiClient.tokens.list(),
-    staleTime: 60 * 60_000,
-  });
+  const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
   const tokenIds = tokens.map((t) => t.tokenId);
   const balancesQuery = useQuery({

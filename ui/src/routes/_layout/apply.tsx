@@ -7,12 +7,13 @@ import { z } from "zod";
 import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { useApiClient } from "@/lib/api";
 import { nearnSponsorUrl } from "@/lib/nearn";
+import { publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/apply")({
   head: () => ({
     meta: [
       { title: "Join MultiAgency" },
-      { name: "description", content: "Apply to join MultiAgency as a contributor." },
+      { name: "description", content: "Apply to become a paid contributor." },
     ],
   }),
   component: ApplyPage,
@@ -32,11 +33,7 @@ const ERROR_CLS = "text-sm text-destructive";
 
 function ApplyPage() {
   const apiClient = useApiClient();
-  const settingsQuery = useQuery({
-    queryKey: ["settings", "public"],
-    queryFn: () => apiClient.settings.getPublic(),
-    staleTime: 5 * 60_000,
-  });
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const nearnUrl = settingsQuery.data?.nearnAccountId
     ? nearnSponsorUrl(settingsQuery.data.nearnAccountId)
     : null;
@@ -81,15 +78,21 @@ function ApplyPage() {
         <Card variant="hi-vis">
           <CardContent className="p-8 space-y-4 text-center">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-              agency · application received
+              agency · contacted
             </div>
             <h1 className="font-display text-3xl sm:text-4xl uppercase tracking-tight font-extrabold leading-[0.95]">
               Thanks! Let's build.
             </h1>
             <p className="font-mono text-xs leading-relaxed text-muted-foreground">
-              Your application was received. We'll email next steps — a short contractor agreement
-              and a tax form (W-9 or W-8BEN) — before any work or payout.
+              Message received. Stay tuned!
             </p>
+            <Link
+              to="/docs/$slug"
+              params={{ slug: "contributors" }}
+              className="inline-block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              how to get involved →
+            </Link>
             <div className="pt-2">
               <Button
                 asChild
@@ -113,33 +116,15 @@ function ApplyPage() {
           agency · join
         </div>
         <h1 className="font-display text-4xl sm:text-5xl uppercase tracking-tight font-black leading-[0.95]">
-          Join MultiAgency
+          Tell us about yourself.
         </h1>
       </header>
 
       <Card>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            Tell us who you are and what you build. We will follow up.{" "}
-            <Link
-              to="/docs/$slug"
-              params={{ slug: "contributors" }}
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              how onboarding works →
-            </Link>
+            What is your expertise? We follow up by email.
           </p>
-          {nearnUrl && (
-            <a
-              href={nearnUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
-            >
-              find opportunities via nearn →
-            </a>
-          )}
-
           <form
             className="space-y-4"
             onSubmit={(e) => {
@@ -213,7 +198,7 @@ function ApplyPage() {
               {(field) => (
                 <div className="space-y-2">
                   <label htmlFor={field.name} className={LABEL_CLS}>
-                    what would you build?
+                    message
                   </label>
                   <Textarea
                     id={field.name}
@@ -235,9 +220,19 @@ function ApplyPage() {
               className="w-full font-display uppercase tracking-wide"
             >
               {isPending && <Spinner />}
-              {isPending ? "submitting..." : "submit →"}
+              {isPending ? "submitting..." : "send →"}
             </Button>
           </form>
+          {nearnUrl && (
+            <a
+              href={nearnUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              if you'd rather browse open work directly →
+            </a>
+          )}
         </CardContent>
       </Card>
     </div>

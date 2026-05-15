@@ -6,6 +6,7 @@ import { ContributorsAdminSection } from "@/components/contributors-admin-sectio
 import { UnclaimedState } from "@/components/unclaimed-state";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
+import { publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/team")({
   head: () => ({
@@ -25,11 +26,7 @@ function Team() {
   const apiClient = useApiClient();
   const { isOperator, isLoaded } = useMeRoles();
 
-  const settingsQuery = useQuery({
-    queryKey: ["settings", "public"],
-    queryFn: () => apiClient.settings.getPublic(),
-    staleTime: 5 * 60_000,
-  });
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
 
   const teamQuery = useQuery({
     queryKey: ["team", "list"],
@@ -61,7 +58,7 @@ function Team() {
       </header>
 
       {teamQuery.isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((i) => (
             <RoleCardSkeleton key={i} />
           ))}
@@ -71,7 +68,7 @@ function Team() {
           could not load — try again
         </p>
       ) : teamQuery.data && teamQuery.data.roles.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {teamQuery.data.roles.map((role) => (
             <RoleCard key={role.name} role={role} />
           ))}
@@ -110,7 +107,8 @@ function Team() {
                 Applications Inbox
               </h2>
               <p className="text-sm text-muted-foreground max-w-2xl">
-                Received interest submissions from `/apply` and `/launch`. Filter by kind.
+                Received interest submissions from `/apply`, `/register`, and `/contact`. Filter by
+                kind.
               </p>
             </div>
             <ApplicationsAdminSection />

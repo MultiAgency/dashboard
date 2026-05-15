@@ -13,14 +13,11 @@ import {
 } from "@/components/token-amount-fields";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
+import { adminProjectsListQueryOptions, adminTokensQueryOptions } from "@/lib/queries";
 
 export function AllocationsManager() {
   const apiClient = useApiClient();
-  const projectsQuery = useQuery({
-    queryKey: ["admin", "projects", "list"],
-    queryFn: () => apiClient.agency.projects.adminList(),
-    retry: false,
-  });
+  const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
 
   const [projectId, setProjectId] = useState<string>("");
 
@@ -82,11 +79,7 @@ function AgencyAuditLogPanel({
   const apiClient = useApiClient();
   const projectById = new Map(projects.map((p) => [p.id, p] as const));
 
-  const tokensQuery = useQuery({
-    queryKey: ["admin", "tokens"],
-    queryFn: () => apiClient.tokens.list(),
-    staleTime: 60 * 60_000,
-  });
+  const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
 
   const [filterProject, setFilterProject] = useState<string>("");
@@ -235,11 +228,7 @@ function TransferPanel({
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
 
-  const tokensQuery = useQuery({
-    queryKey: ["admin", "tokens"],
-    queryFn: () => apiClient.tokens.list(),
-    staleTime: 60 * 60_000,
-  });
+  const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
 
   const isCustom = tokenSelection === CUSTOM_TOKEN;
@@ -451,11 +440,7 @@ function ProjectAllocationPanel({ projectId }: { projectId: string }) {
 
   const allocs = allocsQuery.data?.pages.flatMap((p) => p.data) ?? [];
 
-  const tokensQuery = useQuery({
-    queryKey: ["admin", "tokens"],
-    queryFn: () => apiClient.tokens.list(),
-    staleTime: 60 * 60_000,
-  });
+  const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
 
   const [tokenSelection, setTokenSelection] = useState("near");

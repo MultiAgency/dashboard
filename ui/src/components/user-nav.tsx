@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { connectNear, sessionQueryKey, sessionQueryOptions, signOut } from "@/lib/auth";
+import { meRolesQueryKey } from "@/lib/queries";
 
 export function UserNav() {
   const queryClient = useQueryClient();
@@ -24,7 +25,10 @@ export function UserNav() {
   const connectMutation = useMutation({
     mutationFn: () => connectNear(authClient),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey }),
+        queryClient.invalidateQueries({ queryKey: meRolesQueryKey }),
+      ]);
       navigate({ to: "/treasury" });
     },
     onError: (error: { message?: string }) => {
@@ -36,7 +40,10 @@ export function UserNav() {
     mutationFn: () => signOut(authClient),
     onSuccess: async () => {
       queryClient.setQueryData(sessionQueryKey, null);
-      await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
+        queryClient.invalidateQueries({ queryKey: meRolesQueryKey }),
+      ]);
       navigate({ to: "/", replace: true });
     },
     onError: (error: Error) => {

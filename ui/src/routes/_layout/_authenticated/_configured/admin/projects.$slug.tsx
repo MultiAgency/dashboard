@@ -19,6 +19,11 @@ import { Empty, Field, Loading, selectClass, textareaClass } from "@/components/
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingUrl } from "@/lib/nearn";
+import {
+  adminContributorsListQueryOptions,
+  adminSettingsQueryOptions,
+  adminTokensQueryOptions,
+} from "@/lib/queries";
 import { trezuPaymentUrl, trezuProposalUrl } from "@/lib/trezu";
 
 type ProposalStatus =
@@ -181,10 +186,7 @@ function BillingsSection({
   const apiClient = useApiClient();
   const [creating, setCreating] = useState(false);
 
-  const settingsQuery = useQuery({
-    queryKey: ["settings", "adminGet"],
-    queryFn: () => apiClient.settings.adminGet(),
-  });
+  const settingsQuery = useQuery(adminSettingsQueryOptions(apiClient));
   const daoAccountId = settingsQuery.data?.settings.daoAccountId ?? null;
 
   const billingsQuery = useInfiniteQuery({
@@ -288,16 +290,10 @@ function BillingCreateForm({
   const [contributorIdOverride, setContributorIdOverride] = useState("");
   const [note, setNote] = useState("");
 
-  const tokensQuery = useQuery({
-    queryKey: ["admin", "tokens"],
-    queryFn: () => apiClient.tokens.list(),
-  });
+  const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
 
-  const allContributorsQuery = useQuery({
-    queryKey: ["admin", "contributors", "list"],
-    queryFn: () => apiClient.contributors.adminList(),
-  });
+  const allContributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
   const onboardingById = new Map(
     (allContributorsQuery.data?.data ?? []).map((c) => [c.id, c.onboardingStatus]),
   );
