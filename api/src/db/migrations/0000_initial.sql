@@ -1,4 +1,6 @@
-CREATE TABLE "agency_settings" (
+CREATE SCHEMA IF NOT EXISTS "agency";
+--> statement-breakpoint
+CREATE TABLE "agency"."settings" (
 	"id" text PRIMARY KEY NOT NULL,
 	"dao_account_id" text NOT NULL,
 	"nearn_account_id" text,
@@ -16,7 +18,7 @@ CREATE TABLE "agency_settings" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "allocations" (
+CREATE TABLE "agency"."allocations" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
 	"token_id" text NOT NULL,
@@ -27,7 +29,7 @@ CREATE TABLE "allocations" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "applications" (
+CREATE TABLE "agency"."applications" (
 	"id" text PRIMARY KEY NOT NULL,
 	"kind" text NOT NULL,
 	"name" text NOT NULL,
@@ -41,7 +43,7 @@ CREATE TABLE "applications" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "billings" (
+CREATE TABLE "agency"."billings" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
 	"contributor_id" text,
@@ -52,7 +54,7 @@ CREATE TABLE "billings" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "contributors" (
+CREATE TABLE "agency"."contributors" (
 	"id" text PRIMARY KEY NOT NULL,
 	"near_account_id" text,
 	"name" text NOT NULL,
@@ -62,7 +64,7 @@ CREATE TABLE "contributors" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "project_contributors" (
+CREATE TABLE "agency"."project_contributors" (
 	"project_id" text NOT NULL,
 	"contributor_id" text NOT NULL,
 	"role" text,
@@ -70,7 +72,7 @@ CREATE TABLE "project_contributors" (
 	CONSTRAINT "project_contributors_project_id_contributor_id_pk" PRIMARY KEY("project_id","contributor_id")
 );
 --> statement-breakpoint
-CREATE TABLE "projects" (
+CREATE TABLE "agency"."projects" (
 	"id" text PRIMARY KEY NOT NULL,
 	"owner_id" text NOT NULL,
 	"organization_id" text NOT NULL,
@@ -84,13 +86,13 @@ CREATE TABLE "projects" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "allocations" ADD CONSTRAINT "allocations_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "billings" ADD CONSTRAINT "billings_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "billings" ADD CONSTRAINT "billings_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "public"."contributors"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "project_contributors" ADD CONSTRAINT "project_contributors_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "project_contributors" ADD CONSTRAINT "project_contributors_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "public"."contributors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "allocations_cursor" ON "allocations" USING btree ("created_at","id");--> statement-breakpoint
-CREATE INDEX "applications_cursor" ON "applications" USING btree ("created_at","id");--> statement-breakpoint
-CREATE INDEX "billings_cursor" ON "billings" USING btree ("created_at","id");--> statement-breakpoint
-CREATE UNIQUE INDEX "billings_proposal_unique" ON "billings" USING btree ("proposal_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "projects_owner_slug" ON "projects" USING btree ("owner_id","slug");
+ALTER TABLE "agency"."allocations" ADD CONSTRAINT "allocations_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "agency"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agency"."billings" ADD CONSTRAINT "billings_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "agency"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agency"."billings" ADD CONSTRAINT "billings_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "agency"."contributors"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agency"."project_contributors" ADD CONSTRAINT "project_contributors_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "agency"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "agency"."project_contributors" ADD CONSTRAINT "project_contributors_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "agency"."contributors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "allocations_cursor" ON "agency"."allocations" USING btree ("created_at","id");--> statement-breakpoint
+CREATE INDEX "applications_cursor" ON "agency"."applications" USING btree ("created_at","id");--> statement-breakpoint
+CREATE INDEX "billings_cursor" ON "agency"."billings" USING btree ("created_at","id");--> statement-breakpoint
+CREATE UNIQUE INDEX "billings_proposal_unique" ON "agency"."billings" USING btree ("proposal_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "projects_owner_slug" ON "agency"."projects" USING btree ("owner_id","slug");

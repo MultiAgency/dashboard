@@ -1,12 +1,12 @@
 {
-  "id": "1c286be1-f912-45a2-a522-e5baf5d86a95",
+  "id": "c8a8a320-e5b1-478d-8a5f-cc6cb7404458",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.agency_settings": {
-      "name": "agency_settings",
-      "schema": "",
+    "agency.settings": {
+      "name": "settings",
+      "schema": "agency",
       "columns": {
         "id": {
           "name": "id",
@@ -115,9 +115,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.allocations": {
+    "agency.allocations": {
       "name": "allocations",
-      "schema": "",
+      "schema": "agency",
       "columns": {
         "id": {
           "name": "id",
@@ -197,6 +197,7 @@
           "name": "allocations_project_id_projects_id_fk",
           "tableFrom": "allocations",
           "tableTo": "projects",
+          "schemaTo": "agency",
           "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
@@ -209,9 +210,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.applications": {
+    "agency.applications": {
       "name": "applications",
-      "schema": "",
+      "schema": "agency",
       "columns": {
         "id": {
           "name": "id",
@@ -312,9 +313,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.billings": {
+    "agency.billings": {
       "name": "billings",
-      "schema": "",
+      "schema": "agency",
       "columns": {
         "id": {
           "name": "id",
@@ -409,6 +410,7 @@
           "name": "billings_project_id_projects_id_fk",
           "tableFrom": "billings",
           "tableTo": "projects",
+          "schemaTo": "agency",
           "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
@@ -418,6 +420,7 @@
           "name": "billings_contributor_id_contributors_id_fk",
           "tableFrom": "billings",
           "tableTo": "contributors",
+          "schemaTo": "agency",
           "columnsFrom": ["contributor_id"],
           "columnsTo": ["id"],
           "onDelete": "set null",
@@ -430,9 +433,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.contributors": {
+    "agency.contributors": {
       "name": "contributors",
-      "schema": "",
+      "schema": "agency",
       "columns": {
         "id": {
           "name": "id",
@@ -488,9 +491,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.project_contributors": {
+    "agency.project_contributors": {
       "name": "project_contributors",
-      "schema": "",
+      "schema": "agency",
       "columns": {
         "project_id": {
           "name": "project_id",
@@ -524,6 +527,7 @@
           "name": "project_contributors_project_id_projects_id_fk",
           "tableFrom": "project_contributors",
           "tableTo": "projects",
+          "schemaTo": "agency",
           "columnsFrom": ["project_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
@@ -533,6 +537,7 @@
           "name": "project_contributors_contributor_id_contributors_id_fk",
           "tableFrom": "project_contributors",
           "tableTo": "contributors",
+          "schemaTo": "agency",
           "columnsFrom": ["contributor_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
@@ -550,9 +555,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.projects": {
+    "agency.projects": {
       "name": "projects",
-      "schema": "",
+      "schema": "agency",
       "columns": {
         "id": {
           "name": "id",
@@ -657,7 +662,9 @@
     }
   },
   "enums": {},
-  "schemas": {},
+  "schemas": {
+    "agency": "agency"
+  },
   "sequences": {},
   "roles": {},
   "policies": {},

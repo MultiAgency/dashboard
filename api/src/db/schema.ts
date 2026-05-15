@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
-import { index, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, pgSchema, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const applications = pgTable(
+export const agency = pgSchema("agency");
+
+export const applications = agency.table(
   "applications",
   {
     id: text("id").primaryKey(),
@@ -26,7 +28,7 @@ export const applications = pgTable(
 export type Application = typeof applications.$inferSelect;
 export type NewApplication = typeof applications.$inferInsert;
 
-export const projects = pgTable(
+export const projects = agency.table(
   "projects",
   {
     id: text("id").primaryKey(),
@@ -53,7 +55,7 @@ export const projects = pgTable(
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 
-export const contributors = pgTable("contributors", {
+export const contributors = agency.table("contributors", {
   id: text("id").primaryKey(),
   nearAccountId: text("near_account_id"),
   name: text("name").notNull(),
@@ -70,7 +72,7 @@ export const contributors = pgTable("contributors", {
 export type Contributor = typeof contributors.$inferSelect;
 export type NewContributor = typeof contributors.$inferInsert;
 
-export const projectContributors = pgTable(
+export const projectContributors = agency.table(
   "project_contributors",
   {
     projectId: text("project_id")
@@ -87,7 +89,7 @@ export const projectContributors = pgTable(
   }),
 );
 
-export const allocations = pgTable(
+export const allocations = agency.table(
   "allocations",
   {
     id: text("id").primaryKey(),
@@ -109,7 +111,7 @@ export const allocations = pgTable(
 export type Allocation = typeof allocations.$inferSelect;
 export type NewAllocation = typeof allocations.$inferInsert;
 
-export const billings = pgTable(
+export const billings = agency.table(
   "billings",
   {
     id: text("id").primaryKey(),
@@ -134,7 +136,7 @@ export const billings = pgTable(
 export type Billing = typeof billings.$inferSelect;
 export type NewBilling = typeof billings.$inferInsert;
 
-export const agencySettings = pgTable("agency_settings", {
+export const agencySettings = agency.table("settings", {
   id: text("id").primaryKey(),
   daoAccountId: text("dao_account_id").notNull(),
   nearnAccountId: text("nearn_account_id"),
