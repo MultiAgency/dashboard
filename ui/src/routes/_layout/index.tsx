@@ -1,9 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
-import nearnLogo from "@/assets/brand/nearn.svg";
-import trezuLogo from "@/assets/brand/trezu.svg";
-import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
 import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
 import { ReactionDiffusionField } from "@/components/reaction-diffusion-field";
 import { UnclaimedState } from "@/components/unclaimed-state";
@@ -12,6 +9,7 @@ import { nearnSponsorUrl } from "@/lib/nearn";
 import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
 import { getRepoUrl } from "@/lib/repo";
 import { trezuTreasuryUrl } from "@/lib/trezu";
+import { Route as RootRoute } from "../__root";
 
 const META_DESCRIPTION = "Human-led, AI-native agencies for hire.";
 
@@ -50,6 +48,8 @@ type LandingProject = {
 
 function Landing() {
   const apiClient = useApiClient();
+  const loaderData = RootRoute.useLoaderData();
+  const assetsUrl = loaderData?.assetsUrl ?? "";
 
   const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
@@ -246,8 +246,8 @@ function Landing() {
             label="treasury"
             tag="on-chain"
             name="Trezu"
-            iconSrc={trezuSymbol}
-            logoSrc={trezuLogo}
+            iconSrc={`${assetsUrl}/static/svg/trezu-symbol.svg`}
+            logoSrc={`${assetsUrl}/static/svg/trezu.svg`}
             logoAlt="Trezu"
             body="Manage your team's capital in minutes from a single dashboard without ever giving up your keys."
             url="https://trezu.app/"
@@ -257,7 +257,7 @@ function Landing() {
             label="bounties"
             tag="live listings"
             name="NEARN"
-            logoSrc={nearnLogo}
+            logoSrc={`${assetsUrl}/static/svg/nearn.svg`}
             logoAlt="NEARN"
             logoHeightClass="h-9"
             body="NEARN connects projects (sponsors) with skilled contributors to complete bounties, projects, and tasks in the NEAR ecosystem."
