@@ -140,7 +140,7 @@ function Landing() {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
               <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-background/70">
-                template
+                agency · template
               </span>
               <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] bg-accent text-accent-foreground px-2 py-0.5">
                 coming soon
@@ -199,6 +199,13 @@ function Landing() {
               <ProjectCardSkeleton key={i} />
             ))}
           </div>
+        ) : projectsQuery.isError ? (
+          <p
+            role="alert"
+            className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground"
+          >
+            could not load — try again
+          </p>
         ) : projects.length === 0 ? (
           <Empty className="border-2 border-dashed border-border/40">
             <EmptyTitle className="font-display text-lg uppercase tracking-tight text-muted-foreground">

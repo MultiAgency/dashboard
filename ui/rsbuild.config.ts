@@ -185,7 +185,6 @@ function createServerConfig() {
         target: "async-node",
         output: {
           uniqueName: `${normalizedName}_server`,
-          publicPath: "/",
           library: { type: "commonjs-module" },
         },
         resolve: {

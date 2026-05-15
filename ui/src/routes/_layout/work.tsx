@@ -84,9 +84,20 @@ function WorkIndex() {
           ))}
         </div>
       ) : projectsQuery.isError ? (
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          could not load — try again
-        </p>
+        <div
+          role="alert"
+          className="flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground"
+        >
+          <span>could not load</span>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => projectsQuery.refetch()}
+            className="font-display uppercase tracking-wide"
+          >
+            try again
+          </Button>
+        </div>
       ) : projectsQuery.data && projectsQuery.data.data.length > 0 ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {(projectsQuery.data.data as ProjectListItem[]).map((p) => (

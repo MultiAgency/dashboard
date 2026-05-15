@@ -120,6 +120,8 @@ const getRouteHead = async (pathname: string, context?: Partial<RouterContext>) 
   return collectHeadData(router);
 };
 
+declare let __webpack_public_path__: string;
+
 const renderToStream = async (request: Request, renderOptions: RenderOptions) => {
   const url = new URL(request.url);
   const history = createMemoryHistory({ initialEntries: [url.pathname + url.search] });
@@ -127,6 +129,8 @@ const renderToStream = async (request: Request, renderOptions: RenderOptions) =>
   if (!hostUrl || !rpcBase) {
     throw new Error("Missing runtime config for SSR render");
   }
+  // Match client publicPath so imported assets don't double-load (host + remote).
+  __webpack_public_path__ = `${renderOptions.assetsUrl}/`;
   // Build our own request-scoped client; the host-provided one can arrive empty.
   const apiClient = createServerApiClient({ hostUrl, rpcBase }, request.headers.get("cookie"));
   let queryClientRef: QueryClient | null = null;

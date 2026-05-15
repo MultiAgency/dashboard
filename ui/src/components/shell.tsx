@@ -2,9 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
-import builtOn from "@/assets/built_on.png";
-import builtOnRev from "@/assets/built_on_rev.png";
-import { GithubIcon, XIcon } from "@/components/icons";
+import { GithubIcon, NearWordmark, XIcon } from "@/components/icons";
 import { Logo } from "@/components/logo";
 import {
   DropdownMenu,
@@ -42,6 +40,12 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen w-full flex bg-background text-foreground">
       <div className="flex-1 flex flex-col min-w-0">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-2 focus:bg-foreground focus:text-background font-mono text-[11px] uppercase tracking-[0.22em]"
+        >
+          Skip to content
+        </a>
         <header className="shrink-0 bg-card/50">
           <div className="flex items-center justify-between gap-4 px-4 sm:px-6 h-14">
             <Link
@@ -130,7 +134,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main className="w-full">
+        <main id="main" className="w-full">
           <div
             className={`w-full mx-auto px-4 sm:px-6 py-6 sm:py-10 animate-fade-in-up ${isAuthenticated ? "max-w-5xl" : "max-w-4xl"}`}
           >
@@ -143,18 +147,11 @@ export function Shell({ children }: { children: ReactNode }) {
             href="https://near.dev"
             target="_blank"
             rel="noopener noreferrer"
-            className="relative h-10 w-[160px]"
+            aria-label="Built on NEAR"
+            className="flex items-center gap-2 h-10 text-foreground hover:opacity-70 transition-opacity duration-150"
           >
-            <img
-              src={builtOn}
-              alt="Built on NEAR"
-              className="absolute inset-0 h-full w-full object-contain dark:hidden"
-            />
-            <img
-              src={builtOnRev}
-              alt="Built on NEAR"
-              className="absolute inset-0 hidden h-full w-full object-contain dark:block"
-            />
+            <span className="font-display uppercase tracking-wide text-sm">Built on</span>
+            <NearWordmark className="h-5" />
           </a>
         </footer>
       </div>
