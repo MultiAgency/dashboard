@@ -17,7 +17,7 @@ import {
   projectContributors,
   projects,
 } from "./db/schema";
-import type { PluginsClient } from "./plugins-client.gen";
+import type { PluginsClient } from "./lib/plugins-types.gen";
 import { getNearnListing, listNearnBountiesForSponsor } from "./services/nearn";
 import { notifyNewApplication } from "./services/notify";
 import {
