@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
+import trezuLogo from "@/assets/brand/trezu.svg";
+import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
 import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
 import { ReactionDiffusionField } from "@/components/reaction-diffusion-field";
 import { UnclaimedState } from "@/components/unclaimed-state";
@@ -246,8 +248,8 @@ function Landing() {
             label="treasury"
             tag="on-chain"
             name="Trezu"
-            iconSrc={`${assetsUrl}/static/svg/trezu-symbol.svg`}
-            logoSrc={`${assetsUrl}/static/svg/trezu.svg`}
+            iconSrc={trezuSymbol}
+            logoSrc={trezuLogo}
             logoAlt="Trezu"
             body="Manage your team's capital in minutes from a single dashboard without ever giving up your keys."
             url="https://trezu.app/"
@@ -364,7 +366,9 @@ function StackCard({
         </div>
         {logoSrc ? (
           <h3 className="h-12 flex items-center gap-3 leading-none">
-            {iconSrc && <img src={iconSrc} alt="" className="h-12 w-12 shrink-0" />}
+            {iconSrc && (
+              <img src={iconSrc} alt="" aria-hidden="true" className="h-12 w-12 shrink-0" />
+            )}
             <img
               src={logoSrc}
               alt={logoAlt ?? name}

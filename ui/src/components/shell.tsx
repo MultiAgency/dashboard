@@ -227,9 +227,9 @@ export function RouteError() {
 export function UnknownDoc() {
   return (
     <SignText
-      eyebrow="handbook · 404"
+      eyebrow="agency · 404"
       headline="unknown doc"
-      body="That entry isn't in the handbook. Browse the docs index."
+      body="That entry isn't in the docs. Browse the index."
       ctaLabel="← all docs"
       ctaTo="/docs"
     />

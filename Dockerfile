@@ -21,8 +21,8 @@ COPY --from=builder --chown=appuser:appgroup /app/bunfig.toml .
 COPY --from=builder --chown=appuser:appgroup /app/api ./api
 COPY --from=builder --chown=appuser:appgroup /app/ui ./ui
 
-RUN mkdir -p .bos/generated .bos/logs && \
-    chown -R appuser:appgroup .bos && \
+RUN mkdir -p .bos/generated .bos/logs dist && \
+    chown -R appuser:appgroup .bos dist && \
     chown appuser:appgroup /app
 
 ENV NODE_ENV=production

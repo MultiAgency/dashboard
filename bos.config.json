@@ -84,14 +84,14 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-29-ui-dashboard-multiagency-8d47c3e0a-ze.zephyrcloud.app",
+      "production": "https://multiagentic-32-ui-dashboard-multiagency-d91c42f56-ze.zephyrcloud.app",
       "integrity": "sha384-y+EcN/vnZ2fUtZb8O0s6Ejtga9iQXc51r2jY3NZvJ6QOlRfzZAEEXeknVDcOCpAu",
-      "ssr": "https://multiagentic-30-ui-dashboard-multiagency-4f674fd12-ze.zephyrcloud.app"
+      "ssr": "https://multiagentic-33-ui-dashboard-multiagency-15201b7fa-ze.zephyrcloud.app"
     },
     "api": {
       "name": "api",
       "development": "local:api",
-      "production": "https://multiagentic-31-api-dashboard-multiagency-d3e58eda0-ze.zephyrcloud.app",
+      "production": "https://multiagentic-34-api-dashboard-multiagency-944626453-ze.zephyrcloud.app",
       "integrity": "sha384-vzm+UStU5q/YwB0KOSznM4Q8vsEA88YSmLh1XgsOaoeRufuzcuet9HfkHQ7vhibx",
       "secrets": [
         "API_DATABASE_URL",

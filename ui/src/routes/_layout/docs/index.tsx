@@ -19,8 +19,8 @@ const SECTION_TITLE: Record<DocSection, string> = {
 };
 
 const SECTION_EYEBROW: Record<DocSection, string> = {
-  operating: "handbook · model",
-  skills: "handbook · skills",
+  operating: "agency · model",
+  skills: "agency · skills",
 };
 
 function DocsIndex() {

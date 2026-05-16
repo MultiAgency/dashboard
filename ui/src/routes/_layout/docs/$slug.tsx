@@ -42,7 +42,7 @@ function DocPage() {
     return <UnknownDoc />;
   }
 
-  const eyebrow = doc.section === "skills" ? "handbook · skill" : "handbook · model";
+  const eyebrow = doc.section === "skills" ? "agency · skill" : "agency · model";
   // fall back to the registry title only when the markdown has no leading "# ..."
   const showRegistryTitle = contentQuery.isSuccess && !/^\s*#\s/.test(contentQuery.data ?? "");
 

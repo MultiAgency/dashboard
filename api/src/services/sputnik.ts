@@ -259,8 +259,15 @@ async function rpcCall<T>(body: unknown): Promise<T> {
   return json.result;
 }
 
+function decodeViewResult(result: { result?: number[]; error?: string }): string {
+  // call_function errors surface inside result.error, not at the JSON-RPC top level.
+  if (result.error) throw new Error(result.error);
+  if (!result.result) throw new Error("View call returned no result");
+  return new TextDecoder().decode(new Uint8Array(result.result));
+}
+
 async function fetchAvailableNearBalance(daoAccountId: string): Promise<string> {
-  const result = await rpcCall<{ result: number[] }>({
+  const result = await rpcCall<{ result?: number[]; error?: string }>({
     jsonrpc: "2.0",
     id: "available",
     method: "query",
@@ -272,14 +279,13 @@ async function fetchAvailableNearBalance(daoAccountId: string): Promise<string> 
       args_base64: btoa("{}"),
     },
   });
-  const text = new TextDecoder().decode(new Uint8Array(result.result));
   // Coerce to string — older Sputnik deployments may JSON-encode u128 as number.
-  return String(JSON.parse(text));
+  return String(JSON.parse(decodeViewResult(result)));
 }
 
 async function fetchFtBalance(accountId: string, tokenContractId: string): Promise<string> {
   const args = btoa(JSON.stringify({ account_id: accountId }));
-  const result = await rpcCall<{ result: number[] }>({
+  const result = await rpcCall<{ result?: number[]; error?: string }>({
     jsonrpc: "2.0",
     id: "ft_balance",
     method: "query",
@@ -291,8 +297,7 @@ async function fetchFtBalance(accountId: string, tokenContractId: string): Promi
       args_base64: args,
     },
   });
-  const text = new TextDecoder().decode(new Uint8Array(result.result));
-  return String(JSON.parse(text));
+  return String(JSON.parse(decodeViewResult(result)));
 }
 
 async function getCachedBalance(cacheKey: string, fetcher: () => Promise<string>): Promise<string> {
