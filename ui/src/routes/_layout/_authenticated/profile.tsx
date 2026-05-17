@@ -5,7 +5,7 @@ import { useAuthClient } from "@/app";
 import { Avatar, AvatarFallback, AvatarImage, Button, Card, CardContent } from "@/components";
 import { Field } from "@/components/admin-form";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { sessionQueryKey, sessionQueryOptions, signOut } from "@/lib/auth";
+import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/profile")({
   head: () => ({
@@ -57,7 +57,7 @@ function ProfilePage() {
   const avatarUrl = resolveAvatarUrl(profile);
 
   const signOutMutation = useMutation({
-    mutationFn: () => signOut(authClient),
+    mutationFn: () => authClient.signOut(),
     onSuccess: async () => {
       queryClient.setQueryData(sessionQueryKey, null);
       await queryClient.invalidateQueries({ queryKey: sessionQueryKey });

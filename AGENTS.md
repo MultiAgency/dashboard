@@ -1,3 +1,36 @@
+<!-- intent-skills:start -->
+# Skill mappings - load `use` with `npx @tanstack/intent@latest load <use>`.
+skills:
+  - when: "Install TanStack Devtools, pick framework adapter (React/Vue/Solid/Preact), register plugins via plugins prop, configure shell (position, hotkeys, theme, hideUntilHover, requireUrlFlag, eventBusConfig). TanStackDevtools component, defaultOpen, localStorage persistence."
+    use: "@tanstack/devtools#devtools-app-setup"
+  - when: "Publish plugin to npm and submit to TanStack Devtools Marketplace. PluginMetadata registry format, plugin-registry.ts, pluginImport (importName, type), requires (packageName, minVersion), framework tagging, multi-framework submissions, featured plugins."
+    use: "@tanstack/devtools#devtools-marketplace"
+  - when: "Build devtools panel components that display emitted event data. Listen via EventClient.on(), handle theme (light/dark), use @tanstack/devtools-ui components. Plugin registration (name, render, id, defaultOpen), lifecycle (mount, activate, destroy), max 3 active plugins. Two paths: Solid.js core with devtools-ui for multi-framework support, or framework-specific panels."
+    use: "@tanstack/devtools#devtools-plugin-panel"
+  - when: "Handle devtools in production vs development. removeDevtoolsOnBuild, devDependency vs regular dependency, conditional imports, NoOp plugin variants for tree-shaking, non-Vite production exclusion patterns."
+    use: "@tanstack/devtools#devtools-production"
+  - when: "Two-way event patterns between devtools panel and application. App-to-devtools observation, devtools-to-app commands, time-travel debugging with snapshots and revert. structuredClone for snapshot safety, distinct event suffixes for observation vs commands, serializable payloads only."
+    use: "@tanstack/devtools-event-client#devtools-bidirectional"
+  - when: "Create typed EventClient for a library. Define event maps with typed payloads, pluginId auto-prepend namespacing, emit()/on()/onAll()/onAllPluginEvents() API. Connection lifecycle (5 retries, 300ms), event queuing, enabled/disabled state, SSR fallbacks, singleton pattern. Unique pluginId requirement to avoid event collisions."
+    use: "@tanstack/devtools-event-client#devtools-event-client"
+  - when: "Analyze library codebase for critical architecture and debugging points, add strategic event emissions. Identify middleware boundaries, state transitions, lifecycle hooks. Consolidate events (1 not 15), debounce high-frequency updates, DRY shared payload fields, guard emit() for production. Transparent server/client event bridging."
+    use: "@tanstack/devtools-event-client#devtools-instrumentation"
+  - when: "TanStack Router bundler plugin for route generation and automatic code splitting. Supports Vite, Webpack, Rspack, and esbuild. Configures autoCodeSplitting, routesDirectory, target framework, and code split groupings."
+    use: "@tanstack/router-plugin#router-plugin"
+  - when: "Load environment variables from a .env file into process.env for Node.js applications. Use when configuring apps with secrets, setting up local development environments, managing API keys and database uRLs, parsing .env file contents, or populating environment variables programmatically. Always use this skill when the user mentions .env, even for simple tasks like \"set up dotenv\" — the skill contains critical gotchas (encrypted keys, variable expansion, command substitution) that prevent common production issues."
+    use: "dotenv#dotenv"
+  - when: "Use dotenvx to run commands with environment variables, manage multiple .env files, expand variables, and encrypt env files for safe commits and CI/CD."
+    use: "dotenv#dotenvx"
+  - when: "Build every-plugin modules with oRPC contracts, Effect services, and Module Federation. Use when creating or modifying plugins under plugins/ or the _template scaffold."
+    use: "every-plugin#plugin-development"
+  - when: "Test every-plugin modules with vitest and the plugin runtime. Use when writing or modifying plugin tests under plugins/*/src/__tests__/ or plugins/*/tests/."
+    use: "every-plugin#plugin-testing"
+  - when: "Development workflow for everything-dev projects using bos dev, bos start, and the Module Federation runtime. Use when starting dev servers, debugging hot reload, or understanding the service-descriptor architecture."
+    use: "everything-dev#dev-workflow"
+  - when: "Publish bos.config.json to the FastKV registry, sync from upstream, and upgrade workspace packages. Use when deploying, syncing, or managing runtime configuration across projects."
+    use: "everything-dev#publish-sync"
+<!-- intent-skills:end -->
+
 # Agent Instructions
 
 Operational guidance for AI agents working on the **Agency Dashboard Template** repo (maintained by [MultiAgency](https://github.com/MultiAgency); built on the [everything.dev](https://github.com/NEARBuilders/everything-dev) runtime, scaffolded via `bos init`). The repo is a fork-and-customize template for on-chain agencies. Same routes for everyone — `/`, `/work`, `/team`, `/treasury`, `/payouts`, `/docs`, plus three intake forms (`/apply` for contributors, `/register` for founders, `/contact` for clients) — with operator-only sections (Manage Projects, Allocations, Contributors, Applications Inbox, Billings, Proposals) revealed inline on the matching public route when the signed-in NEAR account holds an operator role on the DAO. `/admin/projects/$slug` is the only deep-admin route; `/settings` configures agency identity + DAO. Verify what exists in `ui/src/routes/` and `api/src/contract.ts` before assuming a surface is missing.
@@ -166,18 +199,17 @@ bun lint        # Run linting
 ### Authentication Check
 Routes requiring auth use `_authenticated.tsx` layout. Auth is NEAR-only via `better-near-auth` SIWN; there is no login page, so unauthenticated users are sent back to `/` where the landing exposes the connect button:
 ```typescript
-import { getSessionFromData, sessionQueryOptions } from "@/lib/session";
+import { sessionQueryOptions } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated")({
   beforeLoad: async ({ context }) => {
     const session = await context.queryClient.ensureQueryData(
-      sessionQueryOptions(context.session),
+      sessionQueryOptions(context.authClient, context.session),
     );
-    const auth = getSessionFromData(session);
-    if (!auth.isAuthenticated) {
+    if (!session?.user) {
       throw redirect({ to: "/" });
     }
-    return { auth, session };
+    return { session };
   },
 });
 ```
@@ -185,12 +217,11 @@ export const Route = createFileRoute("/_layout/_authenticated")({
 ### API Client Usage
 oRPC returns the contract output shape directly — no `{ data }` envelope is added by the client. Destructure to match the contract.
 ```typescript
-import { useApiClient } from "@/lib/use-api-client";
+import { useApiClient } from "@/app";
 
 function MyComponent() {
   const apiClient = useApiClient();
   const { status, timestamp } = await apiClient.ping();
-  const { data } = await apiClient.projects.list();
   await apiClient.applications.create({ kind, name, email });
 }
 ```

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useMatchRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 import { GithubIcon, NearWordmark, XIcon } from "@/components/icons";
@@ -11,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { UserNav } from "@/components/user-nav";
-import { useClientValue } from "@/hooks/use-client";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { publicSettingsQueryOptions } from "@/lib/queries";
@@ -28,14 +27,20 @@ const PRIMARY_NAV: NavItem[] = [
 const SETTINGS_ITEM: NavItem = { to: "/settings", label: "settings" };
 
 export function Shell({ children }: { children: ReactNode }) {
-  const pathname = useClientValue(() => window.location.pathname, "/");
+  const matchRoute = useMatchRoute();
   const apiClient = useApiClient();
   const { isAuthenticated, isAdmin } = useMeRoles();
 
   const publicSettingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const brandName = publicSettingsQuery.data?.name?.trim() || "MultiAgency";
 
-  const linkActive = (to: string) => pathname === to;
+  const linkActive = (to: string) =>
+    Boolean(
+      matchRoute({
+        to,
+        fuzzy: true,
+      }),
+    );
 
   return (
     <div className="min-h-screen w-full flex bg-background text-foreground">
@@ -119,10 +124,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   </DropdownMenuItem>
                   {isAdmin && (
                     <DropdownMenuItem asChild>
-                      <Link
-                        to={SETTINGS_ITEM.to}
-                        className="font-mono text-xs uppercase tracking-wide"
-                      >
+                      <Link to={SETTINGS_ITEM.to} className="font-mono text-xs uppercase tracking-wide">
                         {SETTINGS_ITEM.label}
                       </Link>
                     </DropdownMenuItem>
@@ -134,7 +136,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main id="main" className="w-full">
+        <main id="main" className="w-full flex-1">
           <div
             className={`w-full mx-auto px-4 sm:px-6 py-6 sm:py-10 animate-fade-in-up ${isAuthenticated ? "max-w-5xl" : "max-w-4xl"}`}
           >
@@ -167,71 +169,5 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
     >
       {item.label}
     </Link>
-  );
-}
-
-type SignTextProps = {
-  eyebrow: string;
-  headline: string;
-  body: string;
-  ctaLabel: string;
-  ctaTo?: string;
-};
-
-function SignText({ eyebrow, headline, body, ctaLabel, ctaTo = "/" }: SignTextProps) {
-  return (
-    <div className="min-h-[70vh] flex items-center justify-center">
-      <div className="text-center space-y-6 max-w-md">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          {eyebrow}
-        </div>
-        <h1 className="font-display text-5xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-          {headline}
-        </h1>
-        <p className="text-base leading-relaxed text-muted-foreground">{body}</p>
-        <div className="pt-2">
-          <Link
-            to={ctaTo}
-            className="inline-flex items-center justify-center font-display uppercase tracking-wide border-2 border-foreground bg-card text-foreground hover:bg-foreground hover:text-background transition-colors duration-150 h-10 px-4 text-sm"
-          >
-            {ctaLabel}
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function NotFound() {
-  return (
-    <SignText
-      eyebrow="agency · 404"
-      headline="no record"
-      body="That route isn't wired. Head back to home."
-      ctaLabel="← back to home"
-    />
-  );
-}
-
-export function RouteError() {
-  return (
-    <SignText
-      eyebrow="agency · error"
-      headline="off the rails"
-      body="Something went wrong loading this page. Head back to home and try again."
-      ctaLabel="← back to home"
-    />
-  );
-}
-
-export function UnknownDoc() {
-  return (
-    <SignText
-      eyebrow="agency · 404"
-      headline="unknown doc"
-      body="That entry isn't in the docs. Browse the index."
-      ctaLabel="← all docs"
-      ctaTo="/docs"
-    />
   );
 }

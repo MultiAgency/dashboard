@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect } from "react";
 import trezuLogo from "@/assets/brand/trezu.svg";
 import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
 import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
@@ -21,6 +20,18 @@ const FALLBACK = {
   tagline: "The future of work is near…",
 };
 
+function getLandingName(settings?: { name?: string | null } | null) {
+  return settings?.name?.trim() || FALLBACK.name;
+}
+
+function getLandingTagline(settings?: { tagline?: string | null } | null) {
+  return settings?.tagline?.trim() || FALLBACK.tagline;
+}
+
+function getLandingDescription(settings?: { description?: string | null } | null) {
+  return settings?.description?.trim() || META_DESCRIPTION;
+}
+
 const STANDARD = [
   { label: "Website", note: "landing, work, contact" },
   { label: "Treasury", note: "payouts, permissions, policies" },
@@ -29,15 +40,23 @@ const STANDARD = [
 ];
 
 export const Route = createFileRoute("/_layout/")({
-  head: () => ({
-    meta: [{ name: "description", content: META_DESCRIPTION }],
-  }),
-  beforeLoad: async ({ context }) => {
-    // Non-fatal prefetch — landing page projects, so SSR renders cards or the empty state.
-    await context.queryClient
-      .ensureQueryData(projectsListQueryOptions(context.apiClient))
-      .catch(() => {});
+  loader: async ({ context }) => {
+    const [settings] = await Promise.all([
+      context.queryClient.ensureQueryData(publicSettingsQueryOptions(context.apiClient)).catch(() => null),
+      context.queryClient.ensureQueryData(projectsListQueryOptions(context.apiClient)).catch(() => null),
+    ]);
+
+    return {
+      landingTitle: `${getLandingName(settings)} — ${getLandingTagline(settings)}`,
+      landingDescription: getLandingDescription(settings),
+    };
   },
+  head: ({ loaderData }) => ({
+    meta: [
+      { title: loaderData?.landingTitle ?? `${FALLBACK.name} — ${FALLBACK.tagline}` },
+      { name: "description", content: loaderData?.landingDescription ?? META_DESCRIPTION },
+    ],
+  }),
   component: Landing,
 });
 
@@ -57,18 +76,8 @@ function Landing() {
   const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
 
   const s = settingsQuery.data;
-  const agencyName = s?.name?.trim() || FALLBACK.name;
+  const agencyName = getLandingName(s);
   const headline = s?.headline?.trim() || FALLBACK.headline;
-  const tagline = s?.tagline?.trim() || FALLBACK.tagline;
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const prev = document.title;
-    document.title = `${agencyName} — ${tagline}`;
-    return () => {
-      document.title = prev;
-    };
-  }, [agencyName, tagline]);
   const description = s?.description?.trim() || null;
   const contactEmail = s?.contactEmail?.trim() || null;
   const docsUrl = s?.docsUrl?.trim() || null;
@@ -96,10 +105,8 @@ function Landing() {
         <div className="relative flex flex-col items-start space-y-6 text-left">
           <div className="w-full pl-3 pr-3">
             <h1
-              className="font-black uppercase leading-[0.88] break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl"
+              className="font-brand font-black uppercase leading-[0.88] break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-[-0.04em]"
               style={{
-                fontFamily: '"Bungee", "Impact", "Arial Black", sans-serif',
-                letterSpacing: "-0.04em",
                 fontFeatureSettings: '"kern", "liga"',
                 WebkitFontSmoothing: "subpixel-antialiased",
                 MozOsxFontSmoothing: "auto",

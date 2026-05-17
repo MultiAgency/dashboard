@@ -6,12 +6,23 @@ import { ContributorsAdminSection } from "@/components/contributors-admin-sectio
 import { UnclaimedState } from "@/components/unclaimed-state";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
-import { publicSettingsQueryOptions } from "@/lib/queries";
+import { publicSettingsQueryOptions, teamListQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/team")({
   head: () => ({
     meta: [{ title: "Team" }, { name: "description", content: "Roles defined on the agency DAO." }],
   }),
+  loader: async ({ context }) => {
+    const settings = await context.queryClient
+      .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
+      .catch(() => null);
+
+    if (settings && !settings.isPlaceholder) {
+      await context.queryClient.ensureQueryData(teamListQueryOptions(context.apiClient)).catch(() => null);
+    }
+
+    return null;
+  },
   component: Team,
 });
 
@@ -28,12 +39,7 @@ function Team() {
 
   const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
 
-  const teamQuery = useQuery({
-    queryKey: ["team", "list"],
-    queryFn: () => apiClient.team.list(),
-    staleTime: 60_000,
-    retry: false,
-  });
+  const teamQuery = useQuery(teamListQueryOptions(apiClient));
 
   if (settingsQuery.data?.isPlaceholder) {
     return (

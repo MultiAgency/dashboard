@@ -105,27 +105,3 @@ export function useRelayHistory(session: SessionData | null | undefined, authCli
     refetchInterval: 2000,
   });
 }
-
-export async function connectNear(authClient: AuthClient): Promise<void> {
-  if (authClient.near.isWalletConnected()) {
-    await authClient.near.disconnect();
-  }
-  return new Promise((resolve, reject) => {
-    authClient.signIn.near({
-      onSuccess: () => resolve(),
-      onError: (error) => reject(error),
-    });
-  });
-}
-
-export async function signOut(authClient: AuthClient): Promise<void> {
-  await authClient.signOut();
-}
-
-export function getSessionFromData(session: SessionData | null) {
-  return {
-    isAuthenticated: !!session?.user,
-    user: session?.user ?? null,
-    session: session?.session ?? null,
-  };
-}

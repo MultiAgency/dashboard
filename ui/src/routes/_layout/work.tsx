@@ -20,6 +20,14 @@ export const Route = createFileRoute("/_layout/work")({
   head: () => ({
     meta: [{ title: "Work" }, { name: "description", content: "Active projects." }],
   }),
+  loader: async ({ context }) => {
+    await Promise.all([
+      context.queryClient.ensureQueryData(publicSettingsQueryOptions(context.apiClient)).catch(() => null),
+      context.queryClient.ensureQueryData(projectsListQueryOptions(context.apiClient)).catch(() => null),
+    ]);
+
+    return null;
+  },
   component: WorkIndex,
 });
 

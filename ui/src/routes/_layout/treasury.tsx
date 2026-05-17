@@ -7,7 +7,11 @@ import { UnclaimedState } from "@/components/unclaimed-state";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
-import { publicSettingsQueryOptions } from "@/lib/queries";
+import {
+  publicSettingsQueryOptions,
+  tokensListQueryOptions,
+  treasuryPublicBalancesQueryOptions,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/treasury")({
   head: () => ({
@@ -16,6 +20,25 @@ export const Route = createFileRoute("/_layout/treasury")({
       { name: "description", content: "On-chain treasury balances of the agency DAO." },
     ],
   }),
+  loader: async ({ context }) => {
+    const settings = await context.queryClient
+      .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
+      .catch(() => null);
+
+    const tokens = await context.queryClient
+      .ensureQueryData(tokensListQueryOptions(context.apiClient))
+      .catch(() => null);
+
+    const tokenIds = tokens?.tokens.map((token) => token.tokenId) ?? [];
+
+    if (settings && !settings.isPlaceholder && tokenIds.length > 0) {
+      await context.queryClient
+        .ensureQueryData(treasuryPublicBalancesQueryOptions(context.apiClient, tokenIds))
+        .catch(() => null);
+    }
+
+    return null;
+  },
   component: TreasuryPage,
 });
 
@@ -34,23 +57,12 @@ function TreasuryPage() {
 
   const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
 
-  const tokensQuery = useQuery({
-    queryKey: ["tokens", "list"],
-    queryFn: () => apiClient.tokens.list(),
-    staleTime: 60 * 60_000,
-    retry: false,
-  });
+  const tokensQuery = useQuery(tokensListQueryOptions(apiClient));
 
   const tokens = tokensQuery.data?.tokens ?? [];
   const tokenIds = tokens.map((t) => t.tokenId);
 
-  const balancesQuery = useQuery({
-    queryKey: ["treasury", "balances", "public", [...tokenIds].sort().join(",")],
-    queryFn: () => apiClient.treasury.getPublicBalances({ tokenIds }),
-    enabled: tokenIds.length > 0,
-    staleTime: 60_000,
-    retry: false,
-  });
+  const balancesQuery = useQuery(treasuryPublicBalancesQueryOptions(apiClient, tokenIds));
 
   if (settingsQuery.data?.isPlaceholder) {
     return (
