@@ -4,7 +4,7 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components";
 import { UnknownDoc } from "@/components/route-fallbacks";
-import { findDoc, type DocEntry } from "@/lib/docs-registry";
+import { type DocEntry, findDoc } from "@/lib/docs-registry";
 
 type DocLoaderData = {
   doc: DocEntry | null;

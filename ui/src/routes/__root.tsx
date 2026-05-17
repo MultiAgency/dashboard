@@ -165,10 +165,7 @@ function RootComponent() {
 
 function RootNotFound() {
   return (
-    <DocumentFallback
-      title="Page not found"
-      body="The page you requested doesn't exist here."
-    />
+    <DocumentFallback title="Page not found" body="The page you requested doesn't exist here." />
   );
 }
 

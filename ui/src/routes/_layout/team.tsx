@@ -18,7 +18,9 @@ export const Route = createFileRoute("/_layout/team")({
       .catch(() => null);
 
     if (settings && !settings.isPlaceholder) {
-      await context.queryClient.ensureQueryData(teamListQueryOptions(context.apiClient)).catch(() => null);
+      await context.queryClient
+        .ensureQueryData(teamListQueryOptions(context.apiClient))
+        .catch(() => null);
     }
 
     return null;

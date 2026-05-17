@@ -1,5 +1,4 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_layout/_authenticated/_configured/_admin/admin")({
   component: AdminLayout,

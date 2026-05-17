@@ -124,7 +124,10 @@ export function Shell({ children }: { children: ReactNode }) {
                   </DropdownMenuItem>
                   {isAdmin && (
                     <DropdownMenuItem asChild>
-                      <Link to={SETTINGS_ITEM.to} className="font-mono text-xs uppercase tracking-wide">
+                      <Link
+                        to={SETTINGS_ITEM.to}
+                        className="font-mono text-xs uppercase tracking-wide"
+                      >
                         {SETTINGS_ITEM.label}
                       </Link>
                     </DropdownMenuItem>
