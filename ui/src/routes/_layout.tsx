@@ -1,10 +1,9 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { NotFound, Shell } from "@/components/shell";
+import { AppNotFound, AppRouteError, Shell } from "@/components/shell";
 import { meRolesQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout")({
   beforeLoad: async ({ context }) => {
-    // Non-fatal prefetches — settings warms the header brand; meRoles warms operator nav.
     await Promise.all([
       context.queryClient
         .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
@@ -17,14 +16,30 @@ export const Route = createFileRoute("/_layout")({
     ]);
   },
   component: Layout,
-  // In-subtree not-found (e.g. /work/junk); top-level misses hit __root's handler.
-  notFoundComponent: () => <NotFound />,
+  notFoundComponent: LayoutNotFound,
+  errorComponent: LayoutError,
 });
 
 function Layout() {
   return (
     <Shell>
       <Outlet />
+    </Shell>
+  );
+}
+
+function LayoutNotFound() {
+  return (
+    <Shell>
+      <AppNotFound />
+    </Shell>
+  );
+}
+
+function LayoutError() {
+  return (
+    <Shell>
+      <AppRouteError />
     </Shell>
   );
 }

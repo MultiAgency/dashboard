@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { connectNear, sessionQueryKey, sessionQueryOptions, signOut } from "@/lib/auth";
+import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
 import { meRolesQueryKey } from "@/lib/queries";
 
 export function UserNav() {
@@ -23,7 +23,7 @@ export function UserNav() {
   const user = session?.user;
 
   const connectMutation = useMutation({
-    mutationFn: () => connectNear(authClient),
+    mutationFn: () => authClient.signIn.near(),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey }),
@@ -37,7 +37,7 @@ export function UserNav() {
   });
 
   const signOutMutation = useMutation({
-    mutationFn: () => signOut(authClient),
+    mutationFn: () => authClient.signOut(),
     onSuccess: async () => {
       queryClient.setQueryData(sessionQueryKey, null);
       await Promise.all([

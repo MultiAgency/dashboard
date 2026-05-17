@@ -81,8 +81,8 @@ against the now-migrated schema. Skipping this step before `bos dev` causes
 
 This serves the UI and API locally and mounts them on a remote host (loaded via `bos.config.json`'s `extends`).
 
-- UI: http://localhost:3002
-- API: dynamic port (check the `[API ✓ ready]` line in the dev server output)
+- UI: http://localhost:3003
+- API: http://localhost:3001 by default (check the ready output if ports auto-bump)
 
 ## CLI Commands
 

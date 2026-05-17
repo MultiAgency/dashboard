@@ -1,12 +1,44 @@
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components";
 import { UnknownDoc } from "@/components/shell";
-import { findDoc } from "@/lib/docs-registry";
-import { Route as RootRoute } from "../../__root";
+import { type DocEntry, findDoc } from "@/lib/docs-registry";
+
+type DocLoaderData = {
+  doc: DocEntry | null;
+  content: string | null;
+  error: string | null;
+};
+
+async function loadDocPage(slug: string, assetsUrl: string): Promise<DocLoaderData> {
+  const doc = findDoc(slug);
+
+  if (!doc) {
+    return { doc: null, content: null, error: null };
+  }
+
+  try {
+    const res = await fetch(`${assetsUrl}/${doc.source}/${slug}.md`);
+    if (!res.ok) {
+      throw new Error(`Could not load ${slug}.md (${res.status})`);
+    }
+
+    const raw = await res.text();
+    return {
+      doc,
+      content: raw.replace(/^---\n[\s\S]*?\n---\n/, ""),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      doc,
+      content: null,
+      error: error instanceof Error ? error.message : "Could not load document",
+    };
+  }
+}
 
 export const Route = createFileRoute("/_layout/docs/$slug")({
   head: ({ params }) => {
@@ -15,28 +47,16 @@ export const Route = createFileRoute("/_layout/docs/$slug")({
       meta: [{ title: doc ? `${doc.title} · Docs` : "Docs" }],
     };
   },
+  loader: ({ params, context }) => loadDocPage(params.slug, context.assetsUrl || ""),
   component: DocPage,
 });
 
 function DocPage() {
-  const { slug } = Route.useParams();
-  const doc = findDoc(slug);
-  const loaderData = RootRoute.useLoaderData();
-  const assetsUrl = loaderData?.assetsUrl ?? "";
+  const loaderData = Route.useLoaderData() as DocLoaderData;
+  const doc = loaderData?.doc;
+  const content = loaderData?.content ?? null;
+  const error = loaderData?.error ?? null;
   const navigate = useNavigate();
-
-  const contentQuery = useQuery({
-    queryKey: ["docs", slug, assetsUrl],
-    queryFn: async () => {
-      if (!doc) throw new Error("unknown");
-      const res = await fetch(`${assetsUrl}/${doc.source}/${slug}.md`);
-      if (!res.ok) throw new Error(`Could not load ${slug}.md (${res.status})`);
-      const raw = await res.text();
-      return raw.replace(/^---\n[\s\S]*?\n---\n/, "");
-    },
-    enabled: !!doc,
-    staleTime: 5 * 60_000,
-  });
 
   if (!doc) {
     return <UnknownDoc />;
@@ -44,7 +64,7 @@ function DocPage() {
 
   const eyebrow = doc.section === "skills" ? "agency · skill" : "agency · model";
   // fall back to the registry title only when the markdown has no leading "# ..."
-  const showRegistryTitle = contentQuery.isSuccess && !/^\s*#\s/.test(contentQuery.data ?? "");
+  const showRegistryTitle = !!content && !/^\s*#\s/.test(content);
 
   return (
     <div className="max-w-3xl mx-auto space-y-2 animate-fade-in">
@@ -59,13 +79,13 @@ function DocPage() {
         )}
       </header>
 
-      {contentQuery.isLoading ? (
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          loading…
-        </p>
-      ) : contentQuery.isError ? (
+      {error ? (
         <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
           could not load — try again
+        </p>
+      ) : !content ? (
+        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          loading…
         </p>
       ) : (
         <article className="space-y-4 text-sm leading-relaxed">
@@ -169,7 +189,7 @@ function DocPage() {
               hr: () => <hr className="border-t-2 border-foreground/20 my-6" />,
             }}
           >
-            {contentQuery.data ?? ""}
+            {content}
           </ReactMarkdown>
         </article>
       )}

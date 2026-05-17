@@ -1,6 +1,6 @@
 # Contributing Guide
 
-Thank you for contributing to the **Agency Dashboard Template**! 🎉
+Thank you for contributing to the **Agency Dashboard Template**.
 
 This template is maintained by [MultiAgency](https://github.com/MultiAgency) and built on the upstream [everything.dev](https://github.com/NEARBuilders/everything-dev) runtime. Issues and PRs about the template (agency surfaces, modules, dashboard customizations) belong here. Issues and PRs about the underlying runtime/framework belong upstream.
 
@@ -12,7 +12,7 @@ bun run db:migrate       # Apply API schema to ./api.db
 bos dev --host remote    # Start development (typical workflow)
 ```
 
-UI is at http://localhost:3002; API runs on a dynamic port (check the `[API ✓ ready]` line in the dev server output).
+UI typically runs at http://localhost:3003. API and auth ports may vary by local dev session; check the ready lines in the dev output if ports auto-bump.
 
 **Need more details?** See [README.md](./README.md) for architecture and [AGENTS.md](./AGENTS.md) for the agent operational guide.
 
@@ -60,6 +60,7 @@ Secrets go in `.env` (see [.env.example](./.env.example) for required variables)
 - **[AGENTS.md](./AGENTS.md)** - Operational guide for AI agents
 - **[ui/public/README.md](./ui/public/README.md)** - Public-facing description of the maintainer's reference deployment
 - **[ui/public/skill.md](./ui/public/skill.md)** - Agent-oriented usage notes for the deployed site
+- **[OPERATOR.md](./OPERATOR.md)** - Operator notes for the workspace
 
 ## Git Workflow
 
@@ -103,6 +104,20 @@ git commit -m "test(ui): add coverage for login flow"
 - `test:` - Tests
 - `chore:` - Build/config/tooling changes
 
+### Changesets
+
+We use [Changesets](https://github.com/changesets/changesets) for release notes and version coordination.
+
+**When to add a changeset:**
+- Any user-facing change
+- Breaking changes
+- Skip for docs-only changes, internal refactors, and test-only changes
+
+**Create a changeset:**
+```bash
+bun run changeset
+```
+
 ### Pull Request Process
 
 1. **Before creating PR:**
@@ -122,6 +137,7 @@ git commit -m "test(ui): add coverage for login flow"
    - All tests must pass
    - Type checking must pass
    - Linting must pass
+   - Add a changeset when the change is user-facing
 
 4. **After merge:**
    - Delete your branch
@@ -133,9 +149,10 @@ git commit -m "test(ui): add coverage for login flow"
 3. **Create** a feature branch: `git checkout -b feature/amazing-feature`
 4. **Make** your changes
 5. **Test** thoroughly: `bun test` and `bun typecheck`
-6. **Commit** using [Semantic Commits](https://gist.github.com/joshbuchea/6f47e86d2510bce28f8e7f42ae84c716)
-7. **Push** to your fork: `git push origin feature/amazing-feature`
-8. **Open** a Pull Request to the main repository
+6. **Add a changeset** when appropriate: `bun run changeset`
+7. **Commit** using [Semantic Commits](https://gist.github.com/joshbuchea/6f47e86d2510bce28f8e7f42ae84c716)
+8. **Push** to your fork: `git push origin feature/amazing-feature`
+9. **Open** a Pull Request to the main repository
 
 ### Code Style
 
@@ -171,8 +188,9 @@ For issues with the upstream runtime itself, file at [NEARBuilders/everything-de
 
 - Check [AGENTS.md](./AGENTS.md) for agent operational guidance
 - Check the [README](./README.md) for architecture and setup
+- Check [OPERATOR.md](./OPERATOR.md) for operator-facing notes
 - Ask questions in GitHub Issues or Discussions
 
 ---
 
-Thank you for your contributions! 💚
+Thank you for your contributions.

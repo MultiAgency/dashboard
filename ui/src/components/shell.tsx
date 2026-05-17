@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useMatchRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 import { GithubIcon, NearWordmark, XIcon } from "@/components/icons";
@@ -11,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { UserNav } from "@/components/user-nav";
-import { useClientValue } from "@/hooks/use-client";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { publicSettingsQueryOptions } from "@/lib/queries";
@@ -28,14 +27,20 @@ const PRIMARY_NAV: NavItem[] = [
 const SETTINGS_ITEM: NavItem = { to: "/settings", label: "settings" };
 
 export function Shell({ children }: { children: ReactNode }) {
-  const pathname = useClientValue(() => window.location.pathname, "/");
+  const matchRoute = useMatchRoute();
   const apiClient = useApiClient();
   const { isAuthenticated, isAdmin } = useMeRoles();
 
   const publicSettingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const brandName = publicSettingsQuery.data?.name?.trim() || "MultiAgency";
 
-  const linkActive = (to: string) => pathname === to;
+  const linkActive = (to: string) =>
+    Boolean(
+      matchRoute({
+        to,
+        fuzzy: true,
+      }),
+    );
 
   return (
     <div className="min-h-screen w-full flex bg-background text-foreground">
@@ -134,7 +139,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main id="main" className="w-full">
+        <main id="main" className="w-full flex-1">
           <div
             className={`w-full mx-auto px-4 sm:px-6 py-6 sm:py-10 animate-fade-in-up ${isAuthenticated ? "max-w-5xl" : "max-w-4xl"}`}
           >
@@ -202,7 +207,7 @@ function SignText({ eyebrow, headline, body, ctaLabel, ctaTo = "/" }: SignTextPr
   );
 }
 
-export function NotFound() {
+export function AppNotFound() {
   return (
     <SignText
       eyebrow="agency · 404"
@@ -213,7 +218,7 @@ export function NotFound() {
   );
 }
 
-export function RouteError() {
+export function AppRouteError() {
   return (
     <SignText
       eyebrow="agency · error"

@@ -1,10 +1,9 @@
-import "@/agency-theme.css";
-
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import {
   ClientOnly,
   createRootRouteWithContext,
   HeadContent,
+  Link,
   Outlet,
   Scripts,
 } from "@tanstack/react-router";
@@ -15,7 +14,6 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import type { RouterContext } from "@/app";
 import { getBaseStyles } from "@/app";
-import { NotFound, RouteError, Shell } from "@/components/shell";
 import { sessionQueryKey } from "@/lib/auth";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 
@@ -51,9 +49,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     const siteUrl = runtimeConfig?.hostUrl
       ? `${runtimeConfig.hostUrl}${runtimeBasePath === "/" ? "" : runtimeBasePath}`
       : "";
-    const title = "MultiAgency";
-    const description = "Human-led, AI-native agencies for hire.";
-    const siteName = title;
+    const title = runtimeConfig?.runtime?.title ?? runtimeConfig?.account ?? "";
+    const description = runtimeConfig?.runtime?.description ?? "";
     const ogImage = `${assetsUrl}/metadata.png`;
 
     const structuredData = {
@@ -73,9 +70,9 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         },
         { title },
         { name: "description", content: description },
-        { name: "theme-color", content: "#ffff33" },
+        { name: "theme-color", content: "#ffffff" },
         { name: "color-scheme", content: "light dark" },
-        { name: "application-name", content: siteName },
+        { name: "application-name", content: title },
         { name: "mobile-web-app-capable", content: "yes" },
         {
           name: "apple-mobile-web-app-status-bar-style",
@@ -87,9 +84,9 @@ export const Route = createRootRouteWithContext<RouterContext>()({
           imageUrl: ogImage,
           title,
           description,
-          siteName,
+          siteName: title,
           siteUrl,
-          alt: "MultiAgency — human-led, AI-native agencies for hire.",
+          alt: description,
         }),
       ],
       links: [
@@ -100,7 +97,10 @@ export const Route = createRootRouteWithContext<RouterContext>()({
           href: "https://fonts.gstatic.com",
           crossOrigin: "anonymous",
         },
+        { rel: "shortcut icon", href: `${assetsUrl}/favicon.ico` },
         { rel: "icon", type: "image/svg+xml", href: `${assetsUrl}/icon.svg` },
+        { rel: "icon", type: "image/png", sizes: "32x32", href: `${assetsUrl}/favicon-32x32.png` },
+        { rel: "icon", type: "image/png", sizes: "16x16", href: `${assetsUrl}/favicon-16x16.png` },
         {
           rel: "apple-touch-icon",
           sizes: "180x180",
@@ -125,16 +125,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
     };
   },
   component: RootComponent,
-  notFoundComponent: () => (
-    <Shell>
-      <NotFound />
-    </Shell>
-  ),
-  errorComponent: () => (
-    <Shell>
-      <RouteError />
-    </Shell>
-  ),
+  notFoundComponent: RootNotFound,
+  errorComponent: RootError,
 });
 
 function RootComponent() {
@@ -168,5 +160,42 @@ function RootComponent() {
         )}
       </body>
     </html>
+  );
+}
+
+function RootNotFound() {
+  return (
+    <DocumentFallback title="Page not found" body="The page you requested doesn't exist here." />
+  );
+}
+
+function RootError() {
+  return (
+    <DocumentFallback
+      title="Application error"
+      body="Something went wrong before the app layout could render."
+    />
+  );
+}
+
+function DocumentFallback({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="min-h-dvh bg-background text-foreground flex items-center justify-center px-6">
+      <div className="max-w-md text-center space-y-4">
+        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          multiagency.ai
+        </p>
+        <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
+        <p className="text-sm text-muted-foreground">{body}</p>
+        <div>
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center h-10 px-4 border border-border bg-card hover:bg-accent transition-colors"
+          >
+            Back home
+          </Link>
+        </div>
+      </div>
+    </div>
   );
 }

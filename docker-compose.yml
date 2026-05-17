@@ -1,10 +1,10 @@
 x-pg-common: &pg-common
   image: postgres:17-alpine
   environment: &pg-env
-    POSTGRES_USER: everythingdev
-    POSTGRES_PASSWORD: everythingdev
+    POSTGRES_USER: multiagency
+    POSTGRES_PASSWORD: multiagency
   healthcheck:
-    test: ["CMD-SHELL", "pg_isready -U everythingdev"]
+    test: ["CMD-SHELL", "pg_isready -U multiagency"]
     interval: 3s
     timeout: 3s
     retries: 5

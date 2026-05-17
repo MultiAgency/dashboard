@@ -49,7 +49,9 @@ function statusBadgeVariant(status: ProposalStatus): "default" | "outline" | "de
   return "outline";
 }
 
-export const Route = createFileRoute("/_layout/_authenticated/_configured/admin/projects/$slug")({
+export const Route = createFileRoute(
+  "/_layout/_authenticated/_configured/_admin/admin/projects/$slug",
+)({
   head: ({ params }) => ({
     meta: [{ title: `${params.slug} | Admin · Projects` }],
   }),
@@ -89,7 +91,7 @@ function AdminProjectDetail() {
     <div className="space-y-6">
       <div>
         <Link
-          to="/work"
+          to="/admin/projects"
           className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
         >
           ← all projects

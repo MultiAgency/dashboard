@@ -28,11 +28,11 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@effect/language-service": "^0.86.1",
+    "@effect/language-service": "^0.85.1",
     "@module-federation/node": "catalog:",
     "@proj-airi/unplugin-drizzle-orm-migrations": "^0.1.4",
-    "@rspack/cli": "^2.0.3",
-    "@rspack/core": "^2.0.3",
+    "@rspack/cli": "catalog:",
+    "@rspack/core": "catalog:",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "dotenv": "^17.2.3",

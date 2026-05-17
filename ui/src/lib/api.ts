@@ -9,10 +9,7 @@ export type ApiClient = ContractRouterClient<ApiContract>;
 
 let browserApiClient: ApiClient | null = null;
 
-function createRpcLink(
-  runtimeConfig: { hostUrl: string; rpcBase: string },
-  forwardCookie?: string,
-) {
+function createRpcLink(runtimeConfig: { hostUrl: string; rpcBase: string }) {
   return new RPCLink({
     url: `${runtimeConfig.hostUrl}${runtimeConfig.rpcBase}`,
     interceptors: [
@@ -41,14 +38,9 @@ function createRpcLink(
       }),
     ],
     fetch(url: RequestInfo | URL, options?: RequestInit) {
-      const headers = new Headers(options?.headers);
-      if (forwardCookie) {
-        headers.set("cookie", forwardCookie);
-      }
       return fetch(url, {
         ...options,
         credentials: "include",
-        headers,
       });
     },
   });
@@ -75,18 +67,6 @@ export function createApiClient(runtimeConfig: { hostUrl: string; rpcBase: strin
   }
 
   return client;
-}
-
-// SSR: a fresh per-request client that forwards the caller's cookie so
-// session-gated procedures resolve. Not cached — cookie varies per request.
-export function createServerApiClient(
-  runtimeConfig: { hostUrl: string; rpcBase: string },
-  cookie: string | null,
-): ApiClient {
-  if (!runtimeConfig.hostUrl) {
-    throw new Error("Missing runtime host URL");
-  }
-  return createORPCClient(createRpcLink(runtimeConfig, cookie ?? undefined));
 }
 
 export function useApiClient(): ApiClient {
