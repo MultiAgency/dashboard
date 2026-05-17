@@ -27,13 +27,9 @@
   },
   "plugins": {
     "projects": {
-      "development": "https://elliot-braem-3560-everything-dev-projects-plugin--0039ec9c5-ze.zephyrcloud.app",
+      "extends": "bos://work.efiz.near/projects.everything.dev#plugins.projects",
       "secrets": [
         "PROJECTS_DATABASE_URL"
-      ],
-      "routes": [
-        "ui/src/routes/_layout/_authenticated/organizations/**",
-        "ui/src/routes/_layout/_authenticated/projects/**"
       ],
       "sidebar": [
         {

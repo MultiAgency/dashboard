@@ -37,7 +37,7 @@
       "@orpc/contract": "1.13.14",
       "@better-auth/api-key": "1.6.10",
       "@better-auth/passkey": "1.6.10",
-      "everything-dev": "^1.28.2",
+      "everything-dev": "^1.28.3",
       "@scure/base": "^2.2.0",
       "pg": "^8.12.0",
       "@types/pg": "^8.11.6",
@@ -52,7 +52,14 @@
       "@rspack/cli": "1.7.11",
       "@rsbuild/core": "1.7.5",
       "@rsbuild/plugin-react": "1.4.6",
-      "@libsql/client": "0.17.0"
+      "@libsql/client": "0.17.0",
+      "@tanstack/react-query-devtools": "^5.91.1",
+      "@tanstack/react-devtools": "^0.10.1",
+      "@tanstack/react-form": "^1.29.1",
+      "@tanstack/react-table": "^8.21.3",
+      "@tanstack/zod-form-adapter": "^0.42.1",
+      "zephyr-rspack-plugin": "^1.1.0",
+      "zephyr-rsbuild-plugin": "^1.0.1"
     }
   },
   "scripts": {
@@ -114,7 +121,8 @@
     "drizzle-orm": "^0.45.1",
     "effect": "catalog:",
     "zod": "catalog:",
-    "@opentelemetry/api": "catalog:"
+    "@opentelemetry/api": "catalog:",
+    "@libsql/client": "^0.17.0"
   },
   "overrides": {
     "axios": "1.13.6",

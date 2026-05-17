@@ -9,6 +9,7 @@
         "@better-auth/passkey": "catalog:",
         "@electric-sql/pglite": "catalog:",
         "@hot-labs/near-connect": "0.11.2",
+        "@libsql/client": "^0.17.0",
         "@opentelemetry/api": "catalog:",
         "@orpc/contract": "^1.13.14",
         "@orpc/server": "^1.13.14",
@@ -40,7 +41,7 @@
         "@electric-sql/pglite": "catalog:",
         "@orpc/contract": "catalog:",
         "@orpc/server": "catalog:",
-        "better-auth": "1.6.10",
+        "better-auth": "catalog:",
         "drizzle-kit": "catalog:",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
@@ -60,7 +61,7 @@
         "everything-dev": "catalog:",
         "vite-tsconfig-paths": "^5.1.4",
         "vitest": "catalog:",
-        "zephyr-rspack-plugin": "^1.1.0",
+        "zephyr-rspack-plugin": "catalog:",
       },
       "peerDependencies": {
         "typescript": "catalog:",
@@ -89,14 +90,14 @@
         "@radix-ui/react-slot": "^1.2.4",
         "@radix-ui/react-tabs": "^1.1.13",
         "@scure/base": "catalog:",
-        "@tanstack/react-devtools": "^0.10.1",
-        "@tanstack/react-form": "^1.29.1",
+        "@tanstack/react-devtools": "catalog:",
+        "@tanstack/react-form": "catalog:",
         "@tanstack/react-query": "catalog:",
-        "@tanstack/react-query-devtools": "^5.91.1",
+        "@tanstack/react-query-devtools": "catalog:",
         "@tanstack/react-router": "catalog:",
         "@tanstack/react-router-devtools": "catalog:",
-        "@tanstack/react-table": "^8.21.3",
-        "@tanstack/zod-form-adapter": "^0.42.1",
+        "@tanstack/react-table": "catalog:",
+        "@tanstack/zod-form-adapter": "catalog:",
         "better-auth": "catalog:",
         "better-near-auth": "catalog:",
         "class-variance-authority": "^0.7.1",
@@ -139,13 +140,13 @@
         "tailwindcss": "^4.1.17",
         "typescript": "catalog:",
         "vitest": "catalog:",
-        "zephyr-rsbuild-plugin": "^1.0.1",
+        "zephyr-rsbuild-plugin": "catalog:",
       },
       "peerDependencies": {
         "@hot-labs/near-connect": "catalog:",
         "@tanstack/react-query": "catalog:",
         "@tanstack/react-router": "catalog:",
-        "near-kit": "^0.14.0",
+        "near-kit": "catalog:",
         "react": "catalog:",
         "react-dom": "catalog:",
       },
@@ -183,10 +184,15 @@
     "@rspack/core": "1.7.11",
     "@scure/base": "^2.2.0",
     "@tanstack/intent": "^0.0.40",
+    "@tanstack/react-devtools": "^0.10.1",
+    "@tanstack/react-form": "^1.29.1",
     "@tanstack/react-query": "5.90.20",
+    "@tanstack/react-query-devtools": "^5.91.1",
     "@tanstack/react-router": "1.157.16",
     "@tanstack/react-router-devtools": "1.157.16",
+    "@tanstack/react-table": "^8.21.3",
     "@tanstack/router-plugin": "1.157.16",
+    "@tanstack/zod-form-adapter": "^0.42.1",
     "@types/node": "^25.0.3",
     "@types/pg": "^8.11.6",
     "@types/react": "^19.2.7",
@@ -197,13 +203,15 @@
     "drizzle-orm": "^0.45.1",
     "effect": "3.21.0",
     "every-plugin": "^2.5.11",
-    "everything-dev": "^1.28.2",
+    "everything-dev": "^1.28.3",
     "near-kit": "^0.14.0",
     "pg": "^8.12.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17",
+    "zephyr-rsbuild-plugin": "^1.0.1",
+    "zephyr-rspack-plugin": "^1.1.0",
     "zod": "4.3.6",
   },
   "packages": {
@@ -1517,7 +1525,7 @@
 
     "every-plugin": ["every-plugin@2.5.11", "", { "dependencies": { "@module-federation/enhanced": "^2.4.0", "@module-federation/node": "^2.7.42", "@module-federation/runtime-core": "^2.4.0", "@orpc/contract": "^1.13.4", "@orpc/experimental-publisher": "^1.13.4", "@orpc/server": "^1.13.4", "@orpc/tanstack-query": "^1.13.4" }, "peerDependencies": { "@orpc/client": "^1.13.4", "@orpc/openapi": "^1.13.4", "@orpc/react-query": "^1.13.4", "@orpc/zod": "^1.13.4", "@rspack/core": "1.7.11", "effect": "^3.21.0", "typescript": "^5.9.3", "zod": "^4.3.6" } }, "sha512-m2Ld9PoB7UMHfDRmS69P+/jNi+fpcBfNBdFJYZAtoMZH0NQQ6zX2JMOtKlEipgvIoxf0UulLeb9E6CGJetgD9w=="],
 
-    "everything-dev": ["everything-dev@1.28.2", "", { "dependencies": { "@clack/prompts": "^0.10.1", "@effect/platform": "^0.96.1", "@effect/platform-node": "^0.106.0", "@module-federation/enhanced": "^2.4.0", "@module-federation/node": "^2.7.42", "@module-federation/runtime-core": "^2.4.0", "chalk": "^5.6.2", "defu": "^6.1.7", "dotenv": "^17.3.1", "effect": "^3.21.0", "every-plugin": "^2.5.11", "execa": "^9.5.2", "glob": "^13.0.6", "gradient-string": "^3.0.0", "ink": "^6.8.0", "tar": "^7.4.3" }, "peerDependencies": { "@tanstack/react-query": ">=5.0.0", "@tanstack/react-router": ">=1.0.0", "react": ">=19.0.0", "react-dom": ">=19.0.0", "zod": "^4.3.6" }, "optionalPeers": ["@tanstack/react-query", "@tanstack/react-router"], "bin": { "everything-dev": "dist/cli.mjs", "bos": "dist/cli.mjs" } }, "sha512-OspbQb+Bb0MSETb1DlsNWnUqceg+U4shGQ1i96Cj4PY54mHVImSAAdu+o6BW+MUHmZg+pnYrIEjYHuNx+Iah+g=="],
+    "everything-dev": ["everything-dev@1.28.3", "", { "dependencies": { "@clack/prompts": "^0.10.1", "@effect/platform": "^0.96.1", "@effect/platform-node": "^0.106.0", "@module-federation/enhanced": "^2.4.0", "@module-federation/node": "^2.7.42", "@module-federation/runtime-core": "^2.4.0", "chalk": "^5.6.2", "defu": "^6.1.7", "dotenv": "^17.3.1", "effect": "^3.21.0", "every-plugin": "^2.5.11", "execa": "^9.5.2", "glob": "^13.0.6", "gradient-string": "^3.0.0", "ink": "^6.8.0", "tar": "^7.4.3" }, "peerDependencies": { "@tanstack/react-query": ">=5.0.0", "@tanstack/react-router": ">=1.0.0", "react": ">=19.0.0", "react-dom": ">=19.0.0", "zod": "^4.3.6" }, "optionalPeers": ["@tanstack/react-query", "@tanstack/react-router"], "bin": { "everything-dev": "dist/cli.mjs", "bos": "dist/cli.mjs" } }, "sha512-tMvZhQ95HPrNe21j4N4JRey6rMp61DdzeVbB/uxfpzSWYhXm8v6w+7DjNlhIFge+L/C6pttRq/uFfJUSL+oarw=="],
 
     "execa": ["execa@9.6.1", "", { "dependencies": { "@sindresorhus/merge-streams": "^4.0.0", "cross-spawn": "^7.0.6", "figures": "^6.1.0", "get-stream": "^9.0.0", "human-signals": "^8.0.1", "is-plain-obj": "^4.1.0", "is-stream": "^4.0.1", "npm-run-path": "^6.0.0", "pretty-ms": "^9.2.0", "signal-exit": "^4.1.0", "strip-final-newline": "^4.0.0", "yoctocolors": "^2.1.1" } }, "sha512-9Be3ZoN4LmYR90tUoVu2te2BsbzHfhJyfEiAVfz7N5/zv+jduIfLrV2xdQXOHbaD6KgpGdO9PRPM1Y4Q9QkPkA=="],
 
@@ -2533,6 +2541,10 @@
 
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
+    "@better-auth/api-key/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
+
+    "@better-auth/passkey/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
+
     "@effect/platform-node/undici": ["undici@7.24.7", "", {}, "sha512-H/nlJ/h0ggGC+uRL3ovD+G0i4bqhvsDOpbDv7At5eFLlj2b41L8QliGbnl2H7SnDiYhENphh1tQFJZf+MyfLsQ=="],
 
     "@esbuild-kit/core-utils/esbuild": ["esbuild@0.18.20", "", { "optionalDependencies": { "@esbuild/android-arm": "0.18.20", "@esbuild/android-arm64": "0.18.20", "@esbuild/android-x64": "0.18.20", "@esbuild/darwin-arm64": "0.18.20", "@esbuild/darwin-x64": "0.18.20", "@esbuild/freebsd-arm64": "0.18.20", "@esbuild/freebsd-x64": "0.18.20", "@esbuild/linux-arm": "0.18.20", "@esbuild/linux-arm64": "0.18.20", "@esbuild/linux-ia32": "0.18.20", "@esbuild/linux-loong64": "0.18.20", "@esbuild/linux-mips64el": "0.18.20", "@esbuild/linux-ppc64": "0.18.20", "@esbuild/linux-riscv64": "0.18.20", "@esbuild/linux-s390x": "0.18.20", "@esbuild/linux-x64": "0.18.20", "@esbuild/netbsd-x64": "0.18.20", "@esbuild/openbsd-x64": "0.18.20", "@esbuild/sunos-x64": "0.18.20", "@esbuild/win32-arm64": "0.18.20", "@esbuild/win32-ia32": "0.18.20", "@esbuild/win32-x64": "0.18.20" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-ceqxoedUrcayh7Y7ZX6NdbbDzGROiyVBgC4PriJThBKSVPWnnFHZAkfI1lJT8QFkOwH4qOS2SJkS4wvpGl8BpA=="],
@@ -2776,6 +2788,8 @@
     "anymatch/picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
 
     "api/vite-tsconfig-paths": ["vite-tsconfig-paths@5.1.4", "", { "dependencies": { "debug": "^4.1.1", "globrex": "^0.1.2", "tsconfck": "^3.0.3" }, "peerDependencies": { "vite": "*" }, "optionalPeers": ["vite"] }, "sha512-cYj0LRuLV2c2sMqhqhGpaO3LretdtMn/BVX4cPLanIZuwwrkVl+lK84E/miEXkCHWXuq65rhNN4rXsBcOB3S4w=="],
+
+    "better-auth/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "better-near-auth/zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 

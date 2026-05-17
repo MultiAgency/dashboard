@@ -19,7 +19,7 @@
     "@electric-sql/pglite": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
-    "better-auth": "1.6.10",
+    "better-auth": "catalog:",
     "drizzle-kit": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
@@ -39,7 +39,7 @@
     "everything-dev": "catalog:",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "catalog:",
-    "zephyr-rspack-plugin": "^1.1.0"
+    "zephyr-rspack-plugin": "catalog:"
   },
   "scripts": {
     "build": "bun run build:types && rspack build",

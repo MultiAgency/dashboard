@@ -182,9 +182,6 @@ function DocumentFallback({ title, body }: { title: string; body: string }) {
   return (
     <div className="min-h-dvh bg-background text-foreground flex items-center justify-center px-6">
       <div className="max-w-md text-center space-y-4">
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          multiagency.ai
-        </p>
         <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
         <p className="text-sm text-muted-foreground">{body}</p>
         <div>
