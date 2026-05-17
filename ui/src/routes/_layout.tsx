@@ -1,6 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { AppNotFound, AppRouteError } from "@/components/route-fallbacks";
-import { Shell } from "@/components/shell";
+import { AppNotFound, AppRouteError, Shell } from "@/components/shell";
 import { meRolesQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout")({

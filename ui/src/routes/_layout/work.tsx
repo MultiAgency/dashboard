@@ -21,7 +21,7 @@ export const Route = createFileRoute("/_layout/work")({
     meta: [{ title: "Work" }, { name: "description", content: "Active projects." }],
   }),
   loader: async ({ context }) => {
-    await Promise.all([
+    const [settings, projects] = await Promise.all([
       context.queryClient
         .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
         .catch(() => null),
@@ -30,7 +30,7 @@ export const Route = createFileRoute("/_layout/work")({
         .catch(() => null),
     ]);
 
-    return null;
+    return { settings, projects };
   },
   component: WorkIndex,
 });
@@ -52,13 +52,18 @@ type ProjectListItem = {
 };
 
 function WorkIndex() {
+  const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
   const { isOperator, isAdmin, isLoaded } = useMeRoles();
   const projectsQuery = useQuery({
     ...projectsListQueryOptions(apiClient),
     staleTime: 30_000,
+    initialData: loaderData.projects ?? undefined,
   });
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const settingsQuery = useQuery({
+    ...publicSettingsQueryOptions(apiClient),
+    initialData: loaderData.settings ?? undefined,
+  });
 
   const nearnUrl = settingsQuery.data?.nearnAccountId
     ? nearnSponsorUrl(settingsQuery.data.nearnAccountId)

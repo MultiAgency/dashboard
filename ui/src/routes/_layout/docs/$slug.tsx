@@ -3,7 +3,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components";
-import { UnknownDoc } from "@/components/route-fallbacks";
+import { UnknownDoc } from "@/components/shell";
 import { type DocEntry, findDoc } from "@/lib/docs-registry";
 
 type DocLoaderData = {

@@ -17,13 +17,14 @@ export const Route = createFileRoute("/_layout/team")({
       .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
       .catch(() => null);
 
+    let team = null;
     if (settings && !settings.isPlaceholder) {
-      await context.queryClient
+      team = await context.queryClient
         .ensureQueryData(teamListQueryOptions(context.apiClient))
         .catch(() => null);
     }
 
-    return null;
+    return { settings, team };
   },
   component: Team,
 });
@@ -36,12 +37,19 @@ type Role = {
 };
 
 function Team() {
+  const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
   const { isOperator, isLoaded } = useMeRoles();
 
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const settingsQuery = useQuery({
+    ...publicSettingsQueryOptions(apiClient),
+    initialData: loaderData.settings ?? undefined,
+  });
 
-  const teamQuery = useQuery(teamListQueryOptions(apiClient));
+  const teamQuery = useQuery({
+    ...teamListQueryOptions(apiClient),
+    initialData: loaderData.team ?? undefined,
+  });
 
   if (settingsQuery.data?.isPlaceholder) {
     return (

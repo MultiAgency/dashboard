@@ -30,14 +30,15 @@ export const Route = createFileRoute("/_layout/treasury")({
       .catch(() => null);
 
     const tokenIds = tokens?.tokens.map((token) => token.tokenId) ?? [];
+    let balances = null;
 
     if (settings && !settings.isPlaceholder && tokenIds.length > 0) {
-      await context.queryClient
+      balances = await context.queryClient
         .ensureQueryData(treasuryPublicBalancesQueryOptions(context.apiClient, tokenIds))
         .catch(() => null);
     }
 
-    return null;
+    return { settings, tokens, balances };
   },
   component: TreasuryPage,
 });
@@ -52,17 +53,27 @@ type Token = {
 };
 
 function TreasuryPage() {
+  const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
   const { isOperator, isAdmin, isLoaded } = useMeRoles();
 
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const settingsQuery = useQuery({
+    ...publicSettingsQueryOptions(apiClient),
+    initialData: loaderData.settings ?? undefined,
+  });
 
-  const tokensQuery = useQuery(tokensListQueryOptions(apiClient));
+  const tokensQuery = useQuery({
+    ...tokensListQueryOptions(apiClient),
+    initialData: loaderData.tokens ?? undefined,
+  });
 
   const tokens = tokensQuery.data?.tokens ?? [];
   const tokenIds = tokens.map((t) => t.tokenId);
 
-  const balancesQuery = useQuery(treasuryPublicBalancesQueryOptions(apiClient, tokenIds));
+  const balancesQuery = useQuery({
+    ...treasuryPublicBalancesQueryOptions(apiClient, tokenIds),
+    initialData: loaderData.balances ?? undefined,
+  });
 
   if (settingsQuery.data?.isPlaceholder) {
     return (
