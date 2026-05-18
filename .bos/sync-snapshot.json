@@ -1,6 +1,6 @@
 {
   "parentRef": "bos://dev.everything.near/everything.dev",
-  "timestamp": "2026-05-18T20:02:50.587Z",
+  "timestamp": "2026-05-18T20:31:40.451Z",
   "files": {
     ".env.example": "4bc14dd795fd3754",
     ".gitignore": "a1f2fd5f05921e50",
@@ -9,11 +9,11 @@
     "bos.config.json": "1492914d9677a90f",
     "bunfig.toml": "4cbe3ca05f990f5d",
     "CONTRIBUTING.md": "e0e6584085e46ed7",
-    "package.json": "3ccefe084c6db30e",
+    "package.json": "d3c8c50fc2193c44",
     ".changeset/config.json": "4a1a55e02038945c",
     ".changeset/README.md": "bf33c79d7e0477dc",
-    ".github/workflows/ci.yml": "b50fc209dd89a16a",
-    ".github/workflows/publish.yml": "acc534aabde2fe15",
+    ".github/workflows/ci.yml": "e8349d6435b03f10",
+    ".github/workflows/publish.yml": "de308c5cdd713139",
     "ui/package.json": "29ff303082d2dcec",
     "ui/postcss.config.mjs": "5b0bc4c78be977cd",
     "ui/rsbuild.config.ts": "6b3b7f9a9ba41ccc",

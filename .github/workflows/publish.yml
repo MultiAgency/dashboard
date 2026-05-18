@@ -75,12 +75,14 @@ jobs:
           }
 
           const deployablePackageJsons = []
+
           for (const dir of ["ui", "api", "host"]) {
             const packageJsonPath = join(dir, "package.json")
             if (existsSync(packageJsonPath)) {
               deployablePackageJsons.push(packageJsonPath)
             }
           }
+
           if (existsSync("plugins")) {
             for (const entry of readdirSync("plugins", { withFileTypes: true })) {
               if (!entry.isDirectory()) continue
@@ -155,9 +157,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
-
-      - name: Build every-plugin
-        run: bun run --cwd packages/every-plugin build
 
       - name: Run postinstall
         run: bun run postinstall
