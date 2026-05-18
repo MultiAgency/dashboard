@@ -25,7 +25,8 @@
     "effect": "catalog:",
     "every-plugin": "catalog:",
     "pg": "catalog:",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@better-auth/core": "catalog:"
   },
   "devDependencies": {
     "@effect/language-service": "^0.85.1",

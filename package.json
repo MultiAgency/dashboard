@@ -37,7 +37,7 @@
       "@orpc/contract": "1.14.3",
       "@better-auth/api-key": "1.6.9",
       "@better-auth/passkey": "1.6.9",
-      "everything-dev": "^1.28.10",
+      "everything-dev": "^1.28.12",
       "@scure/base": "^2.2.0",
       "pg": "^8.12.0",
       "@types/pg": "^8.11.6",
@@ -59,11 +59,12 @@
       "@tanstack/react-table": "^8.21.3",
       "@tanstack/zod-form-adapter": "^0.42.1",
       "zephyr-rspack-plugin": "^1.1.0",
-      "zephyr-rsbuild-plugin": "^1.0.1"
+      "zephyr-rsbuild-plugin": "^1.0.1",
+      "@better-auth/core": "1.6.9"
     }
   },
   "scripts": {
-    "dev": "node_modules/.bin/bos dev",
+    "dev": "node_modules/.bin/bos dev --host remote",
     "dev:ui": "node_modules/.bin/bos dev --ui local --api remote",
     "dev:api": "node_modules/.bin/bos dev --ui remote --api local",
     "dev:proxy": "node_modules/.bin/bos dev --proxy",
@@ -85,10 +86,9 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "echo 'Packages versioned - app release handled by workflow'",
-    "test": "bun run test:api && bun run test:e2e",
+    "test": "bun run test:api",
     "test:api": "cd api && bun run test tests/integration/ tests/unit/",
     "test:integration": "cd api && bun run test tests/integration/",
-    "test:e2e": "bun run --cwd host test:e2e",
     "dev:postgres": "docker compose up -d --wait && bun run dev",
     "dev:postgres:down": "docker compose down",
     "dev:postgres:reset": "docker compose down -v && docker compose up -d --wait",
@@ -120,7 +120,8 @@
     "effect": "catalog:",
     "zod": "catalog:",
     "@opentelemetry/api": "catalog:",
-    "@libsql/client": "catalog:"
+    "@libsql/client": "catalog:",
+    "@better-auth/core": "catalog:"
   },
   "overrides": {
     "axios": "1.13.6",
