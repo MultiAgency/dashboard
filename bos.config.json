@@ -1,7 +1,7 @@
 {
   "extends": "bos://dev.everything.near/everything.dev",
   "account": "multiagentic.near",
-  "domain": "multiagency.ai",
+  "domain": "dev.multiagency.ai",
   "title": "MultiAgency",
   "description": "Human-led, AI-native agencies for hire.",
   "testnet": "agency.testnet",

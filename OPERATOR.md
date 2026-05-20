@@ -80,6 +80,15 @@ A fresh deploy renders against `multiagency.sputnik-dao.near` and shows live dat
 
 Blank values fall through to defaults; non-blank wins. See `api/src/lib/settings-defaults.ts` for the resolver. Multi-tenant per-user settings is v2.
 
+## Network & infrastructure env
+
+Set these in your hosting provider (they are not in the synced `.env.example`):
+
+- `AGENCY_ORG_ACCOUNT_MAINNET` / `AGENCY_ORG_ACCOUNT_TESTNET` — the DAO (or any NEAR account) that is the agency's identity + treasury per network. DAO features require a Sputnik subaccount (`.sputnik-dao.near` / `.sputnikv2.testnet`). Read-only in `/admin/settings`; change here and restart.
+- `NEAR_NETWORK` — pin to a single network (`mainnet`/`testnet`), which hides the NetworkToggle so every visitor sees that network. Leave unset for multi-network mode (visitors toggle).
+- `NEAR_RPC_URL_MAINNET` / `NEAR_RPC_URL_TESTNET` — optional private-RPC overrides; public FastNEAR endpoints route correctly per-account by default.
+- `FASTNEAR_API_KEY` — lifts rate limits on FastNEAR RPC + REST; sent as Bearer auth only when the destination host is FastNEAR.
+
 ## After setup — operating surfaces
 
 Day-to-day operations happen at:

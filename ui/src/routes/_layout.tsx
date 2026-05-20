@@ -3,6 +3,7 @@ import { AppNotFound, AppRouteError, Shell } from "@/components/shell";
 import { meRolesQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout")({
+  head: () => ({ meta: [{ name: "theme-color", content: "#ffff33" }] }),
   beforeLoad: async ({ context }) => {
     await Promise.all([
       context.queryClient

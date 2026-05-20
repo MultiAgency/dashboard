@@ -18,7 +18,7 @@ rspack  Zephyr   FastKV   bos sync
 
 ## Publish
 
-Publish `bos.config.json` to the temporary `dev.everything.near` FastKV registry:
+Publish `bos.config.json` to the configured FastKV registry path for the app account/domain:
 
 ```bash
 bos publish                  # Publish config only
@@ -33,24 +33,27 @@ After `bos publish --deploy`:
 2. `bos.config.json` is auto-updated with production URLs + integrity hashes
 3. Config is published to the FastKV registry at `{account}/bos/gateways/{gateway}/bos.config.json`
 
+Lineage model:
+- `extends` is the canonical parent edge between published runtimes
+- `account` is the tenant namespace root for that runtime
+- `domain` is the public ingress for that runtime
+- a child runtime can extend a parent and still become a new tenant root on its own domain
+
 ## Sync
 
-Pull updates from a published config:
+Pull template updates from the parent referenced by local `bos.config.json`:
 
 ```bash
-bos sync                                    # From every.near/everything.dev (default)
-bos sync --account foo.near --gateway bar.com
-bos sync --network testnet
+bos sync
 bos sync --force
-bos sync --files                            # Also sync template files (rsbuild.config.ts, etc.)
+bos sync --dry-run
 ```
 
-What gets synced from remote:
+What gets synced from the parent template:
 - `app.*.production` — Zephyr URLs
 - `app.*.ssr` — SSR URLs
-- `app.*.template`, `app.*.files`, `app.*.sync` — scaffolding config
 - `shared` — shared dependency versions
-- `gateway` — gateway URLs
+- framework-owned files like build configs, router wiring, and shared runtime scaffolding
 
 What stays local:
 - `account`, `testnet` — your NEAR accounts
@@ -97,13 +100,6 @@ bos build --force        # Force rebuild
 
 These are auto-generated during `bos publish --deploy` and verified at runtime by the host.
 
-## Project Creation
-
-```bash
-bos create project my-app                           # Interactive
-bos create project my-app -a my.near --testnet my.testnet  # Skip prompts
-```
-
 ## Configuration
 
 All runtime config lives in `bos.config.json`. Key sections:
@@ -114,12 +110,49 @@ All runtime config lives in `bos.config.json`. Key sections:
 - `plugins.{key}` — Plugin configs with variables, secrets, routes
 - `shared.ui`, `shared.api` — Module Federation shared dependency versions
 
+### extends
+
+Config can inherit from a parent via `extends`:
+```json
+{ "extends": "bos://dev.everything.near/everything.dev" }
+```
+
+Or per-environment:
+```json
+{
+  "extends": {
+    "development": "bos://dev.everything.near/everything.dev",
+    "production": "bos://dev.everything.near/everything.dev",
+    "staging": "bos://staging.everything.near/everything.dev"
+  }
+}
+```
+
+Deep merge: child overrides parent. Plugins are deep-merged (set to `null` to remove). `secrets` arrays are unioned. See the `extends-config` skill for full details.
+
+Registry and discovery should treat `extends` as runtime lineage. That keeps remix ancestry, tenant roots, and published BOS refs aligned without adding a second parent field.
+
+For remix-host browsing with the apps plugin:
+- use `parent` when you want only direct children of a runtime
+- use `ancestor` when you want all descendants of a runtime, even when that runtime is not the lineage root
+- use `root` when you want the whole tree from the topmost ancestor
+- prefer querying by canonical BOS ref like `bos://account/gateway`, not by host URL, because shared-host descendants can reuse the same host
+
+### What bos dev writes vs bos publish writes
+
+| Mode | Writes to | File |
+|------|-----------|------|
+| `bos dev` | `.bos/bos.resolved-config.json` | Full merged config (gitignored) |
+| `bos build` | `.bos/bos.resolved-config.json` | Full merged config |
+| `bos publish --deploy` | `bos.config.json` | Snapshot with pinned production URLs |
+| `bos plugin publish` | `bos.config.json` | Records production URL + integrity |
+| `bos sync` | `bos.config.json` | Merges template updates |
+
 ## Troubleshooting
 
 ```bash
 bos info              # Show current configuration
-bos status             # Check remote health
-bos clean              # Clean build artifacts
+bos status            # Check remote health
 ```
 
 Process issues:
