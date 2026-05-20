@@ -13,7 +13,6 @@
       "recommended": true,
       "suspicious": {
         "noConsole": "off",
-        "noDocumentCookie": "off",
         "noExplicitAny": "off",
         "noTsIgnore": "off"
       },
