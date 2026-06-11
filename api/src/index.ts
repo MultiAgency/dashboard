@@ -532,10 +532,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
         projects: {
           list: builder.agency.projects.list.handler(async ({ context }) => {
             const orgAccountId = await getOrgAccountId(context.reqHeaders);
+            if (!plugins.projects) return { data: [] };
+
             const upstream: UpstreamProject[] = [];
             let cursor: string | undefined;
             do {
-              const result = await plugins.projects().listProjects({
+              const result = await plugins.projects(proxyCtx(orgAccountId)).listProjects({
                 organizationId: orgAccountId,
                 visibility: "public",
                 status: "active",
