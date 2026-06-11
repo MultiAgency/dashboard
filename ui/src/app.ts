@@ -84,8 +84,8 @@ import type { AuthClient as AuthClientType } from "./lib/auth";
 
 export type { ApiClient } from "./lib/api";
 export { createApiClient, useApiClient, useOrpc } from "./lib/api";
-export type { AuthClient, Organization, Passkey, SessionData } from "./lib/auth";
-export { createAuthClient, sessionQueryOptions, useAuthClient, useRelayHistory } from "./lib/auth";
+export type { AuthClient, NearProfile, Organization, Passkey, SessionData } from "./lib/auth";
+export { createAuthClient, nearProfileOptions, sessionQueryOptions, useAuthClient, useRelayHistory } from "./lib/auth";
 
 import type {
   CreateRouterOptions as BaseCreateRouterOptions,

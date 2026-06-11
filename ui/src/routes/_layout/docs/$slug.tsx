@@ -47,7 +47,7 @@ export const Route = createFileRoute("/_layout/docs/$slug")({
       meta: [{ title: doc ? `${doc.title} · Docs` : "Docs" }],
     };
   },
-  loader: ({ params, context }) => loadDocPage(params.slug, context.assetsUrl || ""),
+  loader: ({ params, context }) => loadDocPage(params.slug, context.runtimeConfig?.assetsUrl || ""),
   component: DocPage,
 });
 

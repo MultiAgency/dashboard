@@ -1,5 +1,5 @@
 {
-  "extends": "bos://dev.everything.near/everything.dev",
+  "extends": "bos://dev.everything.near/dev.everything.dev",
   "account": "multiagentic.near",
   "domain": "dev.multiagency.ai",
   "title": "MultiAgency",
@@ -26,59 +26,5 @@
       ]
     }
   },
-  "plugins": {},
-  "shared": {
-    "ui": {
-      "effect": {
-        "version": "3.21.2",
-        "requiredVersion": "^3.21.2",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "zod": {
-        "version": "4.3.6",
-        "requiredVersion": "^4.3.6",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "@orpc/contract": {
-        "version": "1.14.3",
-        "requiredVersion": "^1.14.3",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "better-auth": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "better-near-auth": {
-        "version": "1.5.0",
-        "requiredVersion": "^1.5.0",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "@better-auth/api-key": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      },
-      "@better-auth/passkey": {
-        "version": "1.6.9",
-        "requiredVersion": "^1.6.9",
-        "singleton": true,
-        "strictVersion": false,
-        "shareScope": "default"
-      }
-    },
-    "plugins": {}
-  }
+  "plugins": {}
 }
