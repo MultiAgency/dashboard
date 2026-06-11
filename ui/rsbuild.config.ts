@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ModuleFederationPlugin } from "@module-federation/enhanced/rspack";
@@ -11,6 +12,7 @@ import { computeSriHashForUrl } from "everything-dev/integrity";
 import { withZephyr } from "zephyr-rsbuild-plugin";
 import pkg from "./package.json";
 
+const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const normalizedName = pkg.name;
@@ -27,7 +29,63 @@ const bosConfig = fs.existsSync(resolvedConfigPath)
       return data;
     })()
   : JSON.parse(fs.readFileSync(bosConfigPath, "utf8"));
-const uiSharedDeps = bosConfig.shared?.ui ?? {};
+
+function getInstalledVersion(pkgName: string, fallback: string): string {
+  try {
+    let currentDir = path.dirname(require.resolve(pkgName));
+    for (let i = 0; i < 5; i += 1) {
+      const packageJsonPath = path.join(currentDir, "package.json");
+      if (fs.existsSync(packageJsonPath)) {
+        return (JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as { version: string })
+          .version;
+      }
+      currentDir = path.dirname(currentDir);
+    }
+
+    throw new Error(`Could not resolve installed version for ${pkgName}`);
+  } catch {
+    const match = fallback.match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/);
+    return match ? match[0] : fallback.replace(/^[\^~>=<\s]+/, "");
+  }
+}
+
+const SHARE_DEFAULTS = {
+  requiredVersion: false,
+  singleton: true,
+  strictVersion: false,
+  eager: false,
+  shareScope: "default",
+} as const;
+
+const uiSharedDeps = {
+  react: { version: getInstalledVersion("react", pkg.dependencies.react), ...SHARE_DEFAULTS },
+  "react-dom": {
+    version: getInstalledVersion("react-dom", pkg.dependencies["react-dom"]),
+    ...SHARE_DEFAULTS,
+  },
+  "@orpc/client": {
+    version: getInstalledVersion("@orpc/client", pkg.dependencies["@orpc/client"]),
+    ...SHARE_DEFAULTS,
+  },
+  "@orpc/contract": {
+    version: getInstalledVersion("@orpc/contract", pkg.dependencies["@orpc/contract"]),
+    ...SHARE_DEFAULTS,
+  },
+  "@tanstack/react-query": {
+    version: getInstalledVersion(
+      "@tanstack/react-query",
+      pkg.dependencies["@tanstack/react-query"],
+    ),
+    ...SHARE_DEFAULTS,
+  },
+  "@tanstack/react-router": {
+    version: getInstalledVersion(
+      "@tanstack/react-router",
+      pkg.dependencies["@tanstack/react-router"],
+    ),
+    ...SHARE_DEFAULTS,
+  },
+};
 
 function updateBosConfig(field: "production" | "ssr", url: string, integrity?: string) {
   try {
@@ -125,6 +183,7 @@ function createClientConfig() {
         target: "web",
         output: {
           uniqueName: normalizedName,
+          chunkFilename: "static/js/async/[name].[contenthash].js",
         },
         resolve: {
           fallback: { bufferutil: false, "utf-8-validate": false },
@@ -152,13 +211,29 @@ function createClientConfig() {
 function createServerConfig() {
   const plugins = [pluginReact()];
 
+  plugins.push({
+    name: "restore-manifest-public-path",
+    setup(api) {
+      api.onAfterBuild(() => {
+        const manifestPath = path.resolve(__dirname, "dist/mf-manifest.json");
+        if (!fs.existsSync(manifestPath)) return;
+        const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+        if (manifest.metaData?.publicPath && manifest.metaData.publicPath !== "auto") {
+          manifest.metaData.publicPath = "auto";
+          fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+        }
+      });
+    },
+  });
+
   if (shouldDeploy) {
     plugins.push(
       withZephyr({
         hooks: {
           onDeployComplete: async (info) => {
             console.log("🚀 UI SSR Deployed:", info.url);
-            const integrity = await computeSriHashForUrl(info.url);
+            const ssrEntryUrl = `${info.url.replace(/\/$/, "")}/remoteEntry.server.js`;
+            const integrity = await computeSriHashForUrl(ssrEntryUrl, { resolveEntryUrl: false });
             updateBosConfig("ssr", info.url, integrity ?? undefined);
           },
         },
@@ -194,7 +269,6 @@ function createServerConfig() {
         target: "async-node",
         output: {
           uniqueName: `${normalizedName}_server`,
-          publicPath: "auto",
           library: { type: "commonjs-module" },
         },
         resolve: {
@@ -220,7 +294,7 @@ function createServerConfig() {
     },
     output: {
       distPath: { root: "dist" },
-      assetPrefix: "auto",
+      assetPrefix: "/",
       cleanDistPath: false,
     },
   });
