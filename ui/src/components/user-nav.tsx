@@ -63,7 +63,9 @@ export function UserNav() {
   const { data: profile } = useQuery(nearProfileOptions(authClient));
   const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
   const isAdmin = roles?.isAdmin ?? false;
-  const avatarUrl = profile?.image?.url ?? (profile?.image?.ipfs_cid ? `https://ipfs.io/ipfs/${profile.image.ipfs_cid}` : null);
+  const avatarUrl =
+    profile?.image?.url ??
+    (profile?.image?.ipfs_cid ? `https://ipfs.io/ipfs/${profile.image.ipfs_cid}` : null);
 
   const connectMutation = useMutation({
     mutationFn: async () => {
