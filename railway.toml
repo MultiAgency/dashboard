@@ -1,9 +1,6 @@
-[build]
-builder = "DOCKERFILE"
-
 [deploy]
+image = "ghcr.io/nearbuilders/everything-dev:latest"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
-overlapSeconds = 30
+healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10

@@ -2,13 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useAuthClient } from "@/app";
+import { nearProfileOptions, useAuthClient } from "@/app";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -59,8 +60,12 @@ export function UserNav() {
 
   const { data: session } = useQuery(sessionQueryOptions(authClient));
   const user = session?.user;
+  const { data: profile } = useQuery(nearProfileOptions(authClient));
   const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
   const isAdmin = roles?.isAdmin ?? false;
+  const avatarUrl =
+    profile?.image?.url ??
+    (profile?.image?.ipfs_cid ? `https://ipfs.io/ipfs/${profile.image.ipfs_cid}` : null);
 
   const connectMutation = useMutation({
     mutationFn: async () => {
@@ -112,7 +117,11 @@ export function UserNav() {
   });
 
   const signOutMutation = useMutation({
-    mutationFn: () => authClient.signOut(),
+    mutationFn: async () => {
+      const { error } = await authClient.signOut();
+      if (error) throw new Error(error.message || "Failed to sign out");
+      await authClient.near.disconnect().catch(() => {});
+    },
     onSuccess: async () => {
       queryClient.setQueryData(sessionQueryKey, null);
       await Promise.all([
@@ -142,14 +151,21 @@ export function UserNav() {
             aria-label={`Signed in as ${identifier}`}
           >
             <Avatar className="size-8 rounded-full ring-1 ring-accent/60">
-              {user.image && <AvatarImage src={user.image} alt={identifier} />}
+              {avatarUrl && <AvatarImage src={avatarUrl} alt={identifier} />}
               <AvatarFallback className="bg-muted text-foreground border-0 text-xs font-medium">
                 {identifier.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuLabel>
+            <div className="space-y-0.5">
+              <p className="text-xs text-muted-foreground">signed in as</p>
+              <p className="truncate text-sm font-medium">{identifier}</p>
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
             <Link to="/profile" className="font-mono text-xs uppercase tracking-wide">
               profile

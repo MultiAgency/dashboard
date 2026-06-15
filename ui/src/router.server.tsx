@@ -57,18 +57,25 @@ const createRouter = (opts: CreateRouterOptions) => {
 
   const history = opts.history ?? createMemoryHistory();
 
+  const cspNonce = opts.context.cspNonce;
   const router = createTanStackRouter({
     routeTree,
     history,
     basepath: opts.basepath,
     context: {
       queryClient,
-      assetsUrl: opts.context.assetsUrl,
       runtimeConfig: opts.context.runtimeConfig,
       apiClient: opts.context.apiClient,
-      authClient: opts.context.authClient ?? createAuthClient(opts.context.runtimeConfig),
+      authClient:
+        opts.context.authClient ??
+        createAuthClient({
+          runtimeConfig: opts.context.runtimeConfig,
+          cspNonce: opts.context.cspNonce,
+        }),
       session: opts.context.session,
+      cspNonce,
     },
+    ...(cspNonce ? { ssr: { nonce: cspNonce } } : {}),
     defaultPreload: "intent",
     scrollRestoration: true,
     defaultStructuralSharing: true,
@@ -107,12 +114,12 @@ const getRouteHead = async (pathname: string, context?: Partial<RouterContext>) 
     history,
     context: {
       queryClient,
-      assetsUrl: context?.assetsUrl ?? "",
       runtimeConfig,
       apiClient:
         context?.apiClient ??
         createApiClient({ hostUrl: runtimeConfig.hostUrl, rpcBase: runtimeConfig.rpcBase }),
-      authClient: context?.authClient ?? createAuthClient(runtimeConfig),
+      authClient:
+        context?.authClient ?? createAuthClient({ runtimeConfig, cspNonce: context?.cspNonce }),
       session: context?.session,
     },
   });
@@ -145,11 +152,15 @@ const renderToStream = async (request: Request, renderOptions: RenderOptions) =>
         basepath: renderOptions.basepath,
         context: {
           queryClient: localQueryClient,
-          assetsUrl: renderOptions.assetsUrl,
           runtimeConfig: renderOptions.runtimeConfig,
           apiClient: renderOptions.apiClient,
-          authClient: createAuthClient(renderOptions.runtimeConfig, request.headers),
+          authClient: createAuthClient({
+            runtimeConfig: renderOptions.runtimeConfig,
+            headers: request.headers,
+            cspNonce: renderOptions.cspNonce,
+          }),
           session: renderOptions.session,
+          cspNonce: renderOptions.cspNonce,
         },
       });
       queryClientRef = localQueryClient;
