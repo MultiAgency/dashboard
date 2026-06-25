@@ -3,12 +3,14 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 
-type MarkdownProps = React.ComponentProps<"article"> & { content: string };
+interface MarkdownProps {
+  content: string;
+  className?: string;
+}
 
-export function Markdown({ content, className, ...props }: MarkdownProps) {
+export function Markdown({ content, className }: MarkdownProps) {
   return (
     <article
-      data-slot="markdown"
       className={cn(
         "prose prose-neutral dark:prose-invert max-w-none",
         "prose-headings:font-semibold prose-headings:tracking-tight",
@@ -27,7 +29,6 @@ export function Markdown({ content, className, ...props }: MarkdownProps) {
         "prose-hr:border-border",
         className,
       )}
-      {...props}
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}

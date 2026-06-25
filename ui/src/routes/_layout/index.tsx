@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAuthClient } from "@/app";
 import trezuLogo from "@/assets/brand/trezu.svg";
 import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
 import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
@@ -10,6 +9,7 @@ import { nearnSponsorUrl } from "@/lib/nearn";
 import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
 import { getRepoUrl } from "@/lib/repo";
 import { trezuTreasuryUrl } from "@/lib/trezu";
+import { Route as RootRoute } from "../__root";
 
 const META_DESCRIPTION = "Human-led, AI-native agencies for hire.";
 
@@ -42,14 +42,10 @@ export const Route = createFileRoute("/_layout/")({
   loader: async ({ context }) => {
     const [settings] = await Promise.all([
       context.queryClient
-        .ensureQueryData(
-          publicSettingsQueryOptions(context.apiClient, context.authClient.near.getNetwork()),
-        )
+        .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
         .catch(() => null),
       context.queryClient
-        .ensureQueryData(
-          projectsListQueryOptions(context.apiClient, context.authClient.near.getNetwork()),
-        )
+        .ensureQueryData(projectsListQueryOptions(context.apiClient))
         .catch(() => null),
     ]);
 
@@ -76,12 +72,11 @@ type LandingProject = {
 
 function Landing() {
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
+  const loaderData = RootRoute.useLoaderData();
+  const assetsUrl = loaderData?.assetsUrl ?? "";
 
-  const settingsQuery = useQuery(
-    publicSettingsQueryOptions(apiClient, authClient.near.getNetwork()),
-  );
-  const projectsQuery = useQuery(projectsListQueryOptions(apiClient, authClient.near.getNetwork()));
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
 
   const s = settingsQuery.data;
   const agencyName = getLandingName(s);
@@ -265,7 +260,7 @@ function Landing() {
             label="bounties"
             tag="live listings"
             name="NEARN"
-            logoSrc="/static/svg/nearn.svg"
+            logoSrc={`${assetsUrl}/static/svg/nearn.svg`}
             logoAlt="NEARN"
             logoHeightClass="h-9"
             body="NEARN connects projects (sponsors) with skilled contributors to complete bounties, projects, and tasks in the NEAR ecosystem."

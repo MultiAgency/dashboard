@@ -1,15 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useApiClient, useAuthClient } from "@/app";
-import { sessionQueryOptions } from "@/lib/auth";
+import { getNetwork, sessionQueryOptions, setNetwork } from "@/lib/auth";
 import { publicSettingsQueryOptions } from "@/lib/queries";
-
-const NETWORK_COOKIE = "current_near_network";
 
 type Network = "mainnet" | "testnet";
 
 export function NetworkToggle() {
-  // Skip SSR — cookie/URL-driven hydration risks class mismatch with runtime config.
+  // Skip SSR — localStorage-driven hydration risks class mismatch with runtime config.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -22,7 +20,7 @@ export function NetworkToggle() {
   // Server pin (NEAR_NETWORK env set) forces single-network mode.
   if (publicSettings?.networkPinned) return null;
 
-  const current = authClient.near.getNetwork();
+  const current = getNetwork();
 
   // Signed in: wallet network IS the network; sign out to switch.
   if (session?.user) return null;
@@ -45,14 +43,8 @@ function NetworkOption({
   current: Network;
   label: string;
 }) {
-  const authClient = useAuthClient();
   const active = value === current;
   const id = `network-${value}`;
-  const handleChange = useCallback(() => {
-    authClient.near.setNetwork(value);
-    // biome-ignore lint/suspicious/noDocumentCookie: carries network to server for settings/DAO routing
-    document.cookie = `${NETWORK_COOKIE}=${value}; path=/; max-age=31536000; samesite=lax; secure`;
-  }, [authClient, value]);
   return (
     <>
       <input
@@ -61,7 +53,9 @@ function NetworkOption({
         name="agency-network"
         value={value}
         checked={active}
-        onChange={handleChange}
+        onChange={() => {
+          void setNetwork(value);
+        }}
         className="sr-only peer"
       />
       <label

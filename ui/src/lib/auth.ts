@@ -16,34 +16,6 @@ import type { ClientRuntimeConfig } from "everything-dev/types";
 import { getRuntimeConfig } from "everything-dev/ui/runtime";
 import type { Auth } from "./auth-types.gen";
 
-type RuntimeAuthVariables = {
-  siwn: {
-    recipient?: string;
-    recipients?: {
-      mainnet?: string;
-      testnet?: string;
-    };
-  };
-};
-
-type CreateAuthClientOptions = {
-  runtimeConfig?: Partial<ClientRuntimeConfig>;
-  headers?: HeadersInit;
-  cspNonce?: string;
-};
-
-type SiwnClientConfig = Parameters<typeof siwnClient>[0] & {
-  cspNonce?: string;
-};
-
-function hasAuthVariables(auth: ClientRuntimeConfig["auth"] | undefined): auth is NonNullable<
-  ClientRuntimeConfig["auth"]
-> & {
-  variables: RuntimeAuthVariables;
-} {
-  return !!auth && typeof auth === "object" && typeof auth.variables === "object";
-}
-
 function readRuntimeConfig(config?: Partial<ClientRuntimeConfig>) {
   if (config) return config;
   if (typeof window === "undefined") return undefined;
@@ -54,83 +26,33 @@ function readRuntimeConfig(config?: Partial<ClientRuntimeConfig>) {
   }
 }
 
-function getAuthVariables(config?: Partial<ClientRuntimeConfig>): RuntimeAuthVariables {
-  const runtimeConfig = readRuntimeConfig(config);
-  if (!runtimeConfig || !hasAuthVariables(runtimeConfig.auth)) {
-    throw new Error("Missing auth runtime configuration");
-  }
-  return runtimeConfig.auth.variables;
+function getAccountId(config?: Partial<ClientRuntimeConfig>) {
+  return readRuntimeConfig(config)?.account ?? "every.near";
 }
 
-function getProviderId(account: {
-  providerId?: unknown;
-  accountId?: unknown;
-  network?: unknown;
-}): string {
-  if (typeof account.providerId === "string" && account.providerId.length > 0) {
-    return account.providerId;
+export function getNetwork(config?: Partial<ClientRuntimeConfig>): "mainnet" | "testnet" {
+  if (typeof window !== "undefined") {
+    // URL is canonical; localStorage is next-session memory.
+    const fromUrl = new URLSearchParams(window.location.search).get("network");
+    if (fromUrl === "mainnet" || fromUrl === "testnet") return fromUrl;
+    const cached = window.localStorage.getItem("agency_network");
+    if (cached === "mainnet" || cached === "testnet") return cached;
   }
-
-  if (
-    typeof account.accountId === "string" &&
-    (account.network === "mainnet" || account.network === "testnet")
-  ) {
-    return "siwn";
-  }
-
-  return "unknown";
+  return (
+    readRuntimeConfig(config)?.networkId ??
+    (getAccountId(config).endsWith(".testnet") ? "testnet" : "mainnet")
+  );
 }
 
-export function getAccountProviderId(account: {
-  providerId?: unknown;
-  accountId?: unknown;
-  network?: unknown;
-}): string {
-  return getProviderId(account);
-}
-
-export function getNearAccountId(
-  linkedAccounts: Array<{ providerId?: unknown; accountId?: unknown; network?: unknown }>,
-): string | null {
-  if (!Array.isArray(linkedAccounts)) {
-    return null;
-  }
-
-  const nearAccount = linkedAccounts.find((account) => getProviderId(account) === "siwn");
-  if (typeof nearAccount?.accountId !== "string") {
-    return null;
-  }
-
-  return nearAccount.accountId.split(":")[0] || null;
-}
-
-export function getLinkedProviders(
-  linkedAccounts: Array<{ providerId?: unknown; accountId?: unknown; network?: unknown }>,
-): string[] {
-  if (!Array.isArray(linkedAccounts)) {
-    return [];
-  }
-
-  return [...new Set(linkedAccounts.map((account) => getProviderId(account)))];
-}
-
-function getSiwnClientConfig(options: CreateAuthClientOptions): SiwnClientConfig {
-  const runtimeConfig = readRuntimeConfig(options.runtimeConfig);
-  const variables = getAuthVariables(options.runtimeConfig);
-  const siwn = variables.siwn;
-
-  const mainnetRecipient = siwn.recipients?.mainnet ?? siwn.recipient;
-  if (!mainnetRecipient) {
-    throw new Error("Missing auth SIWN recipient");
-  }
-
-  const networkId =
-    runtimeConfig?.networkId ?? (mainnetRecipient.endsWith(".testnet") ? "testnet" : "mainnet");
-  const testnetRecipient = siwn.recipients?.testnet;
-  const recipient =
-    networkId === "testnet" && testnetRecipient ? testnetRecipient : mainnetRecipient;
-
-  return { recipient, networkId, cspNonce: options.cspNonce };
+export async function setNetwork(network: "mainnet" | "testnet"): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (getNetwork() === network) return;
+  window.localStorage.setItem("agency_network", network);
+  // URL is the authoritative source for the active network. Full reload so SSR
+  // routes (loaders) re-fetch with the new network on the new HTML shell.
+  const url = new URL(window.location.href);
+  url.searchParams.set("network", network);
+  window.location.href = url.toString();
 }
 
 function getHostUrl(config?: Partial<ClientRuntimeConfig>) {
@@ -140,15 +62,25 @@ function getHostUrl(config?: Partial<ClientRuntimeConfig>) {
   return "";
 }
 
-export function createAuthClient(options: CreateAuthClientOptions = {}) {
-  const nearAuthConfig = getSiwnClientConfig(options);
+function getCspNonce(config?: Partial<ClientRuntimeConfig>) {
+  const runtimeConfig = readRuntimeConfig(config);
+  if (runtimeConfig?.cspNonce) return runtimeConfig.cspNonce;
+  if (typeof document !== "undefined") {
+    return document.querySelector("script[nonce]")?.getAttribute("nonce") ?? undefined;
+  }
+  return undefined;
+}
+
+export function createAuthClient(config?: Partial<ClientRuntimeConfig>) {
+  const nearAuthConfig = {
+    recipient: getAccountId(config),
+    networkId: getNetwork(config),
+    cspNonce: getCspNonce(config),
+  };
 
   return createBetterAuthClient({
-    baseURL: getHostUrl(options.runtimeConfig),
-    fetchOptions: {
-      credentials: "include",
-      ...(options.headers ? { headers: options.headers } : {}),
-    },
+    baseURL: getHostUrl(config),
+    fetchOptions: { credentials: "include" },
     plugins: [
       inferAdditionalFields<Auth>(),
       siwnClient(nearAuthConfig),
@@ -195,9 +127,9 @@ export function sessionQueryOptions(authClient: AuthClient, initialSession?: Ses
 export function useRelayHistory(session: SessionData | null | undefined, authClient: AuthClient) {
   return useQuery({
     queryKey: ["relay-history"],
-    queryFn: async (): Promise<RelayedTransactionT[]> => {
+    queryFn: async () => {
       const res = await authClient.near.relayHistory();
-      return res?.data?.transactions ?? [];
+      return (res?.data?.transactions ?? []) as RelayedTransactionT[];
     },
     enabled: !!session,
     refetchInterval: 2000,

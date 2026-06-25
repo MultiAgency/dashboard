@@ -2,22 +2,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { nearProfileOptions, useAuthClient } from "@/app";
+import { useAuthClient } from "@/app";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useApiClient } from "@/lib/api";
-import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
-import { meRolesQueryKey, meRolesQueryOptions } from "@/lib/queries";
-
-const NETWORK_COOKIE = "current_near_network";
+import { getNetwork, sessionQueryKey, sessionQueryOptions, setNetwork } from "@/lib/auth";
+import { meRolesQueryKey } from "@/lib/queries";
 
 type Network = "mainnet" | "testnet";
 
@@ -57,16 +53,9 @@ export function UserNav() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const authClient = useAuthClient();
-  const apiClient = useApiClient();
 
   const { data: session } = useQuery(sessionQueryOptions(authClient));
   const user = session?.user;
-  const { data: profile } = useQuery(nearProfileOptions(authClient));
-  const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
-  const isAdmin = roles?.isAdmin ?? false;
-  const avatarUrl =
-    profile?.image?.url ??
-    (profile?.image?.ipfs_cid ? `https://ipfs.io/ipfs/${profile.image.ipfs_cid}` : null);
 
   const connectMutation = useMutation({
     mutationFn: async () => {
@@ -79,7 +68,7 @@ export function UserNav() {
       if (!account) {
         throw new Error("Sign-in returned no NEAR account on the session");
       }
-      const dashboardNetwork = authClient.near.getNetwork();
+      const dashboardNetwork = getNetwork();
       const walletNetwork = networkOf(account);
       if (walletNetwork !== dashboardNetwork) {
         // Swallow signOut failures — the toast fires regardless, and the user's recovery click
@@ -105,9 +94,7 @@ export function UserNav() {
             action: {
               label: `switch to ${error.walletNetwork}`,
               onClick: () => {
-                authClient.near.setNetwork(error.walletNetwork);
-                // biome-ignore lint/suspicious/noDocumentCookie: carries network to server for settings/DAO routing
-                document.cookie = `${NETWORK_COOKIE}=${error.walletNetwork}; path=/; max-age=31536000; samesite=lax; secure`;
+                void setNetwork(error.walletNetwork);
               },
             },
             duration: 15_000,
@@ -120,11 +107,7 @@ export function UserNav() {
   });
 
   const signOutMutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await authClient.signOut();
-      if (error) throw new Error(error.message || "Failed to sign out");
-      await authClient.near.disconnect().catch(() => {});
-    },
+    mutationFn: () => authClient.signOut(),
     onSuccess: async () => {
       queryClient.setQueryData(sessionQueryKey, null);
       await Promise.all([
@@ -154,33 +137,19 @@ export function UserNav() {
             aria-label={`Signed in as ${identifier}`}
           >
             <Avatar className="size-8 rounded-full ring-1 ring-accent/60">
-              {avatarUrl && <AvatarImage src={avatarUrl} alt={identifier} />}
+              {user.image && <AvatarImage src={user.image} alt={identifier} />}
               <AvatarFallback className="bg-muted text-foreground border-0 text-xs font-medium">
                 {identifier.charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground">signed in as</p>
-              <p className="truncate text-sm font-medium">{identifier}</p>
-            </div>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
+        <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem asChild>
             <Link to="/profile" className="font-mono text-xs uppercase tracking-wide">
               profile
             </Link>
           </DropdownMenuItem>
-          {isAdmin && (
-            <DropdownMenuItem asChild>
-              <Link to="/admin/settings" className="font-mono text-xs uppercase tracking-wide">
-                settings
-              </Link>
-            </DropdownMenuItem>
-          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             variant="destructive"
@@ -199,11 +168,14 @@ export function UserNav() {
   );
 }
 
-// Pre-connect button. Tells the user which network they're about to authenticate against.
+// Pre-connect button. Tells the user which network they're about to authenticate against —
+// reduces the wallet-network-mismatch toast we'd otherwise show reactively. SSR-naive: getNetwork
+// reads URL+localStorage (client-only), so we render the bare label first then upgrade on mount.
 function ConnectButton({ connect }: { connect: { mutate: () => void; isPending: boolean } }) {
-  const authClient = useAuthClient();
+  // Local `setNetwork` shadows the imported auth helper, intentionally — the import only fires
+  // from the outer UserNav mutation, never inside this component. Keeping the natural name.
   const [network, setNetwork] = useState<Network | null>(null);
-  useEffect(() => setNetwork(authClient.near.getNetwork()), []);
+  useEffect(() => setNetwork(getNetwork()), []);
   const label = connect.isPending ? "connecting..." : network ? `connect · ${network}` : "connect";
   return (
     <div className="flex items-center gap-2">

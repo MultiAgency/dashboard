@@ -12,7 +12,7 @@ type DocLoaderData = {
   error: string | null;
 };
 
-async function loadDocPage(slug: string): Promise<DocLoaderData> {
+async function loadDocPage(slug: string, assetsUrl: string): Promise<DocLoaderData> {
   const doc = findDoc(slug);
 
   if (!doc) {
@@ -20,7 +20,7 @@ async function loadDocPage(slug: string): Promise<DocLoaderData> {
   }
 
   try {
-    const res = await fetch(`/${doc.source}/${slug}.md`);
+    const res = await fetch(`${assetsUrl}/${doc.source}/${slug}.md`);
     if (!res.ok) {
       throw new Error(`Could not load ${slug}.md (${res.status})`);
     }
@@ -47,7 +47,7 @@ export const Route = createFileRoute("/_layout/docs/$slug")({
       meta: [{ title: doc ? `${doc.title} · Docs` : "Docs" }],
     };
   },
-  loader: ({ params }) => loadDocPage(params.slug),
+  loader: ({ params, context }) => loadDocPage(params.slug, context.assetsUrl || ""),
   component: DocPage,
 });
 

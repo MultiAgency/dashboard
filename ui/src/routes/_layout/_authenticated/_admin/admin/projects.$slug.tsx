@@ -1,11 +1,8 @@
-import { useForm } from "@tanstack/react-form";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { z } from "zod";
-import { useAuthClient } from "@/app";
 import {
   Alert,
   AlertDescription,
@@ -20,23 +17,15 @@ import {
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass, textareaClass } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { type ApiClient, useApiClient } from "@/lib/api";
+import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingUrl } from "@/lib/nearn";
 import {
-  adminContributorsListQueryKey,
   adminContributorsListQueryOptions,
-  adminInternalListingQueryKey,
-  adminInternalListingQueryOptions,
-  adminNearnSubmissionsQueryOptions,
-  adminProjectBudgetQueryKey,
-  adminProjectBudgetQueryOptions,
-  adminProjectDetailQueryOptions,
   adminTokensQueryOptions,
   publicSettingsQueryOptions,
 } from "@/lib/queries";
 import { trezuPaymentUrl, trezuProposalUrl } from "@/lib/trezu";
-import { safeHttpHref } from "@/lib/url";
 
 type ProposalStatus =
   | "InProgress"
@@ -65,61 +54,25 @@ export const Route = createFileRoute("/_layout/_authenticated/_admin/admin/proje
   head: ({ params }) => ({
     meta: [{ title: `${params.slug} | Admin · Projects` }],
   }),
-  loader: async ({ context, params }) => {
-    // Warm the query cache server-side; errors non-fatal so the component owns error/not-found UI.
-    const projectData = await context.queryClient
-      .ensureQueryData(
-        adminProjectDetailQueryOptions(
-          context.apiClient,
-          params.slug,
-          context.authClient.near.getNetwork(),
-        ),
-      )
-      .catch(() => null);
-    if (!projectData) return;
-    const projectId = projectData.project.id;
-    await Promise.allSettled([
-      context.queryClient.ensureQueryData(
-        adminProjectBudgetQueryOptions(
-          context.apiClient,
-          projectId,
-          context.authClient.near.getNetwork(),
-        ),
-      ),
-      context.queryClient.ensureQueryData(
-        adminInternalListingQueryOptions(
-          context.apiClient,
-          projectId,
-          context.authClient.near.getNetwork(),
-        ),
-      ),
-      projectData.project.nearnListingId
-        ? context.queryClient.ensureQueryData(
-            adminNearnSubmissionsQueryOptions(
-              context.apiClient,
-              projectData.project.nearnListingId,
-              context.authClient.near.getNetwork(),
-            ),
-          )
-        : Promise.resolve(),
-    ]);
-  },
   component: AdminProjectDetail,
 });
 
 function AdminProjectDetail() {
   const { slug } = Route.useParams();
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
 
-  const projectQuery = useQuery(
-    adminProjectDetailQueryOptions(apiClient, slug, authClient.near.getNetwork()),
-  );
+  const projectQuery = useQuery({
+    queryKey: ["admin", "projects", "detail", slug],
+    queryFn: () => apiClient.agency.projects.adminGet({ slug }),
+    retry: false,
+  });
 
   const projectId = projectQuery.data?.project.id;
   const budgetQuery = useQuery({
-    ...adminProjectBudgetQueryOptions(apiClient, projectId ?? "", authClient.near.getNetwork()),
+    queryKey: ["admin", "projects", "budget", projectId],
+    queryFn: () => apiClient.agency.projects.getBudget({ projectId: projectId! }),
     enabled: !!projectId,
+    staleTime: 30_000,
   });
 
   if (projectQuery.isLoading) {
@@ -137,7 +90,7 @@ function AdminProjectDetail() {
     <div className="space-y-6">
       <div>
         <Link
-          to="/work"
+          to="/admin/projects"
           className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
         >
           ← all projects
@@ -203,10 +156,6 @@ function AdminProjectDetail() {
 
       {projectId && <BillingsSection projectId={projectId} contributors={contributors} />}
 
-      {projectId && (
-        <InternalListingSection projectId={projectId} hasNearnListing={!!project.nearnListingId} />
-      )}
-
       {nearnUrl && (
         <section className="space-y-2">
           <h2 className="text-xs uppercase tracking-wide text-muted-foreground">NEARN listing</h2>
@@ -218,151 +167,12 @@ function AdminProjectDetail() {
         </section>
       )}
 
-      {project.nearnListingId && <NearnSubmissionsSection slug={project.nearnListingId} />}
-
       <DeleteProjectSection
         projectId={project.id}
         projectTitle={project.title}
         projectSlug={project.slug}
       />
     </div>
-  );
-}
-
-function NearnSubmissionsSection({ slug }: { slug: string }) {
-  const authClient = useAuthClient();
-  const apiClient = useApiClient();
-  const queryClient = useQueryClient();
-  const query = useQuery(
-    adminNearnSubmissionsQueryOptions(apiClient, slug, authClient.near.getNetwork()),
-  );
-  const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
-  // Bridge: submission.user.publicKey ↔ contributor.nearAccountId — see project memory.
-  const contributorByNearAccount = new Map(
-    (contributorsQuery.data?.data ?? [])
-      .filter((c): c is typeof c & { nearAccountId: string } => !!c.nearAccountId)
-      .map((c) => [c.nearAccountId, c]),
-  );
-  const addContributorMutation = useMutation({
-    mutationFn: (input: { name: string; nearAccountId: string }) =>
-      apiClient.contributors.adminCreate(input),
-    onSuccess: (_data, vars) => {
-      toast.success(`Added ${vars.name} as a contributor`);
-      queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
-    },
-    onError: (err) => {
-      toast.error(`Could not add contributor: ${(err as Error).message}`);
-    },
-  });
-
-  if (query.isLoading) {
-    return (
-      <section className="space-y-2">
-        <h2 className="text-xs uppercase tracking-wide text-muted-foreground">NEARN submissions</h2>
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </section>
-    );
-  }
-  if (query.isError) {
-    return (
-      <section className="space-y-2">
-        <h2 className="text-xs uppercase tracking-wide text-muted-foreground">NEARN submissions</h2>
-        <div className="rounded-sm border border-dashed border-destructive/60 p-3 text-xs text-destructive">
-          NEARN submissions not reachable for slug "{slug}". Check the slug or try later.
-        </div>
-      </section>
-    );
-  }
-  const submissions = query.data?.submissions ?? [];
-  const winnerCount = submissions.filter((s) => s.isWinner).length;
-
-  return (
-    <section className="space-y-2">
-      <h2 className="text-xs uppercase tracking-wide text-muted-foreground">
-        NEARN submissions ({submissions.length}
-        {winnerCount > 0 ? ` · ${winnerCount} winner${winnerCount === 1 ? "" : "s"}` : ""})
-      </h2>
-      {submissions.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No submissions yet.</p>
-      ) : (
-        <ul className="space-y-1 text-xs">
-          {submissions.map((s) => (
-            <li
-              key={s.id}
-              className="flex flex-wrap items-center gap-2 rounded-sm border border-border bg-muted/10 px-3 py-2"
-            >
-              <span className="font-medium">{s.user.name ?? s.user.username ?? s.user.id}</span>
-              {s.user.username && (
-                <span className="font-mono text-muted-foreground">@{s.user.username}</span>
-              )}
-              {s.user.publicKey && (
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  {s.user.publicKey}
-                </span>
-              )}
-              {s.user.publicKey &&
-                contributorsQuery.isSuccess &&
-                (contributorByNearAccount.has(s.user.publicKey) ? (
-                  <Badge variant="secondary">
-                    ✓ {contributorByNearAccount.get(s.user.publicKey)!.name}
-                  </Badge>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={
-                      addContributorMutation.isPending &&
-                      addContributorMutation.variables?.nearAccountId === s.user.publicKey
-                    }
-                    onClick={() =>
-                      addContributorMutation.mutate({
-                        name: s.user.name ?? s.user.username ?? s.user.publicKey!,
-                        nearAccountId: s.user.publicKey!,
-                      })
-                    }
-                  >
-                    {addContributorMutation.isPending &&
-                    addContributorMutation.variables?.nearAccountId === s.user.publicKey
-                      ? "adding…"
-                      : "+ add contributor"}
-                  </Button>
-                ))}
-              {s.isWinner && (
-                <Badge variant="default">
-                  winner{s.winnerPosition ? ` #${s.winnerPosition}` : ""}
-                </Badge>
-              )}
-              {s.status && <Badge variant="outline">{s.status}</Badge>}
-              {s.label && s.label !== "New" && <Badge variant="outline">{s.label}</Badge>}
-              {s.ask != null && s.token && (
-                <span className="font-mono text-muted-foreground">
-                  ask: {s.ask} {s.token}
-                </span>
-              )}
-              {s.rewardInUSD != null && s.rewardInUSD > 0 && (
-                <span className="font-mono text-muted-foreground">
-                  ${Math.round(s.rewardInUSD)}
-                </span>
-              )}
-              {(() => {
-                const href = safeHttpHref(s.link);
-                return href ? (
-                  <a
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="ml-auto text-muted-foreground hover:text-foreground"
-                  >
-                    open <ArrowUpRight className="inline size-3" />
-                  </a>
-                ) : null;
-              })()}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }
 
@@ -392,7 +202,7 @@ function DeleteProjectSection({
       ]);
       toast.success(`Project @${projectSlug} deleted`);
       // Project detail is unreachable now — leave before the next adminGet 404s.
-      navigate({ to: "/work" });
+      navigate({ to: "/admin/projects" });
     },
     onError: (err: Error) => toast.error(err.message || "Failed to delete project"),
   });
@@ -446,13 +256,10 @@ function BillingsSection({
   projectId: string;
   contributors: ProjectContributor[];
 }) {
-  const authClient = useAuthClient();
   const apiClient = useApiClient();
   const [creating, setCreating] = useState(false);
 
-  const settingsQuery = useQuery(
-    publicSettingsQueryOptions(apiClient, authClient.near.getNetwork()),
-  );
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
 
   const billingsQuery = useInfiniteQuery({
@@ -798,453 +605,5 @@ function BillingCreateForm({
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-type InternalListing = NonNullable<
-  Awaited<ReturnType<ApiClient["agency"]["listings"]["adminGet"]>>["listing"]
->;
-
-const internalListingFormSchema = z.object({
-  title: z.string().trim().min(1, "required").max(200),
-  type: z.enum(["Bounty", "Project", "Sponsorship"]),
-  token: z.string().trim().min(1, "required"),
-  rewardAmount: z
-    .string()
-    .trim()
-    .regex(/^\d+(\.\d+)?$/, 'decimal amount e.g. "100" or "100.5"')
-    .max(80)
-    .refine((s) => Number.parseFloat(s) > 0, "must be greater than 0"),
-  description: z.string().trim().max(16000),
-  deadline: z.string().trim(),
-  isPublished: z.boolean(),
-  isArchived: z.boolean(),
-  isWinnersAnnounced: z.boolean(),
-});
-
-type InternalListingFormValues = z.infer<typeof internalListingFormSchema>;
-
-function lifecycleLabel(row: InternalListing): string {
-  if (row.isArchived) return "archived";
-  if (row.isWinnersAnnounced) return "winners announced";
-  if (row.isPublished) return "published";
-  return "draft";
-}
-
-function fieldErr(err: unknown): string {
-  if (typeof err === "string") return err;
-  if (err && typeof err === "object" && "message" in err) {
-    const msg = (err as { message?: unknown }).message;
-    return typeof msg === "string" ? msg : "invalid";
-  }
-  return "invalid";
-}
-
-function InternalListingSection({
-  projectId,
-  hasNearnListing,
-}: {
-  projectId: string;
-  hasNearnListing: boolean;
-}) {
-  const authClient = useAuthClient();
-  const apiClient = useApiClient();
-  const [editing, setEditing] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const listingQuery = useQuery(
-    adminInternalListingQueryOptions(apiClient, projectId, authClient.near.getNetwork()),
-  );
-
-  const row = listingQuery.data?.listing ?? null;
-
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Internal listing</h2>
-        {!editing && row && (
-          <div className="flex gap-2">
-            <Button onClick={() => setEditing(true)} variant="outline" size="sm">
-              edit
-            </Button>
-            <Button onClick={() => setConfirmDelete(true)} variant="ghost" size="sm">
-              delete
-            </Button>
-          </div>
-        )}
-        {!editing && !row && !listingQuery.isLoading && (
-          <Button onClick={() => setEditing(true)} variant="default" size="sm">
-            + internal listing
-          </Button>
-        )}
-      </div>
-
-      {hasNearnListing && (
-        <Alert>
-          <AlertTriangle />
-          <AlertTitle>NEARN listing takes priority for rollups</AlertTitle>
-          <AlertDescription>
-            This project has a NEARN listing attached. The internal listing is dormant — rollup math
-            uses NEARN. To activate the internal listing, detach NEARN from the project's edit form.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {listingQuery.isLoading ? (
-        <Loading label="Loading internal listing..." />
-      ) : editing ? (
-        <InternalListingForm
-          projectId={projectId}
-          existing={row}
-          onDone={() => setEditing(false)}
-        />
-      ) : row ? (
-        <Card>
-          <CardContent className="p-4 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{row.type ?? "—"}</Badge>
-              <Badge variant={row.isPublished && !row.isArchived ? "default" : "outline"}>
-                {lifecycleLabel(row)}
-              </Badge>
-            </div>
-            <div className="text-sm font-medium">{row.title ?? "(untitled)"}</div>
-            <div className="font-mono text-sm">
-              {row.rewardAmount ?? "0"} {row.token ?? ""}
-            </div>
-            {row.description && (
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{row.description}</p>
-            )}
-            {row.deadline && (
-              <div className="text-xs text-muted-foreground">
-                deadline: {new Date(row.deadline).toISOString().slice(0, 10)}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Empty label="No internal listing. Use this when no NEARN listing exists — notably on testnet, where NEARN is unavailable." />
-      )}
-
-      {row && (
-        <InternalListingDeleteDialog
-          open={confirmDelete}
-          onOpenChange={setConfirmDelete}
-          projectId={projectId}
-          listingTitle={row.title ?? "(untitled)"}
-        />
-      )}
-    </section>
-  );
-}
-
-function InternalListingForm({
-  projectId,
-  existing,
-  onDone,
-}: {
-  projectId: string;
-  existing: InternalListing | null;
-  onDone: () => void;
-}) {
-  const apiClient = useApiClient();
-  const queryClient = useQueryClient();
-  const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
-  const tokens = tokensQuery.data?.tokens ?? [];
-
-  const isEdit = existing !== null;
-
-  const invalidate = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: adminInternalListingQueryKey }),
-      queryClient.invalidateQueries({ queryKey: adminProjectBudgetQueryKey }),
-      queryClient.invalidateQueries({ queryKey: ["treasury", "rollups"] }),
-    ]);
-  };
-
-  const submitMutation = useMutation({
-    mutationFn: async (values: InternalListingFormValues) => {
-      const deadlineDate = values.deadline ? new Date(values.deadline) : null;
-      const payload = {
-        projectId,
-        title: values.title.trim(),
-        type: values.type,
-        token: values.token,
-        rewardAmount: values.rewardAmount.trim(),
-        description: values.description.trim() || undefined,
-        deadline: deadlineDate,
-        isPublished: values.isPublished,
-        isArchived: values.isArchived,
-        isWinnersAnnounced: values.isWinnersAnnounced,
-      };
-      if (isEdit) {
-        return apiClient.agency.listings.adminUpdate(payload);
-      }
-      return apiClient.agency.listings.adminCreate(payload);
-    },
-    onSuccess: async () => {
-      await invalidate();
-      toast.success(isEdit ? "Internal listing updated" : "Internal listing created");
-      onDone();
-    },
-    onError: (err: Error) => toast.error(err.message || "Failed to save internal listing"),
-  });
-
-  const form = useForm({
-    defaultValues: {
-      title: existing?.title ?? "",
-      type: internalListingFormSchema.shape.type.safeParse(existing?.type).data ?? "Bounty",
-      token: existing?.token ?? "NEAR",
-      rewardAmount: existing?.rewardAmount ?? "",
-      description: existing?.description ?? "",
-      deadline: existing?.deadline ? new Date(existing.deadline).toISOString().slice(0, 10) : "",
-      isPublished: existing?.isPublished ?? true,
-      isArchived: existing?.isArchived ?? false,
-      isWinnersAnnounced: existing?.isWinnersAnnounced ?? false,
-    } as InternalListingFormValues,
-    validators: { onChange: internalListingFormSchema, onSubmit: internalListingFormSchema },
-    onSubmit: async ({ value }) => {
-      await submitMutation.mutateAsync(value);
-    },
-  });
-
-  const isPending = submitMutation.isPending;
-
-  return (
-    <Card>
-      <CardContent className="p-4 grid gap-3">
-        <form
-          className="grid gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            await form.validateAllFields("submit");
-            if (form.state.canSubmit) form.handleSubmit();
-          }}
-        >
-          <form.Field name="title">
-            {(field) => {
-              const err = field.state.meta.errors[0];
-              return (
-                <Field label="title" htmlFor={field.name}>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="e.g. Build the agency portal"
-                    disabled={isPending}
-                    aria-invalid={err ? true : undefined}
-                  />
-                  {err && <p className="text-xs text-destructive">{fieldErr(err)}</p>}
-                </Field>
-              );
-            }}
-          </form.Field>
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            <form.Field name="type">
-              {(field) => (
-                <Field label="type" htmlFor={field.name}>
-                  <select
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => {
-                      const parsed = internalListingFormSchema.shape.type.safeParse(e.target.value);
-                      if (parsed.success) field.handleChange(parsed.data);
-                    }}
-                    disabled={isPending}
-                    className={selectClass}
-                  >
-                    <option value="Bounty">Bounty</option>
-                    <option value="Project">Project</option>
-                    <option value="Sponsorship">Sponsorship</option>
-                  </select>
-                </Field>
-              )}
-            </form.Field>
-
-            <form.Field name="token">
-              {(field) => (
-                <Field label="token" htmlFor={field.name}>
-                  <select
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    disabled={isPending || tokensQuery.isLoading}
-                    className={selectClass}
-                  >
-                    {tokens.length === 0 && <option value="NEAR">NEAR</option>}
-                    {tokens.map((t) => (
-                      <option key={t.tokenId} value={t.symbol}>
-                        {t.symbol}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              )}
-            </form.Field>
-
-            <form.Field name="rewardAmount">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                return (
-                  <Field label="reward amount" htmlFor={field.name}>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="100"
-                      inputMode="decimal"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                    />
-                    {err && <p className="text-xs text-destructive">{fieldErr(err)}</p>}
-                  </Field>
-                );
-              }}
-            </form.Field>
-          </div>
-
-          <form.Field name="description">
-            {(field) => (
-              <Field label="description (optional)" htmlFor={field.name}>
-                <textarea
-                  id={field.name}
-                  name={field.name}
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  rows={3}
-                  disabled={isPending}
-                  className={textareaClass}
-                />
-              </Field>
-            )}
-          </form.Field>
-
-          <form.Field name="deadline">
-            {(field) => (
-              <Field label="deadline (optional, YYYY-MM-DD)" htmlFor={field.name}>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  type="date"
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  disabled={isPending}
-                />
-              </Field>
-            )}
-          </form.Field>
-
-          <div className="grid gap-2 sm:grid-cols-3">
-            <form.Field name="isPublished">
-              {(field) => (
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.checked)}
-                    disabled={isPending}
-                  />
-                  published
-                </label>
-              )}
-            </form.Field>
-            <form.Field name="isWinnersAnnounced">
-              {(field) => (
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.checked)}
-                    disabled={isPending}
-                  />
-                  winners announced
-                </label>
-              )}
-            </form.Field>
-            <form.Field name="isArchived">
-              {(field) => (
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.checked)}
-                    disabled={isPending}
-                  />
-                  archived
-                </label>
-              )}
-            </form.Field>
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            Lifecycle drives the rollup column the listing contributes to: <code>published</code> +
-            no winners → <em>allocated</em>; <code>winners announced</code> → <em>committed</em>{" "}
-            (until a billing exists); <code>archived</code> or unpublished → excluded.
-          </p>
-
-          <div className="flex gap-2">
-            <Button type="submit" disabled={isPending} size="sm">
-              {isPending ? "saving..." : isEdit ? "save changes" : "create listing"}
-            </Button>
-            <Button onClick={onDone} variant="outline" disabled={isPending} size="sm" type="button">
-              cancel
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-function InternalListingDeleteDialog({
-  open,
-  onOpenChange,
-  projectId,
-  listingTitle,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  projectId: string;
-  listingTitle: string;
-}) {
-  const apiClient = useApiClient();
-  const queryClient = useQueryClient();
-
-  const deleteMutation = useMutation({
-    mutationFn: () => apiClient.agency.listings.adminDelete({ projectId }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: adminInternalListingQueryKey }),
-        queryClient.invalidateQueries({ queryKey: adminProjectBudgetQueryKey }),
-        queryClient.invalidateQueries({ queryKey: ["treasury", "rollups"] }),
-      ]);
-      toast.success("Internal listing deleted");
-    },
-    onError: (err: Error) => toast.error(err.message || "Failed to delete internal listing"),
-  });
-
-  return (
-    <ConfirmDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={`Delete internal listing "${listingTitle}"?`}
-      description="The listing's contribution to allocated/committed rollup columns disappears immediately. This cannot be undone."
-      confirmLabel="delete listing"
-      destructive
-      onConfirm={async () => {
-        await deleteMutation.mutateAsync();
-      }}
-    />
   );
 }

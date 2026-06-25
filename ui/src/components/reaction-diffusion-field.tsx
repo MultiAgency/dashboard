@@ -54,23 +54,17 @@ export function ReactionDiffusionField({ preset = "worms", className }: Props) {
       }
     }
 
-    const probe = document.createElement("canvas");
-    probe.width = probe.height = 1;
-    const probeCtx = probe.getContext("2d", { willReadFrequently: true });
-    const readToken = (varName: string): [number, number, number] => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-      if (!probeCtx || !raw) return [0, 0, 0];
-      probeCtx.fillStyle = raw;
-      probeCtx.fillRect(0, 0, 1, 1);
-      const d = probeCtx.getImageData(0, 0, 1, 1).data;
-      return [d[0], d[1], d[2]];
-    };
-    let bg = readToken("--paper");
-    let fg = readToken("--ink");
+    const LIGHT_BG: [number, number, number] = [236, 229, 213];
+    const LIGHT_FG: [number, number, number] = [45, 40, 35];
+    const DARK_BG: [number, number, number] = [34, 30, 26];
+    const DARK_FG: [number, number, number] = [236, 229, 213];
+    const isDark = () => document.documentElement.classList.contains("dark");
+    let bg = isDark() ? DARK_BG : LIGHT_BG;
+    let fg = isDark() ? DARK_FG : LIGHT_FG;
 
     const themeObserver = new MutationObserver(() => {
-      bg = readToken("--paper");
-      fg = readToken("--ink");
+      bg = isDark() ? DARK_BG : LIGHT_BG;
+      fg = isDark() ? DARK_FG : LIGHT_FG;
     });
     themeObserver.observe(document.documentElement, {
       attributes: true,

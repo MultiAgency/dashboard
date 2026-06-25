@@ -1,6 +1,5 @@
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useAuthClient } from "@/app";
 import {
   Badge,
   Button,
@@ -19,7 +18,7 @@ import {
 import { ProjectsAdminSection } from "@/components/projects-admin-section";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
-import { formatNearnReward, nearnListingUrl, nearnSponsorUrl } from "@/lib/nearn";
+import { nearnListingUrl, nearnSponsorUrl } from "@/lib/nearn";
 import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/work")({
@@ -29,14 +28,10 @@ export const Route = createFileRoute("/_layout/work")({
   loader: async ({ context }) => {
     const [settings, projects] = await Promise.all([
       context.queryClient
-        .ensureQueryData(
-          publicSettingsQueryOptions(context.apiClient, context.authClient.near.getNetwork()),
-        )
+        .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
         .catch(() => null),
       context.queryClient
-        .ensureQueryData(
-          projectsListQueryOptions(context.apiClient, context.authClient.near.getNetwork()),
-        )
+        .ensureQueryData(projectsListQueryOptions(context.apiClient))
         .catch(() => null),
     ]);
 
@@ -56,11 +51,6 @@ type ProjectListItem = {
     type?: string | null;
     description?: string | null;
     rewardAmount?: number | null;
-    compensationType?: string | null;
-    minRewardAsk?: number | null;
-    maxRewardAsk?: number | null;
-    totalPaymentsMade?: number | null;
-    totalWinnersSelected?: number | null;
     token?: string | null;
     deadline?: string | null;
   } | null;
@@ -69,15 +59,14 @@ type ProjectListItem = {
 function WorkIndex() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
   const { isOperator, isLoaded } = useMeRoles();
   const projectsQuery = useQuery({
-    ...projectsListQueryOptions(apiClient, authClient.near.getNetwork()),
+    ...projectsListQueryOptions(apiClient),
     staleTime: 30_000,
     initialData: loaderData.projects ?? undefined,
   });
   const settingsQuery = useQuery({
-    ...publicSettingsQueryOptions(apiClient, authClient.near.getNetwork()),
+    ...publicSettingsQueryOptions(apiClient),
     initialData: loaderData.settings ?? undefined,
   });
 
@@ -194,14 +183,7 @@ function ProjectCard({ project }: { project: ProjectListItem }) {
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
           <span className="truncate">@{project.slug}</span>
-          <div className="flex items-center gap-1.5">
-            {n?.type && <Badge variant="outline">{n.type}</Badge>}
-            {n?.status ? (
-              <Badge variant="default">{n.status}</Badge>
-            ) : (
-              <span>{project.status}</span>
-            )}
-          </div>
+          {n?.status ? <Badge variant="default">{n.status}</Badge> : <span>{project.status}</span>}
         </div>
         <h2 className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
           {project.title}
@@ -212,10 +194,10 @@ function ProjectCard({ project }: { project: ProjectListItem }) {
           </p>
         )}
         <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground space-y-1">
-          {n && <div>reward · {formatNearnReward(n)}</div>}
-          {n?.totalWinnersSelected != null && n.totalWinnersSelected > 0 && (
+          {n?.type && <div>type · {n.type}</div>}
+          {n?.rewardAmount !== undefined && n?.rewardAmount !== null && n?.token && (
             <div>
-              {n.totalPaymentsMade ?? 0} of {n.totalWinnersSelected} paid
+              reward · <span className="tabular-nums">{n.rewardAmount}</span> {n.token}
             </div>
           )}
           {n?.deadline && <div>deadline · {new Date(n.deadline).toISOString().slice(0, 10)}</div>}

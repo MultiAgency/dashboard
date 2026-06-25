@@ -13,7 +13,7 @@ import {
 } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
-import { formatNearnReward, nearnListingUrl } from "@/lib/nearn";
+import { nearnListingUrl } from "@/lib/nearn";
 import {
   adminContributorsListQueryOptions,
   adminProjectsListQueryKey,
@@ -628,13 +628,11 @@ function NearnSnapshot({ slug }: { slug: string }) {
         <Badge variant="outline">NEARN snapshot</Badge>
         {l.status && <Badge variant="default">{l.status}</Badge>}
         {l.type && <Badge variant="outline">{l.type}</Badge>}
-        {l.sponsor?.isVerified && <Badge variant="secondary">verified sponsor</Badge>}
       </div>
       {l.title && <div className="text-sm font-medium">{l.title}</div>}
-      <div className="font-mono text-muted-foreground">reward: {formatNearnReward(l)}</div>
-      {l.totalWinnersSelected != null && l.totalWinnersSelected > 0 && (
+      {l.rewardAmount !== null && l.token && (
         <div className="font-mono text-muted-foreground">
-          {l.totalPaymentsMade ?? 0} of {l.totalWinnersSelected} paid
+          reward: {l.rewardAmount} {l.token}
         </div>
       )}
       {l.deadline && (

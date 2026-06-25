@@ -15,9 +15,7 @@ export const Route = createFileRoute("/_layout/_authenticated")({
     }
 
     // Non-fatal prefetch — warms meRoles so operator sections don't flash on hydration.
-    await queryClient
-      .ensureQueryData(meRolesQueryOptions(apiClient, context.authClient.near.getNetwork()))
-      .catch(() => {});
+    await queryClient.ensureQueryData(meRolesQueryOptions(apiClient)).catch(() => {});
 
     return {
       session,
