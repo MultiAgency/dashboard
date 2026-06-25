@@ -47,7 +47,7 @@ skills:
 
 # Agent Instructions
 
-This document provides operational guidance for AI agents working in the parent `everything.dev` repository.
+This document provides operational guidance for AI agents working in this everything.dev project.
 
 ## Quick Reference
 
@@ -56,14 +56,6 @@ This document provides operational guidance for AI agents working in the parent 
 cp .env.example .env   # First time only
 bun install
 bun run dev
-```
-
-**Sync and Publish:**
-```bash
-bos sync              # Pull updates from published config/template state
-bos upgrade           # Check for new versions, update, then sync
-bos publish           # Publish config to the FastKV registry
-bos publish --deploy  # Build/deploy all workspaces, then publish
 ```
 
 **Check Status:**
@@ -75,88 +67,39 @@ bos info      # Show configuration
 
 ## Architecture
 
-This is the parent **Module Federation monorepo** for `everything.dev`. The host is in this repository under `host/`. You may work across `/host`, `/ui`, `/api`, `/plugins`, and `/packages`.
+This is an everything.dev child project. Depending on your overrides, it may include:
+- **UI** — React 19 + TanStack Router frontend, loaded via Module Federation
+- **API** — Hono.js + oRPC backend with Effect services
+- **Plugins** — Self-contained business logic modules with oRPC contracts
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Host (Server)                        │
-│  - Hono.js + oRPC router                               │
-│  - Runtime config loader (bos.config.json)              │
-│  - Module Federation host                               │
-│  - every-plugin runtime                                │
-└─────────────────────────────────────────────────────────┘
-            ↓                ↓                ↓
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│       UI         │ │  Auth Plugin     │ │  API + Plugins   │
-│  - React 19      │ │  - every-plugin  │ │  - every-plugin  │
-│  - TanStack      │ │  - Better-Auth   │ │  - oRPC contract │
-│  - Module Fed.   │ │  - NEAR SIWN     │ │  - Effect svc    │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
-```
-
-The host loads UI and API at runtime from URLs in `bos.config.json`. In production today, the host still boots one base `RuntimeConfig` snapshot at startup, but it can resolve tenant-specific UI overrides per request while keeping the server core fixed.
-
-### Runtime Config
-
-All runtime configuration lives in `bos.config.json`. The UI reads `window.__RUNTIME_CONFIG__` to get account, gateway, API base URL, etc. The host uses the same config to wire Module Federation remotes, auth, plugins, and SSR.
-
-Use these helpers from `@/app`:
-- `getAppName()` — active runtime title (falls back to account)
-- `getAccount()` — NEAR account from config
-- `getRepository()` — repository URL from config
-- `getActiveRuntime()` — active runtime info (accountId, gatewayId, title)
-- `getRuntimeConfig()` — full client config
-
-Important: fixed-core tenant runtime composition now lives primarily in:
-- `host/src/services/tenant-runtime.ts`
-- `host/src/program.ts`
-- `host/src/services/federation.server.ts`
-
-Tenant model:
-- `extends` is the lineage edge between runtimes
-- `account` is the tenant namespace root for the active runtime
-- `domain` is the public ingress for that runtime
-- a runtime can extend another runtime and still become a new tenant root on its own domain
-
-Current fixed-core host rules:
-- the shared host still boots once from one base runtime snapshot
-- child runtime config must extend the active BOS runtime
-- supported request-scoped overrides are `ui`, existing `plugins.<id>.ui`, and existing `plugins.<id>.sidebar`
-- tenant SSR is gated by `TENANT_WHITELIST` and `ALLOW_UNTRUSTED_SSR`
-- nested label routing and account-relative tenant derivation are the intended architecture direction, but not the complete resolver behavior today
-
-For full per-request host/plugin/auth/api swapping, start from `plans/runtime-config-hot-swap.md`.
+The parent runtime provides the shared framework; your project provides custom overrides.
 
 ## Development Workflow
 
-### Typical Session
-1. `bun run dev` to start development
-2. UI available at http://localhost:3003, API at http://localhost:3001, Auth at http://localhost:3002
-3. Check `.bos/logs/` for process logs if issues occur
-4. Use `bos kill` to clean up processes when done
+### Starting Development
+1. `cp .env.example .env` (first time)
+2. `bun install`
+3. `bun run dev`
 
 ### Debugging Issues
 
 **API not responding:**
-- Check `bos ps` to see if API process is running
+- Check `bos ps` to see if the API process is running
 - Check `.bos/logs/api.log` for errors
 
 **UI not loading:**
-- Verify host is running: `bos ps`
+- Verify the dev server is running: `bos ps`
 - Check browser console for Module Federation errors
 - Clear browser cache and retry
 
 **Type errors:**
-- Run `bun typecheck`
-- Ensure `api/src/contract.ts` is in sync with UI usage
+- Run `bun run typecheck`
 
 ## Code Changes
 
 ### Making Changes
-- **Host Changes**: Edit `host/src/` when changing runtime resolution, auth wiring, SSR, proxying, or plugin mounting
 - **UI Changes**: Edit `ui/src/` files → hot reload automatically
 - **API Changes**: Edit `api/src/` files → hot reload automatically
-- **CLI/Scaffolding Changes**: Edit `packages/everything-dev/` when changing init/dev/publish flows or child-project scaffolding
 - **New Components**: Create in `ui/src/components/ui/`, export from `ui/src/components/index.ts`
 - **New Routes**: Create file in `ui/src/routes/`, TanStack Router auto-generates tree
 
@@ -165,7 +108,6 @@ For full per-request host/plugin/auth/api swapping, start from `plans/runtime-co
 - No hardcoded colors like `bg-blue-600`
 - No code comments in implementation
 - Component file naming: lowercase kebab-case (`data-table.tsx`, `user-profile.tsx`)
-- File/directory naming: kebab-case for all files and directories
 - Follow existing patterns in neighboring files
 
 ### Adding API Endpoints
@@ -176,58 +118,21 @@ For full per-request host/plugin/auth/api swapping, start from `plans/runtime-co
 ### Plugin Architecture
 
 Business logic is organized into independent plugins loaded via Module Federation:
-- **`api/`** — Thin structural shell: ping, authHealth, error routes, middleware definitions
-- **`plugins/auth/`** — Authentication and authorization (Better-Auth, NEAR SIWN, organizations, API keys)
-- **`plugins/registry/`** — FastKV app discovery, metadata publish/relay (no database)
-- **`plugins/projects/`** — Project and organization management
-- **`plugins/_template/`** — Scaffold for creating new plugins
+- Each plugin has its own `contract.ts` — oRPC route definitions and Zod schemas
+- Each plugin has its own `index.ts` — `createPlugin` with variables, secrets, context, router
+- Each plugin has its own rspack config for independent deployment
 
-Each plugin is self-contained with its own:
-- `contract.ts` — oRPC route definitions and Zod schemas
-- `index.ts` — `createPlugin` with variables, secrets, context, router
-- rspack config for independent deployment
-
-The UI accesses plugin routes via namespaced clients: `apiClient.registry.listRegistryApps()`, etc.
+The UI accesses plugin routes via namespaced clients: `apiClient.<plugin>.<method>()`.
 
 ### Plugin Client (pluginsClient)
 
 The API plugin receives typed client factories for all other plugins via `createPlugin.withPlugins<PluginsClient>()`, enabling in-process composition without HTTP roundtrips.
 
-**Two-phase loading**: The host loads non-API plugins first (Phase 1), creates a `pluginsClient` map, then loads the API with that map injected (Phase 2). The host is generic — no plugin-specific code.
+### Generated Types
 
-**Generated types**: `api/src/lib/plugins-types.gen.ts`, `api/src/lib/auth-types.gen.ts`, `ui/src/lib/api-types.gen.ts`, and `ui/src/lib/auth-types.gen.ts` are generated by `bos types gen` from `bos.config.json`. These files are gitignored and auto-regenerated on `bun install`, `typecheck`, `bos dev`, `bos build`, and `bos pluginAdd`/`pluginRemove`.
-
-Plugin types resolve in two ways:
-- `local:plugins/<name>` → reads `src/contract.ts` directly from disk
-- Remote URL → fetches bundled types from the deployed plugin manifest
+`api/src/lib/plugins-types.gen.ts`, `api/src/lib/auth-types.gen.ts`, `ui/src/lib/api-types.gen.ts`, and `ui/src/lib/auth-types.gen.ts` are generated by `bos types gen` from `bos.config.json`. These files are gitignored and auto-regenerated on `bun install`, `typecheck`, `bos dev`, `bos build`, and bos plugin management commands.
 
 If you hand-edit `bos.config.json`, run `bos types gen` or restart `bos dev` to regenerate.
-
-## Parent vs Child
-
-This repo is the parent platform, not a generated child project.
-
-- Prefer changing `host/` and `packages/everything-dev/` when the request is about runtime resolution, domain routing, config loading, CLI behavior, or scaffolding.
-- Prefer changing child project repos when the request is about project-specific content, shell navigation, or app-specific plugin/sidebar composition.
-- Do not assume the host is remote-only or out of tree; that is true for many child repos, not for this one.
-
-## Changesets
-
-**When to add a changeset:**
-- Any user-facing change (features, fixes, deprecations)
-- Breaking changes
-- Skip for: docs-only changes, internal refactors, test-only changes
-
-**Release flow:**
-- Parent repo production releases run through `.github/workflows/packages-release.yml`, which creates or updates the `chore: version packages` PR when changesets are pending.
-- After that version PR is merged, `packages-release.yml` calls `.github/workflows/release.yml`, which runs `bun run deploy`, publishes `bos.config.json` to FastKV, and commits the updated deployment URLs.
-- Generated child repos use the same `CI` -> `Packages Release` -> `Release` pattern, but only version and deploy their local workspaces and runtime surfaces.
-
-**Create changeset:**
-```bash
-bun run changeset
-# Follow prompts to select packages and describe changes
-```
 
 ## Testing & Quality
 
@@ -241,6 +146,7 @@ bun lint        # Run linting
 ## Common Patterns
 
 ### Authentication Check
+
 Routes requiring auth use `_authenticated.tsx` layout:
 ```typescript
 export const Route = createFileRoute('/_layout/_authenticated')({
@@ -260,55 +166,8 @@ import { useApiClient } from "@/app";
 function MyComponent() {
   const apiClient = useApiClient();
   const { data } = await apiClient.ping();
-  const { data } = await apiClient.registry.listRegistryApps({ limit: 24 });
 }
 ```
-
-### App Name in UI
-```typescript
-import { getAppName } from "@/app";
-
-// In a component (client-side only)
-const appName = useClientValue(() => getAppName(), "app");
-
-// In a head() function (server-side, from loaderData)
-const { runtimeConfig } = Route.useLoaderData();
-const appName = getActiveRuntime(runtimeConfig)?.title ?? getAccount(runtimeConfig);
-```
-
-## Security
-
-### Shared Singleton Trust Model
-
-Module Federation shares React, TanStack Query, and TanStack Router as singletons across remotes. A compromise of these packages affects all remotes simultaneously. Defense:
-
-- **Catalog pinning** — versions are locked in root `package.json` catalogs. Bump versions deliberately, not reactively.
-- **Renovate `minimumReleaseAge`** — 3 days general, 5 days for `@tanstack/*`. Malicious versions detected within hours are blocked from auto-merge.
-- **Minor bumps never automerged** — supply chain attacks typically ship as minor version bumps. All minor updates require manual review.
-
-### Dependency Security
-
-- **Renovate** manages dependency updates for this parent repo (not Dependabot). Config: `.github/renovate.json`. New generated child repos no longer scaffold that config by default.
-- **`--ignore-scripts`** — all CI workflows use `bun install --frozen-lockfile --ignore-scripts`. Lifecycle scripts (the TanStack attack vector) never execute during install.
-- **`dependency-review-action`** runs on every PR to flag known vulnerabilities.
-- **`bun audit`** runs in CI and fails on critical/high findings.
-- **GitHub Actions pinned to commit SHAs** — all `uses:` references are SHA-pinned to prevent tag-hijacking attacks (e.g. tj-actions).
-
-### Supply Chain Incident Response
-
-If a dependency is compromised:
-
-1. **Catalog pin protects all remotes** — all workspaces resolve from the same catalog, so pinning one version secures everything.
-2. **Independent deployment enables instant containment** — update the compromised remote's URL in `bos.config.json` and publish. No host rebuild needed.
-3. **On-chain config is verifiable** — `bos.config.json` is published to FastKV. URL changes are inspectable and auditable on-chain.
-4. **Runtime isolation limits blast radius** — a compromised UI dep cannot access API database secrets or auth keys. Remotes run in separate processes.
-
-### CI Hardening
-
-- No `pull_request_target` in any workflow — prevents the "Pwn Request" cache-poisoning pattern used in the TanStack compromise.
-- Secrets scoped to individual steps, not job-level env — limits exposure if any step is compromised.
-- `id-token: write` removed from job-level permissions — only granted where explicitly needed.
-- `permissions:` set to minimum required on every workflow.
 
 ## Troubleshooting
 
@@ -333,9 +192,5 @@ bun run db:studio # Open Drizzle Studio
 ## Environment
 
 **Required files:**
-- `.env` - Secrets (see `.env.example`)
-- `bos.config.json` - Runtime configuration (committed)
-
-**Key ports:**
-- 3003 - UI dev server
-- 3001 - API dev server
+- `.env` — Secrets (see `.env.example`)
+- `bos.config.json` — Runtime configuration (committed)

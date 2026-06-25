@@ -34,6 +34,17 @@ services:
     volumes:
       - multiagentic_near_postgres_auth_data:/var/lib/postgresql/data
 
+  postgres-builders:
+    <<: *pg-common
+    container_name: multiagentic.near-postgres-builders
+    environment:
+      <<: *pg-env
+      POSTGRES_DB: builders_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - multiagentic_near_postgres_builders_data:/var/lib/postgresql/data
+
   postgres-projects:
     <<: *pg-common
     container_name: multiagentic.near-postgres-projects
@@ -41,7 +52,7 @@ services:
       <<: *pg-env
       POSTGRES_DB: projects_db
     ports:
-      - "5434:5432"
+      - "5435:5432"
     volumes:
       - multiagentic_near_postgres_projects_data:/var/lib/postgresql/data
 
@@ -50,5 +61,7 @@ volumes:
     name: multiagentic_near_postgres_api_data
   multiagentic_near_postgres_auth_data:
     name: multiagentic_near_postgres_auth_data
+  multiagentic_near_postgres_builders_data:
+    name: multiagentic_near_postgres_builders_data
   multiagentic_near_postgres_projects_data:
     name: multiagentic_near_postgres_projects_data
