@@ -1,6 +1,7 @@
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { useAuthClient } from "@/app";
 import {
   Badge,
   Card,
@@ -30,7 +31,9 @@ export const Route = createFileRoute("/_layout/team")({
   }),
   loader: async ({ context }) => {
     const team = await context.queryClient
-      .ensureQueryData(teamListQueryOptions(context.apiClient))
+      .ensureQueryData(
+        teamListQueryOptions(context.apiClient, context.authClient.near.getNetwork()),
+      )
       .catch(() => null);
 
     return { team };
@@ -48,11 +51,12 @@ type Role = {
 function Team() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
+  const authClient = useAuthClient();
   const { isOperator, isLoaded } = useMeRoles();
   const [selectedMember, setSelectedMember] = useState<string | null>(null);
 
   const teamQuery = useQuery({
-    ...teamListQueryOptions(apiClient),
+    ...teamListQueryOptions(apiClient, authClient.near.getNetwork()),
     initialData: loaderData.team ?? undefined,
   });
 

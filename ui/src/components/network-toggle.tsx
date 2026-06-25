@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useApiClient, useAuthClient } from "@/app";
 import { sessionQueryOptions } from "@/lib/auth";
-import { getNetwork, setNetwork } from "@/lib/network";
 import { publicSettingsQueryOptions } from "@/lib/queries";
+
+const NETWORK_COOKIE = "current_near_network";
 
 type Network = "mainnet" | "testnet";
 
@@ -21,7 +22,7 @@ export function NetworkToggle() {
   // Server pin (NEAR_NETWORK env set) forces single-network mode.
   if (publicSettings?.networkPinned) return null;
 
-  const current = getNetwork();
+  const current = authClient.near.getNetwork();
 
   // Signed in: wallet network IS the network; sign out to switch.
   if (session?.user) return null;
@@ -44,8 +45,14 @@ function NetworkOption({
   current: Network;
   label: string;
 }) {
+  const authClient = useAuthClient();
   const active = value === current;
   const id = `network-${value}`;
+  const handleChange = useCallback(() => {
+    authClient.near.setNetwork(value);
+    // biome-ignore lint/suspicious/noDocumentCookie: carries network to server for settings/DAO routing
+    document.cookie = `${NETWORK_COOKIE}=${value}; path=/; max-age=31536000; samesite=lax; secure`;
+  }, [authClient, value]);
   return (
     <>
       <input
@@ -54,9 +61,7 @@ function NetworkOption({
         name="agency-network"
         value={value}
         checked={active}
-        onChange={() => {
-          void setNetwork(value);
-        }}
+        onChange={handleChange}
         className="sr-only peer"
       />
       <label

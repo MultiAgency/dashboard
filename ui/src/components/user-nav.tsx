@@ -15,8 +15,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
-import { getNetwork, setNetwork } from "@/lib/network";
 import { meRolesQueryKey, meRolesQueryOptions } from "@/lib/queries";
+
+const NETWORK_COOKIE = "current_near_network";
 
 type Network = "mainnet" | "testnet";
 
@@ -78,7 +79,7 @@ export function UserNav() {
       if (!account) {
         throw new Error("Sign-in returned no NEAR account on the session");
       }
-      const dashboardNetwork = getNetwork();
+      const dashboardNetwork = authClient.near.getNetwork();
       const walletNetwork = networkOf(account);
       if (walletNetwork !== dashboardNetwork) {
         // Swallow signOut failures — the toast fires regardless, and the user's recovery click
@@ -104,7 +105,9 @@ export function UserNav() {
             action: {
               label: `switch to ${error.walletNetwork}`,
               onClick: () => {
-                void setNetwork(error.walletNetwork);
+                authClient.near.setNetwork(error.walletNetwork);
+                // biome-ignore lint/suspicious/noDocumentCookie: carries network to server for settings/DAO routing
+                document.cookie = `${NETWORK_COOKIE}=${error.walletNetwork}; path=/; max-age=31536000; samesite=lax; secure`;
               },
             },
             duration: 15_000,
@@ -196,14 +199,11 @@ export function UserNav() {
   );
 }
 
-// Pre-connect button. Tells the user which network they're about to authenticate against —
-// reduces the wallet-network-mismatch toast we'd otherwise show reactively. getNetwork reads
-// URL+cookie (client-only), so we render the bare label first then upgrade on mount.
+// Pre-connect button. Tells the user which network they're about to authenticate against.
 function ConnectButton({ connect }: { connect: { mutate: () => void; isPending: boolean } }) {
-  // Local `setNetwork` shadows the imported auth helper, intentionally — the import only fires
-  // from the outer UserNav mutation, never inside this component. Keeping the natural name.
+  const authClient = useAuthClient();
   const [network, setNetwork] = useState<Network | null>(null);
-  useEffect(() => setNetwork(getNetwork()), []);
+  useEffect(() => setNetwork(authClient.near.getNetwork()), []);
   const label = connect.isPending ? "connecting..." : network ? `connect · ${network}` : "connect";
   return (
     <div className="flex items-center gap-2">

@@ -2,6 +2,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { z } from "zod";
+import { useAuthClient } from "@/app";
 import {
   Badge,
   Card,
@@ -40,7 +41,6 @@ import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { csvTimestamp, downloadCsv } from "@/lib/csv";
 import { formatTokenAmount, tokenSymbol } from "@/lib/format-amount";
-import { getNetwork } from "@/lib/network";
 import {
   adminContributorsListQueryOptions,
   adminProjectsListQueryOptions,
@@ -74,15 +74,18 @@ export const Route = createFileRoute("/_layout/treasury")({
     ],
   }),
   loader: async ({ context }) => {
+    const network = context.authClient.near.getNetwork();
     const tokens = await context.queryClient
-      .ensureQueryData(tokensListQueryOptions(context.apiClient))
+      .ensureQueryData(tokensListQueryOptions(context.apiClient, network))
       .catch(() => null);
 
     const tokenIds = tokens?.tokens.map((token) => token.tokenId) ?? [];
     const balances =
       tokenIds.length > 0
         ? await context.queryClient
-            .ensureQueryData(treasuryPublicBalancesQueryOptions(context.apiClient, tokenIds))
+            .ensureQueryData(
+              treasuryPublicBalancesQueryOptions(context.apiClient, tokenIds, network),
+            )
             .catch(() => null)
         : null;
 
@@ -103,6 +106,7 @@ type Token = {
 function TreasuryPage() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
+  const authClient = useAuthClient();
   const { isOperator, isLoaded } = useMeRoles();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -131,15 +135,13 @@ function TreasuryPage() {
   const setProposalsFilter = (next: ProposalsFilter) => updateSearch(filterToSearch(next));
 
   const tokensQuery = useQuery({
-    ...tokensListQueryOptions(apiClient),
+    ...tokensListQueryOptions(apiClient, authClient.near.getNetwork()),
     initialData: loaderData.tokens ?? undefined,
   });
 
-  const tokens = tokensQuery.data?.tokens ?? [];
-  const tokenIds = tokens.map((t) => t.tokenId);
-
+  const tokenIds = tokensQuery.data?.tokens.map((token) => token.tokenId) ?? [];
   const balancesQuery = useQuery({
-    ...treasuryPublicBalancesQueryOptions(apiClient, tokenIds),
+    ...treasuryPublicBalancesQueryOptions(apiClient, tokenIds, authClient.near.getNetwork()),
     initialData: loaderData.balances ?? undefined,
   });
 
@@ -156,11 +158,17 @@ function TreasuryPage() {
     }
   };
   const visibleTokens = isOperator
-    ? tokens
-    : tokens.filter((t) => isNonZero(balanceByToken.get(t.tokenId) ?? "0"));
+    ? (tokensQuery.data?.tokens ?? [])
+    : (tokensQuery.data?.tokens ?? []).filter((t) =>
+        isNonZero(balanceByToken.get(t.tokenId) ?? "0"),
+      );
 
   const proposalsQuery = useInfiniteQuery({
-    queryKey: ["proposals", isOperator ? "adminList" : "list", getNetwork()] as const,
+    queryKey: [
+      "proposals",
+      isOperator ? "adminList" : "list",
+      authClient.near.getNetwork(),
+    ] as const,
     queryFn: ({ pageParam }) =>
       isOperator
         ? apiClient.proposals.adminList({ limit: 50, fromIndex: pageParam })
@@ -170,7 +178,9 @@ function TreasuryPage() {
     staleTime: 30_000,
     retry: false,
   });
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const settingsQuery = useQuery(
+    publicSettingsQueryOptions(apiClient, authClient.near.getNetwork()),
+  );
   const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
   const proposals = useMemo(
     () => proposalsQuery.data?.pages.flatMap((p) => p.data) ?? [],
@@ -238,7 +248,7 @@ function TreasuryPage() {
           <TabsContent value="balances" className="mt-6">
             <BalancesSection
               isLoading={isLoading}
-              tokens={tokens}
+              tokens={tokensQuery.data?.tokens ?? []}
               visibleTokens={visibleTokens}
               balanceByToken={balanceByToken}
               onSelectToken={setSelectedToken}
@@ -269,7 +279,7 @@ function TreasuryPage() {
           <TabsContent value="balances" className="mt-6">
             <BalancesSection
               isLoading={isLoading}
-              tokens={tokens}
+              tokens={tokensQuery.data?.tokens ?? []}
               visibleTokens={visibleTokens}
               balanceByToken={balanceByToken}
               onSelectToken={setSelectedToken}
@@ -579,8 +589,14 @@ function TokenDetailDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const apiClient = useApiClient();
+  const authClient = useAuthClient();
   const storageQuery = useQuery({
-    queryKey: ["tokens", "storage-status", getNetwork(), token?.tokenId ?? ""] as const,
+    queryKey: [
+      "tokens",
+      "storage-status",
+      authClient.near.getNetwork(),
+      token?.tokenId ?? "",
+    ] as const,
     queryFn: () => apiClient.tokens.getStorageStatus({ tokenId: token?.tokenId ?? "" }),
     enabled: !!token,
     staleTime: 60_000,

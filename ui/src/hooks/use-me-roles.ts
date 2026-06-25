@@ -10,7 +10,10 @@ export function useMeRoles() {
   const isAuthenticated = !!session?.user;
   const apiClient = useApiClient();
 
-  const query = useQuery({ ...meRolesQueryOptions(apiClient), enabled: isAuthenticated });
+  const query = useQuery({
+    ...meRolesQueryOptions(apiClient, authClient.near.getNetwork()),
+    enabled: isAuthenticated,
+  });
 
   const isAdmin = !!query.data?.isAdmin;
   const isApprover = !!query.data?.isApprover;

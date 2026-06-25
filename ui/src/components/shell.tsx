@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
+import { useAuthClient } from "@/app";
 import { GithubIcon, NearWordmark, XIcon } from "@/components/icons";
 import { Logo } from "@/components/logo";
 import { NetworkToggle } from "@/components/network-toggle";
@@ -28,9 +29,12 @@ const PRIMARY_NAV: NavItem[] = [
 export function Shell({ children }: { children: ReactNode }) {
   const matchRoute = useMatchRoute();
   const apiClient = useApiClient();
+  const authClient = useAuthClient();
   const { isAuthenticated } = useMeRoles();
 
-  const publicSettingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const publicSettingsQuery = useQuery(
+    publicSettingsQueryOptions(apiClient, authClient.near.getNetwork()),
+  );
   const brandName = publicSettingsQuery.data?.name?.trim() || "MultiAgency";
 
   const linkActive = (to: string) =>

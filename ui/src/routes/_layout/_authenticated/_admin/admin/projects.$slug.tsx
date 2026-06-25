@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { useAuthClient } from "@/app";
 import {
   Alert,
   AlertDescription,
@@ -67,22 +68,37 @@ export const Route = createFileRoute("/_layout/_authenticated/_admin/admin/proje
   loader: async ({ context, params }) => {
     // Warm the query cache server-side; errors non-fatal so the component owns error/not-found UI.
     const projectData = await context.queryClient
-      .ensureQueryData(adminProjectDetailQueryOptions(context.apiClient, params.slug))
+      .ensureQueryData(
+        adminProjectDetailQueryOptions(
+          context.apiClient,
+          params.slug,
+          context.authClient.near.getNetwork(),
+        ),
+      )
       .catch(() => null);
     if (!projectData) return;
     const projectId = projectData.project.id;
     await Promise.allSettled([
       context.queryClient.ensureQueryData(
-        adminProjectBudgetQueryOptions(context.apiClient, projectId),
+        adminProjectBudgetQueryOptions(
+          context.apiClient,
+          projectId,
+          context.authClient.near.getNetwork(),
+        ),
       ),
       context.queryClient.ensureQueryData(
-        adminInternalListingQueryOptions(context.apiClient, projectId),
+        adminInternalListingQueryOptions(
+          context.apiClient,
+          projectId,
+          context.authClient.near.getNetwork(),
+        ),
       ),
       projectData.project.nearnListingId
         ? context.queryClient.ensureQueryData(
             adminNearnSubmissionsQueryOptions(
               context.apiClient,
               projectData.project.nearnListingId,
+              context.authClient.near.getNetwork(),
             ),
           )
         : Promise.resolve(),
@@ -94,12 +110,15 @@ export const Route = createFileRoute("/_layout/_authenticated/_admin/admin/proje
 function AdminProjectDetail() {
   const { slug } = Route.useParams();
   const apiClient = useApiClient();
+  const authClient = useAuthClient();
 
-  const projectQuery = useQuery(adminProjectDetailQueryOptions(apiClient, slug));
+  const projectQuery = useQuery(
+    adminProjectDetailQueryOptions(apiClient, slug, authClient.near.getNetwork()),
+  );
 
   const projectId = projectQuery.data?.project.id;
   const budgetQuery = useQuery({
-    ...adminProjectBudgetQueryOptions(apiClient, projectId ?? ""),
+    ...adminProjectBudgetQueryOptions(apiClient, projectId ?? "", authClient.near.getNetwork()),
     enabled: !!projectId,
   });
 
@@ -211,9 +230,12 @@ function AdminProjectDetail() {
 }
 
 function NearnSubmissionsSection({ slug }: { slug: string }) {
+  const authClient = useAuthClient();
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  const query = useQuery(adminNearnSubmissionsQueryOptions(apiClient, slug));
+  const query = useQuery(
+    adminNearnSubmissionsQueryOptions(apiClient, slug, authClient.near.getNetwork()),
+  );
   const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
   // Bridge: submission.user.publicKey ↔ contributor.nearAccountId — see project memory.
   const contributorByNearAccount = new Map(
@@ -424,10 +446,13 @@ function BillingsSection({
   projectId: string;
   contributors: ProjectContributor[];
 }) {
+  const authClient = useAuthClient();
   const apiClient = useApiClient();
   const [creating, setCreating] = useState(false);
 
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const settingsQuery = useQuery(
+    publicSettingsQueryOptions(apiClient, authClient.near.getNetwork()),
+  );
   const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
 
   const billingsQuery = useInfiniteQuery({
@@ -822,11 +847,14 @@ function InternalListingSection({
   projectId: string;
   hasNearnListing: boolean;
 }) {
+  const authClient = useAuthClient();
   const apiClient = useApiClient();
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const listingQuery = useQuery(adminInternalListingQueryOptions(apiClient, projectId));
+  const listingQuery = useQuery(
+    adminInternalListingQueryOptions(apiClient, projectId, authClient.near.getNetwork()),
+  );
 
   const row = listingQuery.data?.listing ?? null;
 

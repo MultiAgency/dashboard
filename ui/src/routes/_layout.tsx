@@ -7,11 +7,15 @@ export const Route = createFileRoute("/_layout")({
   beforeLoad: async ({ context }) => {
     await Promise.all([
       context.queryClient
-        .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
+        .ensureQueryData(
+          publicSettingsQueryOptions(context.apiClient, context.authClient.near.getNetwork()),
+        )
         .catch(() => {}),
       context.session
         ? context.queryClient
-            .ensureQueryData(meRolesQueryOptions(context.apiClient))
+            .ensureQueryData(
+              meRolesQueryOptions(context.apiClient, context.authClient.near.getNetwork()),
+            )
             .catch(() => {})
         : Promise.resolve(),
     ]);

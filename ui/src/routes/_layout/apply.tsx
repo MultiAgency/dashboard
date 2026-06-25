@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { useAuthClient } from "@/app";
 import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { useApiClient } from "@/lib/api";
 import { nearnSponsorUrl } from "@/lib/nearn";
@@ -33,7 +34,10 @@ const ERROR_CLS = "text-sm text-destructive";
 
 function ApplyPage() {
   const apiClient = useApiClient();
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const authClient = useAuthClient();
+  const settingsQuery = useQuery(
+    publicSettingsQueryOptions(apiClient, authClient.near.getNetwork()),
+  );
   const nearnUrl = settingsQuery.data?.nearnAccountId
     ? nearnSponsorUrl(settingsQuery.data.nearnAccountId)
     : null;
