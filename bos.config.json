@@ -31,16 +31,15 @@
       "development": "local:plugins/projects",
       "secrets": [
         "PROJECTS_DATABASE_URL"
-      ],
-      "routes": [
-        "ui/src/routes/_layout/_authenticated/projects/**"
-      ],
-      "sidebar": [
-        {
-          "icon": "FolderKanban",
-          "label": "projects"
-        }
       ]
+    },
+    "contributors": {
+      "development": "local:plugins/builders",
+      "secrets": [
+        "BUILDERS_DATABASE_URL"
+      ],
+      "production": "https://elliot-braem-5099-everything-dev-builders-plugin--356329b32-ze.zephyrcloud.app",
+      "integrity": "sha384-oMqFFXs4M6tvzkODR6viI3xGiYWiIiDCJptZIaABMN53reLLtT7VISnAlv8Ez3hx"
     }
   }
 }
