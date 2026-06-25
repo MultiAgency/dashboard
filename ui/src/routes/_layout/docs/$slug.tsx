@@ -47,11 +47,7 @@ export const Route = createFileRoute("/_layout/docs/$slug")({
       meta: [{ title: doc ? `${doc.title} · Docs` : "Docs" }],
     };
   },
-<<<<<<< Updated upstream
-  loader: ({ params, context }) => loadDocPage(params.slug, context.runtimeConfig?.assetsUrl || ""),
-=======
   loader: ({ params }) => loadDocPage(params.slug),
->>>>>>> Stashed changes
   component: DocPage,
 });
 

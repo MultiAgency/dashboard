@@ -76,12 +76,7 @@ type LandingProject = {
 
 function Landing() {
   const apiClient = useApiClient();
-<<<<<<< Updated upstream
-  const loaderData = RootRoute.useLoaderData();
-  const assetsUrl = loaderData?.runtimeConfig?.assetsUrl ?? "";
-=======
   const authClient = useAuthClient();
->>>>>>> Stashed changes
 
   const settingsQuery = useQuery(
     publicSettingsQueryOptions(apiClient, authClient.near.getNetwork()),
