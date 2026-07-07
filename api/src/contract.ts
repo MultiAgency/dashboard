@@ -984,6 +984,23 @@ export const contract = oc.router({
       .input(z.object({ orgId: z.string() }))
       .output(z.object({ ok: z.literal(true) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    listProjects: oc
+      .route({ method: "GET", path: "/platform/projects" })
+      .output(
+        z.object({
+          orgs: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              slug: z.string(),
+              daoAccountId: z.string().nullable(),
+              projects: z.array(publicProject),
+            }),
+          ),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
   },
 
   members: {

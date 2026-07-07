@@ -4,17 +4,26 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button, Card, CardContent, Input, Spinner } from "@/components";
 import { useApiClient } from "@/lib/api";
+import {
+  LABEL_CLS,
+  orgSiteUrl,
+  ProjectRow,
+  TAB_ACTIVE,
+  TAB_BASE,
+  TAB_INACTIVE,
+} from "@/components/platform-shared";
+import type { PlatformProject } from "@/components/platform-shared";
 
 export const Route = createFileRoute("/_layout/_authenticated/_superadmin/admin/platform/")({
   head: () => ({
-    meta: [{ title: "Platform | Admin" }],
+    meta: [{ title: "Organizations | Platform" }],
   }),
   validateSearch: (search: Record<string, unknown>) => ({
     prefillSlug: typeof search.prefillSlug === "string" ? search.prefillSlug : undefined,
     prefillDaoAccountId:
       typeof search.prefillDaoAccountId === "string" ? search.prefillDaoAccountId : undefined,
   }),
-  component: PlatformPage,
+  component: PlatformOrganizationsPage,
 });
 
 type Member = {
@@ -30,9 +39,7 @@ const ROLE_COLORS: Record<string, string> = {
   client: "bg-green-500/10 text-green-600 border-green-500/20",
 };
 
-const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
-
-function PlatformPage() {
+function PlatformOrganizationsPage() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const { prefillSlug, prefillDaoAccountId } = useSearch({
@@ -56,6 +63,7 @@ function PlatformPage() {
     onSuccess: () => {
       toast.success("Organization deleted");
       queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
+      queryClient.invalidateQueries({ queryKey: ["platform", "projects"] });
       setConfirmDeleteOrgId(null);
       setEditingOrgId(null);
     },
@@ -63,126 +71,147 @@ function PlatformPage() {
   });
 
   return (
-    <div className="space-y-10">
-      <div className="space-y-2">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          super admin · platform
+          all organizations
         </div>
-        <h2 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Platform
-        </h2>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Create and manage organizations. Assign initial org admins. Org-level member management
-          lives under each org's own admin panel.
-        </p>
+        <Button size="sm" variant="outline" onClick={() => setShowCreateOrg((v) => !v)}>
+          {showCreateOrg ? "cancel" : "+ new org"}
+        </Button>
       </div>
 
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            organizations
-          </div>
-          <Button size="sm" variant="outline" onClick={() => setShowCreateOrg((v) => !v)}>
-            {showCreateOrg ? "cancel" : "+ new org"}
-          </Button>
-        </div>
+      {showCreateOrg && (
+        <OrgForm
+          initialSlug={prefillSlug}
+          initialDaoAccountId={prefillDaoAccountId}
+          onDone={() => {
+            queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
+            queryClient.invalidateQueries({ queryKey: ["platform", "projects"] });
+            setShowCreateOrg(false);
+          }}
+        />
+      )}
 
-        {showCreateOrg && (
-          <OrgForm
-            initialSlug={prefillSlug}
-            initialDaoAccountId={prefillDaoAccountId}
-            onDone={() => {
-              queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
-              setShowCreateOrg(false);
-            }}
-          />
-        )}
+      {orgsQuery.isLoading && <Spinner />}
 
-        {orgsQuery.isLoading && <Spinner />}
+      {orgsQuery.data?.length === 0 && (
+        <p className="font-mono text-sm text-muted-foreground">No organizations yet.</p>
+      )}
 
-        {orgsQuery.data?.length === 0 && (
-          <p className="font-mono text-sm text-muted-foreground">No organizations yet.</p>
-        )}
-
-        <div className="space-y-2">
-          {orgsQuery.data?.map((org) => (
-            <div key={org.id} className="space-y-0">
-              <Card>
-                <CardContent className="p-4 flex items-center justify-between gap-4">
-                  <div className="space-y-0.5 min-w-0">
-                    <div className="font-display text-base uppercase tracking-tight font-bold">
-                      {org.name}
-                    </div>
-                    <div className="font-mono text-xs text-muted-foreground">@{org.slug}</div>
-                    {(org.metadata as any)?.daoAccountId && (
-                      <div className="font-mono text-[10px] text-muted-foreground break-all">
-                        dao: {String((org.metadata as any).daoAccountId)}
-                      </div>
-                    )}
+      <div className="space-y-2">
+        {orgsQuery.data?.map((org) => (
+          <div key={org.id} className="space-y-0">
+            <Card>
+              <CardContent className="p-4 flex items-center justify-between gap-4">
+                <div className="space-y-0.5 min-w-0">
+                  <div className="font-display text-base uppercase tracking-tight font-bold">
+                    {org.name}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setEditingOrgId(editingOrgId === org.id ? null : org.id)}
-                    >
-                      {editingOrgId === org.id ? "cancel" : "edit"}
-                    </Button>
-                    {confirmDeleteOrgId === org.id ? (
-                      <>
-                        <span className="font-mono text-[11px] text-destructive">sure?</span>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => deleteOrgMutation.mutate(org.id)}
-                          disabled={deleteOrgMutation.isPending}
-                        >
-                          {deleteOrgMutation.isPending ? "…" : "yes, delete"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setConfirmDeleteOrgId(null)}
-                          disabled={deleteOrgMutation.isPending}
-                        >
-                          cancel
-                        </Button>
-                      </>
-                    ) : (
+                  <div className="font-mono text-xs text-muted-foreground">@{org.slug}</div>
+                  {(org.metadata as { daoAccountId?: string })?.daoAccountId && (
+                    <div className="font-mono text-[10px] text-muted-foreground break-all">
+                      dao: {String((org.metadata as { daoAccountId?: string }).daoAccountId)}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setEditingOrgId(editingOrgId === org.id ? null : org.id)}
+                  >
+                    {editingOrgId === org.id ? "cancel" : "edit"}
+                  </Button>
+                  {confirmDeleteOrgId === org.id ? (
+                    <>
+                      <span className="font-mono text-[11px] text-destructive">sure?</span>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => deleteOrgMutation.mutate(org.id)}
+                        disabled={deleteOrgMutation.isPending}
+                      >
+                        {deleteOrgMutation.isPending ? "…" : "yes, delete"}
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => setConfirmDeleteOrgId(org.id)}
+                        onClick={() => setConfirmDeleteOrgId(null)}
+                        disabled={deleteOrgMutation.isPending}
                       >
-                        delete
+                        cancel
                       </Button>
-                    )}
-                    <a
-                      href={`http://${org.slug}.localhost:3000/admin/settings`}
-                      target="_blank"
-                      rel="noreferrer"
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setConfirmDeleteOrgId(org.id)}
                     >
-                      <Button size="sm" variant="outline">
-                        open →
-                      </Button>
-                    </a>
-                  </div>
-                </CardContent>
-              </Card>
-              {editingOrgId === org.id && (
-                <OrgForm
-                  org={{ ...org, slug: org.slug ?? "" }}
-                  onDone={() => {
-                    queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
-                    setEditingOrgId(null);
-                  }}
-                />
-              )}
-            </div>
+                      delete
+                    </Button>
+                  )}
+                  <a href={orgSiteUrl(org.slug)} target="_blank" rel="noreferrer">
+                    <Button size="sm" variant="outline">
+                      view org →
+                    </Button>
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+            {editingOrgId === org.id && (
+              <OrgForm
+                org={{ ...org, slug: org.slug ?? "" }}
+                onDone={() => {
+                  queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
+                  queryClient.invalidateQueries({ queryKey: ["platform", "projects"] });
+                  setEditingOrgId(null);
+                }}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OrgProjectsTab({ orgId, orgSlug }: { orgId: string; orgSlug: string }) {
+  const apiClient = useApiClient();
+  const projectsQuery = useQuery({
+    queryKey: ["platform", "projects"],
+    queryFn: () => apiClient.platform.listProjects(),
+  });
+
+  if (projectsQuery.isLoading) return <Spinner />;
+
+  const org = projectsQuery.data?.orgs.find((entry) => entry.id === orgId);
+  const projects = org?.projects ?? [];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          {projects.length} project{projects.length === 1 ? "" : "s"}
+        </div>
+        <a href={orgSiteUrl(orgSlug)} target="_blank" rel="noreferrer">
+          <Button size="sm" variant="outline">
+            view org →
+          </Button>
+        </a>
+      </div>
+
+      {projects.length === 0 ? (
+        <p className="font-mono text-sm text-muted-foreground">No projects in this org yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {projects.map((project: PlatformProject) => (
+            <ProjectRow key={project.id} project={project} orgSlug={orgSlug} />
           ))}
         </div>
-      </section>
+      )}
     </div>
   );
 }
@@ -201,21 +230,22 @@ function OrgForm({
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const isEdit = !!org;
+  const [editTab, setEditTab] = useState<"details" | "members" | "projects">("details");
 
   const [name, setName] = useState(org?.name ?? "");
   const [slug, setSlug] = useState(org?.slug ?? initialSlug ?? "");
   const [type, setType] = useState<"agency" | "client">(
-    ((org?.metadata as any)?.type as "agency" | "client") ?? "client",
+    ((org?.metadata as { type?: "agency" | "client" })?.type as "agency" | "client") ?? "client",
   );
   const [daoAccountId, setDaoAccountId] = useState(
-    String((org?.metadata as any)?.daoAccountId ?? initialDaoAccountId ?? ""),
+    String((org?.metadata as { daoAccountId?: string })?.daoAccountId ?? initialDaoAccountId ?? ""),
   );
   const [adminNearId, setAdminNearId] = useState("");
 
   const membersQuery = useQuery({
     queryKey: ["platform", "orgs", org?.id, "members"],
     queryFn: () => apiClient.platform.listOrgMembers({ orgId: org!.id }),
-    enabled: isEdit,
+    enabled: isEdit && editTab === "members",
   });
 
   const slugFromName = (n: string) =>
@@ -242,7 +272,9 @@ function OrgForm({
           }),
     onSuccess: (result) => {
       toast.success(
-        isEdit ? "Organization updated" : `Organization "${(result as any).name}" created`,
+        isEdit
+          ? "Organization updated"
+          : `Organization "${(result as { name: string }).name}" created`,
       );
       onDone();
     },
@@ -255,6 +287,82 @@ function OrgForm({
     (isEdit || (slug.trim().length > 0 && daoAccountId.trim().length > 0)) &&
     !mutation.isPending;
 
+  const detailsFields = (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-1">
+        <label htmlFor="org-name" className={LABEL_CLS}>
+          name
+        </label>
+        <Input
+          id="org-name"
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (!isEdit && (!slug || slug === slugFromName(name)))
+              setSlug(slugFromName(e.target.value));
+          }}
+          placeholder="Acme Agency"
+          disabled={mutation.isPending}
+        />
+      </div>
+      {!isEdit && (
+        <div className="space-y-1">
+          <label htmlFor="org-slug" className={LABEL_CLS}>
+            slug
+          </label>
+          <Input
+            id="org-slug"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            placeholder="acme-agency"
+            disabled={mutation.isPending}
+          />
+        </div>
+      )}
+      <div className="space-y-1">
+        <label htmlFor="org-type" className={LABEL_CLS}>
+          type
+        </label>
+        <select
+          id="org-type"
+          value={type}
+          onChange={(e) => setType(e.target.value as "agency" | "client")}
+          disabled={mutation.isPending}
+          className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 font-mono text-xs"
+        >
+          <option value="client">client</option>
+          <option value="agency">agency</option>
+        </select>
+      </div>
+      <div className="space-y-1">
+        <label htmlFor="org-dao-account" className={LABEL_CLS}>
+          sputnik dao account
+        </label>
+        <Input
+          id="org-dao-account"
+          value={daoAccountId}
+          onChange={(e) => setDaoAccountId(e.target.value)}
+          placeholder="acme.sputnik-dao.near"
+          disabled={mutation.isPending}
+        />
+      </div>
+      {!isEdit && (
+        <div className="space-y-1">
+          <label htmlFor="org-admin-near-id" className={LABEL_CLS}>
+            admin near id (optional)
+          </label>
+          <Input
+            id="org-admin-near-id"
+            value={adminNearId}
+            onChange={(e) => setAdminNearId(e.target.value)}
+            placeholder="alice.near"
+            disabled={mutation.isPending}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <Card className={isEdit ? "rounded-t-none border-t-0" : ""}>
       <CardContent className="p-5 space-y-6">
@@ -262,124 +370,78 @@ function OrgForm({
           {isEdit ? "edit organization" : "create organization"}
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1">
-            <label htmlFor="org-name" className={LABEL_CLS}>
-              name
-            </label>
-            <Input
-              id="org-name"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (!isEdit && (!slug || slug === slugFromName(name)))
-                  setSlug(slugFromName(e.target.value));
-              }}
-              placeholder="Acme Agency"
-              disabled={mutation.isPending}
-            />
-          </div>
-          {!isEdit && (
-            <div className="space-y-1">
-              <label htmlFor="org-slug" className={LABEL_CLS}>
-                slug
-              </label>
-              <Input
-                id="org-slug"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                placeholder="acme-agency"
-                disabled={mutation.isPending}
-              />
-            </div>
-          )}
-          <div className="space-y-1">
-            <label htmlFor="org-type" className={LABEL_CLS}>
-              type
-            </label>
-            <select
-              id="org-type"
-              value={type}
-              onChange={(e) => setType(e.target.value as "agency" | "client")}
-              disabled={mutation.isPending}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 font-mono text-xs"
-            >
-              <option value="client">client</option>
-              <option value="agency">agency</option>
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="org-dao-account" className={LABEL_CLS}>
-              sputnik dao account
-            </label>
-            <Input
-              id="org-dao-account"
-              value={daoAccountId}
-              onChange={(e) => setDaoAccountId(e.target.value)}
-              placeholder="acme.sputnik-dao.near"
-              disabled={mutation.isPending}
-            />
-          </div>
-          {!isEdit && (
-            <div className="space-y-1">
-              <label htmlFor="org-admin-near-id" className={LABEL_CLS}>
-                admin near id (optional)
-              </label>
-              <Input
-                id="org-admin-near-id"
-                value={adminNearId}
-                onChange={(e) => setAdminNearId(e.target.value)}
-                placeholder="alice.near"
-                disabled={mutation.isPending}
-              />
-            </div>
-          )}
-        </div>
+        {isEdit ? (
+          <div className="space-y-6">
+            <nav className="flex items-center gap-1 border-b border-border pb-px">
+              {(["details", "members", "projects"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setEditTab(tab)}
+                  className={`${TAB_BASE} ${editTab === tab ? TAB_ACTIVE : TAB_INACTIVE}`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </nav>
 
-        <Button
-          onClick={() => mutation.mutate()}
-          disabled={!canSubmit}
-          className="font-display uppercase tracking-wide"
-        >
-          {mutation.isPending
-            ? isEdit
-              ? "saving…"
-              : "creating…"
-            : isEdit
-              ? "save changes →"
-              : "create org →"}
-        </Button>
-
-        {isEdit && (
-          <div className="space-y-3 pt-2 border-t border-border">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              members
-            </div>
-            <AddMemberForm
-              orgId={org.id}
-              onAdded={() =>
-                queryClient.invalidateQueries({ queryKey: ["platform", "orgs", org.id, "members"] })
-              }
-            />
-            {membersQuery.isLoading && <Spinner />}
-            {membersQuery.data?.length === 0 && (
-              <p className="font-mono text-sm text-muted-foreground">No members yet.</p>
+            {editTab === "details" && (
+              <div className="space-y-6">
+                {detailsFields}
+                <Button
+                  onClick={() => mutation.mutate()}
+                  disabled={!canSubmit}
+                  className="font-display uppercase tracking-wide"
+                >
+                  {mutation.isPending ? "saving…" : "save changes →"}
+                </Button>
+              </div>
             )}
-            <div className="space-y-2">
-              {membersQuery.data?.map((member) => (
-                <MemberRow
-                  key={member.id}
-                  member={member}
+
+            {editTab === "members" && (
+              <div className="space-y-3">
+                <AddMemberForm
                   orgId={org.id}
-                  onChanged={() =>
+                  onAdded={() =>
                     queryClient.invalidateQueries({
                       queryKey: ["platform", "orgs", org.id, "members"],
                     })
                   }
                 />
-              ))}
-            </div>
+                {membersQuery.isLoading && <Spinner />}
+                {membersQuery.data?.length === 0 && (
+                  <p className="font-mono text-sm text-muted-foreground">No members yet.</p>
+                )}
+                <div className="space-y-2">
+                  {membersQuery.data?.map((member) => (
+                    <MemberRow
+                      key={member.id}
+                      member={member}
+                      orgId={org.id}
+                      onChanged={() =>
+                        queryClient.invalidateQueries({
+                          queryKey: ["platform", "orgs", org.id, "members"],
+                        })
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {editTab === "projects" && <OrgProjectsTab orgId={org.id} orgSlug={org.slug} />}
           </div>
+        ) : (
+          <>
+            {detailsFields}
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={!canSubmit}
+              className="font-display uppercase tracking-wide"
+            >
+              {mutation.isPending ? "creating…" : "create org →"}
+            </Button>
+          </>
         )}
       </CardContent>
     </Card>

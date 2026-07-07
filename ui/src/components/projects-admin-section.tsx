@@ -18,7 +18,6 @@ import {
   adminContributorsListQueryOptions,
   adminProjectsListQueryKey,
   adminProjectsListQueryOptions,
-  meRolesQueryOptions,
   projectsListQueryKey,
 } from "@/lib/queries";
 
@@ -41,8 +40,6 @@ type Project = {
 export function ProjectsAdminSection() {
   const apiClient = useApiClient();
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
-  const rolesQuery = useQuery(meRolesQueryOptions(apiClient));
-  const isSuperAdmin = rolesQuery.data?.isSuperAdmin ?? false;
 
   const [creating, setCreating] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -90,7 +87,6 @@ export function ProjectsAdminSection() {
               project={p}
               expanded={selectedId === p.id}
               onToggle={() => setSelectedId((s) => (s === p.id ? null : p.id))}
-              showOrg={isSuperAdmin}
             />
           ))}
         </div>
@@ -123,12 +119,10 @@ function ProjectRow({
   project,
   expanded,
   onToggle,
-  showOrg = false,
 }: {
   project: Project;
   expanded: boolean;
   onToggle: () => void;
-  showOrg?: boolean;
 }) {
   const apiClient = useApiClient();
   const budgetQuery = useQuery({
@@ -137,7 +131,6 @@ function ProjectRow({
     staleTime: 30_000,
   });
   const fundingBadge = formatFundingBadge(budgetQuery.data?.budgets);
-  const orgLabel = showOrg && project.organizationId ? project.organizationId.split(".")[0] : null;
 
   return (
     <Card>
@@ -152,11 +145,6 @@ function ProjectRow({
               {fundingBadge && (
                 <Badge variant={fundingBadge.tone === "destructive" ? "destructive" : "outline"}>
                   {fundingBadge.label}
-                </Badge>
-              )}
-              {orgLabel && (
-                <Badge variant="outline" className="font-mono text-[10px]">
-                  {orgLabel}
                 </Badge>
               )}
             </div>

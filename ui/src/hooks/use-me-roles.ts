@@ -16,7 +16,7 @@ export function useMeRoles() {
   const isContributor = !!query.data?.isContributor;
   const isClient = !!query.data?.isClient;
   const isSuperAdmin = !!query.data?.isSuperAdmin;
-  const canAccessAdmin = isAdmin || isContributor;
+  const canAccessAdmin = (isAdmin || isContributor) && !isSuperAdmin;
   const isLoaded = !isAuthenticated || query.isSuccess;
 
   return {

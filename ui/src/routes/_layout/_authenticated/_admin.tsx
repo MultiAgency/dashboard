@@ -5,7 +5,7 @@ export const Route = createFileRoute("/_layout/_authenticated/_admin")({
   beforeLoad: async ({ context }) => {
     const roles = await context.queryClient.ensureQueryData(meRolesQueryOptions(context.apiClient));
 
-    if (!roles.isAdmin && !roles.isSuperAdmin) {
+    if (!roles.isAdmin) {
       throw redirect({ to: "/", hash: "unauthorized" });
     }
 
