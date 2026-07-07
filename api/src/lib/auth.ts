@@ -9,6 +9,29 @@ export interface RequestAuthContext {
   userId?: GeneratedAuthRequestContext["userId"];
   user?: GeneratedAuthRequestContext["user"];
   organizationId?: GeneratedAuthRequestContext["organization"]["activeOrganizationId"];
+  organization?: {
+    activeOrganizationId?: string | null;
+    organization?: {
+      id?: string;
+      name?: string;
+      slug?: string;
+      logo?: string | null;
+      metadata?: Record<string, unknown> | null;
+    } | null;
+    member?: { id: string; role: string } | null;
+    isPersonal?: boolean;
+    hasOrganization?: boolean;
+  };
+  near?: {
+    primaryAccountId: string | null;
+    linkedAccounts: Array<{
+      accountId: string;
+      network: string;
+      publicKey: string;
+      isPrimary: boolean;
+    }>;
+    hasNearAccount: boolean;
+  };
   apiKey?: GeneratedAuthRequestContext["apiKey"];
   reqHeaders?: Headers;
   getRawBody?: () => Promise<string>;
@@ -41,6 +64,8 @@ function toRequestAuthContext(context: RequestAuthContext): RequestAuthContext {
     userId: context.userId,
     user: context.user,
     organizationId: context.organizationId,
+    organization: context.organization,
+    near: context.near,
     apiKey: context.apiKey,
     reqHeaders: context.reqHeaders,
     getRawBody: context.getRawBody,

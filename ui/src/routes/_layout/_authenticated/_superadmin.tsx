@@ -1,13 +1,15 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { meRolesQueryOptions } from "@/lib/queries";
+import { sessionQueryOptions } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/_superadmin")({
   beforeLoad: async ({ context }) => {
-    const roles = await context.queryClient.ensureQueryData(meRolesQueryOptions(context.apiClient));
-    if (!roles.isSuperAdmin) {
+    const session = await context.queryClient.ensureQueryData(
+      sessionQueryOptions(context.authClient, context.session),
+    );
+    if (session?.user?.role !== "admin") {
       throw redirect({ to: "/", hash: "unauthorized" });
     }
-    return { roles };
+    return { roles: { orgRole: null } };
   },
   component: () => <Outlet />,
 });

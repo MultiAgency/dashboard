@@ -81,8 +81,8 @@ export function UserNav() {
     retry: false,
   });
   const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
-  const isAdmin = roles?.isAdmin ?? false;
-  const isSuperAdmin = roles?.isSuperAdmin ?? false;
+  const orgRole = roles?.orgRole ?? null;
+  const isSuperAdmin = session?.user?.role === "admin";
   const avatarUrl =
     profile?.image?.url ??
     (profile?.image?.ipfs_cid ? `https://ipfs.io/ipfs/${profile.image.ipfs_cid}` : null);
@@ -189,7 +189,7 @@ export function UserNav() {
               profile
             </Link>
           </DropdownMenuItem>
-          {isAdmin && (
+          {(orgRole === "admin" || orgRole === "contributor") && (
             <DropdownMenuItem asChild>
               <Link to="/admin/settings" className="font-mono text-xs uppercase tracking-wide">
                 settings

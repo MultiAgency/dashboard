@@ -794,10 +794,7 @@ export const contract = oc.router({
       .route({ method: "GET", path: "/me/roles" })
       .output(
         z.object({
-          isAdmin: z.boolean(),
-          isContributor: z.boolean(),
-          isClient: z.boolean(),
-          isSuperAdmin: z.boolean(),
+          orgRole: z.enum(["admin", "contributor", "client"]).nullable(),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
