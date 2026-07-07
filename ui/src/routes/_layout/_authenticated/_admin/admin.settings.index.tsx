@@ -32,6 +32,7 @@ const optionalEmail = z
   .refine((s) => s === "" || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s), "not a valid email");
 
 const settingsFormSchema = z.object({
+  daoAccountId: z.string().trim().max(120),
   nearnAccountId: z.string().trim().max(120),
   websiteUrl: optionalUrl,
   docsUrl: optionalUrl,
@@ -80,13 +81,14 @@ function SettingsForm({
   apiClient,
   queryClient,
 }: {
-  data: NonNullable<Awaited<ReturnType<typeof apiClient.settings.adminGet>>>;
+  data: NonNullable<Awaited<ReturnType<typeof apiClient.agencyConfig.get>>>;
   apiClient: ReturnType<typeof useApiClient>;
   queryClient: ReturnType<typeof useQueryClient>;
 }) {
   const submit = useMutation({
     mutationFn: (values: SettingsFormValues) =>
-      apiClient.settings.adminUpdate({
+      apiClient.agencyConfig.update({
+        daoAccountId: values.daoAccountId.trim() || null,
         nearnAccountId: values.nearnAccountId.trim() || null,
         websiteUrl: values.websiteUrl.trim() || null,
         docsUrl: values.docsUrl.trim() || null,
@@ -103,6 +105,7 @@ function SettingsForm({
 
   const form = useForm({
     defaultValues: {
+      daoAccountId: data.editable.daoAccountId ?? "",
       nearnAccountId: data.editable.nearnAccountId ?? "",
       websiteUrl: data.editable.websiteUrl ?? "",
       docsUrl: data.editable.docsUrl ?? "",
@@ -120,15 +123,12 @@ function SettingsForm({
   return (
     <section className="space-y-8">
       <div className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          admin · settings
-        </div>
         <h2 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
           Settings
         </h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Agency-level configuration for the {data.network} deployment. Editable fields write to the
-          `agency.settings` row for this DAO. Read-only fields are deploy-time config — env vars or
+          Agency-level configuration for the {data.network} deployment. Editable fields write to the{" "}
+          settings row for this organization. Read-only fields are deploy-time config — env vars or
           hardcoded brand identity.
         </p>
       </div>
@@ -140,7 +140,7 @@ function SettingsForm({
               editable
             </div>
             <p className="text-sm text-muted-foreground">
-              NEARN account link and basic metadata. Saved to this DAO's settings row.
+              NEARN account link and basic metadata. Saved to this organization's settings row.
             </p>
           </div>
           <form
@@ -155,15 +155,48 @@ function SettingsForm({
             }}
           >
             <div className="space-y-2">
-              <div className={LABEL_CLS}>trezu sputnik account</div>
+              <div className={LABEL_CLS}>agency account</div>
               <div className="font-mono text-sm break-all px-3 py-2 border border-border bg-muted/30">
                 {data.orgAccountId}
               </div>
               <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                row identity — multi-tenant native. to point this dashboard at a different dao, edit{" "}
-                <code>AGENCY_ORG_ACCOUNT_{data.network.toUpperCase()}</code> and restart.
+                row identity — resolved from org metadata, settings table, or{" "}
+                <code>AGENCY_ORG_ACCOUNT_{data.network.toUpperCase()}</code> fallback.
               </p>
             </div>
+            <form.Field name="daoAccountId">
+              {(field) => {
+                const err = field.state.meta.errors[0];
+                const errId = `${field.name}-error`;
+                return (
+                  <div className="space-y-2">
+                    <label htmlFor={field.name} className={LABEL_CLS}>
+                      sputnik dao account
+                    </label>
+                    <Input
+                      id={field.name}
+                      name={field.name}
+                      value={field.state.value}
+                      onBlur={field.handleBlur}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      placeholder="multiagency.sputnik-dao.near"
+                      disabled={isPending}
+                      aria-invalid={err ? true : undefined}
+                      aria-describedby={err ? errId : undefined}
+                    />
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      Links this organization to a Sputnik DAO for treasury/proposals display. Not
+                      used for access control.
+                    </p>
+                    {err && (
+                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
+                        {fieldErrorMessage(err)}
+                      </p>
+                    )}
+                  </div>
+                );
+              }}
+            </form.Field>
             <form.Field name="nearnAccountId">
               {(field) => {
                 const err = field.state.meta.errors[0];
@@ -350,9 +383,6 @@ function SettingsForm({
             <ReadOnly label="agency name" value={data.readOnly.name} />
             <ReadOnly label="headline" value={data.readOnly.headline} />
             <ReadOnly label="tagline" value={data.readOnly.tagline} />
-            <ReadOnly label="admin role" value={data.readOnly.adminRoleName} />
-            <ReadOnly label="approver role" value={data.readOnly.approverRoleName} />
-            <ReadOnly label="requestor role" value={data.readOnly.requestorRoleName} />
           </dl>
         </CardContent>
       </Card>

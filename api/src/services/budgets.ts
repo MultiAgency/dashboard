@@ -40,7 +40,7 @@ export type BudgetListItem = Pick<
 >;
 
 export interface ListBudgetsInput {
-  projectIds: string[];
+  projectIds: string[] | null;
   tokenId?: string;
   cursor?: string;
   limit: number;
@@ -55,7 +55,8 @@ export async function listBudgets(
   db: Database,
   input: ListBudgetsInput,
 ): Promise<ListBudgetsOutput> {
-  if (input.projectIds.length === 0) return { data: [], nextCursor: null };
+  if (input.projectIds !== null && input.projectIds.length === 0)
+    return { data: [], nextCursor: null };
 
   const rows = await db
     .select({
@@ -71,7 +72,7 @@ export async function listBudgets(
     .from(budgets)
     .where(
       and(
-        inArray(budgets.projectId, input.projectIds),
+        input.projectIds !== null ? inArray(budgets.projectId, input.projectIds) : undefined,
         input.tokenId ? eq(budgets.tokenId, input.tokenId) : undefined,
         cursorWhere(budgets.createdAt, budgets.id, input.cursor),
       ),

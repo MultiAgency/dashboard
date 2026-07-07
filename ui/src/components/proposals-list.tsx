@@ -109,7 +109,7 @@ export type OperatorContext = {
 };
 
 const BILLING_INVALIDATIONS = [
-  ["proposals", "adminList"],
+  ["proposals", "list"],
   ["admin", "billings", "list"],
   ["admin", "projects", "budget"],
   ["treasury", "rollups"],
@@ -625,7 +625,7 @@ function ProposalBillingSection({
 
   const recordMutation = useMutation({
     mutationFn: async () =>
-      apiClient.billings.adminCreate({
+      apiClient.billings.create({
         projectId,
         contributorId: contributorId || undefined,
         proposalId: proposal.proposalId,
@@ -642,7 +642,7 @@ function ProposalBillingSection({
   const deleteMutation = useMutation({
     mutationFn: async () => {
       if (!proposal.mapping) throw new Error("No billing to delete");
-      return apiClient.billings.adminDelete({ id: proposal.mapping.billingId });
+      return apiClient.billings.delete({ id: proposal.mapping.billingId });
     },
     onSuccess: async () => {
       await invalidate();

@@ -9,16 +9,14 @@ import { cursorOf, cursorWhere } from "./db/cursor";
 import { loadMigrations } from "./db/load-migrations";
 import { migrate } from "./db/migrator";
 import { applications, billings, budgets, contributors, projectContributors } from "./db/schema";
-import { defaultOrgAccount, pinnedNetwork } from "./lib/default-org-account";
+import { AuthDbClient } from "./lib/auth-db";
+import { baseTenantSuffix, getTenantDaoAccountId, pinnedNetwork } from "./lib/default-org-account";
 import { getNetwork } from "./lib/network";
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import {
-  defaultAdminRoleName,
-  defaultApproverRoleName,
   defaultContactEmail,
   defaultNearnAccountId,
   defaultPublicSettings,
-  defaultRequestorRoleName,
 } from "./lib/settings-defaults";
 import {
   BudgetInsufficientError,
@@ -71,7 +69,6 @@ import {
   getStorageBalance,
   getTreasuryBalances,
   networkOf,
-  userInRole,
 } from "./services/sputnik";
 import { summarizeProposals, summarizeTeam, summarizeTreasury } from "./services/summaries";
 import { getTokenMetadata, type KnownToken, NATIVE_TOKEN_ID } from "./services/tokens";
@@ -140,23 +137,37 @@ const nearCapabilitiesSchema = z.object({
   hasNearAccount: z.boolean(),
 });
 
-export interface AuthContext {
-  userId: string;
-  user: {
-    id: string;
-    role?: string;
-    email?: string;
-    name?: string;
-  };
-  nearAccountId: string;
-  reqHeaders?: Headers;
-}
+const orgContextSchema = z
+  .object({
+    activeOrganizationId: z.string().nullable().optional(),
+    organization: z
+      .object({
+        id: z.string().optional(),
+        name: z.string().optional(),
+        slug: z.string().optional(),
+        logo: z.string().nullable().optional(),
+        metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+      })
+      .nullable()
+      .optional(),
+    member: z
+      .object({
+        id: z.string(),
+        role: z.string(),
+      })
+      .nullable()
+      .optional(),
+    isPersonal: z.boolean().optional(),
+    hasOrganization: z.boolean().optional(),
+  })
+  .optional();
 
 export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({}),
 
   secrets: z.object({
     API_DATABASE_URL: z.string().default("pglite:.bos/api/:memory:"),
+    AUTH_DATABASE_URL: z.string().optional(),
     APPLICATIONS_WEBHOOK_URL: z.string().optional(),
     RESEND_API_KEY: z.string().optional(),
     NOTIFY_FROM_EMAIL: z.string().optional(),
@@ -172,6 +183,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         name: z.string().optional(),
       })
       .optional(),
+    organization: orgContextSchema,
     near: nearCapabilitiesSchema.optional(),
     reqHeaders: z.custom<Headers>().optional(),
     getRawBody: z.custom<() => Promise<string>>().optional(),
@@ -185,7 +197,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const db = driver.db;
       const migrations = await loadMigrations();
       await migrate(db, migrations);
+      const authDb = config.secrets.AUTH_DATABASE_URL
+        ? new AuthDbClient(config.secrets.AUTH_DATABASE_URL)
+        : null;
       console.log("[API] Services Initialized");
+      console.log("[API] AuthDb:", authDb ? "connected" : "not configured");
       console.log("[API] Plugins available:", Object.keys(plugins).join(", ") || "none");
 
       const notifyConfig = {
@@ -193,7 +209,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         resendApiKey: config.secrets.RESEND_API_KEY,
         fromEmail: config.secrets.NOTIFY_FROM_EMAIL,
       };
-      return { db, driver, plugins, notifyConfig };
+      return { db, driver, plugins, notifyConfig, authDb };
     }),
 
   shutdown: (services) =>
@@ -203,107 +219,185 @@ export default createPlugin.withPlugins<PluginsClient>()({
     }),
 
   createRouter: (services, builder) => {
-    const { db, notifyConfig, plugins } = services;
+    const { db, notifyConfig, plugins, authDb } = services;
 
-    const hostUrl = process.env.HOST_URL ?? `http://localhost:${process.env.PORT ?? "3000"}`;
-
-    const getCookie = (reqHeaders: unknown): string | undefined => {
-      if (!reqHeaders) return undefined;
-      if (reqHeaders instanceof Headers) return reqHeaders.get("cookie") ?? undefined;
-      const obj = reqHeaders as Record<string, string>;
-      return obj.cookie ?? obj.Cookie;
-    };
-
-    const resolveNearAccountId = async (reqHeaders: unknown): Promise<string | undefined> => {
-      const cookie = getCookie(reqHeaders);
-      if (!cookie) return undefined;
-      try {
-        const res = await fetch(`${hostUrl}/api/auth/near/list-accounts`, {
-          headers: { cookie },
-        });
-        if (!res.ok) return undefined;
-        const data = (await res.json()) as {
-          accounts?: Array<{ accountId: string; isPrimary?: boolean }>;
-        };
-        const accounts = data.accounts ?? [];
-        const primary = accounts.find((a) => a.isPrimary) ?? accounts[0];
-        return primary?.accountId;
-      } catch (err) {
-        console.warn("[API] Failed to resolve nearAccountId:", (err as Error).message);
-        return undefined;
-      }
-    };
-
-    // Settings is keyed by orgAccountId, so orgAccountId resolves from env BEFORE any DB lookup.
-    // Async signature preserved as forward-compat: multi-tenant resolution will read session/DB.
+    // Read the DAO account for data queries (Sputnik RPC, projects plugin scope).
+    // Derives from the tenant subdomain's saved daoAccountId, falling back to env/hardcoded.
+    // NOT used for role gating — gating uses better-auth org context below.
     const getOrgAccountId = (reqHeaders: Headers | undefined): Promise<string> =>
-      Promise.resolve(defaultOrgAccount(getNetwork(reqHeaders)));
+      getTenantDaoAccountId(db, reqHeaders, getNetwork(reqHeaders));
 
-    const requireSession = builder.middleware(async ({ context, next }) => {
-      if (!context.user || !context.userId) {
-        throw new ORPCError("UNAUTHORIZED", { message: "Authentication required" });
-      }
-      const nearAccountId = await resolveNearAccountId(context.reqHeaders);
-      if (!nearAccountId) {
-        throw new ORPCError("FORBIDDEN", {
-          message: "NEAR account required for this action",
-        });
-      }
-      return next({
-        context: {
-          userId: context.userId,
-          user: context.user,
-          nearAccountId,
-          reqHeaders: context.reqHeaders,
-        } satisfies AuthContext,
-      });
-    });
-
-    type RoleKey = "admin" | "approver" | "requestor";
-    const roleNameFor = (key: RoleKey): string => {
-      if (key === "admin") return defaultAdminRoleName();
-      if (key === "approver") return defaultApproverRoleName();
-      return defaultRequestorRoleName();
+    // Returns the settings row key — always the tenant account (slug.baseSuffix or env default),
+    // NOT the DAO account. Used by agencyConfig get/update so they read/write the same row
+    // that createOrg/updateOrg wrote.
+    const getSettingsKey = (reqHeaders: Headers | undefined): string => {
+      const host = (reqHeaders?.get("host") ?? "").replace(/:\d+$/, "");
+      const subdomain = host.split(".")[0];
+      const suffix = baseTenantSuffix();
+      if (subdomain && subdomain !== "localhost") return `${subdomain}.${suffix}`;
+      return process.env.AGENCY_ORG_ACCOUNT_MAINNET ?? `multiagency.${suffix}`;
     };
 
-    const requireRoles = (roles: RoleKey[]) =>
-      builder.middleware(async ({ context, next }) => {
+    // Gate: authenticated + active org + required org-scoped role(s).
+    const requireOrgRole = (requiredRoles: string[]) =>
+      builder.middleware(async ({ context, next }: { context: any; next: any }) => {
         if (!context.user || !context.userId) {
-          throw new ORPCError("UNAUTHORIZED", { message: "Authentication required" });
-        }
-        const nearAccountId = await resolveNearAccountId(context.reqHeaders);
-        if (!nearAccountId) {
-          throw new ORPCError("FORBIDDEN", {
-            message: "NEAR account required for this action",
+          throw new ORPCError("UNAUTHORIZED", {
+            message: "Authentication required",
+            data: { hint: "Sign in to continue" },
           });
         }
-        const orgAccountId = await getOrgAccountId(context.reqHeaders);
-        const roleNames = roles.map(roleNameFor);
-        const checks = await Promise.all(
-          roleNames.map((name) => userInRole(orgAccountId, nearAccountId, name)),
-        );
-        if (!checks.some(Boolean)) {
+        const isSuperAdmin = (context.user as any)?.role === "admin";
+        const daoAccountId = await getOrgAccountId(context.reqHeaders);
+        const org = authDb ? await authDb.findOrgByDaoAccountId(daoAccountId) : null;
+        const organizationId = org?.id ?? null;
+        if (!organizationId) {
           throw new ORPCError("FORBIDDEN", {
-            message: `Requires ${roleNames.join(" or ")} role on ${orgAccountId} (your view network's DAO); your account ${nearAccountId} has none.`,
+            message: "No organization configured for this domain",
+            data: { hint: "Ask a platform admin to set up this subdomain" },
+          });
+        }
+        const memberRole =
+          organizationId && authDb
+            ? await authDb.getMemberRole(context.userId, organizationId)
+            : null;
+        if (!memberRole || !requiredRoles.includes(memberRole)) {
+          throw new ORPCError("FORBIDDEN", {
+            message: `Requires role: ${requiredRoles.join(" or ")}`,
+            data: { requiredRoles, currentRole: memberRole },
           });
         }
         return next({
           context: {
-            userId: context.userId,
-            user: context.user,
-            nearAccountId,
-            reqHeaders: context.reqHeaders,
-          } as AuthContext,
+            ...context,
+            organizationId,
+            memberRole,
+            nearAccountId: context.near?.primaryAccountId ?? null,
+            isSuperAdmin,
+            orgMetadata: org?.metadata ?? null,
+          },
         });
       });
 
+    // Gate: authenticated + active org (any role, including client).
+    const requireOrgMember = builder.middleware(
+      async ({ context, next }: { context: any; next: any }) => {
+        if (!context.user || !context.userId) {
+          throw new ORPCError("UNAUTHORIZED", {
+            message: "Authentication required",
+            data: { hint: "Sign in to continue" },
+          });
+        }
+        const isSuperAdmin = (context.user as any)?.role === "admin";
+        const daoAccountId = await getOrgAccountId(context.reqHeaders);
+        const org = authDb ? await authDb.findOrgByDaoAccountId(daoAccountId) : null;
+        const organizationId = org?.id ?? null;
+        if (!organizationId) {
+          throw new ORPCError("FORBIDDEN", {
+            message: "No organization configured for this domain",
+            data: { hint: "Ask a platform admin to set up this subdomain" },
+          });
+        }
+        const memberRole =
+          organizationId && authDb
+            ? await authDb.getMemberRole(context.userId, organizationId)
+            : null;
+        return next({
+          context: {
+            ...context,
+            organizationId,
+            memberRole,
+            nearAccountId: context.near?.primaryAccountId ?? null,
+            isSuperAdmin,
+            orgMetadata: org?.metadata ?? null,
+          },
+        });
+      },
+    );
+
+    // Gate: authenticated (no org required) but normalizes org/near fields.
+    const requireAuthNormalized = builder.middleware(
+      async ({ context, next }: { context: any; next: any }) => {
+        if (!context.user || !context.userId) {
+          throw new ORPCError("UNAUTHORIZED", {
+            message: "Authentication required",
+            data: { hint: "Sign in to continue" },
+          });
+        }
+        const isSuperAdmin = (context.user as any)?.role === "admin";
+        const daoAccountId = await getOrgAccountId(context.reqHeaders);
+        const org = authDb ? await authDb.findOrgByDaoAccountId(daoAccountId) : null;
+        const memberRole =
+          org && authDb ? await authDb.getMemberRole(context.userId, org.id) : null;
+        return next({
+          context: {
+            ...context,
+            organizationId: org?.id ?? null,
+            memberRole,
+            nearAccountId: context.near?.primaryAccountId ?? null,
+            isSuperAdmin,
+            orgMetadata: org?.metadata ?? null,
+          },
+        });
+      },
+    );
+
+    // Soft auth: fills org/role context if the user has a session, passes through otherwise.
+    // Used by adaptive endpoints that return different data shapes based on role.
+    const tryOrgAuth = builder.middleware(
+      async ({ context, next }: { context: any; next: any }) => {
+        if (!context.user || !context.userId) return next();
+        const isSuperAdmin = (context.user as any)?.role === "admin";
+        const daoAccountId = await getOrgAccountId(context.reqHeaders);
+        const org = authDb ? await authDb.findOrgByDaoAccountId(daoAccountId) : null;
+        const memberRole =
+          org && authDb ? await authDb.getMemberRole(context.userId, org.id) : null;
+        return next({
+          context: {
+            ...context,
+            organizationId: org?.id ?? null,
+            memberRole,
+            nearAccountId: context.near?.primaryAccountId ?? null,
+            isSuperAdmin,
+            orgMetadata: org?.metadata ?? null,
+          },
+        });
+      },
+    );
+
     const gates = {
-      admin: requireRoles(["admin"]),
-      approver: requireRoles(["approver"]),
-      requestor: requireRoles(["requestor"]),
-      operator: requireRoles(["admin", "approver"]),
-      member: requireRoles(["admin", "approver", "requestor"]),
+      admin: requireOrgRole(["admin"]),
+      contributor: requireOrgRole(["admin", "contributor"]),
+      org: requireOrgMember,
+      superAdmin: builder.middleware(async ({ context, next }: { context: any; next: any }) => {
+        if (!context.user || !context.userId) {
+          throw new ORPCError("UNAUTHORIZED", {
+            message: "Authentication required",
+            data: { hint: "Sign in to continue" },
+          });
+        }
+        if ((context.user as any)?.role !== "admin") {
+          throw new ORPCError("FORBIDDEN", {
+            message: "Super admin access required",
+            data: { hint: "This action requires platform-level admin privileges" },
+          });
+        }
+        const orgMetadata = (context.organization?.organization as any)?.metadata ?? null;
+        return next({ context: { ...context, isSuperAdmin: true, orgMetadata } });
+      }),
     } as const;
+
+    // Resolve the Sputnik DAO account for data queries.
+    // Prefers the org metadata's daoAccountId (set when the org was created), falling back to the
+    // subdomain-based tenant lookup, then env/hardcoded defaults.
+    const resolveOrgAccountId = async (
+      context: any,
+      reqHeaders: Headers | undefined,
+    ): Promise<string> => {
+      const daoFromMeta = (context.orgMetadata as any)?.daoAccountId;
+      if (typeof daoFromMeta === "string" && daoFromMeta.length > 0) return daoFromMeta;
+      return getOrgAccountId(reqHeaders);
+    };
 
     const enrichWithChainStatus = async (b: typeof billings.$inferSelect, orgAccountId: string) => {
       const proposalId = Number.parseInt(b.proposalId, 10);
@@ -320,8 +414,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       return { ...b, status };
     };
 
-    const computeBudget = async (projectId: string, reqHeaders: Headers | undefined) => {
-      const orgId = await getOrgAccountId(reqHeaders);
+    const computeBudget = async (projectId: string, orgId: string) => {
       const [budgetRows, billsRaw, nearnListing, internalListing] = await Promise.all([
         db
           .select({ tokenId: budgets.tokenId, amount: budgets.amount })
@@ -369,11 +462,17 @@ export default createPlugin.withPlugins<PluginsClient>()({
       ReturnType<ReturnType<PluginsClient["projects"]>["listProjects"]>
     >["data"][number];
 
-    // Proxy as orgAccountId: upstream's canEditProject is per-ownerId; per-op audit in budgets/billings actorAccountId.
-    const proxyCtx = (orgAccountId: string) => ({
-      userId: orgAccountId,
-      walletAddress: orgAccountId,
-      user: { id: orgAccountId },
+    // Proxy context passed to the projects plugin. Scoped by DAO/env org account.
+    // memberRole threads the better-auth org role for permission checks in the projects plugin.
+    // organizationId prefers the better-auth UUID over the Sputnik DAO account string for ownerId.
+    const proxyCtx = (
+      orgAccountId: string,
+      memberRole?: string | null,
+      organizationId?: string | null,
+    ) => ({
+      userId: organizationId ?? orgAccountId,
+      walletAddress: organizationId ?? orgAccountId,
+      user: { id: organizationId ?? orgAccountId, role: memberRole ?? undefined },
     });
 
     const toContractProject = (
@@ -389,11 +488,29 @@ export default createPlugin.withPlugins<PluginsClient>()({
       description: p.description,
       repository: p.repository ?? null,
       nearnListingId,
+      kind: ((p as any).kind ?? "project") as "project" | "idea",
       status: p.status,
       visibility: p.visibility,
       createdAt: new Date(p.createdAt),
       updatedAt: new Date(p.updatedAt),
     });
+
+    const toPublicProject = (p: UpstreamProject, fallbackOrgId: string) => {
+      const { description, nearnListingId, ...rest } = toContractProject(p, null, fallbackOrgId);
+      return rest;
+    };
+
+    const fetchPlatformOrgProjects = async (org: {
+      id: string;
+      metadata: Record<string, unknown> | null;
+    }) => {
+      const daoAccountId = String((org.metadata as { daoAccountId?: string })?.daoAccountId ?? "");
+      if (!daoAccountId || !plugins.projects) return [];
+      const upstream = await fetchOrgProjects(daoAccountId, org.id);
+      return upstream
+        .map((p) => toPublicProject(p, daoAccountId))
+        .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    };
 
     // Short TTL caches the DAO project list across handler-burst calls; writes invalidate.
     const DAO_PROJECTS_TTL_MS = 5_000;
@@ -403,10 +520,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
     };
 
     // DAO ctx admits private DAO projects via upstream's ownerId===userId branch.
-    const fetchOrgProjects = async (orgAccountId: string): Promise<UpstreamProject[]> => {
+    const fetchOrgProjects = async (
+      orgAccountId: string,
+      organizationId?: string | null,
+    ): Promise<UpstreamProject[]> => {
       const cached = daoProjectsCache.get(orgAccountId);
       if (cached && cached.expiresAt > Date.now()) return cached.projects;
-      const ctx = proxyCtx(orgAccountId);
+      const ctx = proxyCtx(orgAccountId, null, organizationId);
       const out: UpstreamProject[] = [];
       let cursor: string | undefined;
       do {
@@ -427,14 +547,16 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
     const fetchOrgProjectsById = async (
       orgAccountId: string,
+      organizationId?: string | null,
     ): Promise<Map<string, UpstreamProject>> => {
-      const ps = await fetchOrgProjects(orgAccountId);
+      const ps = await fetchOrgProjects(orgAccountId, organizationId);
       return new Map(ps.map((p) => [p.id, p]));
     };
 
     const requireProjectInOrg = async (
       projectId: string,
       orgAccountId: string,
+      organizationId?: string | null,
     ): Promise<UpstreamProject> => {
       // Fast path: a warm cache already contains every project in this org (filtered upstream by
       // `organizationId`), so a hit implicitly satisfies the org check. Cache miss / stale falls
@@ -445,7 +567,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
         if (hit) return hit;
       }
       try {
-        const result = await plugins.projects(proxyCtx(orgAccountId)).getProject({ id: projectId });
+        // Use "admin" role so the upstream grants access regardless of ownerId — callers are
+        // already gated by our own admin/contributor middleware before reaching this point.
+        const result = await plugins
+          .projects(proxyCtx(orgAccountId, "admin", organizationId))
+          .getProject({ id: projectId });
         if (result.data.organizationId !== orgAccountId) {
           throw new ORPCError("NOT_FOUND", { message: "Project not found" });
         }
@@ -488,7 +614,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           return { id, status: "new" as const };
         }),
 
-        adminList: builder.applications.adminList.use(gates.operator).handler(async ({ input }) => {
+        list: builder.applications.list.use(gates.contributor).handler(async ({ input }) => {
           const rows = await db
             .select()
             .from(applications)
@@ -509,47 +635,58 @@ export default createPlugin.withPlugins<PluginsClient>()({
           };
         }),
 
-        adminUpdate: builder.applications.adminUpdate
-          .use(gates.admin)
-          .handler(async ({ context, input }) => {
-            const reviewed = input.status !== "new";
-            const result = await db
-              .update(applications)
-              .set({
-                status: input.status,
-                reviewedBy: reviewed ? context.nearAccountId : null,
-                reviewedAt: reviewed ? new Date() : null,
-              })
-              .where(eq(applications.id, input.id))
-              .returning();
-            const row = result[0];
-            if (!row) throw new ORPCError("NOT_FOUND", { message: "Application not found" });
-            return { application: row };
-          }),
+        update: builder.applications.update.use(gates.admin).handler(async ({ context, input }) => {
+          const reviewed = input.status !== "new";
+          const result = await db
+            .update(applications)
+            .set({
+              status: input.status,
+              reviewedBy: reviewed
+                ? ((context as any).nearAccountId ?? context.userId ?? null)
+                : null,
+              reviewedAt: reviewed ? new Date() : null,
+            })
+            .where(eq(applications.id, input.id))
+            .returning();
+          const row = result[0];
+          if (!row) throw new ORPCError("NOT_FOUND", { message: "Application not found" });
+          return { application: row };
+        }),
       },
 
       agency: {
         projects: {
-          list: builder.agency.projects.list.handler(async ({ context }) => {
-            const orgAccountId = await getOrgAccountId(context.reqHeaders);
+          list: builder.agency.projects.list.use(tryOrgAuth).handler(async ({ context }) => {
             if (!plugins.projects) return { data: [] };
+
+            const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
+            const organizationId = (context as any).organizationId ?? null;
+
+            const isContributor = ["admin", "contributor"].includes(
+              (context as any)?.memberRole ?? "",
+            );
 
             const upstream: UpstreamProject[] = [];
             let cursor: string | undefined;
             do {
-              const result = await plugins.projects(proxyCtx(orgAccountId)).listProjects({
-                organizationId: orgAccountId,
-                visibility: "public",
-                status: "active",
-                limit: 100,
-                cursor,
-              });
+              const result = await plugins
+                .projects(
+                  proxyCtx(orgAccountId, (context as any).memberRole ?? null, organizationId),
+                )
+                .listProjects({
+                  organizationId: orgAccountId,
+                  ...(isContributor ? {} : { visibility: "public", status: "active" }),
+                  limit: 100,
+                  cursor,
+                });
               upstream.push(...result.data);
               cursor = result.meta.nextCursor ?? undefined;
             } while (cursor);
             const projectIds = upstream.map((p) => p.id);
             const linkByProjectId = isNearnAvailable(orgAccountId)
-              ? await getListingsForProjects(projectIds, "nearn", orgAccountId, db)
+              ? await getListingsForProjects(projectIds, "nearn", orgAccountId, db, {
+                  skipRefresh: !isContributor,
+                })
               : new Map();
             const data = upstream
               .map((p) => {
@@ -563,92 +700,89 @@ export default createPlugin.withPlugins<PluginsClient>()({
             return { data };
           }),
 
-          adminGet: builder.agency.projects.adminGet
-            .use(requireSession)
-            .handler(async ({ context, input }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
-              const upstreamMatch = (await fetchOrgProjects(orgAccountId)).find(
+          get: builder.agency.projects.get.use(tryOrgAuth).handler(async ({ context, input }) => {
+            const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
+            const organizationId = (context as any).organizationId ?? null;
+            const isContributor = ["admin", "contributor"].includes(
+              (context as any)?.memberRole ?? "",
+            );
+
+            let upstreamMatch: UpstreamProject | undefined;
+            if (isContributor) {
+              upstreamMatch = (await fetchOrgProjects(orgAccountId, organizationId)).find(
                 (p) => p.slug === input.slug,
               );
-              if (!upstreamMatch) {
-                throw new ORPCError("NOT_FOUND", { message: "Project not found" });
-              }
-              const link = await getListingForProject(upstreamMatch.id, "nearn", orgAccountId, db, {
-                skipRefresh: true,
-              });
+            } else {
+              if (!plugins.projects) return null as never;
+              const result = await plugins
+                .projects(
+                  proxyCtx(orgAccountId, (context as any).memberRole ?? null, organizationId),
+                )
+                .listProjects({
+                  organizationId: orgAccountId,
+                  visibility: "public",
+                  status: "active",
+                  limit: 100,
+                });
+              upstreamMatch = result.data.find((p) => p.slug === input.slug);
+            }
 
-              const contributorRows = await db
-                .select({
-                  id: contributors.id,
-                  name: contributors.name,
-                  nearAccountId: contributors.nearAccountId,
-                  role: projectContributors.role,
-                })
-                .from(projectContributors)
-                .innerJoin(contributors, eq(projectContributors.contributorId, contributors.id))
-                .where(eq(projectContributors.projectId, upstreamMatch.id))
-                .orderBy(desc(projectContributors.createdAt));
+            if (!upstreamMatch) {
+              throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+            }
 
-              const [admin, approver, requestor] = await Promise.all([
-                userInRole(orgAccountId, context.nearAccountId!, defaultAdminRoleName()),
-                userInRole(orgAccountId, context.nearAccountId!, defaultApproverRoleName()),
-                userInRole(orgAccountId, context.nearAccountId!, defaultRequestorRoleName()),
-              ]);
-              if (!admin && !approver && !requestor) {
-                const isAssigned = contributorRows.some(
-                  (c) => c.nearAccountId && c.nearAccountId === context.nearAccountId,
-                );
-                if (!isAssigned) {
-                  throw new ORPCError("FORBIDDEN", {
-                    message: `Project access requires ${defaultAdminRoleName()}/${defaultApproverRoleName()}/${defaultRequestorRoleName()} role or contributor assignment`,
-                  });
-                }
-              }
-
+            if (!isContributor) {
               return {
-                project: toContractProject(upstreamMatch, link?.externalId ?? null, orgAccountId),
-                contributors: contributorRows,
+                project: {
+                  ...toContractProject(upstreamMatch, null, orgAccountId),
+                  description: null,
+                  nearnListingId: null,
+                },
+                contributors: null,
               };
-            }),
+            }
+
+            const link = await getListingForProject(upstreamMatch.id, "nearn", orgAccountId, db, {
+              skipRefresh: true,
+            });
+
+            const contributorRows = await db
+              .select({
+                id: contributors.id,
+                name: contributors.name,
+                nearAccountId: contributors.nearAccountId,
+                role: projectContributors.role,
+              })
+              .from(projectContributors)
+              .innerJoin(contributors, eq(projectContributors.contributorId, contributors.id))
+              .where(eq(projectContributors.projectId, upstreamMatch.id))
+              .orderBy(desc(projectContributors.createdAt));
+
+            return {
+              project: toContractProject(upstreamMatch, link?.externalId ?? null, orgAccountId),
+              contributors: contributorRows,
+            };
+          }),
 
           getBudget: builder.agency.projects.getBudget
-            .use(gates.operator)
+            .use(gates.contributor)
             .handler(async ({ context, input }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
+              const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
               await requireProjectInOrg(input.projectId, orgAccountId);
-              return { budgets: await computeBudget(input.projectId, context.reqHeaders) };
+              return { budgets: await computeBudget(input.projectId, orgAccountId) };
             }),
 
-          adminList: builder.agency.projects.adminList
-            .use(gates.member)
-            .handler(async ({ context }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
-              const upstream = await fetchOrgProjects(orgAccountId);
-              const projectIds = upstream.map((p) => p.id);
-              const linkByProjectId = await getListingsForProjects(
-                projectIds,
-                "nearn",
-                orgAccountId,
-                db,
-                {
-                  skipRefresh: true,
-                },
-              );
-              const data = upstream
-                .map((p) =>
-                  toContractProject(p, linkByProjectId.get(p.id)?.externalId ?? null, orgAccountId),
-                )
-                .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-              return { data };
-            }),
-
-          adminCreate: builder.agency.projects.adminCreate
-            .use(gates.operator)
+          create: builder.agency.projects.create
+            .use(gates.contributor)
             .handler(async ({ context, input }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
-              const ctx = proxyCtx(orgAccountId);
+              const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
+              const ctx = proxyCtx(
+                orgAccountId,
+                (context as any).memberRole ?? null,
+                (context as any).organizationId ?? null,
+              );
               const created = await plugins.projects(ctx).createProject({
-                kind: "project",
+                kind: input.kind ?? "project",
                 title: input.title,
                 slug: input.slug,
                 description: input.description,
@@ -703,11 +837,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
               };
             }),
 
-          adminUpdate: builder.agency.projects.adminUpdate
-            .use(gates.operator)
+          update: builder.agency.projects.update
+            .use(gates.contributor)
             .handler(async ({ context, input }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
-              const ctx = proxyCtx(orgAccountId);
+              const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
+              const ctx = proxyCtx(
+                orgAccountId,
+                (context as any).memberRole ?? null,
+                (context as any).organizationId ?? null,
+              );
               const { id, nearnListingId: _nearnListingId, ...projectPatch } = input;
 
               const existing = await requireProjectInOrg(id, orgAccountId);
@@ -776,10 +914,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
               };
             }),
 
-          adminDelete: builder.agency.projects.adminDelete
+          delete: builder.agency.projects.delete
             .use(gates.admin)
             .handler(async ({ context, input }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
+              const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
               await requireProjectInOrg(input.id, orgAccountId);
 
               // Cascade local rows first (atomic via the service's transaction), then upstream
@@ -787,17 +925,25 @@ export default createPlugin.withPlugins<PluginsClient>()({
               // Partial-failure cross-system state (agency empty, upstream still has project) is
               // converged by the re-run.
               await deleteProjectCascade(db, input.id);
-              await plugins.projects(proxyCtx(orgAccountId)).deleteProject({ id: input.id });
+              await plugins
+                .projects(
+                  proxyCtx(
+                    orgAccountId,
+                    (context as any).memberRole ?? null,
+                    (context as any).organizationId ?? null,
+                  ),
+                )
+                .deleteProject({ id: input.id });
               invalidateOrgProjects(orgAccountId);
               return { deleted: true as const };
             }),
         },
 
         listings: {
-          adminGet: builder.agency.listings.adminGet
-            .use(gates.operator)
+          get: builder.agency.listings.get
+            .use(gates.contributor)
             .handler(async ({ context, input }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
+              const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
               await requireProjectInOrg(input.projectId, orgAccountId);
               const row = await getListingForProject(
                 input.projectId,
@@ -809,10 +955,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
               return { listing: row };
             }),
 
-          adminCreate: builder.agency.listings.adminCreate
-            .use(gates.operator)
+          create: builder.agency.listings.create
+            .use(gates.contributor)
             .handler(async ({ context, input }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
+              const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
               await requireProjectInOrg(input.projectId, orgAccountId);
 
               const existing = await getListingForProject(
@@ -843,10 +989,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
               return { listing: row };
             }),
 
-          adminUpdate: builder.agency.listings.adminUpdate
-            .use(gates.operator)
+          update: builder.agency.listings.update
+            .use(gates.contributor)
             .handler(async ({ context, input }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
+              const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
               await requireProjectInOrg(input.projectId, orgAccountId);
 
               const { projectId, ...patch } = input;
@@ -859,10 +1005,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
               return { listing: row };
             }),
 
-          adminDelete: builder.agency.listings.adminDelete
-            .use(gates.operator)
+          delete: builder.agency.listings.delete
+            .use(gates.contributor)
             .handler(async ({ context, input }) => {
-              const orgAccountId = await getOrgAccountId(context.reqHeaders);
+              const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
               await requireProjectInOrg(input.projectId, orgAccountId);
 
               const removed = await deleteInternalListing(input.projectId, db);
@@ -877,57 +1023,53 @@ export default createPlugin.withPlugins<PluginsClient>()({
       },
 
       contributors: {
-        adminList: builder.contributors.adminList.use(gates.operator).handler(async () => {
+        list: builder.contributors.list.use(gates.contributor).handler(async () => {
           const rows = await db.select().from(contributors).orderBy(desc(contributors.updatedAt));
           return { data: rows };
         }),
 
-        adminCreate: builder.contributors.adminCreate
-          .use(gates.admin)
-          .handler(async ({ input }) => {
-            const id = crypto.randomUUID();
-            const now = new Date();
-            const result = await db
-              .insert(contributors)
-              .values({
-                id,
-                name: input.name,
-                email: input.email ?? null,
-                nearAccountId: input.nearAccountId ?? null,
-                onboardingStatus: input.onboardingStatus,
-                createdAt: now,
-                updatedAt: now,
-              })
-              .returning();
-            const row = result[0];
-            if (!row) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Insert failed" });
-            return { contributor: row };
-          }),
+        create: builder.contributors.create.use(gates.admin).handler(async ({ input }) => {
+          const id = crypto.randomUUID();
+          const now = new Date();
+          const result = await db
+            .insert(contributors)
+            .values({
+              id,
+              name: input.name,
+              email: input.email ?? null,
+              nearAccountId: input.nearAccountId ?? null,
+              onboardingStatus: input.onboardingStatus,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
+          const row = result[0];
+          if (!row) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Insert failed" });
+          return { contributor: row };
+        }),
 
-        adminUpdate: builder.contributors.adminUpdate
-          .use(gates.admin)
-          .handler(async ({ input }) => {
-            const { id, ...patch } = input;
-            const updates: Record<string, unknown> = { updatedAt: new Date() };
-            for (const [k, v] of Object.entries(patch)) {
-              if (v !== undefined) updates[k] = v;
-            }
-            const result = await db
-              .update(contributors)
-              .set(updates)
-              .where(eq(contributors.id, id))
-              .returning();
-            const row = result[0];
-            if (!row) throw new ORPCError("NOT_FOUND", { message: "Contributor not found" });
-            return { contributor: row };
-          }),
+        update: builder.contributors.update.use(gates.admin).handler(async ({ input }) => {
+          const { id, ...patch } = input;
+          const updates: Record<string, unknown> = { updatedAt: new Date() };
+          for (const [k, v] of Object.entries(patch)) {
+            if (v !== undefined) updates[k] = v;
+          }
+          const result = await db
+            .update(contributors)
+            .set(updates)
+            .where(eq(contributors.id, id))
+            .returning();
+          const row = result[0];
+          if (!row) throw new ORPCError("NOT_FOUND", { message: "Contributor not found" });
+          return { contributor: row };
+        }),
       },
 
       assignments: {
-        adminList: builder.assignments.adminList
-          .use(gates.operator)
+        list: builder.assignments.list
+          .use(gates.contributor)
           .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
+            const orgId = await resolveOrgAccountId(context, context.reqHeaders);
             await requireProjectInOrg(input.projectId, orgId);
             const rows = await db
               .select({
@@ -943,10 +1085,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
             return { data: rows };
           }),
 
-        adminCreate: builder.assignments.adminCreate
-          .use(gates.operator)
+        create: builder.assignments.create
+          .use(gates.contributor)
           .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
+            const orgId = await resolveOrgAccountId(context, context.reqHeaders);
             await requireProjectInOrg(input.projectId, orgId);
 
             const contributorExists = await db
@@ -975,58 +1117,59 @@ export default createPlugin.withPlugins<PluginsClient>()({
             };
           }),
 
-        adminDelete: builder.assignments.adminDelete
-          .use(gates.operator)
-          .handler(async ({ input }) => {
-            await db
-              .delete(projectContributors)
-              .where(
-                and(
-                  eq(projectContributors.projectId, input.projectId),
-                  eq(projectContributors.contributorId, input.contributorId),
-                ),
-              );
-            return { ok: true as const };
-          }),
+        delete: builder.assignments.delete.use(gates.contributor).handler(async ({ input }) => {
+          await db
+            .delete(projectContributors)
+            .where(
+              and(
+                eq(projectContributors.projectId, input.projectId),
+                eq(projectContributors.contributorId, input.contributorId),
+              ),
+            );
+          return { ok: true as const };
+        }),
       },
 
       budgets: {
-        adminList: builder.budgets.adminList
-          .use(gates.operator)
-          .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
-            // Validate projectId is in-DAO upfront — explicit 404 over silent empty.
-            if (input.projectId) await requireProjectInOrg(input.projectId, orgId);
-            const projectIds = input.projectId
-              ? [input.projectId]
-              : (await fetchOrgProjects(orgId)).map((p) => p.id);
-            return listBudgets(db, {
-              projectIds,
-              tokenId: input.tokenId,
-              cursor: input.cursor,
-              limit: input.limit,
-            });
-          }),
+        list: builder.budgets.list.use(gates.contributor).handler(async ({ context, input }) => {
+          const orgId = await resolveOrgAccountId(context, context.reqHeaders);
+          // Validate projectId is in-DAO upfront — explicit 404 over silent empty.
+          if (input.projectId)
+            await requireProjectInOrg(
+              input.projectId,
+              orgId,
+              (context as any).organizationId ?? null,
+            );
+          const projectIds = input.projectId
+            ? [input.projectId]
+            : (await fetchOrgProjects(orgId, (context as any).organizationId ?? null)).map(
+                (p) => p.id,
+              );
+          return listBudgets(db, {
+            projectIds,
+            tokenId: input.tokenId,
+            cursor: input.cursor,
+            limit: input.limit,
+          });
+        }),
 
-        adminCreate: builder.budgets.adminCreate
-          .use(gates.approver)
-          .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
-            await requireProjectInOrg(input.projectId, orgId);
-            const budget = await createBudget(db, {
-              projectId: input.projectId,
-              tokenId: input.tokenId,
-              amount: input.amount,
-              note: input.note ?? null,
-              actorAccountId: context.nearAccountId!,
-            });
-            return { budget };
-          }),
+        create: builder.budgets.create.use(gates.admin).handler(async ({ context, input }) => {
+          const orgId = await resolveOrgAccountId(context, context.reqHeaders);
+          await requireProjectInOrg(input.projectId, orgId);
+          const budget = await createBudget(db, {
+            projectId: input.projectId,
+            tokenId: input.tokenId,
+            amount: input.amount,
+            note: input.note ?? null,
+            actorAccountId: (context as any).nearAccountId ?? context.userId ?? "unknown",
+          });
+          return { budget };
+        }),
 
-        adminDeallocate: builder.budgets.adminDeallocate
-          .use(gates.approver)
+        deallocate: builder.budgets.deallocate
+          .use(gates.admin)
           .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
+            const orgId = await resolveOrgAccountId(context, context.reqHeaders);
             await requireProjectInOrg(input.projectId, orgId);
             try {
               const budget = await deallocateBudget(db, {
@@ -1034,7 +1177,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
                 tokenId: input.tokenId,
                 amount: input.amount,
                 note: input.note ?? null,
-                actorAccountId: context.nearAccountId!,
+                actorAccountId: (context as any).nearAccountId ?? context.userId ?? "unknown",
               });
               return { budget };
             } catch (err) {
@@ -1045,165 +1188,170 @@ export default createPlugin.withPlugins<PluginsClient>()({
             }
           }),
 
-        adminTransfer: builder.budgets.adminTransfer
-          .use(gates.approver)
-          .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
-            const ownedProjectIds = new Set((await fetchOrgProjects(orgId)).map((p) => p.id));
-            if (
-              !ownedProjectIds.has(input.fromProjectId) ||
-              !ownedProjectIds.has(input.toProjectId)
-            ) {
-              throw new ORPCError("NOT_FOUND", {
-                message: "fromProjectId and toProjectId must both belong to this agency",
-              });
+        transfer: builder.budgets.transfer.use(gates.admin).handler(async ({ context, input }) => {
+          const orgId = await resolveOrgAccountId(context, context.reqHeaders);
+          const ownedProjectIds = new Set((await fetchOrgProjects(orgId)).map((p) => p.id));
+          if (
+            !ownedProjectIds.has(input.fromProjectId) ||
+            !ownedProjectIds.has(input.toProjectId)
+          ) {
+            throw new ORPCError("NOT_FOUND", {
+              message: "fromProjectId and toProjectId must both belong to this agency",
+            });
+          }
+          try {
+            return await transferBudget(db, {
+              fromProjectId: input.fromProjectId,
+              toProjectId: input.toProjectId,
+              tokenId: input.tokenId,
+              amount: input.amount,
+              note: input.note ?? null,
+              actorAccountId: (context as any).nearAccountId ?? context.userId ?? "unknown",
+            });
+          } catch (err) {
+            if (err instanceof BudgetInsufficientError) {
+              throw new ORPCError("BAD_REQUEST", { message: err.message });
             }
-            try {
-              return await transferBudget(db, {
-                fromProjectId: input.fromProjectId,
-                toProjectId: input.toProjectId,
-                tokenId: input.tokenId,
-                amount: input.amount,
-                note: input.note ?? null,
-                actorAccountId: context.nearAccountId!,
-              });
-            } catch (err) {
-              if (err instanceof BudgetInsufficientError) {
-                throw new ORPCError("BAD_REQUEST", { message: err.message });
-              }
-              throw err;
-            }
-          }),
+            throw err;
+          }
+        }),
       },
 
       billings: {
-        adminList: builder.billings.adminList
-          .use(gates.operator)
-          .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
-            if (input.projectId) await requireProjectInOrg(input.projectId, orgId);
-            const projectIds = input.projectId
-              ? [input.projectId]
-              : (await fetchOrgProjects(orgId)).map((p) => p.id);
-            const rows = await db
-              .select({
-                id: billings.id,
-                projectId: billings.projectId,
-                contributorId: billings.contributorId,
-                tokenId: billings.tokenId,
-                amount: billings.amount,
-                proposalId: billings.proposalId,
-                note: billings.note,
-                createdAt: billings.createdAt,
-              })
-              .from(billings)
-              .where(
-                and(
-                  inArray(billings.projectId, projectIds),
-                  input.contributorId ? eq(billings.contributorId, input.contributorId) : undefined,
-                  cursorWhere(billings.createdAt, billings.id, input.cursor),
-                ),
-              )
-              .orderBy(desc(billings.createdAt), desc(billings.id))
-              .limit(input.limit);
-            const last = rows[rows.length - 1];
-            const enriched = await Promise.all(rows.map((b) => enrichWithChainStatus(b, orgId)));
-            return {
-              data: enriched,
-              nextCursor:
-                rows.length === input.limit && last ? cursorOf(last.createdAt, last.id) : null,
-            };
-          }),
+        list: builder.billings.list.use(gates.contributor).handler(async ({ context, input }) => {
+          const selectBillingCols = {
+            id: billings.id,
+            projectId: billings.projectId,
+            contributorId: billings.contributorId,
+            tokenId: billings.tokenId,
+            amount: billings.amount,
+            proposalId: billings.proposalId,
+            note: billings.note,
+            createdAt: billings.createdAt,
+          } as const;
 
-        adminCreate: builder.billings.adminCreate
-          .use(gates.approver)
-          .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
-            const orgProjectsById = await fetchOrgProjectsById(orgId);
-            if (!orgProjectsById.has(input.projectId))
-              throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+          const orgId = await resolveOrgAccountId(context, context.reqHeaders);
+          if (input.projectId)
+            await requireProjectInOrg(
+              input.projectId,
+              orgId,
+              (context as any).organizationId ?? null,
+            );
+          const projectIds = input.projectId
+            ? [input.projectId]
+            : (await fetchOrgProjects(orgId, (context as any).organizationId ?? null)).map(
+                (p) => p.id,
+              );
+          const rows = await db
+            .select(selectBillingCols)
+            .from(billings)
+            .where(
+              and(
+                inArray(billings.projectId, projectIds),
+                input.contributorId ? eq(billings.contributorId, input.contributorId) : undefined,
+                cursorWhere(billings.createdAt, billings.id, input.cursor),
+              ),
+            )
+            .orderBy(desc(billings.createdAt), desc(billings.id))
+            .limit(input.limit);
+          const last = rows[rows.length - 1];
+          const enriched = await Promise.all(rows.map((b) => enrichWithChainStatus(b, orgId)));
+          return {
+            data: enriched,
+            nextCursor:
+              rows.length === input.limit && last ? cursorOf(last.createdAt, last.id) : null,
+          };
+        }),
 
-            const proposalIdNum = Number.parseInt(input.proposalId, 10);
-            if (Number.isNaN(proposalIdNum))
-              throw new ORPCError("BAD_REQUEST", { message: "Invalid proposal id" });
+        create: builder.billings.create.use(gates.admin).handler(async ({ context, input }) => {
+          const orgId = await resolveOrgAccountId(context, context.reqHeaders);
+          const orgProjectsById = await fetchOrgProjectsById(orgId);
+          if (!orgProjectsById.has(input.projectId))
+            throw new ORPCError("NOT_FOUND", { message: "Project not found" });
 
-            const existing = await db
-              .select({
-                billingId: billings.id,
-                projectId: billings.projectId,
-              })
-              .from(billings)
-              .where(eq(billings.proposalId, input.proposalId))
+          const proposalIdNum = Number.parseInt(input.proposalId, 10);
+          if (Number.isNaN(proposalIdNum))
+            throw new ORPCError("BAD_REQUEST", { message: "Invalid proposal id" });
+
+          const existing = await db
+            .select({
+              billingId: billings.id,
+              projectId: billings.projectId,
+            })
+            .from(billings)
+            .where(eq(billings.proposalId, input.proposalId))
+            .limit(1);
+          if (existing.length > 0) {
+            const e = existing[0]!;
+            const project = orgProjectsById.get(e.projectId);
+            throw new ORPCError("BAD_REQUEST", {
+              message: `Proposal ${input.proposalId} is already assigned to ${
+                project?.title ?? e.projectId
+              } (@${project?.slug ?? "?"})`,
+            });
+          }
+
+          const proposal = await getProposal(db, orgId, proposalIdNum);
+          if (!proposal)
+            throw new ORPCError("NOT_FOUND", {
+              message: `Proposal ${input.proposalId} not found on DAO`,
+            });
+          if (proposal.kind.type !== "Transfer")
+            throw new ORPCError("BAD_REQUEST", {
+              message: `Proposal ${input.proposalId} is not a funding request (kind: ${proposal.kind.name})`,
+            });
+
+          let contributorId = input.contributorId ?? null;
+          if (!contributorId) {
+            const found = await db
+              .select({ id: contributors.id })
+              .from(contributors)
+              .where(eq(contributors.nearAccountId, proposal.kind.receiverId))
               .limit(1);
-            if (existing.length > 0) {
-              const e = existing[0]!;
-              const project = orgProjectsById.get(e.projectId);
-              throw new ORPCError("BAD_REQUEST", {
-                message: `Proposal ${input.proposalId} is already assigned to ${
-                  project?.title ?? e.projectId
-                } (@${project?.slug ?? "?"})`,
-              });
-            }
+            contributorId = found[0]?.id ?? null;
+          }
 
-            const proposal = await getProposal(db, orgId, proposalIdNum);
-            if (!proposal)
-              throw new ORPCError("NOT_FOUND", {
-                message: `Proposal ${input.proposalId} not found on DAO`,
-              });
-            if (proposal.kind.type !== "Transfer")
-              throw new ORPCError("BAD_REQUEST", {
-                message: `Proposal ${input.proposalId} is not a funding request (kind: ${proposal.kind.name})`,
-              });
+          const id = crypto.randomUUID();
+          const result = await db
+            .insert(billings)
+            .values({
+              id,
+              projectId: input.projectId,
+              contributorId,
+              tokenId: proposal.kind.tokenId === "" ? NATIVE_TOKEN_ID : proposal.kind.tokenId,
+              amount: proposal.kind.amount,
+              proposalId: input.proposalId,
+              note: input.note ?? null,
+              createdAt: new Date(),
+            })
+            .returning();
+          const row = result[0];
+          if (!row) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Insert failed" });
+          return { billing: await enrichWithChainStatus(row, orgId) };
+        }),
 
-            let contributorId = input.contributorId ?? null;
-            if (!contributorId) {
-              const found = await db
-                .select({ id: contributors.id })
-                .from(contributors)
-                .where(eq(contributors.nearAccountId, proposal.kind.receiverId))
-                .limit(1);
-              contributorId = found[0]?.id ?? null;
-            }
-
-            const id = crypto.randomUUID();
-            const result = await db
-              .insert(billings)
-              .values({
-                id,
-                projectId: input.projectId,
-                contributorId,
-                tokenId: proposal.kind.tokenId === "" ? NATIVE_TOKEN_ID : proposal.kind.tokenId,
-                amount: proposal.kind.amount,
-                proposalId: input.proposalId,
-                note: input.note ?? null,
-                createdAt: new Date(),
-              })
-              .returning();
-            const row = result[0];
-            if (!row) throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Insert failed" });
-            return { billing: await enrichWithChainStatus(row, orgId) };
-          }),
-
-        adminDelete: builder.billings.adminDelete
-          .use(gates.admin)
-          .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
-            const existing = await db
-              .select({ id: billings.id, projectId: billings.projectId })
-              .from(billings)
-              .where(eq(billings.id, input.id))
-              .limit(1);
-            const row = existing[0];
-            if (!row) throw new ORPCError("NOT_FOUND", { message: "Billing not found" });
-            await requireProjectInOrg(row.projectId, orgId);
-            await db.delete(billings).where(eq(billings.id, input.id));
-            return { deleted: true as const };
-          }),
+        delete: builder.billings.delete.use(gates.admin).handler(async ({ context, input }) => {
+          const orgId = await resolveOrgAccountId(context, context.reqHeaders);
+          const existing = await db
+            .select({ id: billings.id, projectId: billings.projectId })
+            .from(billings)
+            .where(eq(billings.id, input.id))
+            .limit(1);
+          const row = existing[0];
+          if (!row) throw new ORPCError("NOT_FOUND", { message: "Billing not found" });
+          await requireProjectInOrg(row.projectId, orgId);
+          await db.delete(billings).where(eq(billings.id, input.id));
+          return { deleted: true as const };
+        }),
       },
 
       proposals: {
         list: builder.proposals.list.handler(async ({ context, input }) => {
-          const orgAccountId = await getOrgAccountId(context.reqHeaders);
+          const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
+          const isContributor = ["admin", "contributor"].includes(
+            (context as any)?.memberRole ?? "",
+          );
+
           try {
             const { transfers, lastProposalId, nextFromIndex } = await fetchTransferProposals(
               db,
@@ -1211,30 +1359,17 @@ export default createPlugin.withPlugins<PluginsClient>()({
               input.fromIndex,
               input.limit,
             );
-            return {
-              data: transfers.map(toProposalPublicItem),
-              lastProposalId,
-              nextFromIndex,
-            };
-          } catch {
-            // RPC failures degrade to empty for public visitors; admins see errors.
-            return { data: [], lastProposalId: 0, nextFromIndex: null };
-          }
-        }),
 
-        adminList: builder.proposals.adminList
-          .use(gates.operator)
-          .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
-            const { transfers, lastProposalId, nextFromIndex } = await fetchTransferProposals(
-              db,
-              orgId,
-              input.fromIndex,
-              input.limit,
-            );
+            if (!isContributor) {
+              return {
+                data: transfers.map((p) => ({ ...toProposalPublicItem(p), mapping: null })),
+                lastProposalId,
+                nextFromIndex,
+              };
+            }
 
             const proposalIdStrs = transfers.map((p) => String(p.id));
-            const orgProjectsById = await fetchOrgProjectsById(orgId);
+            const orgProjectsById = await fetchOrgProjectsById(orgAccountId);
             const localBillings =
               proposalIdStrs.length > 0
                 ? await db
@@ -1270,10 +1405,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
             });
 
             return { data, lastProposalId, nextFromIndex };
-          }),
+          } catch (err) {
+            if (isContributor) throw err;
+            return { data: [], lastProposalId: 0, nextFromIndex: null };
+          }
+        }),
 
         getPublicSummary: builder.proposals.getPublicSummary.handler(async ({ context }) => {
-          const orgAccountId = await getOrgAccountId(context.reqHeaders);
+          const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
           try {
             const lastProposalId = await getLastProposalId(orgAccountId);
             if (lastProposalId === 0) return summarizeProposals([], 0);
@@ -1293,9 +1432,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       nearn: {
         getListing: builder.nearn.getListing
-          .use(gates.operator)
+          .use(gates.contributor)
           .handler(async ({ context, input }) => {
-            const orgAccountId = await getOrgAccountId(context.reqHeaders);
+            const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
             if (!isNearnAvailable(orgAccountId)) {
               throw new ORPCError("NOT_FOUND", { message: "NEARN not available on this network" });
             }
@@ -1312,9 +1451,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }),
 
         listSponsorBounties: builder.nearn.listSponsorBounties
-          .use(gates.operator)
+          .use(gates.contributor)
           .handler(async ({ context }) => {
-            const orgAccountId = await getOrgAccountId(context.reqHeaders);
+            const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
             if (!isNearnAvailable(orgAccountId)) {
               return { sponsorSlug: null, bounties: [] };
             }
@@ -1327,9 +1466,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }),
 
         listSubmissions: builder.nearn.listSubmissions
-          .use(gates.operator)
+          .use(gates.contributor)
           .handler(async ({ context, input }) => {
-            const orgAccountId = await getOrgAccountId(context.reqHeaders);
+            const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
             if (!isNearnAvailable(orgAccountId)) {
               throw new ORPCError("NOT_FOUND", { message: "NEARN not available on this network" });
             }
@@ -1348,7 +1487,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       tokens: {
         list: builder.tokens.list.handler(async ({ context }) => {
-          const orgAccountId = await getOrgAccountId(context.reqHeaders);
+          const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
           const orgNetwork = networkOf(orgAccountId);
           const ids = await getDaoTokenIds(orgAccountId);
           const resolved = await Promise.all(
@@ -1379,7 +1518,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         }),
 
         getStorageStatus: builder.tokens.getStorageStatus.handler(async ({ context, input }) => {
-          const orgAccountId = await getOrgAccountId(context.reqHeaders);
+          const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
           // NEP-145 doesn't apply to native NEAR; surface null so clients can label "n/a".
           if (input.tokenId === NATIVE_TOKEN_ID) {
             return { tokenId: input.tokenId, status: null };
@@ -1392,7 +1531,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       treasury: {
         getPublicBalances: builder.treasury.getPublicBalances.handler(
           async ({ context, input }) => {
-            const orgAccountId = await getOrgAccountId(context.reqHeaders);
+            const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
             try {
               const balances = await getTreasuryBalances(orgAccountId, input.tokenIds);
               return {
@@ -1411,9 +1550,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
         ),
 
         getBalances: builder.treasury.getBalances
-          .use(gates.operator)
+          .use(gates.contributor)
           .handler(async ({ context, input }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
+            const orgId = await resolveOrgAccountId(context, context.reqHeaders);
             const orgProjectIds = (await fetchOrgProjects(orgId)).map((p) => p.id);
             const [balances, budgetRows, billingRows] =
               orgProjectIds.length > 0
@@ -1475,77 +1614,87 @@ export default createPlugin.withPlugins<PluginsClient>()({
             };
           }),
 
-        getRollups: builder.treasury.getRollups.use(gates.operator).handler(async ({ context }) => {
-          const orgId = await getOrgAccountId(context.reqHeaders);
-          // Archived projects are excluded from the canonical financial surface.
-          const orgProjectIds = (await fetchOrgProjects(orgId))
-            .filter((p) => p.status !== "archived")
-            .map((p) => p.id);
-          const [budgetRows, billingRows, nearnListings, internalListings] =
-            orgProjectIds.length > 0
-              ? await Promise.all([
-                  db
-                    .select({
-                      projectId: budgets.projectId,
-                      tokenId: budgets.tokenId,
-                      amount: budgets.amount,
-                    })
-                    .from(budgets)
-                    .where(inArray(budgets.projectId, orgProjectIds)),
-                  db
-                    .select({
-                      id: billings.id,
-                      projectId: billings.projectId,
-                      contributorId: billings.contributorId,
-                      tokenId: billings.tokenId,
-                      amount: billings.amount,
-                      proposalId: billings.proposalId,
-                      note: billings.note,
-                      createdAt: billings.createdAt,
-                    })
-                    .from(billings)
-                    .where(inArray(billings.projectId, orgProjectIds)),
-                  getListingsForProjects(orgProjectIds, "nearn", orgId, db),
-                  getListingsForProjects(orgProjectIds, "internal", orgId, db),
-                ])
-              : [
-                  [] as { projectId: string; tokenId: string; amount: string }[],
-                  [] as (typeof billings.$inferSelect)[],
-                  new Map<
-                    string,
-                    Awaited<ReturnType<typeof getListingsForProjects>> extends Map<string, infer V>
-                      ? V
-                      : never
-                  >(),
-                  new Map<
-                    string,
-                    Awaited<ReturnType<typeof getListingsForProjects>> extends Map<string, infer V>
-                      ? V
-                      : never
-                  >(),
-                ];
-          const bills = await Promise.all(billingRows.map((b) => enrichWithChainStatus(b, orgId)));
+        getRollups: builder.treasury.getRollups
+          .use(gates.contributor)
+          .handler(async ({ context }) => {
+            const orgId = await resolveOrgAccountId(context, context.reqHeaders);
+            // Archived projects are excluded from the canonical financial surface.
+            const orgProjectIds = (await fetchOrgProjects(orgId))
+              .filter((p) => p.status !== "archived")
+              .map((p) => p.id);
+            const [budgetRows, billingRows, nearnListings, internalListings] =
+              orgProjectIds.length > 0
+                ? await Promise.all([
+                    db
+                      .select({
+                        projectId: budgets.projectId,
+                        tokenId: budgets.tokenId,
+                        amount: budgets.amount,
+                      })
+                      .from(budgets)
+                      .where(inArray(budgets.projectId, orgProjectIds)),
+                    db
+                      .select({
+                        id: billings.id,
+                        projectId: billings.projectId,
+                        contributorId: billings.contributorId,
+                        tokenId: billings.tokenId,
+                        amount: billings.amount,
+                        proposalId: billings.proposalId,
+                        note: billings.note,
+                        createdAt: billings.createdAt,
+                      })
+                      .from(billings)
+                      .where(inArray(billings.projectId, orgProjectIds)),
+                    getListingsForProjects(orgProjectIds, "nearn", orgId, db),
+                    getListingsForProjects(orgProjectIds, "internal", orgId, db),
+                  ])
+                : [
+                    [] as { projectId: string; tokenId: string; amount: string }[],
+                    [] as (typeof billings.$inferSelect)[],
+                    new Map<
+                      string,
+                      Awaited<ReturnType<typeof getListingsForProjects>> extends Map<
+                        string,
+                        infer V
+                      >
+                        ? V
+                        : never
+                    >(),
+                    new Map<
+                      string,
+                      Awaited<ReturnType<typeof getListingsForProjects>> extends Map<
+                        string,
+                        infer V
+                      >
+                        ? V
+                        : never
+                    >(),
+                  ];
+            const bills = await Promise.all(
+              billingRows.map((b) => enrichWithChainStatus(b, orgId)),
+            );
 
-          const rollupArgs = {
-            projectIds: orgProjectIds,
-            budgetRows,
-            billingRows: bills.map((b) => ({
-              projectId: b.projectId,
-              tokenId: b.tokenId,
-              amount: b.amount,
-              status: b.status,
-            })),
-            nearnListings,
-            internalListings,
-            network: networkOf(orgId),
-          };
-          const tokenIds = tokenIdsForRollup(rollupArgs);
-          const balances = tokenIds.length > 0 ? await getTreasuryBalances(orgId, tokenIds) : {};
-          return { rollups: assembleAgencyRollups({ ...rollupArgs, balances }) };
-        }),
+            const rollupArgs = {
+              projectIds: orgProjectIds,
+              budgetRows,
+              billingRows: bills.map((b) => ({
+                projectId: b.projectId,
+                tokenId: b.tokenId,
+                amount: b.amount,
+                status: b.status,
+              })),
+              nearnListings,
+              internalListings,
+              network: networkOf(orgId),
+            };
+            const tokenIds = tokenIdsForRollup(rollupArgs);
+            const balances = tokenIds.length > 0 ? await getTreasuryBalances(orgId, tokenIds) : {};
+            return { rollups: assembleAgencyRollups({ ...rollupArgs, balances }) };
+          }),
 
         getPublicSummary: builder.treasury.getPublicSummary.handler(async ({ context }) => {
-          const orgAccountId = await getOrgAccountId(context.reqHeaders);
+          const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
           try {
             const [balances, tokenIds] = await Promise.all([
               getTreasuryBalances(orgAccountId, [NATIVE_TOKEN_ID]),
@@ -1560,13 +1709,16 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       me: {
         assignedProjects: builder.me.assignedProjects
-          .use(requireSession)
+          .use(gates.org)
           .handler(async ({ context }) => {
-            const orgId = await getOrgAccountId(context.reqHeaders);
+            const orgId = await resolveOrgAccountId(context, context.reqHeaders);
+            const nearAccountId = (context as any).nearAccountId as string | null | undefined;
+            if (!nearAccountId) return { data: [] };
+
             const myContributor = await db
               .select({ id: contributors.id })
               .from(contributors)
-              .where(eq(contributors.nearAccountId, context.nearAccountId!))
+              .where(eq(contributors.nearAccountId, nearAccountId))
               .limit(1);
             const me = myContributor[0];
             if (!me) return { data: [] };
@@ -1606,29 +1758,21 @@ export default createPlugin.withPlugins<PluginsClient>()({
             return { data };
           }),
 
-        roles: builder.me.roles.use(requireSession).handler(async ({ context }) => {
-          const fallback = { isAdmin: false, isApprover: false, isRequestor: false };
-          try {
-            const orgAccountId = await getOrgAccountId(context.reqHeaders);
-            const [isAdmin, isApprover, isRequestor] = await Promise.all([
-              userInRole(orgAccountId, context.nearAccountId!, defaultAdminRoleName()),
-              userInRole(orgAccountId, context.nearAccountId!, defaultApproverRoleName()),
-              userInRole(orgAccountId, context.nearAccountId!, defaultRequestorRoleName()),
-            ]);
-            return { isAdmin, isApprover, isRequestor };
-          } catch (err) {
-            console.warn(
-              "[API] me.roles failed; returning non-admin fallback:",
-              (err as Error).message,
-            );
-            return fallback;
-          }
+        roles: builder.me.roles.use(requireAuthNormalized).handler(async ({ context }) => {
+          const role = (context as any).memberRole as string | null | undefined;
+          const isSuperAdmin = (context as any).user?.role === "admin";
+          return {
+            isAdmin: role === "admin",
+            isContributor: role === "contributor",
+            isClient: role === "client",
+            isSuperAdmin,
+          };
         }),
       },
 
       team: {
         list: builder.team.list.handler(async ({ context }) => {
-          const orgAccountId = await getOrgAccountId(context.reqHeaders);
+          const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
           try {
             const roles = await getRoles(orgAccountId);
             return { roles };
@@ -1638,7 +1782,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         }),
 
         getPublicSummary: builder.team.getPublicSummary.handler(async ({ context }) => {
-          const orgAccountId = await getOrgAccountId(context.reqHeaders);
+          const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
           try {
             const roles = await getRoles(orgAccountId);
             return summarizeTeam(roles);
@@ -1648,11 +1792,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
         }),
       },
 
-      settings: {
-        getPublic: builder.settings.getPublic.handler(async ({ context }) => {
+      agencyConfig: {
+        getPublic: builder.agencyConfig.getPublic.handler(async ({ context }) => {
           const network = getNetwork(context.reqHeaders);
-          const orgAccountId = await getOrgAccountId(context.reqHeaders);
-          const resolved = await getResolvedPublicSettings(db, network, orgAccountId);
+          const settingsKey = getSettingsKey(context.reqHeaders);
+          const resolved = await getResolvedPublicSettings(db, network, settingsKey);
           return {
             ...resolved,
             network,
@@ -1660,15 +1804,17 @@ export default createPlugin.withPlugins<PluginsClient>()({
           };
         }),
 
-        adminGet: builder.settings.adminGet.use(gates.admin).handler(async ({ context }) => {
+        get: builder.agencyConfig.get.use(gates.admin).handler(async ({ context }) => {
           const network = getNetwork(context.reqHeaders);
-          const orgAccountId = await getOrgAccountId(context.reqHeaders);
-          const row = await getSettingsRow(db, orgAccountId);
+          const settingsKey = getSettingsKey(context.reqHeaders);
+          const orgAccountId = await resolveOrgAccountId(context, context.reqHeaders);
+          const row = await getSettingsRow(db, settingsKey);
           const base = defaultPublicSettings(network);
           return {
             orgAccountId,
             network,
             editable: {
+              daoAccountId: row?.daoAccountId ?? null,
               nearnAccountId: row?.nearnAccountId ?? base.nearnAccountId,
               websiteUrl: row?.websiteUrl ?? base.websiteUrl,
               docsUrl: row?.docsUrl ?? base.docsUrl,
@@ -1679,9 +1825,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
               name: base.name,
               headline: base.headline,
               tagline: base.tagline,
-              adminRoleName: defaultAdminRoleName(),
-              approverRoleName: defaultApproverRoleName(),
-              requestorRoleName: defaultRequestorRoleName(),
             },
             audit: row
               ? {
@@ -1694,16 +1837,244 @@ export default createPlugin.withPlugins<PluginsClient>()({
           };
         }),
 
-        adminUpdate: builder.settings.adminUpdate
-          .use(gates.admin)
+        update: builder.agencyConfig.update.use(gates.admin).handler(async ({ context, input }) => {
+          const settingsKey = getSettingsKey(context.reqHeaders);
+          const actorId = (context as any).nearAccountId ?? context.userId ?? "unknown";
+          await upsertSettings(
+            db,
+            settingsKey,
+            {
+              daoAccountId: input.daoAccountId ?? null,
+              nearnAccountId: input.nearnAccountId,
+              websiteUrl: input.websiteUrl,
+              docsUrl: input.docsUrl,
+              description: input.description,
+              contactEmail: input.contactEmail,
+            },
+            actorId,
+          );
+          return { ok: true as const };
+        }),
+      },
+
+      platform: {
+        listOrgs: builder.platform.listOrgs.use(gates.superAdmin).handler(async () => {
+          if (!authDb)
+            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+          const orgs = await authDb.listOrgs();
+          return orgs.map((o) => ({
+            id: o.id,
+            name: o.name,
+            slug: o.slug,
+            metadata: o.metadata,
+            createdAt:
+              o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
+          }));
+        }),
+
+        createOrg: builder.platform.createOrg
+          .use(gates.superAdmin)
           .handler(async ({ context, input }) => {
-            // orgAccountId is the row's immutable PK identity, resolved from request context (env →
-            // hardcoded). Changing the active DAO is an env-level concern, not an in-app save —
-            // see settings-admin.ts. The gate already verified caller is admin on this orgAccountId.
-            const orgAccountId = await getOrgAccountId(context.reqHeaders);
-            await upsertSettings(db, orgAccountId, input, context.nearAccountId);
+            if (!authDb)
+              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+            const adminUser = await authDb.findUserByNearId(input.adminNearId);
+            if (!adminUser)
+              throw new ORPCError("BAD_REQUEST", {
+                message: `No account found for "${input.adminNearId}". They need to sign in to the platform at least once before being added as admin.`,
+              });
+            const metadata: Record<string, unknown> = {};
+            if (input.daoAccountId) metadata.daoAccountId = input.daoAccountId;
+            const org = await authDb.createOrg({
+              name: input.name,
+              slug: input.slug,
+              metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+            });
+            await authDb.addMember(org.id, adminUser.id, "admin");
+            const tenantAccount = `${input.slug}.${baseTenantSuffix()}`;
+            await upsertSettings(
+              db,
+              tenantAccount,
+              {
+                daoAccountId: input.daoAccountId,
+                nearnAccountId: null,
+                websiteUrl: null,
+                docsUrl: null,
+                description: null,
+                contactEmail: null,
+              },
+              (context as any).near?.primaryAccountId ?? tenantAccount,
+            );
+            return { id: org.id, name: org.name, slug: org.slug };
+          }),
+
+        updateOrg: builder.platform.updateOrg.use(gates.superAdmin).handler(async ({ input }) => {
+          if (!authDb)
+            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+          const existing = (await authDb.listOrgs()).find((o) => o.id === input.orgId);
+          if (!existing) throw new ORPCError("NOT_FOUND", { message: "Organization not found" });
+          const newMetadata = { ...(existing.metadata ?? {}) };
+          delete newMetadata.type;
+          if (input.daoAccountId !== undefined) newMetadata.daoAccountId = input.daoAccountId;
+          const updated = await authDb.updateOrg(input.orgId, {
+            name: input.name,
+            metadata: newMetadata,
+          });
+          if (!updated) throw new ORPCError("NOT_FOUND", { message: "Organization not found" });
+          const tenantAccount = `${updated.slug}.${baseTenantSuffix()}`;
+          const existingSettings = await getSettingsRow(db, tenantAccount);
+          await upsertSettings(
+            db,
+            tenantAccount,
+            {
+              daoAccountId:
+                (newMetadata.daoAccountId as string | undefined) ??
+                existingSettings?.daoAccountId ??
+                null,
+              nearnAccountId: existingSettings?.nearnAccountId ?? null,
+              websiteUrl: existingSettings?.websiteUrl ?? null,
+              docsUrl: existingSettings?.docsUrl ?? null,
+              description: existingSettings?.description ?? null,
+              contactEmail: existingSettings?.contactEmail ?? null,
+            },
+            updated.slug,
+          );
+          return { id: updated.id, name: updated.name, slug: updated.slug };
+        }),
+
+        listOrgMembers: builder.platform.listOrgMembers
+          .use(gates.superAdmin)
+          .handler(async ({ input }) => {
+            if (!authDb)
+              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+            const members = await authDb.listMembers(input.orgId);
+            return members.map((m) => ({
+              id: m.id,
+              userId: m.userId,
+              nearAccountId: m.nearAccountId,
+              role: m.role,
+            }));
+          }),
+
+        addOrgMember: builder.platform.addOrgMember
+          .use(gates.superAdmin)
+          .handler(async ({ input }) => {
+            if (!authDb)
+              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+            const user = await authDb.findUserByNearId(input.nearAccountId);
+            if (!user)
+              throw new ORPCError("NOT_FOUND", {
+                message: `No user found for: ${input.nearAccountId}`,
+              });
+            await authDb.addMember(input.orgId, user.id, input.role);
             return { ok: true as const };
           }),
+
+        updateOrgMember: builder.platform.updateOrgMember
+          .use(gates.superAdmin)
+          .handler(async ({ input }) => {
+            if (!authDb)
+              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+            await authDb.updateMemberRole(input.memberId, input.orgId, input.role);
+            return { ok: true as const };
+          }),
+
+        removeOrgMember: builder.platform.removeOrgMember
+          .use(gates.superAdmin)
+          .handler(async ({ input }) => {
+            if (!authDb)
+              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+            await authDb.removeMember(input.memberId, input.orgId);
+            return { ok: true as const };
+          }),
+
+        deleteOrg: builder.platform.deleteOrg.use(gates.superAdmin).handler(async ({ input }) => {
+          if (!authDb)
+            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+          await authDb.deleteOrg(input.orgId);
+          return { ok: true as const };
+        }),
+
+        listProjects: builder.platform.listProjects.use(gates.superAdmin).handler(async () => {
+          if (!authDb)
+            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+          const orgs = await authDb.listOrgs();
+          const orgsWithProjects = await Promise.all(
+            orgs.map(async (org) => {
+              const daoAccountId = String(
+                (org.metadata as { daoAccountId?: string })?.daoAccountId ?? "",
+              );
+              let projects: ReturnType<typeof toPublicProject>[] = [];
+              try {
+                projects = await fetchPlatformOrgProjects(org);
+              } catch {
+                projects = [];
+              }
+              return {
+                id: org.id,
+                name: org.name,
+                slug: org.slug,
+                daoAccountId: daoAccountId || null,
+                projects,
+              };
+            }),
+          );
+          return { orgs: orgsWithProjects };
+        }),
+      },
+
+      members: {
+        list: builder.members.list.use(gates.admin).handler(async ({ context }) => {
+          if (!authDb)
+            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+          const orgId = (context as any).organizationId as string | null;
+          if (!orgId) throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
+          const members = await authDb.listMembers(orgId);
+          return members.map((m) => ({
+            id: m.id,
+            userId: m.userId,
+            nearAccountId: m.nearAccountId,
+            displayName: m.nearAccountId,
+            role: m.role,
+          }));
+        }),
+
+        addByNearId: builder.members.addByNearId
+          .use(gates.admin)
+          .handler(async ({ context, input }) => {
+            if (!authDb)
+              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+            const orgId = (context as any).organizationId as string | null;
+            if (!orgId)
+              throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
+            const user = await authDb.findUserByNearId(input.nearAccountId);
+            if (!user)
+              throw new ORPCError("NOT_FOUND", {
+                message: `No user found for: ${input.nearAccountId}`,
+              });
+            await authDb.addMember(orgId, user.id, input.role);
+            return { ok: true as const };
+          }),
+
+        updateRole: builder.members.updateRole
+          .use(gates.admin)
+          .handler(async ({ context, input }) => {
+            if (!authDb)
+              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+            const orgId = (context as any).organizationId as string | null;
+            if (!orgId)
+              throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
+            await authDb.updateMemberRole(input.memberId, orgId, input.role);
+            return { ok: true as const };
+          }),
+
+        remove: builder.members.remove.use(gates.admin).handler(async ({ context, input }) => {
+          if (!authDb)
+            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
+          const orgId = (context as any).organizationId as string | null;
+          if (!orgId) throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
+          await authDb.removeMember(input.memberId, orgId);
+          return { ok: true as const };
+        }),
       },
     };
   },

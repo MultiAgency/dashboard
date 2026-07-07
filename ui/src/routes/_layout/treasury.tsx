@@ -103,7 +103,7 @@ type Token = {
 function TreasuryPage() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
-  const { isOperator, isLoaded } = useMeRoles();
+  const { canAccessAdmin, isLoaded } = useMeRoles();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
@@ -155,15 +155,15 @@ function TreasuryPage() {
       return false;
     }
   };
-  const visibleTokens = isOperator
+  const visibleTokens = canAccessAdmin
     ? tokens
     : tokens.filter((t) => isNonZero(balanceByToken.get(t.tokenId) ?? "0"));
 
   const proposalsQuery = useInfiniteQuery({
-    queryKey: ["proposals", isOperator ? "adminList" : "list", getNetwork()] as const,
+    queryKey: ["proposals", canAccessAdmin ? "list" : "list", getNetwork()] as const,
     queryFn: ({ pageParam }) =>
-      isOperator
-        ? apiClient.proposals.adminList({ limit: 50, fromIndex: pageParam })
+      canAccessAdmin
+        ? apiClient.proposals.list({ limit: 50, fromIndex: pageParam })
         : apiClient.proposals.list({ limit: 50, fromIndex: pageParam }),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (last) => last.nextFromIndex ?? undefined,
@@ -179,14 +179,14 @@ function TreasuryPage() {
 
   const adminProjectsQuery = useQuery({
     ...adminProjectsListQueryOptions(apiClient),
-    enabled: isOperator,
+    enabled: canAccessAdmin,
   });
   const adminContributorsQuery = useQuery({
     ...adminContributorsListQueryOptions(apiClient),
-    enabled: isOperator,
+    enabled: canAccessAdmin,
   });
   const operatorContext: OperatorContext | undefined = useMemo(() => {
-    if (!isOperator) return undefined;
+    if (!canAccessAdmin) return undefined;
     return {
       projects: (adminProjectsQuery.data?.data ?? []).map((p) => ({
         id: p.id,
@@ -198,7 +198,7 @@ function TreasuryPage() {
         name: c.name,
       })),
     };
-  }, [isOperator, adminProjectsQuery.data, adminContributorsQuery.data]);
+  }, [canAccessAdmin, adminProjectsQuery.data, adminContributorsQuery.data]);
 
   const proposalsListProps = {
     proposals,
@@ -227,7 +227,7 @@ function TreasuryPage() {
         </p>
       </header>
 
-      {isLoaded && isOperator ? (
+      {isLoaded && canAccessAdmin ? (
         <Tabs value={activeTab} onValueChange={(t) => setActiveTab(t as TreasuryTab)}>
           <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.22em]">
             <TabsTrigger value="balances">balances</TabsTrigger>

@@ -31,7 +31,7 @@ export function ApplicationsAdminSection() {
   const applicationsQuery = useInfiniteQuery({
     queryKey: ["admin", "applications", "list", filterKind || null, filterStatus || null],
     queryFn: ({ pageParam }) =>
-      apiClient.applications.adminList({
+      apiClient.applications.list({
         kind: filterKind || undefined,
         status: filterStatus || undefined,
         cursor: pageParam,
@@ -136,7 +136,7 @@ function ApplicationCard({ application }: { application: Application }) {
 
   const updateMutation = useMutation({
     mutationFn: async (status: ApplicationStatus) =>
-      apiClient.applications.adminUpdate({ id: application.id, status }),
+      apiClient.applications.update({ id: application.id, status }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin", "applications", "list"] });
       toast.success("Status updated");

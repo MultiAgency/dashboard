@@ -48,7 +48,7 @@ type Role = {
 function Team() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
-  const { isOperator, isLoaded } = useMeRoles();
+  const { canAccessAdmin, isLoaded } = useMeRoles();
   const [selectedMember, setSelectedMember] = useState<string | null>(null);
 
   const teamQuery = useQuery({
@@ -70,7 +70,7 @@ function Team() {
         </p>
       </header>
 
-      {isLoaded && isOperator ? (
+      {isLoaded && canAccessAdmin ? (
         <Tabs defaultValue="roles">
           <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.22em]">
             <TabsTrigger value="roles">roles</TabsTrigger>

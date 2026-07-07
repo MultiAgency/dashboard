@@ -13,10 +13,19 @@ export function useMeRoles() {
   const query = useQuery({ ...meRolesQueryOptions(apiClient), enabled: isAuthenticated });
 
   const isAdmin = !!query.data?.isAdmin;
-  const isApprover = !!query.data?.isApprover;
-  const isRequestor = !!query.data?.isRequestor;
-  const isOperator = isAdmin || isApprover;
+  const isContributor = !!query.data?.isContributor;
+  const isClient = !!query.data?.isClient;
+  const isSuperAdmin = !!query.data?.isSuperAdmin;
+  const canAccessAdmin = (isAdmin || isContributor) && !isSuperAdmin;
   const isLoaded = !isAuthenticated || query.isSuccess;
 
-  return { isAuthenticated, isAdmin, isApprover, isRequestor, isOperator, isLoaded };
+  return {
+    isAuthenticated,
+    isAdmin,
+    isContributor,
+    isClient,
+    isSuperAdmin,
+    canAccessAdmin,
+    isLoaded,
+  };
 }

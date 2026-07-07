@@ -117,7 +117,7 @@ function ContributorCreateForm({ onDone }: { onDone: () => void }) {
 
   const createMutation = useMutation({
     mutationFn: async () =>
-      apiClient.contributors.adminCreate({
+      apiClient.contributors.create({
         name: name.trim(),
         email: email.trim() || undefined,
         nearAccountId: nearAccountId.trim() || undefined,
@@ -210,7 +210,7 @@ function ContributorEditForm({ contributor }: { contributor: Contributor }) {
 
   const updateMutation = useMutation({
     mutationFn: async () =>
-      apiClient.contributors.adminUpdate({
+      apiClient.contributors.update({
         id: contributor.id,
         name: name.trim(),
         email: email.trim() || null,

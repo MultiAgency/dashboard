@@ -5,6 +5,7 @@ import { z } from "every-plugin/zod";
 const applicationKind = z.enum(["founder", "contributor", "client"]);
 
 const projectStatus = z.enum(["active", "paused", "archived"]);
+const projectKind = z.enum(["project", "idea"]);
 const visibility = z.enum(["public", "unlisted", "private"]);
 const onboardingStatus = z.enum(["pending", "complete", "expired"]);
 const proposalStatus = z.enum([
@@ -77,6 +78,7 @@ const project = z.object({
   description: z.string().nullable(),
   repository: z.string().nullable(),
   nearnListingId: z.string().nullable(),
+  kind: projectKind,
   status: projectStatus,
   visibility,
   createdAt: z.date(),
@@ -289,7 +291,7 @@ export const contract = oc.router({
         }),
       ),
 
-    adminList: oc
+    list: oc
       .route({ method: "GET", path: "/admin/applications" })
       .input(
         paginationInput.extend({
@@ -305,7 +307,7 @@ export const contract = oc.router({
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-    adminUpdate: oc
+    update: oc
       .route({ method: "PATCH", path: "/admin/applications/{id}" })
       .input(
         z.object({
@@ -323,23 +325,25 @@ export const contract = oc.router({
         .route({ method: "GET", path: "/projects" })
         .output(z.object({ data: z.array(projectWithNearn) })),
 
-      adminGet: oc
-        .route({ method: "GET", path: "/admin/projects/{slug}" })
+      get: oc
+        .route({ method: "GET", path: "/projects/{slug}" })
         .input(z.object({ slug }))
         .output(
           z.object({
             project,
-            contributors: z.array(
-              z.object({
-                id: z.string(),
-                name: z.string(),
-                nearAccountId: z.string().nullable(),
-                role: z.string().nullable(),
-              }),
-            ),
+            contributors: z
+              .array(
+                z.object({
+                  id: z.string(),
+                  name: z.string(),
+                  nearAccountId: z.string().nullable(),
+                  role: z.string().nullable(),
+                }),
+              )
+              .nullable(),
           }),
         )
-        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+        .errors({ NOT_FOUND }),
 
       getBudget: oc
         .route({ method: "GET", path: "/admin/projects/{projectId}/budget" })
@@ -347,12 +351,7 @@ export const contract = oc.router({
         .output(z.object({ budgets: z.array(tokenBudget) }))
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
-      adminList: oc
-        .route({ method: "GET", path: "/admin/projects" })
-        .output(z.object({ data: z.array(project) }))
-        .errors({ UNAUTHORIZED, FORBIDDEN }),
-
-      adminCreate: oc
+      create: oc
         .route({ method: "POST", path: "/admin/projects" })
         .input(
           z.object({
@@ -361,6 +360,7 @@ export const contract = oc.router({
             description: z.string().max(16000).optional(),
             repository: httpUrl.optional(),
             nearnListingId: z.string().max(200).optional(),
+            kind: projectKind.default("project"),
             status: projectStatus.default("active"),
             visibility: visibility.default("private"),
           }),
@@ -368,7 +368,7 @@ export const contract = oc.router({
         .output(z.object({ project }))
         .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
 
-      adminUpdate: oc
+      update: oc
         .route({ method: "PATCH", path: "/admin/projects/{id}" })
         .input(
           z.object({
@@ -384,7 +384,7 @@ export const contract = oc.router({
         .output(z.object({ project }))
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
-      adminDelete: oc
+      delete: oc
         .route({ method: "DELETE", path: "/admin/projects/{id}" })
         .input(z.object({ id: z.string() }))
         .output(z.object({ deleted: z.literal(true) }))
@@ -392,25 +392,25 @@ export const contract = oc.router({
     },
 
     listings: {
-      adminGet: oc
+      get: oc
         .route({ method: "GET", path: "/admin/projects/{projectId}/listings/internal" })
         .input(z.object({ projectId: z.string() }))
         .output(z.object({ listing: listing.nullable() }))
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
-      adminCreate: oc
+      create: oc
         .route({ method: "POST", path: "/admin/projects/{projectId}/listings/internal" })
         .input(internalListingCreate)
         .output(z.object({ listing }))
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
-      adminUpdate: oc
+      update: oc
         .route({ method: "PATCH", path: "/admin/projects/{projectId}/listings/internal" })
         .input(internalListingUpdate)
         .output(z.object({ listing }))
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
-      adminDelete: oc
+      delete: oc
         .route({ method: "DELETE", path: "/admin/projects/{projectId}/listings/internal" })
         .input(z.object({ projectId: z.string() }))
         .output(z.object({ deleted: z.literal(true) }))
@@ -419,12 +419,12 @@ export const contract = oc.router({
   },
 
   contributors: {
-    adminList: oc
+    list: oc
       .route({ method: "GET", path: "/admin/contributors" })
       .output(z.object({ data: z.array(contributor) }))
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-    adminCreate: oc
+    create: oc
       .route({ method: "POST", path: "/admin/contributors" })
       .input(
         z.object({
@@ -437,7 +437,7 @@ export const contract = oc.router({
       .output(z.object({ contributor }))
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-    adminUpdate: oc
+    update: oc
       .route({ method: "PATCH", path: "/admin/contributors/{id}" })
       .input(
         z.object({
@@ -453,7 +453,7 @@ export const contract = oc.router({
   },
 
   assignments: {
-    adminList: oc
+    list: oc
       .route({ method: "GET", path: "/admin/projects/{projectId}/contributors" })
       .input(z.object({ projectId: z.string() }))
       .output(
@@ -471,7 +471,7 @@ export const contract = oc.router({
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-    adminCreate: oc
+    create: oc
       .route({ method: "POST", path: "/admin/projects/{projectId}/contributors" })
       .input(
         z.object({
@@ -489,7 +489,7 @@ export const contract = oc.router({
       )
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
-    adminDelete: oc
+    delete: oc
       .route({ method: "DELETE", path: "/admin/projects/{projectId}/contributors/{contributorId}" })
       .input(
         z.object({
@@ -502,7 +502,7 @@ export const contract = oc.router({
   },
 
   budgets: {
-    adminList: oc
+    list: oc
       .route({ method: "GET", path: "/admin/budgets" })
       .input(
         paginationInput.extend({
@@ -518,7 +518,7 @@ export const contract = oc.router({
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-    adminCreate: oc
+    create: oc
       .route({ method: "POST", path: "/admin/projects/{projectId}/budgets" })
       .input(
         z.object({
@@ -531,7 +531,7 @@ export const contract = oc.router({
       .output(z.object({ budget }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
-    adminDeallocate: oc
+    deallocate: oc
       .route({ method: "POST", path: "/admin/projects/{projectId}/budgets/deallocate" })
       .input(
         z.object({
@@ -544,7 +544,7 @@ export const contract = oc.router({
       .output(z.object({ budget }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
-    adminTransfer: oc
+    transfer: oc
       .route({ method: "POST", path: "/admin/budgets/transfer" })
       .input(
         z
@@ -568,7 +568,7 @@ export const contract = oc.router({
   },
 
   billings: {
-    adminList: oc
+    list: oc
       .route({ method: "GET", path: "/admin/billings" })
       .input(
         paginationInput.extend({
@@ -584,7 +584,7 @@ export const contract = oc.router({
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-    adminCreate: oc
+    create: oc
       .route({ method: "POST", path: "/admin/billings" })
       .input(
         z.object({
@@ -597,7 +597,7 @@ export const contract = oc.router({
       .output(z.object({ billing }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
-    adminDelete: oc
+    delete: oc
       .route({ method: "DELETE", path: "/admin/billings/{id}" })
       .input(z.object({ id: z.string() }))
       .output(z.object({ deleted: z.literal(true) }))
@@ -615,28 +615,11 @@ export const contract = oc.router({
       )
       .output(
         z.object({
-          data: z.array(proposalPublicItem),
-          lastProposalId: z.number(),
-          nextFromIndex: z.number().nullable(),
-        }),
-      ),
-
-    adminList: oc
-      .route({ method: "GET", path: "/admin/proposals" })
-      .input(
-        z.object({
-          limit: z.number().int().min(1).max(100).default(50),
-          fromIndex: z.number().int().min(0).optional(),
-        }),
-      )
-      .output(
-        z.object({
           data: z.array(proposalListItem),
           lastProposalId: z.number(),
           nextFromIndex: z.number().nullable(),
         }),
-      )
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
+      ),
 
     getPublicSummary: oc.route({ method: "GET", path: "/proposals/summary" }).output(
       z.object({
@@ -812,8 +795,9 @@ export const contract = oc.router({
       .output(
         z.object({
           isAdmin: z.boolean(),
-          isApprover: z.boolean(),
-          isRequestor: z.boolean(),
+          isContributor: z.boolean(),
+          isClient: z.boolean(),
+          isSuperAdmin: z.boolean(),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
@@ -841,7 +825,7 @@ export const contract = oc.router({
     ),
   },
 
-  settings: {
+  agencyConfig: {
     getPublic: oc.route({ method: "GET", path: "/settings" }).output(
       z.object({
         name: z.string(),
@@ -858,7 +842,7 @@ export const contract = oc.router({
       }),
     ),
 
-    adminGet: oc
+    get: oc
       .route({ method: "GET", path: "/admin/settings" })
       .output(
         z.object({
@@ -866,6 +850,7 @@ export const contract = oc.router({
           network: z.enum(["mainnet", "testnet"]),
           // Editable for admins of this deployment — resolved DB → env → hardcoded.
           editable: z.object({
+            daoAccountId: z.string().nullable(),
             nearnAccountId: z.string().nullable(),
             websiteUrl: z.string().nullable(),
             docsUrl: z.string().nullable(),
@@ -877,9 +862,6 @@ export const contract = oc.router({
             name: z.string(),
             headline: z.string().nullable(),
             tagline: z.string().nullable(),
-            adminRoleName: z.string(),
-            approverRoleName: z.string(),
-            requestorRoleName: z.string(),
           }),
           audit: z
             .object({
@@ -893,10 +875,11 @@ export const contract = oc.router({
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-    adminUpdate: oc
+    update: oc
       .route({ method: "PATCH", path: "/admin/settings" })
       .input(
         z.object({
+          daoAccountId: z.string().trim().min(1).max(120).nullable().optional(),
           nearnAccountId: z.string().trim().min(1).max(120).nullable(),
           websiteUrl: httpUrl.nullable(),
           docsUrl: httpUrl.nullable(),
@@ -906,6 +889,161 @@ export const contract = oc.router({
       )
       .output(z.object({ ok: z.literal(true) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+  },
+
+  platform: {
+    listOrgs: oc
+      .route({ method: "GET", path: "/platform/orgs" })
+      .output(
+        z.array(
+          z.object({
+            id: z.string(),
+            name: z.string(),
+            slug: z.string(),
+            metadata: z.record(z.string(), z.unknown()).nullable(),
+            createdAt: z.string(),
+          }),
+        ),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    createOrg: oc
+      .route({ method: "POST", path: "/platform/orgs" })
+      .input(
+        z.object({
+          name: z.string().trim().min(1).max(100),
+          slug: z.string().trim().min(1).max(100),
+          daoAccountId: z.string().trim().min(1).max(120),
+          adminNearId: z.string().trim().min(1).max(120),
+        }),
+      )
+      .output(z.object({ id: z.string(), name: z.string(), slug: z.string() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+
+    updateOrg: oc
+      .route({ method: "PATCH", path: "/platform/orgs/:orgId" })
+      .input(
+        z.object({
+          orgId: z.string(),
+          name: z.string().trim().min(1).max(100).optional(),
+          daoAccountId: z.string().trim().min(1).max(120).optional(),
+        }),
+      )
+      .output(z.object({ id: z.string(), name: z.string(), slug: z.string() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, NOT_FOUND }),
+
+    listOrgMembers: oc
+      .route({ method: "GET", path: "/platform/orgs/:orgId/members" })
+      .input(z.object({ orgId: z.string() }))
+      .output(
+        z.array(
+          z.object({
+            id: z.string(),
+            userId: z.string(),
+            nearAccountId: z.string().nullable(),
+            role: z.string(),
+          }),
+        ),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    addOrgMember: oc
+      .route({ method: "POST", path: "/platform/orgs/:orgId/members" })
+      .input(
+        z.object({
+          orgId: z.string(),
+          nearAccountId: z.string().trim().min(1).max(120),
+          role: z.enum(["admin", "contributor", "client"]),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+
+    updateOrgMember: oc
+      .route({ method: "PATCH", path: "/platform/orgs/:orgId/members/:memberId" })
+      .input(
+        z.object({
+          orgId: z.string(),
+          memberId: z.string(),
+          role: z.enum(["admin", "contributor", "client"]),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+
+    removeOrgMember: oc
+      .route({ method: "DELETE", path: "/platform/orgs/:orgId/members/:memberId" })
+      .input(z.object({ orgId: z.string(), memberId: z.string() }))
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    deleteOrg: oc
+      .route({ method: "DELETE", path: "/platform/orgs/:orgId" })
+      .input(z.object({ orgId: z.string() }))
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    listProjects: oc
+      .route({ method: "GET", path: "/platform/projects" })
+      .output(
+        z.object({
+          orgs: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              slug: z.string(),
+              daoAccountId: z.string().nullable(),
+              projects: z.array(publicProject),
+            }),
+          ),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+  },
+
+  members: {
+    list: oc
+      .route({ method: "GET", path: "/members" })
+      .output(
+        z.array(
+          z.object({
+            id: z.string(),
+            userId: z.string(),
+            nearAccountId: z.string().nullable(),
+            displayName: z.string().nullable(),
+            role: z.string(),
+          }),
+        ),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    addByNearId: oc
+      .route({ method: "POST", path: "/members" })
+      .input(
+        z.object({
+          nearAccountId: z.string().trim().min(1).max(120),
+          role: z.enum(["admin", "contributor", "client"]),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+
+    updateRole: oc
+      .route({ method: "PATCH", path: "/members/:memberId" })
+      .input(
+        z.object({
+          memberId: z.string(),
+          role: z.enum(["admin", "contributor", "client"]),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+
+    remove: oc
+      .route({ method: "DELETE", path: "/members/:memberId" })
+      .input(z.object({ memberId: z.string() }))
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
   },
 });
 

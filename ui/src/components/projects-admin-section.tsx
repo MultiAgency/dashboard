@@ -30,9 +30,9 @@ type Project = {
   organizationId: string | null;
   slug: string;
   title: string;
-  description: string | null;
   repository: string | null;
-  nearnListingId: string | null;
+  kind: "project" | "idea";
+  nearnListing: { slug: string } | null;
   status: ProjectStatus;
   visibility: Visibility;
 };
@@ -98,7 +98,7 @@ export function ProjectsAdminSection() {
         linkedSlugs={
           new Set(
             (projectsQuery.data?.data ?? [])
-              .map((p) => p.nearnListingId)
+              .map((p) => p.nearnListing?.slug)
               .filter((s): s is string => !!s),
           )
         }
@@ -172,7 +172,7 @@ function ProjectRow({
 
         {expanded && (
           <div className="space-y-6 pt-2 border-t border-border">
-            {project.nearnListingId && <NearnSnapshot slug={project.nearnListingId} />}
+            {project.nearnListing?.slug && <NearnSnapshot slug={project.nearnListing.slug} />}
             <ProjectEditForm project={project} />
             <AssignmentsSection projectId={project.id} />
           </div>
@@ -231,7 +231,7 @@ function ProjectCreateForm({
 
   const createMutation = useMutation({
     mutationFn: async () =>
-      apiClient.agency.projects.adminCreate({
+      apiClient.agency.projects.create({
         slug: slug.trim(),
         title: title.trim(),
         description: description.trim() || undefined,
@@ -252,7 +252,8 @@ function ProjectCreateForm({
   });
 
   const isPending = createMutation.isPending;
-  const canSubmit = slug.trim().length > 0 && title.trim().length > 0 && !isPending;
+  const canSubmit =
+    slug.trim().length > 0 && title.trim().length > 0 && repository.trim().length > 0 && !isPending;
 
   return (
     <Card>
@@ -261,7 +262,14 @@ function ProjectCreateForm({
           <Input
             id="new-slug"
             value={slug}
-            onChange={(e) => setSlug(e.target.value)}
+            onChange={(e) =>
+              setSlug(
+                e.target.value
+                  .toLowerCase()
+                  .replace(/\s+/g, "-")
+                  .replace(/[^a-z0-9-]/g, ""),
+              )
+            }
             placeholder="lowercase-with-hyphens"
             disabled={isPending}
           />
@@ -284,7 +292,7 @@ function ProjectCreateForm({
             className={textareaClass}
           />
         </Field>
-        <Field label="repository url (optional)" htmlFor="new-repository">
+        <Field label="repository url" htmlFor="new-repository">
           <Input
             id="new-repository"
             value={repository}
@@ -346,24 +354,24 @@ function ProjectEditForm({ project }: { project: Project }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState(project.title);
-  const [description, setDescription] = useState(project.description ?? "");
+  const [description, setDescription] = useState("");
   const [repository, setRepository] = useState(project.repository ?? "");
-  const [nearnListingId, setNearnListingId] = useState(project.nearnListingId ?? "");
+  const [nearnListingId, setNearnListingId] = useState(project.nearnListing?.slug ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status);
   const [vis, setVis] = useState<Visibility>(project.visibility);
 
   useEffect(() => {
     setTitle(project.title);
-    setDescription(project.description ?? "");
+    setDescription("");
     setRepository(project.repository ?? "");
-    setNearnListingId(project.nearnListingId ?? "");
+    setNearnListingId(project.nearnListing?.slug ?? "");
     setStatus(project.status);
     setVis(project.visibility);
   }, [project]);
 
   const updateMutation = useMutation({
     mutationFn: async () =>
-      apiClient.agency.projects.adminUpdate({
+      apiClient.agency.projects.update({
         id: project.id,
         title: title.trim(),
         description: description.trim() || null,
@@ -477,7 +485,7 @@ function AssignmentsSection({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const assignmentsQuery = useQuery({
     queryKey: ["admin", "assignments", projectId],
-    queryFn: () => apiClient.assignments.adminList({ projectId }),
+    queryFn: () => apiClient.assignments.list({ projectId }),
   });
   const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
 
@@ -486,7 +494,7 @@ function AssignmentsSection({ projectId }: { projectId: string }) {
 
   const addMutation = useMutation({
     mutationFn: async () =>
-      apiClient.assignments.adminCreate({
+      apiClient.assignments.create({
         projectId,
         contributorId,
         role: role.trim() || undefined,
@@ -502,7 +510,7 @@ function AssignmentsSection({ projectId }: { projectId: string }) {
 
   const removeMutation = useMutation({
     mutationFn: async (cid: string) =>
-      apiClient.assignments.adminDelete({ projectId, contributorId: cid }),
+      apiClient.assignments.delete({ projectId, contributorId: cid }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin", "assignments", projectId] });
       toast.success("Contributor unassigned");

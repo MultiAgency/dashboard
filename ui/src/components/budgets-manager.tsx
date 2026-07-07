@@ -88,7 +88,7 @@ function AgencyAuditLogPanel({
   const logQuery = useInfiniteQuery({
     queryKey: ["admin", "budgets", "agency", filterProject || null, filterToken || null],
     queryFn: ({ pageParam }) =>
-      apiClient.budgets.adminList({
+      apiClient.budgets.list({
         projectId: filterProject || undefined,
         tokenId: filterToken || undefined,
         cursor: pageParam,
@@ -262,7 +262,7 @@ function TransferPanel({
 
   const transferMutation = useMutation({
     mutationFn: async () =>
-      apiClient.budgets.adminTransfer({
+      apiClient.budgets.transfer({
         fromProjectId,
         toProjectId,
         tokenId: effectiveTokenId,
@@ -433,7 +433,7 @@ function ProjectBudgetPanel({ projectId }: { projectId: string }) {
   });
   const budgetsQuery = useInfiniteQuery({
     queryKey: ["admin", "budgets", projectId],
-    queryFn: ({ pageParam }) => apiClient.budgets.adminList({ projectId, cursor: pageParam }),
+    queryFn: ({ pageParam }) => apiClient.budgets.list({ projectId, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
@@ -471,7 +471,7 @@ function ProjectBudgetPanel({ projectId }: { projectId: string }) {
 
   const createMutation = useMutation({
     mutationFn: async () =>
-      apiClient.budgets.adminCreate({
+      apiClient.budgets.create({
         projectId,
         tokenId: effectiveTokenId,
         amount: amountInBase,
@@ -488,7 +488,7 @@ function ProjectBudgetPanel({ projectId }: { projectId: string }) {
 
   const deallocateMutation = useMutation({
     mutationFn: async () =>
-      apiClient.budgets.adminDeallocate({
+      apiClient.budgets.deallocate({
         projectId,
         tokenId: effectiveTokenId,
         amount: amountInBase,

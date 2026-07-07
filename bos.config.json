@@ -19,11 +19,17 @@
       "development": "local:api",
       "secrets": [
         "API_DATABASE_URL",
+        "AUTH_DATABASE_URL",
         "APPLICATIONS_WEBHOOK_URL",
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
       ]
+    }
+  },
+  "plugins": {
+    "projects": {
+      "production": "https://elliot-braem-5165-everything-dev-projects-plugin--53e34cd79-ze.zephyrcloud.app"
     }
   }
 }

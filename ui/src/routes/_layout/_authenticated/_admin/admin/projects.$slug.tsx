@@ -111,7 +111,8 @@ function AdminProjectDetail() {
   }
   if (!projectQuery.data) throw notFound();
 
-  const { project, contributors } = projectQuery.data;
+  const { project, contributors: contributorsRaw } = projectQuery.data;
+  const contributors = contributorsRaw ?? [];
   const nearnUrl = project.nearnListingId ? nearnListingUrl(project.nearnListingId) : null;
 
   return (
@@ -223,7 +224,7 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
   );
   const addContributorMutation = useMutation({
     mutationFn: (input: { name: string; nearAccountId: string }) =>
-      apiClient.contributors.adminCreate(input),
+      apiClient.contributors.create(input),
     onSuccess: (_data, vars) => {
       toast.success(`Added ${vars.name} as a contributor`);
       queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
@@ -359,17 +360,17 @@ function DeleteProjectSection({
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const deleteMutation = useMutation({
-    mutationFn: () => apiClient.agency.projects.adminDelete({ id: projectId }),
+    mutationFn: () => apiClient.agency.projects.delete({ id: projectId }),
     onSuccess: async () => {
       // The project (and its cascade rows) are gone — bust every query that referenced this project.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin", "projects"] }),
         queryClient.invalidateQueries({ queryKey: ["admin", "billings", "list"] }),
         queryClient.invalidateQueries({ queryKey: ["treasury", "rollups"] }),
-        queryClient.invalidateQueries({ queryKey: ["proposals", "adminList"] }),
+        queryClient.invalidateQueries({ queryKey: ["proposals", "list"] }),
       ]);
       toast.success(`Project @${projectSlug} deleted`);
-      // Project detail is unreachable now — leave before the next adminGet 404s.
+      // Project detail is unreachable now — leave before the next get 404s.
       navigate({ to: "/work" });
     },
     onError: (err: Error) => toast.error(err.message || "Failed to delete project"),
@@ -432,7 +433,7 @@ function BillingsSection({
 
   const billingsQuery = useInfiniteQuery({
     queryKey: ["admin", "billings", "list", projectId],
-    queryFn: ({ pageParam }) => apiClient.billings.adminList({ projectId, cursor: pageParam }),
+    queryFn: ({ pageParam }) => apiClient.billings.list({ projectId, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
@@ -508,13 +509,13 @@ function BillingRow({
   const queryClient = useQueryClient();
 
   const deleteMutation = useMutation({
-    mutationFn: async () => apiClient.billings.adminDelete({ id: billing.id }),
+    mutationFn: async () => apiClient.billings.delete({ id: billing.id }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin", "billings", "list"] }),
         queryClient.invalidateQueries({ queryKey: ["admin", "projects", "budget"] }),
         queryClient.invalidateQueries({ queryKey: ["treasury", "rollups"] }),
-        queryClient.invalidateQueries({ queryKey: ["proposals", "adminList"] }),
+        queryClient.invalidateQueries({ queryKey: ["proposals", "list"] }),
       ]);
       toast.success(`Billing for proposal #${billing.proposalId} deleted`);
     },
@@ -632,7 +633,7 @@ function BillingCreateForm({
 
   const createMutation = useMutation({
     mutationFn: async () =>
-      apiClient.billings.adminCreate({
+      apiClient.billings.create({
         projectId,
         proposalId: proposalId.trim(),
         contributorId: contributorIdOverride || undefined,
@@ -777,7 +778,7 @@ function BillingCreateForm({
 }
 
 type InternalListing = NonNullable<
-  Awaited<ReturnType<ApiClient["agency"]["listings"]["adminGet"]>>["listing"]
+  Awaited<ReturnType<ApiClient["agency"]["listings"]["get"]>>["listing"]
 >;
 
 const internalListingFormSchema = z.object({
@@ -949,9 +950,9 @@ function InternalListingForm({
         isWinnersAnnounced: values.isWinnersAnnounced,
       };
       if (isEdit) {
-        return apiClient.agency.listings.adminUpdate(payload);
+        return apiClient.agency.listings.update(payload);
       }
-      return apiClient.agency.listings.adminCreate(payload);
+      return apiClient.agency.listings.create(payload);
     },
     onSuccess: async () => {
       await invalidate();
@@ -1194,7 +1195,7 @@ function InternalListingDeleteDialog({
   const queryClient = useQueryClient();
 
   const deleteMutation = useMutation({
-    mutationFn: () => apiClient.agency.listings.adminDelete({ projectId }),
+    mutationFn: () => apiClient.agency.listings.delete({ projectId }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: adminInternalListingQueryKey }),

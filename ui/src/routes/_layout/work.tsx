@@ -64,7 +64,7 @@ type ProjectListItem = {
 function WorkIndex() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
-  const { isOperator, isLoaded } = useMeRoles();
+  const { canAccessAdmin, isLoaded } = useMeRoles();
   const projectsQuery = useQuery({
     ...projectsListQueryOptions(apiClient),
     staleTime: 30_000,
@@ -104,7 +104,7 @@ function WorkIndex() {
         </p>
       </header>
 
-      {isLoaded && isOperator ? (
+      {isLoaded && canAccessAdmin ? (
         <Tabs defaultValue="public">
           <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.22em]">
             <TabsTrigger value="public">public</TabsTrigger>
