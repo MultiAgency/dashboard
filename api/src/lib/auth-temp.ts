@@ -1,3 +1,7 @@
+// Temporary direct-DB bridge — replaces the auth plugin's missing
+// programmatic org/member management API (list all orgs, add member
+// by ID with custom roles, find user by NEAR account).
+// Replace with auth plugin API when available.
 import pg from "pg";
 
 export interface AuthOrg {
@@ -108,18 +112,19 @@ export class AuthDbClient {
     }));
   }
 
-  async findUserByNearId(nearAccountId: string): Promise<{ id: string } | null> {
+  async findUserByNearId(nearAccountId: string): Promise<{ id: string; email: string | null } | null> {
     const input = nearAccountId.trim();
     if (input.includes("@")) {
-      const { rows } = await this.pool.query(`SELECT id FROM "user" WHERE email = $1 LIMIT 1`, [
-        input,
-      ]);
+      const { rows } = await this.pool.query(
+        `SELECT id, email FROM "user" WHERE email = $1 LIMIT 1`,
+        [input],
+      );
       return rows[0] ?? null;
     }
     const withoutSuffix = input.replace(/\.near$/, "");
     const derivedEmail = `${withoutSuffix}@near.email`;
     const { rows } = await this.pool.query(
-      `SELECT id FROM "user" WHERE name = $1 OR name = $2 OR email = $3 LIMIT 1`,
+      `SELECT id, email FROM "user" WHERE name = $1 OR name = $2 OR email = $3 LIMIT 1`,
       [input, withoutSuffix, derivedEmail],
     );
     return rows[0] ?? null;
@@ -148,26 +153,6 @@ export class AuthDbClient {
       memberId,
       orgId,
     ]);
-  }
-
-  async findOrgByDaoAccountId(
-    daoAccountId: string,
-  ): Promise<{ id: string; metadata: Record<string, unknown> | null } | null> {
-    const { rows } = await this.pool.query(
-      `SELECT id, metadata FROM organization WHERE metadata IS NOT NULL AND metadata::jsonb ->> 'daoAccountId' = $1 LIMIT 1`,
-      [daoAccountId],
-    );
-    const r = rows[0];
-    if (!r) return null;
-    return { id: r.id, metadata: parseMetadata(r.metadata) };
-  }
-
-  async getMemberRole(userId: string, orgId: string): Promise<string | null> {
-    const { rows } = await this.pool.query(
-      `SELECT role FROM member WHERE user_id = $1 AND organization_id = $2 LIMIT 1`,
-      [userId, orgId],
-    );
-    return rows[0]?.role ?? null;
   }
 
   async deleteOrg(orgId: string): Promise<void> {
