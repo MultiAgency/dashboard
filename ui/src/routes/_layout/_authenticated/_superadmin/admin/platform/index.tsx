@@ -268,7 +268,7 @@ function OrgForm({
             slug: slug.trim(),
             type,
             daoAccountId: daoAccountId.trim(),
-            ...(adminNearId.trim() ? { adminNearId: adminNearId.trim() } : {}),
+            adminNearId: adminNearId.trim(),
           }),
     onSuccess: (result) => {
       toast.success(
@@ -284,7 +284,10 @@ function OrgForm({
 
   const canSubmit =
     name.trim().length > 0 &&
-    (isEdit || (slug.trim().length > 0 && daoAccountId.trim().length > 0)) &&
+    (isEdit ||
+      (slug.trim().length > 0 &&
+        daoAccountId.trim().length > 0 &&
+        adminNearId.trim().length > 0)) &&
     !mutation.isPending;
 
   const detailsFields = (
@@ -349,7 +352,7 @@ function OrgForm({
       {!isEdit && (
         <div className="space-y-1">
           <label htmlFor="org-admin-near-id" className={LABEL_CLS}>
-            admin near id (optional)
+            org admin near id
           </label>
           <Input
             id="org-admin-near-id"

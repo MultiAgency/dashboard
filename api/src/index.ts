@@ -1877,13 +1877,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context, input }) => {
             if (!authDb)
               throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-            if (input.adminNearId) {
-              const adminUser = await authDb.findUserByNearId(input.adminNearId);
-              if (!adminUser)
-                throw new ORPCError("BAD_REQUEST", {
-                  message: `No account found for "${input.adminNearId}". They need to sign in to the platform at least once before being added as admin.`,
-                });
-            }
+            const adminUser = await authDb.findUserByNearId(input.adminNearId);
+            if (!adminUser)
+              throw new ORPCError("BAD_REQUEST", {
+                message: `No account found for "${input.adminNearId}". They need to sign in to the platform at least once before being added as admin.`,
+              });
             const metadata: Record<string, unknown> = {};
             if (input.type) metadata.type = input.type;
             if (input.daoAccountId) metadata.daoAccountId = input.daoAccountId;
@@ -1892,13 +1890,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
               slug: input.slug,
               metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
             });
-            const creatorId = (context as any).userId as string | undefined;
-            if (creatorId) await authDb.addMember(org.id, creatorId, "admin").catch(() => {});
-            if (input.adminNearId) {
-              const adminUser = await authDb.findUserByNearId(input.adminNearId);
-              if (adminUser && adminUser.id !== creatorId)
-                await authDb.addMember(org.id, adminUser.id, "admin").catch(() => {});
-            }
+            await authDb.addMember(org.id, adminUser.id, "admin");
             const tenantAccount = `${input.slug}.${baseTenantSuffix()}`;
             await upsertSettings(
               db,

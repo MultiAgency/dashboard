@@ -915,7 +915,7 @@ export const contract = oc.router({
           slug: z.string().trim().min(1).max(100),
           type: z.enum(["agency", "client"]).optional(),
           daoAccountId: z.string().trim().min(1).max(120),
-          adminNearId: z.string().trim().max(120).optional(),
+          adminNearId: z.string().trim().min(1).max(120),
         }),
       )
       .output(z.object({ id: z.string(), name: z.string(), slug: z.string() }))
