@@ -29,7 +29,10 @@
   },
   "plugins": {
     "projects": {
-      "production": "https://elliot-braem-5165-everything-dev-projects-plugin--53e34cd79-ze.zephyrcloud.app"
+      "development": "local:plugins/projects",
+      "secrets": [
+        "PROJECTS_DATABASE_URL"
+      ]
     }
   }
 }
