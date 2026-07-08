@@ -58,6 +58,7 @@ export {
   SheetTitle,
   SheetTrigger,
 } from "./ui/sheet";
+export { DataTable } from "./ui/data-table";
 export { Skeleton } from "./ui/skeleton";
 export { Spinner } from "./ui/spinner";
 export {
