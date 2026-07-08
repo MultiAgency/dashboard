@@ -24,8 +24,7 @@ type Member = {
 
 const ROLE_COLORS: Record<string, string> = {
   admin: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  contributor: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-  client: "bg-green-500/10 text-green-600 border-green-500/20",
+  member: "bg-blue-500/10 text-blue-600 border-blue-500/20",
 };
 
 const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
@@ -99,17 +98,17 @@ function MembersPage() {
 
 function AddMemberForm({ onAdded }: { onAdded: () => void }) {
   const apiClient = useApiClient();
-  const [nearAccountId, setNearAccountId] = useState("");
-  const [role, setRole] = useState<"admin" | "contributor" | "client">("contributor");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"admin" | "member">("member");
 
   const addMutation = useMutation({
-    mutationFn: () => apiClient.members.addByNearId({ nearAccountId: nearAccountId.trim(), role }),
+    mutationFn: () => apiClient.members.invite({ email: email.trim(), role }),
     onSuccess: () => {
-      toast.success(`Added ${nearAccountId}`);
-      setNearAccountId("");
+      toast.success(`Invited ${email}`);
+      setEmail("");
       onAdded();
     },
-    onError: (e: Error) => toast.error(e.message || "Failed to add member"),
+    onError: (e: Error) => toast.error(e.message || "Failed to invite member"),
   });
 
   return (
@@ -117,42 +116,42 @@ function AddMemberForm({ onAdded }: { onAdded: () => void }) {
       <CardContent className="p-4">
         <div className="flex items-end gap-3">
           <div className="flex-1 space-y-1">
-            <label htmlFor="add-member-near-id" className={LABEL_CLS}>
-              near account id
+            <label htmlFor="invite-member-email" className={LABEL_CLS}>
+              email
             </label>
             <Input
-              id="add-member-near-id"
-              value={nearAccountId}
-              onChange={(e) => setNearAccountId(e.target.value)}
-              placeholder="alice.near"
+              id="invite-member-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="alice@example.com"
               disabled={addMutation.isPending}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && nearAccountId.trim()) addMutation.mutate();
+                if (e.key === "Enter" && email.trim()) addMutation.mutate();
               }}
             />
           </div>
           <div className="space-y-1">
-            <label htmlFor="add-member-role" className={LABEL_CLS}>
+            <label htmlFor="invite-member-role" className={LABEL_CLS}>
               role
             </label>
             <select
-              id="add-member-role"
+              id="invite-member-role"
               value={role}
               onChange={(e) => setRole(e.target.value as typeof role)}
               disabled={addMutation.isPending}
               className="h-9 rounded-md border border-input bg-background px-3 py-1 font-mono text-xs"
             >
               <option value="admin">admin</option>
-              <option value="contributor">contributor</option>
-              <option value="client">client</option>
+              <option value="member">member</option>
             </select>
           </div>
           <Button
             onClick={() => addMutation.mutate()}
-            disabled={!nearAccountId.trim() || addMutation.isPending}
+            disabled={!email.trim() || addMutation.isPending}
             size="sm"
           >
-            {addMutation.isPending ? "adding…" : "add →"}
+            {addMutation.isPending ? "inviting…" : "invite →"}
           </Button>
         </div>
       </CardContent>
@@ -164,7 +163,7 @@ function MemberRow({ member, onChanged }: { member: Member; onChanged: () => voi
   const apiClient = useApiClient();
 
   const updateMutation = useMutation({
-    mutationFn: (newRole: "admin" | "contributor" | "client") =>
+    mutationFn: (newRole: "admin" | "member") =>
       apiClient.members.updateRole({ memberId: member.id, role: newRole }),
     onSuccess: () => {
       toast.success("Role updated");
@@ -203,14 +202,13 @@ function MemberRow({ member, onChanged }: { member: Member; onChanged: () => voi
         <select
           value={member.role}
           onChange={(e) =>
-            updateMutation.mutate(e.target.value as "admin" | "contributor" | "client")
+            updateMutation.mutate(e.target.value as "admin" | "member")
           }
           disabled={updateMutation.isPending || removeMutation.isPending}
           className="h-7 rounded border border-input bg-background px-2 font-mono text-[11px]"
         >
           <option value="admin">admin</option>
-          <option value="contributor">contributor</option>
-          <option value="client">client</option>
+          <option value="member">member</option>
         </select>
         <Button
           size="sm"

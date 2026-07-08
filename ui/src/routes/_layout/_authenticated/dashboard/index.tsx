@@ -1,13 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/_layout/_authenticated/contributor/")({
-  component: ContributorHome,
+export const Route = createFileRoute("/_layout/_authenticated/dashboard/")({
+  component: DashboardHome,
 });
 
-function ContributorHome() {
+function DashboardHome() {
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Contributor Portal</h1>
+      <h1 className="text-2xl font-bold">Dashboard</h1>
       <p className="text-muted-foreground">
         View your assigned projects, billings, and contributions.
       </p>

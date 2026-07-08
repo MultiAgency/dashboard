@@ -1,25 +1,7 @@
-import { createFileRoute, Link, Outlet, redirect } from "@tanstack/react-router";
-import { meRolesQueryOptions } from "@/lib/queries";
-import { sessionQueryOptions } from "@/lib/auth";
+import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_layout/_authenticated/client")({
-  beforeLoad: async ({ context }) => {
-    const [session, roles] = await Promise.all([
-      context.queryClient.ensureQueryData(
-        sessionQueryOptions(context.authClient, context.session),
-      ),
-      context.queryClient.ensureQueryData(meRolesQueryOptions(context.apiClient)),
-    ]);
-
-    const isSuperAdmin = session?.user?.role === "admin";
-    const isClient = roles.orgRole === "client";
-
-    if (!isSuperAdmin && !isClient) {
-      throw redirect({ to: "/", hash: "unauthorized" });
-    }
-
-    return { roles };
-  },
+  beforeLoad: () => {},
   component: ClientLayout,
 });
 

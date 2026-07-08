@@ -9,7 +9,6 @@ import { cursorOf, cursorWhere } from "./db/cursor";
 import { loadMigrations } from "./db/load-migrations";
 import { migrate } from "./db/migrator";
 import { applications, billings, budgets, contributors, projectContributors } from "./db/schema";
-import { AuthDbClient } from "./lib/auth-temp";
 import { createAuthMiddleware } from "./lib/auth";
 import { defaultOrgAccount, pinnedNetwork } from "./lib/default-org-account";
 import { getNetwork } from "./lib/network";
@@ -168,7 +167,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
   secrets: z.object({
     API_DATABASE_URL: z.string().default("pglite:.bos/api/:memory:"),
-    AUTH_DATABASE_URL: z.string().optional(),
     APPLICATIONS_WEBHOOK_URL: z.string().optional(),
     RESEND_API_KEY: z.string().optional(),
     NOTIFY_FROM_EMAIL: z.string().optional(),
@@ -199,11 +197,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const db = driver.db;
       const migrations = await loadMigrations();
       await migrate(db, migrations);
-      const authDb = config.secrets.AUTH_DATABASE_URL
-        ? new AuthDbClient(config.secrets.AUTH_DATABASE_URL)
-        : null;
       console.log("[API] Services Initialized");
-      console.log("[API] AuthDb:", authDb ? "connected" : "not configured");
       console.log("[API] Plugins available:", Object.keys(plugins).join(", ") || "none");
 
       const notifyConfig = {
@@ -211,7 +205,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         resendApiKey: config.secrets.RESEND_API_KEY,
         fromEmail: config.secrets.NOTIFY_FROM_EMAIL,
       };
-      return { db, driver, plugins, notifyConfig, authDb };
+      return { db, driver, plugins, notifyConfig };
     }),
 
   shutdown: (services) =>
@@ -221,7 +215,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
     }),
 
   createRouter: (services, builder) => {
-    const { db, notifyConfig, plugins, authDb } = services;
+    const { db, notifyConfig, plugins } = services;
     const auth = createAuthMiddleware(builder);
 
     const getDaoAccountId = (context: Record<string, unknown>): string => {
@@ -272,7 +266,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
     const gates = {
       admin: requireOrgRole("admin"),
-      contributor: requireOrgRole("admin", "contributor"),
+      contributor: requireOrgRole("admin", "member"),
       org: auth.requireOrganization,
       superAdmin: builder.middleware(async ({ context, next }) => {
         if (!context.user || !context.userId) {
@@ -1746,10 +1740,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
       },
 
       platform: {
-        listOrgs: builder.platform.listOrgs.use(gates.superAdmin).handler(async () => {
-          if (!authDb)
-            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-          const orgs = await authDb.listOrgs();
+        listOrgs: builder.platform.listOrgs.use(gates.superAdmin).handler(async ({ context }) => {
+          const orgs = await plugins.auth(context).listAllOrganizations();
           return orgs.map((o) => ({
             id: o.id,
             name: o.name,
@@ -1763,21 +1755,18 @@ export default createPlugin.withPlugins<PluginsClient>()({
         createOrg: builder.platform.createOrg
           .use(gates.superAdmin)
           .handler(async ({ context, input }) => {
-            if (!authDb)
-              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-            const adminUser = await authDb.findUserByNearId(input.adminNearId);
-            if (!adminUser)
-              throw new ORPCError("BAD_REQUEST", {
-                message: `No account found for "${input.adminNearId}". They need to sign in to the platform at least once before being added as admin.`,
-              });
             const metadata: Record<string, unknown> = {};
             if (input.daoAccountId) metadata.daoAccountId = input.daoAccountId;
-            const org = await authDb.createOrg({
+            const org = await plugins.auth(context).createOrganization({
               name: input.name,
               slug: input.slug,
               metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
             });
-            await authDb.addMember(org.id, adminUser.id, "admin");
+            await plugins.auth(context).inviteMember({
+              email: input.adminEmail,
+              role: "admin",
+              organizationId: org.id,
+            });
             const settingsKey = input.daoAccountId;
             await upsertSettings(
               db,
@@ -1795,19 +1784,17 @@ export default createPlugin.withPlugins<PluginsClient>()({
             return { id: org.id, name: org.name, slug: org.slug };
           }),
 
-        updateOrg: builder.platform.updateOrg.use(gates.superAdmin).handler(async ({ input }) => {
-          if (!authDb)
-            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-          const existing = (await authDb.listOrgs()).find((o) => o.id === input.orgId);
+        updateOrg: builder.platform.updateOrg.use(gates.superAdmin).handler(async ({ context, input }) => {
+          const allOrgs = await plugins.auth(context).listAllOrganizations();
+          const existing = allOrgs.find((o) => o.id === input.orgId);
           if (!existing) throw new ORPCError("NOT_FOUND", { message: "Organization not found" });
           const newMetadata = { ...(existing.metadata ?? {}) };
-          delete newMetadata.type;
           if (input.daoAccountId !== undefined) newMetadata.daoAccountId = input.daoAccountId;
-          const updated = await authDb.updateOrg(input.orgId, {
+          const updated = await plugins.auth(context).updateOrganization({
+            id: input.orgId,
             name: input.name,
             metadata: newMetadata,
           });
-          if (!updated) throw new ORPCError("NOT_FOUND", { message: "Organization not found" });
           const daoAccountId =
             (newMetadata.daoAccountId as string | undefined) ?? existing.metadata?.daoAccountId as string | undefined;
           if (daoAccountId) {
@@ -1831,61 +1818,55 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
         listOrgMembers: builder.platform.listOrgMembers
           .use(gates.superAdmin)
-          .handler(async ({ input }) => {
-            if (!authDb)
-              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-            const members = await authDb.listMembers(input.orgId);
+          .handler(async ({ context, input }) => {
+            const members = await plugins.auth(context).listMembers({ organizationId: input.orgId });
             return members.map((m) => ({
               id: m.id,
               userId: m.userId,
-              nearAccountId: m.nearAccountId,
+              nearAccountId: m.user?.name ?? null,
               role: m.role,
             }));
           }),
 
         addOrgMember: builder.platform.addOrgMember
           .use(gates.superAdmin)
-          .handler(async ({ input }) => {
-            if (!authDb)
-              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-            const user = await authDb.findUserByNearId(input.nearAccountId);
-            if (!user)
-              throw new ORPCError("NOT_FOUND", {
-                message: `No user found for: ${input.nearAccountId}`,
-              });
-            await authDb.addMember(input.orgId, user.id, input.role);
+          .handler(async ({ context, input }) => {
+            await plugins.auth(context).inviteMember({
+              email: input.email,
+              role: input.role as "admin" | "member",
+              organizationId: input.orgId,
+            });
             return { ok: true as const };
           }),
 
         updateOrgMember: builder.platform.updateOrgMember
           .use(gates.superAdmin)
-          .handler(async ({ input }) => {
-            if (!authDb)
-              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-            await authDb.updateMemberRole(input.memberId, input.orgId, input.role);
+          .handler(async ({ context, input }) => {
+            await plugins.auth(context).updateMemberRole({
+              id: input.memberId,
+              organizationId: input.orgId,
+              role: input.role as "admin" | "member",
+            });
             return { ok: true as const };
           }),
 
         removeOrgMember: builder.platform.removeOrgMember
           .use(gates.superAdmin)
-          .handler(async ({ input }) => {
-            if (!authDb)
-              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-            await authDb.removeMember(input.memberId, input.orgId);
+          .handler(async ({ context, input }) => {
+            await plugins.auth(context).removeMember({
+              id: input.memberId,
+              organizationId: input.orgId,
+            });
             return { ok: true as const };
           }),
 
-        deleteOrg: builder.platform.deleteOrg.use(gates.superAdmin).handler(async ({ input }) => {
-          if (!authDb)
-            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-          await authDb.deleteOrg(input.orgId);
+        deleteOrg: builder.platform.deleteOrg.use(gates.superAdmin).handler(async ({ context, input }) => {
+          await plugins.auth(context).deleteOrganization({ id: input.orgId });
           return { ok: true as const };
         }),
 
-        listProjects: builder.platform.listProjects.use(gates.superAdmin).handler(async () => {
-          if (!authDb)
-            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
-          const orgs = await authDb.listOrgs();
+        listProjects: builder.platform.listProjects.use(gates.superAdmin).handler(async ({ context }) => {
+          const orgs = await plugins.auth(context).listAllOrganizations();
           const orgsWithProjects = await Promise.all(
             orgs.map(async (org) => {
               const daoAccountId = String(
@@ -1912,55 +1893,54 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       members: {
         list: builder.members.list.use(gates.admin).handler(async ({ context }) => {
-          if (!authDb)
-            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
           const orgId = context.organizationId as string | null;
           if (!orgId) throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
-          const members = await authDb.listMembers(orgId);
+          const authClient = plugins.auth(context);
+          const members = await authClient.listMembers({ organizationId: orgId });
           return members.map((m) => ({
             id: m.id,
             userId: m.userId,
-            nearAccountId: m.nearAccountId,
-            displayName: m.nearAccountId,
+            nearAccountId: m.user?.name ?? null,
+            displayName: m.user?.name ?? null,
             role: m.role,
           }));
         }),
 
-        addByNearId: builder.members.addByNearId
+        invite: builder.members.invite
           .use(gates.admin)
           .handler(async ({ context, input }) => {
-            if (!authDb)
-              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
             const orgId = context.organizationId as string | null;
             if (!orgId)
               throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
-            const user = await authDb.findUserByNearId(input.nearAccountId);
-            if (!user)
-              throw new ORPCError("NOT_FOUND", {
-                message: `No user found for: ${input.nearAccountId}`,
-              });
-            await authDb.addMember(orgId, user.id, input.role);
+            await plugins.auth(context).inviteMember({
+              email: input.email,
+              role: input.role as "admin" | "member",
+              organizationId: orgId,
+            });
             return { ok: true as const };
           }),
 
         updateRole: builder.members.updateRole
           .use(gates.admin)
           .handler(async ({ context, input }) => {
-            if (!authDb)
-              throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
             const orgId = context.organizationId as string | null;
             if (!orgId)
               throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
-            await authDb.updateMemberRole(input.memberId, orgId, input.role);
+            await plugins.auth(context).updateMemberRole({
+              id: input.memberId,
+              organizationId: orgId,
+              role: input.role as "admin" | "member",
+            });
             return { ok: true as const };
           }),
 
         remove: builder.members.remove.use(gates.admin).handler(async ({ context, input }) => {
-          if (!authDb)
-            throw new ORPCError("INTERNAL_SERVER_ERROR", { message: "Auth DB not configured" });
           const orgId = context.organizationId as string | null;
           if (!orgId) throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
-          await authDb.removeMember(input.memberId, orgId);
+          await plugins.auth(context).removeMember({
+            id: input.memberId,
+            organizationId: orgId,
+          });
           return { ok: true as const };
         }),
       },

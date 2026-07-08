@@ -19,7 +19,6 @@
       "development": "local:api",
       "secrets": [
         "API_DATABASE_URL",
-        "AUTH_DATABASE_URL",
         "APPLICATIONS_WEBHOOK_URL",
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",

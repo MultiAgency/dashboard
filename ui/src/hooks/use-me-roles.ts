@@ -13,7 +13,7 @@ export function useMeRoles() {
   const query = useQuery({ ...meRolesQueryOptions(apiClient), enabled: isAuthenticated });
 
   const orgRole = query.data?.orgRole ?? null;
-  const canAccessAdmin = orgRole === "admin" || orgRole === "contributor";
+  const canAccessAdmin = orgRole === "admin";
   const isLoaded = !isAuthenticated || query.isSuccess;
 
   return {

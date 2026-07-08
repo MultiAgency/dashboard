@@ -794,7 +794,7 @@ export const contract = oc.router({
       .route({ method: "GET", path: "/me/roles" })
       .output(
         z.object({
-          orgRole: z.enum(["admin", "contributor", "client"]).nullable(),
+          orgRole: z.enum(["admin", "member"]).nullable(),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
@@ -911,7 +911,7 @@ export const contract = oc.router({
           name: z.string().trim().min(1).max(100),
           slug: z.string().trim().min(1).max(100),
           daoAccountId: z.string().trim().min(1).max(120),
-          adminNearId: z.string().trim().min(1).max(120),
+          adminEmail: z.string().email().trim().max(320),
         }),
       )
       .output(z.object({ id: z.string(), name: z.string(), slug: z.string() }))
@@ -949,8 +949,8 @@ export const contract = oc.router({
       .input(
         z.object({
           orgId: z.string(),
-          nearAccountId: z.string().trim().min(1).max(120),
-          role: z.enum(["admin", "contributor", "client"]),
+          email: z.string().email().trim().max(320),
+          role: z.enum(["admin", "member"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) }))
@@ -962,7 +962,7 @@ export const contract = oc.router({
         z.object({
           orgId: z.string(),
           memberId: z.string(),
-          role: z.enum(["admin", "contributor", "client"]),
+          role: z.enum(["admin", "member"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) }))
@@ -1014,12 +1014,12 @@ export const contract = oc.router({
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-    addByNearId: oc
-      .route({ method: "POST", path: "/members" })
+    invite: oc
+      .route({ method: "POST", path: "/members/invite" })
       .input(
         z.object({
-          nearAccountId: z.string().trim().min(1).max(120),
-          role: z.enum(["admin", "contributor", "client"]),
+          email: z.string().email().trim().max(320),
+          role: z.enum(["admin", "member"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) }))
@@ -1030,7 +1030,7 @@ export const contract = oc.router({
       .input(
         z.object({
           memberId: z.string(),
-          role: z.enum(["admin", "contributor", "client"]),
+          role: z.enum(["admin", "member"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) }))
