@@ -7,7 +7,7 @@ import { AdminError } from "@/components/admin-error";
 import { Input } from "@/components/ui/input";
 import { useApiClient } from "@/lib/api";
 
-export const Route = createFileRoute("/_layout/_authenticated/_admin/admin/members/")({
+export const Route = createFileRoute("/_layout/_authenticated/admin/members")({
   head: () => ({
     meta: [{ title: "Members | Admin" }],
   }),

@@ -12,7 +12,7 @@ import {
   publicSettingsQueryKey,
 } from "@/lib/queries";
 
-export const Route = createFileRoute("/_layout/_authenticated/_admin/admin/settings/")({
+export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
   head: () => ({
     meta: [{ title: "Settings | Admin" }],
   }),

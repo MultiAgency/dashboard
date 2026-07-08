@@ -2,7 +2,7 @@ import { createFileRoute, Link, Outlet, redirect } from "@tanstack/react-router"
 import { meRolesQueryOptions } from "@/lib/queries";
 import { sessionQueryOptions } from "@/lib/auth";
 
-export const Route = createFileRoute("/_layout/_authenticated/_client")({
+export const Route = createFileRoute("/_layout/_authenticated/client")({
   beforeLoad: async ({ context }) => {
     const [session, roles] = await Promise.all([
       context.queryClient.ensureQueryData(

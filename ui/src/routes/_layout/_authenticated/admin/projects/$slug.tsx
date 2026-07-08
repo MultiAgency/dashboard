@@ -60,12 +60,11 @@ function statusBadgeVariant(status: ProposalStatus): "default" | "outline" | "de
   return "outline";
 }
 
-export const Route = createFileRoute("/_layout/_authenticated/_admin/admin/projects/$slug")({
+export const Route = createFileRoute("/_layout/_authenticated/admin/projects/$slug")({
   head: ({ params }) => ({
     meta: [{ title: `${params.slug} | Admin · Projects` }],
   }),
   loader: async ({ context, params }) => {
-    // Warm the query cache server-side; errors non-fatal so the component owns error/not-found UI.
     const projectData = await context.queryClient
       .ensureQueryData(adminProjectDetailQueryOptions(context.apiClient, params.slug))
       .catch(() => null);
@@ -216,7 +215,6 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
   const queryClient = useQueryClient();
   const query = useQuery(adminNearnSubmissionsQueryOptions(apiClient, slug));
   const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
-  // Bridge: submission.user.publicKey ↔ contributor.nearAccountId — see project memory.
   const contributorByNearAccount = new Map(
     (contributorsQuery.data?.data ?? [])
       .filter((c): c is typeof c & { nearAccountId: string } => !!c.nearAccountId)
@@ -362,7 +360,6 @@ function DeleteProjectSection({
   const deleteMutation = useMutation({
     mutationFn: () => apiClient.agency.projects.delete({ id: projectId }),
     onSuccess: async () => {
-      // The project (and its cascade rows) are gone — bust every query that referenced this project.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["admin", "projects"] }),
         queryClient.invalidateQueries({ queryKey: ["admin", "billings", "list"] }),
@@ -370,7 +367,6 @@ function DeleteProjectSection({
         queryClient.invalidateQueries({ queryKey: ["proposals", "list"] }),
       ]);
       toast.success(`Project @${projectSlug} deleted`);
-      // Project detail is unreachable now — leave before the next get 404s.
       navigate({ to: "/work" });
     },
     onError: (err: Error) => toast.error(err.message || "Failed to delete project"),
