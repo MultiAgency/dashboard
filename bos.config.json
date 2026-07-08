@@ -24,6 +24,20 @@
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
       ]
+    },
+    "auth": {
+      "extends": "bos://auth.everything.near/auth.everything.dev",
+      "variables": {
+        "email": {
+          "from": "noreply@multiagency.ai"
+        },
+        "siwn": {
+          "recipients": {
+            "mainnet": "multiagentic.near",
+            "testnet": "multiagentic.testnet"
+          }
+        }
+      }
     }
   },
   "plugins": {
