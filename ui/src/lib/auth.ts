@@ -130,14 +130,7 @@ function getSiwnClientConfig(options: CreateAuthClientOptions): SiwnClientConfig
   const recipient =
     networkId === "testnet" && testnetRecipient ? testnetRecipient : mainnetRecipient;
 
-  return {
-    recipient,
-    networkId,
-    cspNonce: options.cspNonce,
-    ...(siwn.recipients
-      ? { recipients: siwn.recipients as { mainnet: string; testnet: string } }
-      : {}),
-  };
+  return { recipient, networkId, cspNonce: options.cspNonce };
 }
 
 function getHostUrl(config?: Partial<ClientRuntimeConfig>) {
@@ -177,19 +170,6 @@ export type SessionData = AuthClient["$Infer"]["Session"];
 export type Organization = NonNullable<OrganizationListResult["data"]>[number];
 export type Passkey = NonNullable<PasskeyListResult["data"]>[number];
 
-export function parseOrgMetadata(meta: unknown): Record<string, unknown> {
-  if (!meta) return {};
-  if (typeof meta === "string") {
-    try {
-      return JSON.parse(meta) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  if (typeof meta === "object") return meta as Record<string, unknown>;
-  return {};
-}
-
 export function useAuthClient(): AuthClient {
   return useRouter().options.context.authClient;
 }
@@ -210,6 +190,19 @@ export function sessionQueryOptions(authClient: AuthClient, initialSession?: Ses
   return initialSession === undefined
     ? baseOptions
     : { ...baseOptions, initialData: initialSession };
+}
+
+export function parseOrgMetadata(meta: unknown): Record<string, unknown> {
+  if (!meta) return {};
+  if (typeof meta === "string") {
+    try {
+      return JSON.parse(meta) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+  if (typeof meta === "object") return meta as Record<string, unknown>;
+  return {};
 }
 
 export function useRelayHistory(session: SessionData | null | undefined, authClient: AuthClient) {

@@ -10,13 +10,11 @@ export type ApiClient = ContractRouterClient<ApiContract>;
 
 let browserApiClient: ApiClient | null = null;
 
-function createRpcLink(runtimeConfig: { hostUrl: string; rpcBase: string }) {
+function createRpcLink(runtimeConfig: { hostUrl: string; rpcBase: string }, headers?: Headers) {
   return new RPCLink({
     url: `${runtimeConfig.hostUrl}${runtimeConfig.rpcBase}`,
     interceptors: [
       onError((error: unknown) => {
-        console.error("oRPC API Error:", error);
-
         if (typeof window === "undefined") {
           return;
         }
@@ -42,28 +40,37 @@ function createRpcLink(runtimeConfig: { hostUrl: string; rpcBase: string }) {
       return fetch(url, {
         ...options,
         credentials: "include",
+        headers: headers
+          ? { ...Object.fromEntries(headers), ...(options?.headers as Record<string, string>) }
+          : options?.headers,
       });
     },
   });
 }
 
-export function createApiClient(runtimeConfig: { hostUrl: string; rpcBase: string }): ApiClient {
+export function createApiClient(
+  runtimeConfig: { hostUrl: string; rpcBase: string },
+  headers?: Headers,
+): ApiClient {
   if (!runtimeConfig.hostUrl) {
     throw new Error("Missing runtime host URL");
   }
 
-  if (typeof window !== "undefined" && browserApiClient) {
+  if (typeof window !== "undefined" && !headers && browserApiClient) {
     return browserApiClient;
   }
 
   const client: ApiClient = createORPCClient(
-    createRpcLink({
-      hostUrl: runtimeConfig.hostUrl,
-      rpcBase: runtimeConfig.rpcBase,
-    }),
+    createRpcLink(
+      {
+        hostUrl: runtimeConfig.hostUrl,
+        rpcBase: runtimeConfig.rpcBase,
+      },
+      headers,
+    ),
   );
 
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && !headers) {
     browserApiClient = client;
   }
 

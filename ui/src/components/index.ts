@@ -1,5 +1,4 @@
 export { Budget } from "./budget";
-export { Logo } from "./logo";
 export { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 export { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 export { Badge } from "./ui/badge";

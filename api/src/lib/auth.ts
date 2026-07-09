@@ -49,6 +49,16 @@ export interface AuthCapableServices {
   auth?: AuthPluginClientFactory | null;
 }
 
+export function getAuthClient(
+  services: AuthCapableServices,
+  context?: Record<string, unknown>,
+): AuthPluginClient {
+  if (!services.auth) {
+    throw new Error("Auth plugin client unavailable");
+  }
+  return services.auth(context);
+}
+
 export function parseOrgMetadata(meta: unknown): Record<string, unknown> {
   if (!meta) return {};
   if (typeof meta === "string") {
@@ -60,16 +70,6 @@ export function parseOrgMetadata(meta: unknown): Record<string, unknown> {
   }
   if (typeof meta === "object") return meta as Record<string, unknown>;
   return {};
-}
-
-export function getAuthClient(
-  services: AuthCapableServices,
-  context?: Record<string, unknown>,
-): AuthPluginClient {
-  if (!services.auth) {
-    throw new Error("Auth plugin client unavailable");
-  }
-  return services.auth(context);
 }
 
 function toRequestAuthContext(context: RequestAuthContext): RequestAuthContext {

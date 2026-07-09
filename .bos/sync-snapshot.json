@@ -1,13 +1,13 @@
 {
   "parentRef": "bos://dev.everything.near/dev.everything.dev",
-  "timestamp": "2026-07-08T04:20:11.126Z",
+  "timestamp": "2026-07-09T04:11:22.974Z",
   "files": {
-    ".env.example": "db3e1963a2ae7a72",
-    ".gitignore": "fe62b8cac17f88ae",
+    ".env.example": "b685ac67248e76ed",
+    ".gitignore": "a1d4f7ec4d57a474",
     "biome.json": "36ca7ffcbc5ef3ee",
-    "bos.config.json": "833b8641509bab7d",
+    "bos.config.json": "96c007c9bc507d09",
     "bunfig.toml": "4cbe3ca05f990f5d",
-    "package.json": "1651b5eec04a01a2",
+    "package.json": "c672904f4c62f1a2",
     ".changeset/config.json": "4a1a55e02038945c",
     ".changeset/README.md": "bf33c79d7e0477dc",
     ".github/workflows/ci.yml": "63e406dbffa54830",
@@ -21,17 +21,17 @@
     "ui/src/app.ts": "cad4a447c9262755",
     "ui/src/globals.d.ts": "c02fc02883801480",
     "ui/src/hydrate.tsx": "9a6a20651238cba8",
-    "ui/src/lib/api.ts": "7ffe86bf35b4f98b",
+    "ui/src/lib/api.ts": "cd2dd2afd17fae9b",
     "ui/src/lib/auth.ts": "3fe1d47479df8f16",
     "ui/src/router.server.tsx": "3564568c1873a3ad",
     "ui/src/router.tsx": "be85954a5ebf9b26",
-    "ui/src/routes/__root.tsx": "71b03ca6fdad4ab5",
+    "ui/src/routes/__root.tsx": "db4e47648c15273f",
     "api/package.json": "3bcc90ffce1af60e",
     "api/plugin.dev.ts": "9ce0a97296878503",
     "api/rspack.config.js": "000d145f65b68c7b",
     "api/tsconfig.contract.json": "761dd89908ebe069",
     "api/tsconfig.json": "56dd49566c3036b8",
-    "api/src/lib/auth.ts": "68689b2f38d225cd",
-    "AGENTS.md": "1dfc9c82eedd7019"
+    "api/src/lib/auth.ts": "df57ab5ba858e6e3",
+    "AGENTS.md": "2984d20be6c418a4"
   }
 }

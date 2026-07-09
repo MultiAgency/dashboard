@@ -13,10 +13,10 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "ssr": "https://elliot-braem-5479-ui-multiagency-ai-nearbuilders-fd925f3c6-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-/8SVuzgK3Xg4CCAYa6/ziGhS8pIRKIvxmB5QASJN0i6+Tf40RQFD5e7oMg0Tn2Lw",
-      "production": "https://elliot-braem-5478-ui-multiagency-ai-nearbuilders-22493c8d6-ze.zephyrcloud.app",
-      "integrity": "sha384-zHeomyQe/XFO7KorTLSIonhcElK/iN3Gdt2VBebq8v3/Tto9lpZQgwl1NUDTs3Ln"
+      "production": "https://elliot-braem-5483-ui-multiagency-ai-nearbuilders-82b6be98e-ze.zephyrcloud.app",
+      "integrity": "sha384-Ye8e4rFoFE8vNMX4cEBMQvtMXYaJqxeB9xBxxFsftdG7G7azj27BerZrsxrx68qn",
+      "ssr": "https://elliot-braem-5484-ui-multiagency-ai-nearbuilders-c0eb8ac28-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-1jFzkeEz/5OWFsFKQv2FHZpdaj9Td3SnUcsLDg9aoEh4v9l1/f+si9YeOWfWGtNO"
     },
     "api": {
       "name": "api",
@@ -28,11 +28,11 @@
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
       ],
-      "production": "https://elliot-braem-5480-api-multiagency-ai-nearbuilders-e76dc2b99-ze.zephyrcloud.app",
+      "production": "https://elliot-braem-5485-api-multiagency-ai-nearbuilders-2f50392e4-ze.zephyrcloud.app",
       "integrity": "sha384-jE/2HWX8m6iYQj1z/LkEKv/6FY6yXi6v716Pjlzz6SzCcb1fNy+yoD3/bvoOvBkO"
     },
     "auth": {
-      "extends": "bos://auth.everything.near/auth.everything.dev",
+      "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
       "variables": {
         "email": {
           "from": "noreply@multiagency.ai"
@@ -52,8 +52,8 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://elliot-braem-5481-everything-dev-projects-plugin--67a390ce9-ze.zephyrcloud.app",
-      "integrity": "sha384-utf8cUtw/KwHxwhkIZFXZetQBICV3wpRIFaxESYpGDEjBQ7whqFKx7nedSiXlZa6"
+      "production": "https://elliot-braem-5486-everything-dev-projects-plugin--f73d42454-ze.zephyrcloud.app",
+      "integrity": "sha384-Vak2T0MHctzPmwYki3R2C9fe5svP0C9mBrIGApVdN1Hg42GTjep7nuiT4qiVFWVP"
     }
   }
 }
