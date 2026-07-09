@@ -18,7 +18,7 @@ function isNoOrgContext(error: unknown): boolean {
 
 export function AdminError({ error }: { error: unknown }) {
   const isAccess = isAccessError(error);
-  const noOrg = isNoOrgContext(error);;
+  const noOrg = isNoOrgContext(error);
   const message =
     typeof error === "object" && error && "message" in error
       ? String((error as { message?: unknown }).message ?? "")

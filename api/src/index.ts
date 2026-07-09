@@ -218,7 +218,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
     const { db, notifyConfig, plugins } = services;
     const auth = createAuthMiddleware(builder);
 
-    const getDaoAccountId = (context: Record<string, unknown>): string => {
+    const getDaoAccountId = (context: {
+      organization?: {
+        organization?: {
+          metadata?: Record<string, unknown> | null;
+        } | null;
+      } | null;
+    }): string => {
       const meta = parseOrgMetadata(context.organization?.organization?.metadata);
       const fromMeta = meta.daoAccountId;
       if (typeof fromMeta === "string" && fromMeta.length > 0) return fromMeta;
@@ -226,8 +232,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
         message: "No DAO account configured. A platform admin must create an agency org.",
       });
     };
-
-    
 
     // Gate: authenticated + active org + required org-scoped role(s).
     // Super admins (context.user.role === "admin") bypass org role checks.
@@ -259,12 +263,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
     // Soft auth: fills org/role context if the user has a session, passes through otherwise.
     // Used by adaptive endpoints that return different data shapes based on role.
-    const tryOrgAuth = builder.middleware(
-      async ({ context, next }) => {
-        if (!context.user || !context.userId) return next();
-        return next();
-      },
-    );
+    const tryOrgAuth = builder.middleware(async ({ context, next }) => {
+      if (!context.user || !context.userId) return next();
+      return next();
+    });
 
     const gates = {
       admin: requireOrgRole("admin", "owner"),
@@ -559,7 +561,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
             do {
               const result = await plugins
                 .projects(
-                  proxyCtx(orgAccountId, context.organization?.member?.role ?? null, organizationId),
+                  proxyCtx(
+                    orgAccountId,
+                    context.organization?.member?.role ?? null,
+                    organizationId,
+                  ),
                 )
                 .listProjects({
                   organizationId: orgAccountId,
@@ -604,7 +610,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
               if (!plugins.projects) return null as never;
               const result = await plugins
                 .projects(
-                  proxyCtx(orgAccountId, context.organization?.member?.role ?? null, organizationId),
+                  proxyCtx(
+                    orgAccountId,
+                    context.organization?.member?.role ?? null,
+                    organizationId,
+                  ),
                 )
                 .listProjects({
                   organizationId: orgAccountId,
@@ -1023,16 +1033,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
           const orgId = await getDaoAccountId(context);
           // Validate projectId is in-DAO upfront — explicit 404 over silent empty.
           if (input.projectId)
-            await requireProjectInOrg(
-              input.projectId,
-              orgId,
-              context.organizationId ?? null,
-            );
+            await requireProjectInOrg(input.projectId, orgId, context.organizationId ?? null);
           const projectIds = input.projectId
             ? [input.projectId]
-            : (await fetchOrgProjects(orgId, context.organizationId ?? null)).map(
-                (p) => p.id,
-              );
+            : (await fetchOrgProjects(orgId, context.organizationId ?? null)).map((p) => p.id);
           return listBudgets(db, {
             projectIds,
             tokenId: input.tokenId,
@@ -1120,16 +1124,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
           const orgId = await getDaoAccountId(context);
           if (input.projectId)
-            await requireProjectInOrg(
-              input.projectId,
-              orgId,
-              context.organizationId ?? null,
-            );
+            await requireProjectInOrg(input.projectId, orgId, context.organizationId ?? null);
           const projectIds = input.projectId
             ? [input.projectId]
-            : (await fetchOrgProjects(orgId, context.organizationId ?? null)).map(
-                (p) => p.id,
-              );
+            : (await fetchOrgProjects(orgId, context.organizationId ?? null)).map((p) => p.id);
           const rows = await db
             .select(selectBillingCols)
             .from(billings)
@@ -1647,7 +1645,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }),
 
         roles: builder.me.roles.use(auth.requireAuth).handler(async ({ context }) => {
-          const role = context.organization?.member?.role as "admin" | "member" | "owner" | null | undefined;
+          const role = context.organization?.member?.role as
+            | "admin"
+            | "member"
+            | "owner"
+            | null
+            | undefined;
           return {
             orgRole: role ?? null,
           };
@@ -1740,42 +1743,47 @@ export default createPlugin.withPlugins<PluginsClient>()({
       },
 
       platform: {
-        updateOrg: builder.platform.updateOrg.use(gates.superAdmin).handler(async ({ context, input }) => {
-          const allOrgs = await plugins.auth(context).listAllOrganizations();
-          const existing = allOrgs.find((o) => o.id === input.orgId);
-          if (!existing) throw new ORPCError("NOT_FOUND", { message: "Organization not found" });
-          const newMetadata = { ...(existing.metadata ?? {}) };
-          if (input.daoAccountId !== undefined) newMetadata.daoAccountId = input.daoAccountId;
-          const updated = await plugins.auth(context).updateOrganization({
-            id: input.orgId,
-            name: input.name,
-            metadata: newMetadata,
-          });
-          const daoAccountId =
-            (newMetadata.daoAccountId as string | undefined) ?? existing.metadata?.daoAccountId as string | undefined;
-          if (daoAccountId) {
-            const existingSettings = await getSettingsRow(db, daoAccountId);
-            await upsertSettings(
-              db,
-              daoAccountId,
-              {
+        updateOrg: builder.platform.updateOrg
+          .use(gates.superAdmin)
+          .handler(async ({ context, input }) => {
+            const allOrgs = await plugins.auth(context).listAllOrganizations();
+            const existing = allOrgs.find((o) => o.id === input.orgId);
+            if (!existing) throw new ORPCError("NOT_FOUND", { message: "Organization not found" });
+            const newMetadata = { ...(existing.metadata ?? {}) };
+            if (input.daoAccountId !== undefined) newMetadata.daoAccountId = input.daoAccountId;
+            const updated = await plugins.auth(context).updateOrganization({
+              id: input.orgId,
+              name: input.name,
+              metadata: newMetadata,
+            });
+            const daoAccountId =
+              (newMetadata.daoAccountId as string | undefined) ??
+              (existing.metadata?.daoAccountId as string | undefined);
+            if (daoAccountId) {
+              const existingSettings = await getSettingsRow(db, daoAccountId);
+              await upsertSettings(
+                db,
                 daoAccountId,
-                nearnAccountId: existingSettings?.nearnAccountId ?? null,
-                websiteUrl: existingSettings?.websiteUrl ?? null,
-                docsUrl: existingSettings?.docsUrl ?? null,
-                description: existingSettings?.description ?? null,
-                contactEmail: existingSettings?.contactEmail ?? null,
-              },
-              updated.slug,
-            );
-          }
-          return { id: updated.id, name: updated.name, slug: updated.slug };
-        }),
+                {
+                  daoAccountId,
+                  nearnAccountId: existingSettings?.nearnAccountId ?? null,
+                  websiteUrl: existingSettings?.websiteUrl ?? null,
+                  docsUrl: existingSettings?.docsUrl ?? null,
+                  description: existingSettings?.description ?? null,
+                  contactEmail: existingSettings?.contactEmail ?? null,
+                },
+                updated.slug,
+              );
+            }
+            return { id: updated.id, name: updated.name, slug: updated.slug };
+          }),
 
         listOrgMembers: builder.platform.listOrgMembers
           .use(gates.superAdmin)
           .handler(async ({ context, input }) => {
-            const members = await plugins.auth(context).listMembers({ organizationId: input.orgId });
+            const members = await plugins
+              .auth(context)
+              .listMembers({ organizationId: input.orgId });
             return members.map((m) => ({
               id: m.id,
               userId: m.userId,
@@ -1816,35 +1824,37 @@ export default createPlugin.withPlugins<PluginsClient>()({
             return { ok: true as const };
           }),
 
-        deleteOrg: builder.platform.deleteOrg.use(gates.superAdmin).handler(async ({ context, input }) => {
-          await plugins.auth(context).deleteOrganization({ id: input.orgId });
-          return { ok: true as const };
-        }),
+        deleteOrg: builder.platform.deleteOrg
+          .use(gates.superAdmin)
+          .handler(async ({ context, input }) => {
+            await plugins.auth(context).deleteOrganization({ id: input.orgId });
+            return { ok: true as const };
+          }),
 
-        listProjects: builder.platform.listProjects.use(gates.superAdmin).handler(async ({ context }) => {
-          const orgs = await plugins.auth(context).listAllOrganizations();
-          const orgsWithProjects = await Promise.all(
-            orgs.map(async (org) => {
-              const daoAccountId = String(
-                parseOrgMetadata(org.metadata).daoAccountId ?? "",
-              );
-              let projects: ReturnType<typeof toPublicProject>[] = [];
-              try {
-                projects = await fetchPlatformOrgProjects(org);
-              } catch {
-                projects = [];
-              }
-              return {
-                id: org.id,
-                name: org.name,
-                slug: org.slug,
-                daoAccountId: daoAccountId || null,
-                projects,
-              };
-            }),
-          );
-          return { orgs: orgsWithProjects };
-        }),
+        listProjects: builder.platform.listProjects
+          .use(gates.superAdmin)
+          .handler(async ({ context }) => {
+            const orgs = await plugins.auth(context).listAllOrganizations();
+            const orgsWithProjects = await Promise.all(
+              orgs.map(async (org) => {
+                const daoAccountId = String(parseOrgMetadata(org.metadata).daoAccountId ?? "");
+                let projects: ReturnType<typeof toPublicProject>[] = [];
+                try {
+                  projects = await fetchPlatformOrgProjects(org);
+                } catch {
+                  projects = [];
+                }
+                return {
+                  id: org.id,
+                  name: org.name,
+                  slug: org.slug,
+                  daoAccountId: daoAccountId || null,
+                  projects,
+                };
+              }),
+            );
+            return { orgs: orgsWithProjects };
+          }),
       },
 
       members: {
@@ -1862,19 +1872,16 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }));
         }),
 
-        invite: builder.members.invite
-          .use(gates.admin)
-          .handler(async ({ context, input }) => {
-            const orgId = context.organizationId as string | null;
-            if (!orgId)
-              throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
-            await plugins.auth(context).inviteMember({
-              email: input.email,
-              role: input.role as "admin" | "member",
-              organizationId: orgId,
-            });
-            return { ok: true as const };
-          }),
+        invite: builder.members.invite.use(gates.admin).handler(async ({ context, input }) => {
+          const orgId = context.organizationId as string | null;
+          if (!orgId) throw new ORPCError("FORBIDDEN", { message: "Active organization required" });
+          await plugins.auth(context).inviteMember({
+            email: input.email,
+            role: input.role as "admin" | "member",
+            organizationId: orgId,
+          });
+          return { ok: true as const };
+        }),
 
         updateRole: builder.members.updateRole
           .use(gates.admin)

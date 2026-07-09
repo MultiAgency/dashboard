@@ -180,7 +180,11 @@ export type Passkey = NonNullable<PasskeyListResult["data"]>[number];
 export function parseOrgMetadata(meta: unknown): Record<string, unknown> {
   if (!meta) return {};
   if (typeof meta === "string") {
-    try { return JSON.parse(meta) as Record<string, unknown>; } catch { return {}; }
+    try {
+      return JSON.parse(meta) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
   }
   if (typeof meta === "object") return meta as Record<string, unknown>;
   return {};

@@ -370,4 +370,3 @@ function SettingsForm({
     </section>
   );
 }
-

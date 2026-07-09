@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Check } from "lucide-react";
 import { useAuthClient } from "@/app";
 import { sessionQueryOptions } from "@/lib/auth";

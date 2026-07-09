@@ -5,6 +5,7 @@ export { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 export { Badge } from "./ui/badge";
 export { Button } from "./ui/button";
 export { Card, CardContent } from "./ui/card";
+export { DataTable } from "./ui/data-table";
 export {
   Dialog,
   DialogClose,
@@ -58,7 +59,6 @@ export {
   SheetTitle,
   SheetTrigger,
 } from "./ui/sheet";
-export { DataTable } from "./ui/data-table";
 export { Skeleton } from "./ui/skeleton";
 export { Spinner } from "./ui/spinner";
 export {

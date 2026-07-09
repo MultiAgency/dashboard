@@ -153,8 +153,8 @@ const renderToStream = async (request: Request, renderOptions: RenderOptions) =>
         context: {
           queryClient: localQueryClient,
           runtimeConfig: renderOptions.runtimeConfig,
-        apiClient: renderOptions.apiClient,
-        authClient: createAuthClient({
+          apiClient: renderOptions.apiClient,
+          authClient: createAuthClient({
             runtimeConfig: renderOptions.runtimeConfig,
             headers: request.headers,
             cspNonce: renderOptions.cspNonce,

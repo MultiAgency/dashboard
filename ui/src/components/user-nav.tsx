@@ -220,11 +220,7 @@ export function UserNav() {
   );
 }
 
-function ConnectButton({
-  connect,
-}: {
-  connect: { mutate: () => void; isPending: boolean };
-}) {
+function ConnectButton({ connect }: { connect: { mutate: () => void; isPending: boolean } }) {
   const label = connect.isPending ? "connecting..." : "connect";
   return (
     <Button

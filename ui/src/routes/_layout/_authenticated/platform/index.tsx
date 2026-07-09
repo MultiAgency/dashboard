@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, DataTable, Input } from "@/components";
-import { type ColumnDef } from "@/components/ui/data-table";
+import type { ColumnDef } from "@/components/ui/data-table";
 import type { Organization } from "@/lib/auth";
 import { parseOrgMetadata, useAuthClient } from "@/lib/auth";
 
@@ -51,9 +51,7 @@ function PlatformOrgs() {
       cell: ({ row }) => {
         const isAgency = parseOrgMetadata(row.original.metadata).type === "agency";
         return (
-          <Badge variant={isAgency ? "default" : "outline"}>
-            {isAgency ? "agency" : "client"}
-          </Badge>
+          <Badge variant={isAgency ? "default" : "outline"}>{isAgency ? "agency" : "client"}</Badge>
         );
       },
     },
@@ -94,8 +92,12 @@ function PlatformOrgs() {
         </div>
         {orgsQuery.isError ? (
           <div className="space-y-2">
-            <p className="text-sm text-destructive">{orgsQuery.error?.message || "Failed to load organizations"}</p>
-            <Button variant="outline" size="sm" onClick={invalidate}>retry</Button>
+            <p className="text-sm text-destructive">
+              {orgsQuery.error?.message || "Failed to load organizations"}
+            </p>
+            <Button variant="outline" size="sm" onClick={invalidate}>
+              retry
+            </Button>
           </div>
         ) : (
           <DataTable
@@ -172,7 +174,9 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
       <CardContent className="p-4 space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <label htmlFor="org-name" className={LABEL_CLS}>name</label>
+            <label htmlFor="org-name" className={LABEL_CLS}>
+              name
+            </label>
             <Input
               id="org-name"
               value={name}
@@ -182,7 +186,9 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
             />
           </div>
           <div className="space-y-1">
-            <label htmlFor="org-slug" className={LABEL_CLS}>slug</label>
+            <label htmlFor="org-slug" className={LABEL_CLS}>
+              slug
+            </label>
             <Input
               id="org-slug"
               value={slug}
@@ -196,7 +202,9 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
           </div>
         </div>
         <div className="space-y-1">
-          <label htmlFor="org-type" className={LABEL_CLS}>type</label>
+          <label htmlFor="org-type" className={LABEL_CLS}>
+            type
+          </label>
           <select
             id="org-type"
             value={orgType}
@@ -210,7 +218,9 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
         </div>
         {orgType === "agency" && (
           <div className="space-y-1">
-            <label htmlFor="org-dao" className={LABEL_CLS}>sputnik dao account</label>
+            <label htmlFor="org-dao" className={LABEL_CLS}>
+              sputnik dao account
+            </label>
             <Input
               id="org-dao"
               value={daoAccountId}
@@ -224,7 +234,9 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
           </div>
         )}
         <div className="space-y-1">
-          <label htmlFor="org-admin-email" className={LABEL_CLS}>admin email</label>
+          <label htmlFor="org-admin-email" className={LABEL_CLS}>
+            admin email
+          </label>
           <Input
             id="org-admin-email"
             type="email"

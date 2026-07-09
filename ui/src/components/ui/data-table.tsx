@@ -1,15 +1,15 @@
 import {
   type ColumnDef,
-  type SortingState,
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
+  type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useState } from "react";
 import { Button, Skeleton } from "@/components";
-import { downloadCsv, csvTimestamp, type CsvColumn } from "@/lib/csv";
+import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 
 export type { ColumnDef };
 
@@ -29,18 +29,34 @@ const TD_CLS = "px-3 py-2 text-sm border-b border-border";
 const SORT_BTN_CLS =
   "inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer";
 
-function SortHeader({ column, label }: { column: { id: string; getIsSorted: () => string | false; getToggleSortingHandler: () => ((event: unknown) => void) | undefined }; label: string }) {
+function SortHeader({
+  column,
+  label,
+}: {
+  column: {
+    id: string;
+    getIsSorted: () => string | false;
+    getToggleSortingHandler: () => ((event: unknown) => void) | undefined;
+  };
+  label: string;
+}) {
   const sorted = column.getIsSorted();
   return (
-    <button
-      type="button"
+    <th
+      scope="col"
       onClick={column.getToggleSortingHandler()}
       className={SORT_BTN_CLS}
       aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"}
     >
       {label}
-      {sorted === "asc" ? <ArrowDown className="size-3" /> : sorted === "desc" ? <ArrowUp className="size-3" /> : <ArrowUpDown className="size-3 opacity-40" />}
-    </button>
+      {sorted === "asc" ? (
+        <ArrowDown className="size-3" />
+      ) : sorted === "desc" ? (
+        <ArrowUp className="size-3" />
+      ) : (
+        <ArrowUpDown className="size-3 opacity-40" />
+      )}
+    </th>
   );
 }
 
@@ -91,7 +107,10 @@ export function DataTable<TData, TValue>({
 
   if (data.length === 0) {
     return (
-      <div data-slot="data-table" className="rounded-sm border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+      <div
+        data-slot="data-table"
+        className="rounded-sm border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground"
+      >
         <p>{emptyMessage}</p>
       </div>
     );
@@ -117,11 +136,7 @@ export function DataTable<TData, TValue>({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => downloadCsv(
-              `${csvFilename}-${csvTimestamp()}.csv`,
-              data,
-              exportColumns,
-            )}
+            onClick={() => downloadCsv(`${csvFilename}-${csvTimestamp()}.csv`, data, exportColumns)}
           >
             export csv
           </Button>
@@ -139,7 +154,11 @@ export function DataTable<TData, TValue>({
                     <th key={header.id} scope="col" className={TH_CLS}>
                       {isSortable ? (
                         <SortHeader
-                          column={{ id: header.column.id, getIsSorted: () => header.column.getIsSorted(), getToggleSortingHandler: header.column.getToggleSortingHandler }}
+                          column={{
+                            id: header.column.id,
+                            getIsSorted: () => header.column.getIsSorted(),
+                            getToggleSortingHandler: header.column.getToggleSortingHandler,
+                          }}
                           label={label as string}
                         />
                       ) : (

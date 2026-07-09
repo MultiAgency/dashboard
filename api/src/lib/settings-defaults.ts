@@ -30,7 +30,7 @@ export const defaultApproverRoleName = (): string => process.env.AGENCY_APPROVER
 export const defaultRequestorRoleName = (): string =>
   process.env.AGENCY_REQUESTOR_ROLE || "Requestor";
 
-export function defaultPublicSettings(network: Network) {
+export function defaultPublicSettings(_network: Network) {
   return {
     name: defaultName(),
     headline: defaultHeadline(),

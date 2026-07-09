@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useState } from "react";
 import { toast } from "sonner";
-import { type ColumnDef } from "@tanstack/react-table";
 import { Button, Card, CardContent, DataTable, Spinner } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Input } from "@/components/ui/input";
@@ -60,7 +60,8 @@ function MembersPage() {
         </h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Manage who has access to this organization and what role they hold. Invite members by
-          email. Roles: <strong>admin</strong> (full access) or <strong>member</strong> (read + write).
+          email. Roles: <strong>admin</strong> (full access) or <strong>member</strong> (read +
+          write).
         </p>
       </div>
 

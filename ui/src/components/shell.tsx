@@ -4,13 +4,13 @@ import type { ReactNode } from "react";
 import { GithubIcon, NearWordmark, XIcon } from "@/components/icons";
 import { Logo } from "@/components/logo";
 import { NetworkToggle } from "@/components/network-toggle";
+import { OrgSwitcher } from "@/components/org-switcher";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { OrgSwitcher } from "@/components/org-switcher";
 import { UserNav } from "@/components/user-nav";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { getRepoUrl } from "@/lib/repo";
