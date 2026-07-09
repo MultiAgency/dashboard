@@ -49,6 +49,15 @@ export interface AuthCapableServices {
   auth?: AuthPluginClientFactory | null;
 }
 
+export function parseOrgMetadata(meta: unknown): Record<string, unknown> {
+  if (!meta) return {};
+  if (typeof meta === "string") {
+    try { return JSON.parse(meta) as Record<string, unknown>; } catch { return {}; }
+  }
+  if (typeof meta === "object") return meta as Record<string, unknown>;
+  return {};
+}
+
 export function getAuthClient(
   services: AuthCapableServices,
   context?: Record<string, unknown>,

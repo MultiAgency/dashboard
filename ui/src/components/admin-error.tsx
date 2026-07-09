@@ -16,18 +16,9 @@ function isNoOrgContext(error: unknown): boolean {
   return message.toLowerCase().includes("organization required");
 }
 
-function getSubdomainPrefill(): { prefillSlug?: string; prefillDaoAccountId?: string } {
-  if (typeof window === "undefined") return {};
-  const host = window.location.hostname.replace(/:\d+$/, "");
-  const parts = host.split(".");
-  if (parts.length > 1 && parts[0] !== "localhost") return { prefillSlug: parts[0] };
-  return {};
-}
-
 export function AdminError({ error }: { error: unknown }) {
   const isAccess = isAccessError(error);
-  const noOrg = isNoOrgContext(error);
-  const prefill = noOrg ? getSubdomainPrefill() : {};
+  const noOrg = isNoOrgContext(error);;
   const message =
     typeof error === "object" && error && "message" in error
       ? String((error as { message?: unknown }).message ?? "")
@@ -52,15 +43,7 @@ export function AdminError({ error }: { error: unknown }) {
         <div className="flex gap-2 justify-center">
           {noOrg && (
             <Button asChild size="sm">
-              <Link
-                to="/admin/platform"
-                search={{
-                  prefillSlug: prefill.prefillSlug,
-                  prefillDaoAccountId: prefill.prefillDaoAccountId,
-                }}
-              >
-                {prefill.prefillSlug ? `set up "${prefill.prefillSlug}"` : "set up org"}
-              </Link>
+              <Link to="/platform">set up org</Link>
             </Button>
           )}
           <Button asChild variant="outline" size="sm">

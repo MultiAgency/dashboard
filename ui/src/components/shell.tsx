@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
@@ -11,10 +10,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { OrgSwitcher } from "@/components/org-switcher";
 import { UserNav } from "@/components/user-nav";
 import { useMeRoles } from "@/hooks/use-me-roles";
-import { useApiClient } from "@/lib/api";
-import { publicSettingsQueryOptions } from "@/lib/queries";
 import { getRepoUrl } from "@/lib/repo";
 
 type NavItem = { to: string; label: string };
@@ -27,11 +25,9 @@ const PRIMARY_NAV: NavItem[] = [
 
 export function Shell({ children }: { children: ReactNode }) {
   const matchRoute = useMatchRoute();
-  const apiClient = useApiClient();
   const { isAuthenticated } = useMeRoles();
 
-  const publicSettingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
-  const brandName = publicSettingsQuery.data?.name?.trim() || "MultiAgency";
+  const brandName = "MultiAgency";
 
   const linkActive = (to: string) =>
     Boolean(
@@ -122,6 +118,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              {isAuthenticated && <OrgSwitcher />}
               <NetworkToggle />
               <UserNav />
             </div>

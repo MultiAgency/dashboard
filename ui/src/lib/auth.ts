@@ -177,6 +177,15 @@ export type SessionData = AuthClient["$Infer"]["Session"];
 export type Organization = NonNullable<OrganizationListResult["data"]>[number];
 export type Passkey = NonNullable<PasskeyListResult["data"]>[number];
 
+export function parseOrgMetadata(meta: unknown): Record<string, unknown> {
+  if (!meta) return {};
+  if (typeof meta === "string") {
+    try { return JSON.parse(meta) as Record<string, unknown>; } catch { return {}; }
+  }
+  if (typeof meta === "object") return meta as Record<string, unknown>;
+  return {};
+}
+
 export function useAuthClient(): AuthClient {
   return useRouter().options.context.authClient;
 }

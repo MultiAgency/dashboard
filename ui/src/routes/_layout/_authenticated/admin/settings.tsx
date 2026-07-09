@@ -367,33 +367,7 @@ function SettingsForm({
           )}
         </CardContent>
       </Card>
-
-      <Card>
-        <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              deploy-time config
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Configured via env vars or hardcoded in source. Not editable here.
-            </p>
-          </div>
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <ReadOnly label="agency name" value={data.readOnly.name} />
-            <ReadOnly label="headline" value={data.readOnly.headline} />
-            <ReadOnly label="tagline" value={data.readOnly.tagline} />
-          </dl>
-        </CardContent>
-      </Card>
     </section>
   );
 }
 
-function ReadOnly({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="space-y-1">
-      <dt className={LABEL_CLS}>{label}</dt>
-      <dd className="font-mono text-sm break-all">{value ?? "—"}</dd>
-    </div>
-  );
-}

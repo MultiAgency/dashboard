@@ -5,31 +5,16 @@ import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
 import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
 import { ReactionDiffusionField } from "@/components/reaction-diffusion-field";
 import { useApiClient } from "@/lib/api";
-import { nearnSponsorUrl } from "@/lib/nearn";
-import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
+import { projectsListQueryOptions } from "@/lib/queries";
 import { getRepoUrl } from "@/lib/repo";
-import { trezuTreasuryUrl } from "@/lib/trezu";
 import { Route as RootRoute } from "../__root";
 
-const META_DESCRIPTION = "Human-led, AI-native agencies for hire.";
-
-const FALLBACK = {
+const LANDING = {
   name: "MultiAgency",
   headline: "Open Books · Open Source · Open Doors",
   tagline: "The future of work is near…",
+  description: "Human-led, AI-native agencies for hire.",
 };
-
-function getLandingName(settings?: { name?: string | null } | null) {
-  return settings?.name?.trim() || FALLBACK.name;
-}
-
-function getLandingTagline(settings?: { tagline?: string | null } | null) {
-  return settings?.tagline?.trim() || FALLBACK.tagline;
-}
-
-function getLandingDescription(settings?: { description?: string | null } | null) {
-  return settings?.description?.trim() || META_DESCRIPTION;
-}
 
 const STANDARD = [
   { label: "Website", note: "landing, work, contact" },
@@ -40,24 +25,16 @@ const STANDARD = [
 
 export const Route = createFileRoute("/_layout/")({
   loader: async ({ context }) => {
-    const [settings] = await Promise.all([
-      context.queryClient
-        .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
-        .catch(() => null),
-      context.queryClient
-        .ensureQueryData(projectsListQueryOptions(context.apiClient))
-        .catch(() => null),
-    ]);
+    await context.queryClient
+      .ensureQueryData(projectsListQueryOptions(context.apiClient))
+      .catch(() => null);
 
-    return {
-      landingTitle: `${getLandingName(settings)} — ${getLandingTagline(settings)}`,
-      landingDescription: getLandingDescription(settings),
-    };
+    return null;
   },
-  head: ({ loaderData }) => ({
+  head: () => ({
     meta: [
-      { title: loaderData?.landingTitle ?? `${FALLBACK.name} — ${FALLBACK.tagline}` },
-      { name: "description", content: loaderData?.landingDescription ?? META_DESCRIPTION },
+      { title: `${LANDING.name} — ${LANDING.tagline}` },
+      { name: "description", content: LANDING.description },
     ],
   }),
   component: Landing,
@@ -75,18 +52,9 @@ function Landing() {
   const loaderData = RootRoute.useLoaderData();
   const assetsUrl = loaderData?.runtimeConfig?.assetsUrl ?? "";
 
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
 
-  const s = settingsQuery.data;
-  const agencyName = getLandingName(s);
-  const headline = s?.headline?.trim() || FALLBACK.headline;
-  const description = s?.description?.trim() || null;
-  const contactEmail = s?.contactEmail?.trim() || null;
-  const docsUrl = s?.docsUrl?.trim() || null;
-  const treasuryUrl = s?.orgAccountId ? trezuTreasuryUrl(s.orgAccountId) : null;
   const repositoryUrl = getRepoUrl();
-  const sponsorUrl = s?.nearnAccountId ? nearnSponsorUrl(s.nearnAccountId) : null;
 
   const projects = (projectsQuery.data?.data ?? []) as LandingProject[];
   const visibleProjects = projects.slice(0, 6);
@@ -107,7 +75,7 @@ function Landing() {
                 textRendering: "geometricPrecision",
               }}
             >
-              {agencyName}
+              {LANDING.name}
             </h1>
             <div className="mt-3 flex items-center gap-3">
               <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-[0.22em] text-accent">
@@ -120,13 +88,8 @@ function Landing() {
             </div>
           </div>
           <p className="max-w-2xl pl-3 font-display text-xl sm:text-2xl uppercase font-extrabold tracking-tight leading-tight">
-            {headline}
+            {LANDING.headline}
           </p>
-          {description && (
-            <p className="max-w-2xl pl-3 text-sm leading-relaxed text-foreground/80">
-              {description}
-            </p>
-          )}
           <div className="flex flex-wrap items-center gap-3 pl-3 pt-2">
             <Button asChild variant="outline" className="font-display uppercase tracking-wide">
               <Link to="/apply">join →</Link>
@@ -271,9 +234,7 @@ function Landing() {
       </section>
 
       <footer className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 pt-8 border-t-2 border-foreground/15">
-        {treasuryUrl && <FooterLink href={treasuryUrl}>open books →</FooterLink>}
         <FooterLink href={repositoryUrl}>open source →</FooterLink>
-        {sponsorUrl && <FooterLink href={sponsorUrl}>open doors →</FooterLink>}
         <Link
           to="/docs"
           className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
@@ -281,15 +242,6 @@ function Landing() {
           docs →
         </Link>
         <FooterLink href="https://x.com/_multiagency">x →</FooterLink>
-        {docsUrl && <FooterLink href={docsUrl}>docs site →</FooterLink>}
-        {contactEmail && (
-          <a
-            href={`mailto:${contactEmail}`}
-            className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
-          >
-            {contactEmail}
-          </a>
-        )}
       </footer>
     </div>
   );

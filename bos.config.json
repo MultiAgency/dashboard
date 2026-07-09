@@ -1,6 +1,6 @@
 {
   "extends": "bos://dev.everything.near/dev.everything.dev",
-  "account": "multiagentic.near",
+  "account": "work.efiz.near",
   "domain": "dev.multiagency.ai",
   "title": "MultiAgency",
   "description": "Human-led, AI-native agencies for hire.",
@@ -12,7 +12,11 @@
   "app": {
     "ui": {
       "name": "ui",
-      "development": "local:ui"
+      "development": "local:ui",
+      "ssr": "https://elliot-braem-5479-ui-multiagency-ai-nearbuilders-fd925f3c6-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-/8SVuzgK3Xg4CCAYa6/ziGhS8pIRKIvxmB5QASJN0i6+Tf40RQFD5e7oMg0Tn2Lw",
+      "production": "https://elliot-braem-5478-ui-multiagency-ai-nearbuilders-22493c8d6-ze.zephyrcloud.app",
+      "integrity": "sha384-zHeomyQe/XFO7KorTLSIonhcElK/iN3Gdt2VBebq8v3/Tto9lpZQgwl1NUDTs3Ln"
     },
     "api": {
       "name": "api",
@@ -23,7 +27,9 @@
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
-      ]
+      ],
+      "production": "https://elliot-braem-5480-api-multiagency-ai-nearbuilders-e76dc2b99-ze.zephyrcloud.app",
+      "integrity": "sha384-jE/2HWX8m6iYQj1z/LkEKv/6FY6yXi6v716Pjlzz6SzCcb1fNy+yoD3/bvoOvBkO"
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev",
@@ -45,7 +51,9 @@
       "development": "local:plugins/projects",
       "secrets": [
         "PROJECTS_DATABASE_URL"
-      ]
+      ],
+      "production": "https://elliot-braem-5481-everything-dev-projects-plugin--67a390ce9-ze.zephyrcloud.app",
+      "integrity": "sha384-utf8cUtw/KwHxwhkIZFXZetQBICV3wpRIFaxESYpGDEjBQ7whqFKx7nedSiXlZa6"
     }
   }
 }

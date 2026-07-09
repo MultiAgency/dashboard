@@ -9,7 +9,7 @@ import { cursorOf, cursorWhere } from "./db/cursor";
 import { loadMigrations } from "./db/load-migrations";
 import { migrate } from "./db/migrator";
 import { applications, billings, budgets, contributors, projectContributors } from "./db/schema";
-import { createAuthMiddleware } from "./lib/auth";
+import { createAuthMiddleware, parseOrgMetadata } from "./lib/auth";
 import { pinnedNetwork } from "./lib/default-org-account";
 import { getNetwork } from "./lib/network";
 import type { PluginsClient } from "./lib/plugins-types.gen";
@@ -219,8 +219,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
     const auth = createAuthMiddleware(builder);
 
     const getDaoAccountId = (context: Record<string, unknown>): string => {
-      const meta = context.organization?.organization?.metadata as Record<string, unknown> | undefined;
-      const fromMeta = meta?.daoAccountId;
+      const meta = parseOrgMetadata(context.organization?.organization?.metadata);
+      const fromMeta = meta.daoAccountId;
       if (typeof fromMeta === "string" && fromMeta.length > 0) return fromMeta;
       throw new ORPCError("INTERNAL_SERVER_ERROR", {
         message: "No DAO account configured. A platform admin must create an agency org.",
@@ -267,8 +267,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
     );
 
     const gates = {
-      admin: requireOrgRole("admin"),
-      contributor: requireOrgRole("admin", "member"),
+      admin: requireOrgRole("admin", "owner"),
+      contributor: requireOrgRole("admin", "owner", "member"),
       org: auth.requireOrganization,
       superAdmin: builder.middleware(async ({ context, next }) => {
         if (!context.user || !context.userId) {
@@ -392,7 +392,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       id: string;
       metadata: Record<string, unknown> | null;
     }) => {
-      const daoAccountId = String((org.metadata as { daoAccountId?: string })?.daoAccountId ?? "");
+      const daoAccountId = String(parseOrgMetadata(org.metadata).daoAccountId ?? "");
       if (!daoAccountId || !plugins.projects) return [];
       const upstream = await fetchOrgProjects(daoAccountId, org.id);
       return upstream
@@ -1647,9 +1647,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }),
 
         roles: builder.me.roles.use(auth.requireAuth).handler(async ({ context }) => {
-          const role = context.organization?.member?.role as string | null | undefined;
+          const role = context.organization?.member?.role as "admin" | "member" | "owner" | null | undefined;
           return {
-            orgRole: role,
+            orgRole: role ?? null,
           };
         }),
       },
@@ -1740,50 +1740,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
       },
 
       platform: {
-        listOrgs: builder.platform.listOrgs.use(gates.superAdmin).handler(async ({ context }) => {
-          const orgs = await plugins.auth(context).listAllOrganizations();
-          return orgs.map((o) => ({
-            id: o.id,
-            name: o.name,
-            slug: o.slug,
-            metadata: o.metadata,
-            createdAt:
-              o.createdAt instanceof Date ? o.createdAt.toISOString() : String(o.createdAt),
-          }));
-        }),
-
-        createOrg: builder.platform.createOrg
-          .use(gates.superAdmin)
-          .handler(async ({ context, input }) => {
-            const metadata: Record<string, unknown> = {};
-            if (input.daoAccountId) metadata.daoAccountId = input.daoAccountId;
-            const org = await plugins.auth(context).createOrganization({
-              name: input.name,
-              slug: input.slug,
-              metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-            });
-            await plugins.auth(context).inviteMember({
-              email: input.adminEmail,
-              role: "admin",
-              organizationId: org.id,
-            });
-            const settingsKey = input.daoAccountId;
-            await upsertSettings(
-              db,
-              settingsKey,
-              {
-                daoAccountId: input.daoAccountId,
-                nearnAccountId: null,
-                websiteUrl: null,
-                docsUrl: null,
-                description: null,
-                contactEmail: null,
-              },
-              context.near?.primaryAccountId ?? settingsKey,
-            );
-            return { id: org.id, name: org.name, slug: org.slug };
-          }),
-
         updateOrg: builder.platform.updateOrg.use(gates.superAdmin).handler(async ({ context, input }) => {
           const allOrgs = await plugins.auth(context).listAllOrganizations();
           const existing = allOrgs.find((o) => o.id === input.orgId);
@@ -1870,7 +1826,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           const orgsWithProjects = await Promise.all(
             orgs.map(async (org) => {
               const daoAccountId = String(
-                (org.metadata as { daoAccountId?: string })?.daoAccountId ?? "",
+                parseOrgMetadata(org.metadata).daoAccountId ?? "",
               );
               let projects: ReturnType<typeof toPublicProject>[] = [];
               try {

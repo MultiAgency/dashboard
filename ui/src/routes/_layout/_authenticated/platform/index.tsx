@@ -4,7 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, DataTable, Input } from "@/components";
 import { type ColumnDef } from "@/components/ui/data-table";
-import { useApiClient } from "@/lib/api";
+import type { Organization } from "@/lib/auth";
+import { parseOrgMetadata, useAuthClient } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/platform/")({
   head: () => ({
@@ -13,42 +14,25 @@ export const Route = createFileRoute("/_layout/_authenticated/platform/")({
   component: PlatformOrgs,
 });
 
-type PlatformOrg = {
-  id: string;
-  name: string;
-  slug: string;
-  metadata: Record<string, unknown> | null;
-  createdAt: string;
-};
+type PlatformOrg = Organization;
 
 const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
 
 function PlatformOrgs() {
-  const apiClient = useApiClient();
+  const authClient = useAuthClient();
   const queryClient = useQueryClient();
 
   const orgsQuery = useQuery({
     queryKey: ["platform", "orgs"],
-    queryFn: () => apiClient.platform.listOrgs(),
+    queryFn: async () => {
+      const res = await authClient.organization.list();
+      return res.data ?? [];
+    },
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
 
-  if (orgsQuery.isError) {
-    return (
-      <section className="space-y-6">
-        <p className="text-sm text-destructive">{orgsQuery.error?.message || "Failed to load orgs"}</p>
-        <Button variant="outline" size="sm" onClick={invalidate}>
-          retry
-        </Button>
-      </section>
-    );
-  }
-
   const orgs = orgsQuery.data ?? [];
-
-  const hasDaoAccountId = (meta: Record<string, unknown> | null): boolean =>
-    typeof meta?.daoAccountId === "string" && (meta.daoAccountId as string).length > 0;
 
   const columns: ColumnDef<PlatformOrg>[] = [
     {
@@ -65,7 +49,7 @@ function PlatformOrgs() {
       id: "type",
       header: "Type",
       cell: ({ row }) => {
-        const isAgency = hasDaoAccountId(row.original.metadata);
+        const isAgency = parseOrgMetadata(row.original.metadata).type === "agency";
         return (
           <Badge variant={isAgency ? "default" : "outline"}>
             {isAgency ? "agency" : "client"}
@@ -79,7 +63,7 @@ function PlatformOrgs() {
       accessorKey: "createdAt",
       cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
-          {row.original.createdAt.slice(0, 10)}
+          {row.original.createdAt.toISOString().slice(0, 10)}
         </span>
       ),
     },
@@ -108,36 +92,69 @@ function PlatformOrgs() {
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
           all organizations ({orgs.length})
         </div>
-        <DataTable
-          columns={columns}
-          data={orgs}
-          isLoading={orgsQuery.isLoading}
-          emptyMessage="No organizations yet."
-          csvFilename="organizations"
-        />
+        {orgsQuery.isError ? (
+          <div className="space-y-2">
+            <p className="text-sm text-destructive">{orgsQuery.error?.message || "Failed to load organizations"}</p>
+            <Button variant="outline" size="sm" onClick={invalidate}>retry</Button>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={orgs}
+            isLoading={orgsQuery.isLoading}
+            emptyMessage="No organizations yet."
+            csvFilename="organizations"
+          />
+        )}
       </section>
     </div>
   );
 }
 
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
-  const apiClient = useApiClient();
+  const authClient = useAuthClient();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [orgType, setOrgType] = useState<"agency" | "client">("agency");
   const [daoAccountId, setDaoAccountId] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
 
+  const handleNameChange = (value: string) => {
+    setName(value);
+    setSlug(slugify(value));
+  };
+
   const createMutation = useMutation({
-    mutationFn: () =>
-      apiClient.platform.createOrg({
+    mutationFn: async () => {
+      const metadata: Record<string, unknown> = {
+        type: orgType,
+      };
+      if (orgType === "agency" && daoAccountId.trim()) {
+        metadata.daoAccountId = daoAccountId.trim();
+      }
+      const finalSlug = slug.trim() || slugify(name);
+      const org = await authClient.organization.create({
         name: name.trim(),
-        slug: slug.trim(),
-        daoAccountId: orgType === "agency" ? daoAccountId.trim() : "",
-        adminEmail: adminEmail.trim(),
-      }),
-    onSuccess: () => {
-      toast.success(`Organization "${name}" created`);
+        slug: finalSlug,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+      });
+      if (!org.data?.id) throw new Error("Failed to create organization");
+      await authClient.organization.inviteMember({
+        email: adminEmail.trim(),
+        role: "admin",
+        organizationId: org.data.id,
+      });
+      return org.data;
+    },
+    onSuccess: (org) => {
+      toast.success(`Organization "${org.name}" created`);
       setName("");
       setSlug("");
       setDaoAccountId("");
@@ -148,7 +165,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
   });
 
   const isPending = createMutation.isPending;
-  const canSubmit = name.trim() && slug.trim() && adminEmail.trim() && (orgType === "client" || daoAccountId.trim());
+  const canSubmit = name.trim() && adminEmail.trim();
 
   return (
     <Card>
@@ -159,7 +176,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
             <Input
               id="org-name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => handleNameChange(e.target.value)}
               placeholder="My Agency"
               disabled={isPending}
             />
@@ -170,9 +187,12 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
               id="org-slug"
               value={slug}
               onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
-              placeholder="my-agency"
+              placeholder="auto-generated"
               disabled={isPending}
             />
+            <p className="font-mono text-[10px] text-muted-foreground">
+              auto-generated from name, but you can override.
+            </p>
           </div>
         </div>
         <div className="space-y-1">
@@ -198,6 +218,9 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
               placeholder="multagency.sputnik-dao.near"
               disabled={isPending}
             />
+            <p className="font-mono text-[10px] text-muted-foreground">
+              optional — links this agency to a Sputnik DAO for treasury/proposals.
+            </p>
           </div>
         )}
         <div className="space-y-1">

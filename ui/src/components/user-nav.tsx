@@ -68,7 +68,6 @@ export function UserNav() {
 
   const { data: session } = useQuery(sessionQueryOptions(authClient));
   const user = session?.user;
-  const activeNetwork = authClient.useActiveNetwork();
   const nearAccountId = authClient.near.getAccountId();
   const { data: profile } = useQuery({
     queryKey: ["me", "near-profile", nearAccountId ?? null] as const,
@@ -154,7 +153,7 @@ export function UserNav() {
   });
 
   if (!user) {
-    return <ConnectButton connect={connectMutation} network={activeNetwork} />;
+    return <ConnectButton connect={connectMutation} />;
   }
 
   const identifier = user.name || user.email || user.id;
@@ -189,7 +188,7 @@ export function UserNav() {
               profile
             </Link>
           </DropdownMenuItem>
-          {(orgRole === "admin" || orgRole === "member") && (
+          {(orgRole === "admin" || orgRole === "member" || orgRole === "owner") && (
             <DropdownMenuItem asChild>
               <Link to="/admin/settings" className="font-mono text-xs uppercase tracking-wide">
                 settings
@@ -198,11 +197,7 @@ export function UserNav() {
           )}
           {isSuperAdmin && (
             <DropdownMenuItem asChild>
-              <Link
-                to="/admin/platform"
-                search={{ prefillSlug: undefined, prefillDaoAccountId: undefined }}
-                className="font-mono text-xs uppercase tracking-wide"
-              >
+              <Link to="/platform" className="font-mono text-xs uppercase tracking-wide">
                 platform
               </Link>
             </DropdownMenuItem>
@@ -227,10 +222,8 @@ export function UserNav() {
 
 function ConnectButton({
   connect,
-  network,
 }: {
   connect: { mutate: () => void; isPending: boolean };
-  network: string | null;
 }) {
   const label = connect.isPending ? "connecting..." : "connect";
   return (

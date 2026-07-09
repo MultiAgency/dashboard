@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ColumnDef, createFileRoute } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
+import { type ColumnDef } from "@tanstack/react-table";
 import { Button, Card, CardContent, DataTable, Spinner } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Input } from "@/components/ui/input";

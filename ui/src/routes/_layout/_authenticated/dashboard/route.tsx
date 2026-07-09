@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_layout/_authenticated/dashboard")({
     ]);
 
     const isSuperAdmin = session?.user?.role === "admin";
-    const isMember = roles.orgRole === "admin" || roles.orgRole === "member";
+    const isMember = roles.orgRole === "admin" || roles.orgRole === "member" || roles.orgRole === "owner";
 
     if (!isSuperAdmin && !isMember) {
       throw redirect({ to: "/", hash: "unauthorized" });

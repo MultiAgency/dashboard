@@ -794,7 +794,7 @@ export const contract = oc.router({
       .route({ method: "GET", path: "/me/roles" })
       .output(
         z.object({
-          orgRole: z.enum(["admin", "member"]).nullable(),
+          orgRole: z.enum(["admin", "member", "owner"]).nullable(),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
@@ -889,34 +889,6 @@ export const contract = oc.router({
   },
 
   platform: {
-    listOrgs: oc
-      .route({ method: "GET", path: "/platform/orgs" })
-      .output(
-        z.array(
-          z.object({
-            id: z.string(),
-            name: z.string(),
-            slug: z.string(),
-            metadata: z.record(z.string(), z.unknown()).nullable(),
-            createdAt: z.string(),
-          }),
-        ),
-      )
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
-
-    createOrg: oc
-      .route({ method: "POST", path: "/platform/orgs" })
-      .input(
-        z.object({
-          name: z.string().trim().min(1).max(100),
-          slug: z.string().trim().min(1).max(100),
-          daoAccountId: z.string().trim().min(1).max(120),
-          adminEmail: z.string().email().trim().max(320),
-        }),
-      )
-      .output(z.object({ id: z.string(), name: z.string(), slug: z.string() }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
-
     updateOrg: oc
       .route({ method: "PATCH", path: "/platform/orgs/:orgId" })
       .input(
@@ -950,7 +922,7 @@ export const contract = oc.router({
         z.object({
           orgId: z.string(),
           email: z.string().email().trim().max(320),
-          role: z.enum(["admin", "member"]),
+          role: z.enum(["admin", "member", "owner"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) }))
@@ -962,7 +934,7 @@ export const contract = oc.router({
         z.object({
           orgId: z.string(),
           memberId: z.string(),
-          role: z.enum(["admin", "member"]),
+          role: z.enum(["admin", "member", "owner"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) }))
@@ -1019,7 +991,7 @@ export const contract = oc.router({
       .input(
         z.object({
           email: z.string().email().trim().max(320),
-          role: z.enum(["admin", "member"]),
+          role: z.enum(["admin", "member", "owner"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) }))
@@ -1030,7 +1002,7 @@ export const contract = oc.router({
       .input(
         z.object({
           memberId: z.string(),
-          role: z.enum(["admin", "member"]),
+          role: z.enum(["admin", "member", "owner"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) }))

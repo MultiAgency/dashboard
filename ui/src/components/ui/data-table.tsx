@@ -29,7 +29,7 @@ const TD_CLS = "px-3 py-2 text-sm border-b border-border";
 const SORT_BTN_CLS =
   "inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer";
 
-function SortHeader({ column, label }: { column: { id: string; getIsSorted: () => string | false; getToggleSortingHandler: () => (() => void) | undefined }; label: string }) {
+function SortHeader({ column, label }: { column: { id: string; getIsSorted: () => string | false; getToggleSortingHandler: () => ((event: unknown) => void) | undefined }; label: string }) {
   const sorted = column.getIsSorted();
   return (
     <button
@@ -139,7 +139,7 @@ export function DataTable<TData, TValue>({
                     <th key={header.id} scope="col" className={TH_CLS}>
                       {isSortable ? (
                         <SortHeader
-                          column={{ id: header.column.id, getIsSorted: () => header.column.getIsSorted(), getToggleSortingHandler: () => header.column.getToggleSortingHandler() }}
+                          column={{ id: header.column.id, getIsSorted: () => header.column.getIsSorted(), getToggleSortingHandler: header.column.getToggleSortingHandler }}
                           label={label as string}
                         />
                       ) : (
