@@ -1,3 +1,10 @@
+/**
+ * Better-Auth client with NEAR SIWN, passkey, API key, and organization plugins.
+ *
+ * BE CAREFUL MODIFYING THIS FILE — changes will be overwritten by `bos sync` / `bos upgrade`.
+ * Prefer upstream changes at https://github.com/nearbuilders/everything-dev
+ */
+
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { useQuery } from "@tanstack/react-query";
@@ -190,19 +197,6 @@ export function sessionQueryOptions(authClient: AuthClient, initialSession?: Ses
   return initialSession === undefined
     ? baseOptions
     : { ...baseOptions, initialData: initialSession };
-}
-
-export function parseOrgMetadata(meta: unknown): Record<string, unknown> {
-  if (!meta) return {};
-  if (typeof meta === "string") {
-    try {
-      return JSON.parse(meta) as Record<string, unknown>;
-    } catch {
-      return {};
-    }
-  }
-  if (typeof meta === "object") return meta as Record<string, unknown>;
-  return {};
 }
 
 export function useRelayHistory(session: SessionData | null | undefined, authClient: AuthClient) {

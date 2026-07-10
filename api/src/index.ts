@@ -9,15 +9,8 @@ import { cursorOf, cursorWhere } from "./db/cursor";
 import { loadMigrations } from "./db/load-migrations";
 import { migrate } from "./db/migrator";
 import { applications, billings, budgets, contributors, projectContributors } from "./db/schema";
-import { createAuthMiddleware, parseOrgMetadata } from "./lib/auth";
-import { pinnedNetwork } from "./lib/default-org-account";
-import { getNetwork } from "./lib/network";
+import { createAuthMiddleware, type AuthContext } from "./lib/auth";
 import type { PluginsClient } from "./lib/plugins-types.gen";
-import {
-  defaultContactEmail,
-  defaultNearnAccountId,
-  defaultPublicSettings,
-} from "./lib/settings-defaults";
 import {
   BudgetInsufficientError,
   createBudget,
@@ -54,6 +47,9 @@ import {
   tokenIdsForRollup,
 } from "./services/rollups";
 import {
+  defaultContactEmail,
+  defaultNearnAccountId,
+  defaultPublicSettings,
   getResolvedPublicSettings,
   getSettingsRow,
   upsertSettings,
@@ -72,6 +68,21 @@ import {
 } from "./services/sputnik";
 import { summarizeProposals, summarizeTeam, summarizeTreasury } from "./services/summaries";
 import { getTokenMetadata, type KnownToken, NATIVE_TOKEN_ID } from "./services/tokens";
+
+export type Network = "mainnet" | "testnet";
+
+export function pinnedNetwork(): Network | null {
+  const v = process.env.NEAR_NETWORK?.toLowerCase();
+  return v === "testnet" || v === "mainnet" ? (v as Network) : null;
+}
+
+export function getNetwork(reqHeaders: Headers | undefined): Network {
+  const pinned = pinnedNetwork();
+  if (pinned) return pinned;
+  const m = reqHeaders?.get("cookie")?.match(/(?:^|;\s*)current_near_network=(mainnet|testnet)/);
+  if (m) return m[1] as Network;
+  return "mainnet";
+}
 
 // MAX_ITERATIONS bounds RPC cost when the recent window is governance-only.
 const PROPOSAL_FETCH_PAGE_SIZE = 100;
@@ -124,44 +135,6 @@ function toProposalPublicItem(p: DaoProposal): z.infer<typeof proposalPublicItem
   };
 }
 
-const nearIdentitySchema = z.object({
-  accountId: z.string(),
-  network: z.string(),
-  publicKey: z.string(),
-  isPrimary: z.boolean(),
-});
-
-const nearCapabilitiesSchema = z.object({
-  primaryAccountId: z.string().nullable(),
-  linkedAccounts: z.array(nearIdentitySchema),
-  hasNearAccount: z.boolean(),
-});
-
-const orgContextSchema = z
-  .object({
-    activeOrganizationId: z.string().nullable().optional(),
-    organization: z
-      .object({
-        id: z.string().optional(),
-        name: z.string().optional(),
-        slug: z.string().optional(),
-        logo: z.string().nullable().optional(),
-        metadata: z.record(z.string(), z.unknown()).nullable().optional(),
-      })
-      .nullable()
-      .optional(),
-    member: z
-      .object({
-        id: z.string(),
-        role: z.string(),
-      })
-      .nullable()
-      .optional(),
-    isPersonal: z.boolean().optional(),
-    hasOrganization: z.boolean().optional(),
-  })
-  .optional();
-
 export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({}),
 
@@ -172,22 +145,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
     NOTIFY_FROM_EMAIL: z.string().optional(),
   }),
 
-  context: z.object({
-    userId: z.string().optional(),
-    user: z
-      .object({
-        id: z.string(),
-        role: z.string().optional(),
-        email: z.string().optional(),
-        name: z.string().optional(),
-      })
-      .optional(),
-    organizationId: z.string().optional(),
-    organization: orgContextSchema,
-    near: nearCapabilitiesSchema.optional(),
-    reqHeaders: z.custom<Headers>().optional(),
-    getRawBody: z.custom<() => Promise<string>>().optional(),
-  }),
+  context: z.custom<AuthContext & { organizationId?: string }>(),
 
   contract,
 
@@ -218,65 +176,37 @@ export default createPlugin.withPlugins<PluginsClient>()({
     const { db, notifyConfig, plugins } = services;
     const auth = createAuthMiddleware(builder);
 
+    type OrgMetadata = { daoAccountId?: string; type?: "agency" | "client" };
+
     const getDaoAccountId = (context: {
       organization?: {
         organization?: {
-          metadata?: Record<string, unknown> | null;
+          metadata?: OrgMetadata | null;
         } | null;
       } | null;
     }): string => {
-      const meta = parseOrgMetadata(context.organization?.organization?.metadata);
-      const fromMeta = meta.daoAccountId;
-      if (typeof fromMeta === "string" && fromMeta.length > 0) return fromMeta;
+      const daoAccountId = context.organization?.organization?.metadata?.daoAccountId;
+      if (typeof daoAccountId === "string" && daoAccountId.length > 0) return daoAccountId;
       throw new ORPCError("INTERNAL_SERVER_ERROR", {
         message: "No DAO account configured. A platform admin must create an agency org.",
       });
     };
 
-    // Gate: authenticated + active org + required org-scoped role(s).
-    // Super admins (context.user.role === "admin") bypass org role checks.
-    // Org roles come from context.organization.member.role (better-auth session context).
-    const requireOrgRole = (...roles: string[]) =>
-      builder.middleware(async ({ context, next }) => {
-        if (!context.user || !context.userId) {
-          throw new ORPCError("UNAUTHORIZED", {
-            message: "Authentication required",
-            data: { hint: "Sign in to continue" },
-          });
-        }
-        if (context.user.role === "admin") return next();
-        if (!context.organizationId || !context.organization?.member?.role) {
-          throw new ORPCError("FORBIDDEN", {
-            message: "Active organization with required role membership required",
-            data: { hint: "Select an organization and ensure you have an assigned role" },
-          });
-        }
-        const memberRole = context.organization.member.role;
-        if (!roles.includes(memberRole)) {
-          throw new ORPCError("FORBIDDEN", {
-            message: `Requires role: ${roles.join(" or ")}`,
-            data: { requiredRoles: roles, currentRole: memberRole },
-          });
-        }
-        return next();
-      });
-
-    // Soft auth: fills org/role context if the user has a session, passes through otherwise.
-    // Used by adaptive endpoints that return different data shapes based on role.
-    const tryOrgAuth = builder.middleware(async ({ context, next }) => {
-      if (!context.user || !context.userId) return next();
-      return next();
-    });
-
     const gates = {
-      admin: requireOrgRole("admin", "owner"),
-      contributor: requireOrgRole("admin", "owner", "member"),
+      admin: auth.requireOrgRole("admin", "owner"),
+      contributor: auth.requireOrgRole("admin", "owner", "member"),
       org: auth.requireOrganization,
-      superAdmin: builder.middleware(async ({ context, next }) => {
-        if (!context.user || !context.userId) {
-          throw new ORPCError("UNAUTHORIZED", {
-            message: "Authentication required",
-            data: { hint: "Sign in to continue" },
+      superAdmin: builder.middleware(async ({ context, next }: { context: any; next: any }) => {
+        if (!context.userId || !context.user) {
+          const session = await plugins.auth(context).getSession().catch(() => null);
+          if (!session?.session || !session?.user || session.user.role !== "admin") {
+            throw new ORPCError("UNAUTHORIZED", {
+              message: "Authentication required",
+              data: { hint: "Sign in to continue" },
+            });
+          }
+          return next({
+            context: { ...context, userId: session.user.id, user: session.user, isSuperAdmin: true },
           });
         }
         if (context.user.role !== "admin") {
@@ -392,9 +322,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
     const fetchPlatformOrgProjects = async (org: {
       id: string;
-      metadata: Record<string, unknown> | null;
+      metadata: OrgMetadata | null;
     }) => {
-      const daoAccountId = String(parseOrgMetadata(org.metadata).daoAccountId ?? "");
+      const daoAccountId = org.metadata?.daoAccountId ?? "";
       if (!daoAccountId || !plugins.projects) return [];
       const upstream = await fetchOrgProjects(daoAccountId, org.id);
       return upstream
@@ -546,7 +476,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       agency: {
         projects: {
-          list: builder.agency.projects.list.use(tryOrgAuth).handler(async ({ context }) => {
+          list: builder.agency.projects.list.use(auth.requireOrganization).handler(async ({ context }) => {
             if (!plugins.projects) return { data: [] };
 
             const orgAccountId = await getDaoAccountId(context);
@@ -594,7 +524,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
             return { data };
           }),
 
-          get: builder.agency.projects.get.use(tryOrgAuth).handler(async ({ context, input }) => {
+          get: builder.agency.projects.get.use(auth.requireOrganization).handler(async ({ context, input }) => {
             const orgAccountId = await getDaoAccountId(context);
             const organizationId = context.organizationId ?? null;
             const isContributor = ["admin", "contributor"].includes(
@@ -1837,7 +1767,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
             const orgs = await plugins.auth(context).listAllOrganizations();
             const orgsWithProjects = await Promise.all(
               orgs.map(async (org) => {
-                const daoAccountId = String(parseOrgMetadata(org.metadata).daoAccountId ?? "");
+                const daoAccountId = (org.metadata as OrgMetadata | null)?.daoAccountId ?? "";
                 let projects: ReturnType<typeof toPublicProject>[] = [];
                 try {
                   projects = await fetchPlatformOrgProjects(org);

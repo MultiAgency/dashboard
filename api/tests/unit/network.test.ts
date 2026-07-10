@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { getNetwork } from "../../src/lib/network";
+import { getNetwork } from "../../src/index";
 
 const ENV_KEYS = ["NEAR_NETWORK", "AGENCY_DAO_ACCOUNT"] as const;
 

@@ -1,14 +1,45 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "../db";
 import { settings as settingsTable } from "../db/schema";
-import type { Network } from "../lib/default-org-account";
-import {
-  defaultDescription,
-  defaultDocsUrl,
-  defaultNearnAccountId,
-  defaultPublicSettings,
-  defaultWebsiteUrl,
-} from "../lib/settings-defaults";
+
+type Network = "mainnet" | "testnet";
+
+const HARDCODED_NAME = "MultiAgency";
+const HARDCODED_HEADLINE = "Open Books · Open Source · Open Doors";
+const HARDCODED_TAGLINE = "The future of work is near…";
+const HARDCODED_CONTACT_EMAIL = "multiagentic@gmail.com";
+const HARDCODED_WEBSITE_URL = "https://multiagency.ai";
+const HARDCODED_DOCS_URL = "https://multiagency.ai/docs";
+const HARDCODED_DESCRIPTION = "Human-led, AI-native agencies for hire.";
+const HARDCODED_NEARN_ACCOUNT = "multiagency";
+
+const defaultName = (): string => HARDCODED_NAME;
+const defaultHeadline = (): string => HARDCODED_HEADLINE;
+const defaultTagline = (): string => HARDCODED_TAGLINE;
+export const defaultContactEmail = (): string =>
+  process.env.AGENCY_CONTACT_EMAIL?.trim() || HARDCODED_CONTACT_EMAIL;
+const defaultWebsiteUrl = (): string | null =>
+  process.env.AGENCY_WEBSITE_URL?.trim() || HARDCODED_WEBSITE_URL;
+const defaultDocsUrl = (): string | null =>
+  process.env.AGENCY_DOCS_URL?.trim() || HARDCODED_DOCS_URL;
+const defaultDescription = (): string | null =>
+  process.env.AGENCY_DESCRIPTION?.trim() || HARDCODED_DESCRIPTION;
+export const defaultNearnAccountId = (): string | null =>
+  process.env.AGENCY_NEARN_ACCOUNT?.trim() || HARDCODED_NEARN_ACCOUNT;
+
+export function defaultPublicSettings(_network: Network) {
+  return {
+    name: defaultName(),
+    headline: defaultHeadline(),
+    tagline: defaultTagline(),
+    description: defaultDescription(),
+    contactEmail: defaultContactEmail(),
+    nearnAccountId: defaultNearnAccountId(),
+    websiteUrl: defaultWebsiteUrl(),
+    docsUrl: defaultDocsUrl(),
+    orgAccountId: null as string | null,
+  };
+}
 
 type EditableSettings = {
   daoAccountId?: string | null;

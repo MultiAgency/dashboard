@@ -36,19 +36,19 @@ services:
 
   postgres-projects:
     <<: *pg-common
-    container_name: multiagentic.near-postgres-projects
+    container_name: work.efiz.near-postgres-projects
     environment:
       <<: *pg-env
       POSTGRES_DB: projects_db
     ports:
       - "5434:5432"
     volumes:
-      - multiagentic_near_postgres_projects_data:/var/lib/postgresql/data
+      - work_efiz_near_postgres_projects_data:/var/lib/postgresql/data
 
 volumes:
   multiagentic_near_postgres_api_data:
     name: multiagentic_near_postgres_api_data
   auth_everything_near_postgres_auth_data:
     name: auth_everything_near_postgres_auth_data
-  multiagentic_near_postgres_projects_data:
-    name: multiagentic_near_postgres_projects_data
+  work_efiz_near_postgres_projects_data:
+    name: work_efiz_near_postgres_projects_data

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, DataTable, Input } from "@/components";
 import type { ColumnDef } from "@/components/ui/data-table";
 import type { Organization } from "@/lib/auth";
-import { parseOrgMetadata, useAuthClient } from "@/lib/auth";
+import { useAuthClient } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/platform/")({
   head: () => ({
@@ -49,7 +49,7 @@ function PlatformOrgs() {
       id: "type",
       header: "Type",
       cell: ({ row }) => {
-        const isAgency = parseOrgMetadata(row.original.metadata).type === "agency";
+        const isAgency = ((row.original.metadata ?? {}) as Record<string, unknown>).type === "agency";
         return (
           <Badge variant={isAgency ? "default" : "outline"}>{isAgency ? "agency" : "client"}</Badge>
         );
