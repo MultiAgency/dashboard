@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button, Card, CardContent, DataTable, Spinner } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Input } from "@/components/ui/input";
-import { useApiClient } from "@/lib/api";
+import { useAuthClient } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/members")({
   head: () => ({
@@ -26,15 +26,37 @@ type Member = {
 const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
 
 function MembersPage() {
-  const apiClient = useApiClient();
+  const authClient = useAuthClient();
   const queryClient = useQueryClient();
 
-  const membersQuery = useQuery({
-    queryKey: ["members"],
-    queryFn: () => apiClient.members.list(),
+  const sessionQuery = useQuery({
+    queryKey: ["session"],
+    queryFn: async () => {
+      const { data } = await authClient.getSession();
+      return data ?? null;
+    },
   });
 
-  if (membersQuery.isLoading) {
+  const activeOrgId = sessionQuery.data?.session?.activeOrganizationId;
+
+  const membersQuery = useQuery({
+    queryKey: ["members", activeOrgId],
+    queryFn: async () => {
+      if (!activeOrgId) return [];
+      const res = (await authClient.organization.listMembers({ query: { limit: 100 } })) as any;
+      const raw = Array.isArray(res) ? res : res?.members ?? res?.data ?? [];
+      return raw.map((m: any) => ({
+        id: m.id,
+        userId: m.userId,
+        nearAccountId: m.user?.name ?? null,
+        displayName: m.user?.name ?? null,
+        role: m.role,
+      })) as Member[];
+    },
+    enabled: !!activeOrgId,
+  });
+
+  if (membersQuery.isLoading || sessionQuery.isLoading) {
     return (
       <section className="space-y-6">
         <Spinner />
@@ -47,13 +69,15 @@ function MembersPage() {
   }
 
   const members = membersQuery.data ?? [];
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["members"] });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["members", activeOrgId] });
+  };
 
   return (
     <div className="space-y-8">
       <div className="space-y-2">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          admin · members
+          admin &middot; members
         </div>
         <h2 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
           Members
@@ -69,39 +93,45 @@ function MembersPage() {
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
           invite member
         </div>
-        <AddMemberForm onAdded={invalidate} />
+        <AddMemberForm onAdded={invalidate} authClient={authClient} orgId={activeOrgId ?? undefined} />
       </section>
 
       <section className="space-y-3">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
           current members ({members.length})
         </div>
-        <MembersTable members={members} onChanged={invalidate} />
+        <MembersTable members={members} onChanged={invalidate} authClient={authClient} orgId={activeOrgId ?? undefined} />
       </section>
     </div>
   );
 }
 
-function MembersTable({ members, onChanged }: { members: Member[]; onChanged: () => void }) {
-  const apiClient = useApiClient();
-  const queryClient = useQueryClient();
-
+function MembersTable({
+  members,
+  onChanged,
+  authClient,
+  orgId,
+}: {
+  members: Member[];
+  onChanged: () => void;
+  authClient: any;
+  orgId?: string;
+}) {
   const updateMutation = useMutation({
     mutationFn: ({ memberId, role }: { memberId: string; role: "admin" | "member" }) =>
-      apiClient.members.updateRole({ memberId, role }),
+      authClient.organization.updateMemberRole({ memberId, organizationId: orgId, role }),
     onSuccess: () => {
       toast.success("Role updated");
-      queryClient.invalidateQueries({ queryKey: ["members"] });
       onChanged();
     },
     onError: (e: Error) => toast.error(e.message || "Failed to update role"),
   });
 
   const removeMutation = useMutation({
-    mutationFn: (memberId: string) => apiClient.members.remove({ memberId }),
+    mutationFn: (memberId: string) =>
+      authClient.organization.removeMember({ memberId, organizationId: orgId }),
     onSuccess: () => {
       toast.success("Member removed");
-      queryClient.invalidateQueries({ queryKey: ["members"] });
       onChanged();
     },
     onError: (e: Error) => toast.error(e.message || "Failed to remove member"),
@@ -124,7 +154,7 @@ function MembersTable({ members, onChanged }: { members: Member[]; onChanged: ()
       accessorKey: "nearAccountId",
       cell: ({ row }) => (
         <span className="font-mono text-sm text-muted-foreground">
-          {row.original.nearAccountId ?? "—"}
+          {row.original.nearAccountId ?? "\u2014"}
         </span>
       ),
     },
@@ -164,7 +194,7 @@ function MembersTable({ members, onChanged }: { members: Member[]; onChanged: ()
             onClick={() => removeMutation.mutate(member.id)}
             disabled={removeMutation.isPending || updateMutation.isPending}
           >
-            {removeMutation.isPending ? "…" : "remove"}
+            {removeMutation.isPending ? "\u2026" : "remove"}
           </Button>
         );
       },
@@ -181,13 +211,21 @@ function MembersTable({ members, onChanged }: { members: Member[]; onChanged: ()
   );
 }
 
-function AddMemberForm({ onAdded }: { onAdded: () => void }) {
-  const apiClient = useApiClient();
+function AddMemberForm({
+  onAdded,
+  authClient,
+  orgId,
+}: {
+  onAdded: () => void;
+  authClient: any;
+  orgId?: string;
+}) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "member">("member");
 
   const addMutation = useMutation({
-    mutationFn: () => apiClient.members.invite({ email: email.trim(), role }),
+    mutationFn: () =>
+      authClient.organization.inviteMember({ email: email.trim(), role, organizationId: orgId }),
     onSuccess: () => {
       toast.success(`Invited ${email}`);
       setEmail("");
@@ -236,7 +274,7 @@ function AddMemberForm({ onAdded }: { onAdded: () => void }) {
             disabled={!email.trim() || addMutation.isPending}
             size="sm"
           >
-            {addMutation.isPending ? "inviting…" : "invite →"}
+            {addMutation.isPending ? "inviting\u2026" : "invite \u2192"}
           </Button>
         </div>
       </CardContent>

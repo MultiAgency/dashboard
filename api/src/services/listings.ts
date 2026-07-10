@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { type Listing, listings, type NewListing } from "../db/schema";
 import { getNearnListing, isNearnAvailable, type NearnListing, NearnNotFoundError } from "./nearn";
@@ -411,3 +412,41 @@ export async function getListingsForProjects(
   const fresh = await Promise.all(rows.map((r) => maybeRefresh(r, orgAccountId, db)));
   return new Map(fresh.map((r) => [r.projectId, r]));
 }
+
+export function createListingsService(db: Database) {
+  return {
+    getListingForProject: (
+      projectId: string,
+      source: "nearn" | "internal",
+      orgAccountId: string,
+      opts?: GetListingOpts,
+    ) => Effect.promise(() => getListingForProject(projectId, source, orgAccountId, db, opts)),
+
+    getListingsForProjects: (
+      projectIds: string[],
+      source: "nearn" | "internal",
+      orgAccountId: string,
+      opts?: GetListingOpts,
+    ) => Effect.promise(() => getListingsForProjects(projectIds, source, orgAccountId, db, opts)),
+
+    attachNearnListing: (projectId: string, slug: string) =>
+      Effect.promise(() => attachNearnListing(projectId, slug, db)),
+
+    detachNearnListing: (projectId: string) =>
+      Effect.promise(() => detachNearnListing(projectId, db)),
+
+    createInternalListing: (projectId: string, fields: InternalListingFields) =>
+      Effect.promise(() => createInternalListing(projectId, fields, db)),
+
+    updateInternalListing: (projectId: string, fields: Partial<InternalListingFields>) =>
+      Effect.promise(() => updateInternalListing(projectId, fields, db)),
+
+    deleteInternalListing: (projectId: string) =>
+      Effect.promise(() => deleteInternalListing(projectId, db)),
+
+    setListingsArchived: (projectId: string, isArchived: boolean) =>
+      Effect.promise(() => setListingsArchived(projectId, isArchived, db)),
+  };
+}
+
+export type ListingsService = ReturnType<typeof createListingsService>;

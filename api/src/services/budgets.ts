@@ -1,7 +1,13 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { Effect } from "every-plugin/effect";
+import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { type Budget, budgets } from "../db/schema";
+import { billings } from "../db/schema";
+import { getListingForProject } from "./listings";
+import { enrichWithChainStatus, networkOf } from "./sputnik";
+import { resolveActiveListing, rollupForToken } from "./rollups";
 
 export class BudgetInsufficientError extends Error {
   constructor(
@@ -183,3 +189,90 @@ export async function transferBudget(
     return { from, to };
   });
 }
+
+export function createBudgetsService(db: Database) {
+  return {
+    list: (input: ListBudgetsInput) => listBudgets(db, input),
+
+    create: (input: CreateBudgetInput) =>
+      Effect.tryPromise({
+        try: () => createBudget(db, input),
+        catch: (err) => err as Error,
+      }),
+
+    deallocate: (input: CreateBudgetInput) =>
+      Effect.tryPromise({
+        try: () => deallocateBudget(db, input),
+        catch: (err) => {
+          if (err instanceof BudgetInsufficientError) {
+            return new ORPCError("BAD_REQUEST", { message: err.message });
+          }
+          return new ORPCError("INTERNAL_SERVER_ERROR", {
+            message: err instanceof Error ? err.message : String(err),
+          });
+        },
+      }),
+
+    transfer: (input: TransferBudgetInput) =>
+      Effect.tryPromise({
+        try: () => transferBudget(db, input),
+        catch: (err) => {
+          if (err instanceof BudgetInsufficientError) {
+            return new ORPCError("BAD_REQUEST", { message: err.message });
+          }
+          return new ORPCError("INTERNAL_SERVER_ERROR", {
+            message: err instanceof Error ? err.message : String(err),
+          });
+        },
+      }),
+
+    computeBudget: async (projectId: string, orgId: string) => {
+      const [budgetRows, billsRaw, nearnListing, internalListing] = await Promise.all([
+        db
+          .select({ tokenId: budgets.tokenId, amount: budgets.amount })
+          .from(budgets)
+          .where(eq(budgets.projectId, projectId)),
+        db.select().from(billings).where(eq(billings.projectId, projectId)),
+        getListingForProject(projectId, "nearn", orgId, db),
+        getListingForProject(projectId, "internal", orgId, db),
+      ]);
+      const bills = await Promise.all(
+        billsRaw.map((b) => enrichWithChainStatus(db, b, orgId)),
+      );
+      const resolved = resolveActiveListing(
+        nearnListing,
+        internalListing,
+        networkOf(orgId),
+      );
+      const tokenIds = Array.from(
+        new Set([
+          ...budgetRows.map((b) => b.tokenId),
+          ...bills.map((b) => b.tokenId),
+          ...(resolved ? [resolved.tokenId] : []),
+        ]),
+      ).sort();
+      return tokenIds.map((tokenId) => {
+        const r = rollupForToken({
+          tokenId,
+          budgetAmounts: budgetRows
+            .filter((b) => b.tokenId === tokenId)
+            .map((b) => BigInt(b.amount)),
+          billings: bills
+            .filter((b) => b.tokenId === tokenId)
+            .map((b) => ({ amount: b.amount, status: b.status })),
+          listing: resolved,
+        });
+        return {
+          tokenId,
+          budget: r.budget.toString(),
+          allocated: r.allocated.toString(),
+          committed: r.committed.toString(),
+          paid: r.paid.toString(),
+          remaining: r.remaining.toString(),
+        };
+      });
+    },
+  };
+}
+
+export type BudgetsService = ReturnType<typeof createBudgetsService>;

@@ -781,15 +781,6 @@ export const contract = oc.router({
   },
 
   me: {
-    assignedProjects: oc
-      .route({ method: "GET", path: "/me/projects" })
-      .output(
-        z.object({
-          data: z.array(project.extend({ role: z.string().nullable() })),
-        }),
-      )
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
-
     roles: oc
       .route({ method: "GET", path: "/me/roles" })
       .output(
@@ -814,12 +805,6 @@ export const contract = oc.router({
       }),
     ),
 
-    getPublicSummary: oc.route({ method: "GET", path: "/team/summary" }).output(
-      z.object({
-        roleCount: z.number().int().nonnegative(),
-        memberCount: z.number().int().nonnegative(),
-      }),
-    ),
   },
 
   agencyConfig: {
@@ -886,133 +871,6 @@ export const contract = oc.router({
       )
       .output(z.object({ ok: z.literal(true) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
-  },
-
-  platform: {
-    updateOrg: oc
-      .route({ method: "PATCH", path: "/platform/orgs/:orgId" })
-      .input(
-        z.object({
-          orgId: z.string(),
-          name: z.string().trim().min(1).max(100).optional(),
-          daoAccountId: z.string().trim().min(1).max(120).optional(),
-        }),
-      )
-      .output(z.object({ id: z.string(), name: z.string(), slug: z.string() }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, NOT_FOUND }),
-
-    listOrgMembers: oc
-      .route({ method: "GET", path: "/platform/orgs/:orgId/members" })
-      .input(z.object({ orgId: z.string() }))
-      .output(
-        z.array(
-          z.object({
-            id: z.string(),
-            userId: z.string(),
-            nearAccountId: z.string().nullable(),
-            role: z.string(),
-          }),
-        ),
-      )
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
-
-    addOrgMember: oc
-      .route({ method: "POST", path: "/platform/orgs/:orgId/members" })
-      .input(
-        z.object({
-          orgId: z.string(),
-          email: z.string().email().trim().max(320),
-          role: z.enum(["admin", "member", "owner"]),
-        }),
-      )
-      .output(z.object({ ok: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
-
-    updateOrgMember: oc
-      .route({ method: "PATCH", path: "/platform/orgs/:orgId/members/:memberId" })
-      .input(
-        z.object({
-          orgId: z.string(),
-          memberId: z.string(),
-          role: z.enum(["admin", "member", "owner"]),
-        }),
-      )
-      .output(z.object({ ok: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
-
-    removeOrgMember: oc
-      .route({ method: "DELETE", path: "/platform/orgs/:orgId/members/:memberId" })
-      .input(z.object({ orgId: z.string(), memberId: z.string() }))
-      .output(z.object({ ok: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
-
-    deleteOrg: oc
-      .route({ method: "DELETE", path: "/platform/orgs/:orgId" })
-      .input(z.object({ orgId: z.string() }))
-      .output(z.object({ ok: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
-
-    listProjects: oc
-      .route({ method: "GET", path: "/platform/projects" })
-      .output(
-        z.object({
-          orgs: z.array(
-            z.object({
-              id: z.string(),
-              name: z.string(),
-              slug: z.string(),
-              daoAccountId: z.string().nullable(),
-              projects: z.array(publicProject),
-            }),
-          ),
-        }),
-      )
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
-  },
-
-  members: {
-    list: oc
-      .route({ method: "GET", path: "/members" })
-      .output(
-        z.array(
-          z.object({
-            id: z.string(),
-            userId: z.string(),
-            nearAccountId: z.string().nullable(),
-            displayName: z.string().nullable(),
-            role: z.string(),
-          }),
-        ),
-      )
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
-
-    invite: oc
-      .route({ method: "POST", path: "/members/invite" })
-      .input(
-        z.object({
-          email: z.string().email().trim().max(320),
-          role: z.enum(["admin", "member", "owner"]),
-        }),
-      )
-      .output(z.object({ ok: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
-
-    updateRole: oc
-      .route({ method: "PATCH", path: "/members/:memberId" })
-      .input(
-        z.object({
-          memberId: z.string(),
-          role: z.enum(["admin", "member", "owner"]),
-        }),
-      )
-      .output(z.object({ ok: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
-
-    remove: oc
-      .route({ method: "DELETE", path: "/members/:memberId" })
-      .input(z.object({ memberId: z.string() }))
-      .output(z.object({ ok: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
   },
 });
 
