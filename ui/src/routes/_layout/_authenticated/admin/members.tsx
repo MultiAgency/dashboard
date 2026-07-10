@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button, Card, CardContent, DataTable, Spinner } from "@/components";
 import { AdminError } from "@/components/admin-error";
@@ -20,7 +20,7 @@ type Member = {
   userId: string;
   nearAccountId: string | null;
   displayName: string | null;
-  role: string;
+  role: "admin" | "member" | "owner";
 };
 
 const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
@@ -44,13 +44,13 @@ function MembersPage() {
     queryFn: async () => {
       if (!activeOrgId) return [];
       const res = (await authClient.organization.listMembers({ query: { limit: 100 } })) as any;
-      const raw = Array.isArray(res) ? res : (res?.members ?? res?.data ?? []);
+      const raw = Array.isArray(res) ? res : (res?.data?.members ?? res?.members ?? []);
       return raw.map((m: any) => ({
         id: m.id,
         userId: m.userId,
         nearAccountId: m.user?.name ?? null,
         displayName: m.user?.name ?? null,
-        role: m.role,
+        role: m.role as "admin" | "member" | "owner",
       })) as Member[];
     },
     enabled: !!activeOrgId,
@@ -84,8 +84,8 @@ function MembersPage() {
         </h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Manage who has access to this organization and what role they hold. Invite members by
-          email. Roles: <strong>admin</strong> (full access) or <strong>member</strong> (read +
-          write).
+          email. Roles: <strong>owner</strong> (creator, full access), <strong>admin</strong> (full
+          access), or <strong>member</strong> (read + write).
         </p>
       </div>
 
@@ -126,8 +126,14 @@ function MembersTable({
   authClient: any;
   orgId?: string;
 }) {
+  const [pendingRoles, setPendingRoles] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setPendingRoles({});
+  }, [members]);
+
   const updateMutation = useMutation({
-    mutationFn: ({ memberId, role }: { memberId: string; role: "admin" | "member" }) =>
+    mutationFn: ({ memberId, role }: { memberId: string; role: "admin" | "member" | "owner" }) =>
       authClient.organization.updateMemberRole({ memberId, organizationId: orgId, role }),
     onSuccess: () => {
       toast.success("Role updated");
@@ -175,16 +181,20 @@ function MembersTable({
         const member = row.original;
         return (
           <select
-            value={member.role}
-            onChange={(e) =>
+            value={pendingRoles[member.id] ?? member.role}
+            onChange={(e) => {
+              const newRole = e.target.value;
+              setPendingRoles((prev) => ({ ...prev, [member.id]: newRole }));
               updateMutation.mutate({
                 memberId: member.id,
-                role: e.target.value as "admin" | "member",
-              })
-            }
+                role: newRole as "admin" | "member" | "owner",
+              });
+            }}
             disabled={updateMutation.isPending || removeMutation.isPending}
             className="h-7 rounded border border-input bg-background px-2 font-mono text-[11px]"
           >
+            <option value="owner">owner</option>
+            <option value="owner">owner</option>
             <option value="admin">admin</option>
             <option value="member">member</option>
           </select>
@@ -230,7 +240,7 @@ function AddMemberForm({
   orgId?: string;
 }) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "member">("member");
+  const [role, setRole] = useState<"admin" | "member" | "owner">("member");
 
   const addMutation = useMutation({
     mutationFn: () =>

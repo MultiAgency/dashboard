@@ -49,8 +49,9 @@ function PlatformOrgs() {
       id: "type",
       header: "Type",
       cell: ({ row }) => {
-        const isAgency =
-          ((row.original.metadata ?? {}) as Record<string, unknown>).type === "agency";
+        const rawMeta = row.original.metadata;
+        const meta = typeof rawMeta === "string" ? JSON.parse(rawMeta) : (rawMeta ?? {});
+        const isAgency = (meta as Record<string, unknown>).type === "agency";
         return (
           <Badge variant={isAgency ? "default" : "outline"}>{isAgency ? "agency" : "client"}</Badge>
         );

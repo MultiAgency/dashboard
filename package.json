@@ -37,7 +37,7 @@
       "@orpc/contract": "1.14.3",
       "@better-auth/api-key": "1.6.9",
       "@better-auth/passkey": "1.6.9",
-      "everything-dev": "^1.42.1",
+      "everything-dev": "^1.42.2",
       "@scure/base": "^2.2.0",
       "pg": "^8.12.0",
       "@types/pg": "^8.11.6",
