@@ -5,11 +5,11 @@
 
 <div align="center">
 
-<h1 style="font-size: 4.25rem; font-weight: 800; line-height: 1; margin: 0;">Agency Dashboard Template</h1>
+<h1 style="font-size: 4.25rem; font-weight: 800; line-height: 1; margin: 0;">multiagency.ai</h1>
 
 </div>
 
-A customizable dashboard template for on-chain agencies — DAO-shaped entities sourcing contributors, budgeting treasury to projects, and billing against those budgets.
+The dashboard for multiagency.ai — an on-chain agency: a DAO-shaped entity sourcing contributors, budgeting treasury to projects, and billing against those budgets.
 
 Maintained by [MultiAgency](https://github.com/MultiAgency). Built on [everything.dev](https://github.com/NEARBuilders/everything-dev).
 
@@ -19,7 +19,7 @@ Built with [Tanstack Start](https://tanstack.com/start/latest/docs/framework/rea
 
 ## Status
 
-This repo is shaped as the template described above. Phase 0 cleanup removed the upstream surfaces that don't fit the agency model (organizations, admin dashboard, apps browser, registry plugin). The agency-specific modules below are wired end-to-end in this commit.
+The agency-specific modules below are wired end-to-end.
 
 **Public surface:**
 
@@ -38,8 +38,6 @@ This repo is shaped as the template described above. Phase 0 cleanup removed the
 - Admin / Applications — flat list with kind / status filters; review submissions from `/apply`, transition status (new → reviewing → accepted/declined). Submissions themselves are immutable
 
 Admin routes are gated server-side by a `gates` registry that checks Sputnik DAO role membership (strict `Admin` / `Approver` / `Requestor` tiers plus named compositions like `operator` for Admin OR Approver) for the signed-in NEAR account against the resolved `orgAccountId` (`getOrgAccountId(reqHeaders)` → `defaultOrgAccount(network)`, env-driven). Time-series admin lists (billings, budgets, applications) are paginated cursor-style; the UI exposes a "load more" button.
-
-Instantiate a new agency via `bunx everything-dev init` (the canonical entry point — pulls the template, scaffolds a fresh repo and DB). Remove or extend any of the modules above, and customize per agency. Before deploying, rewrite [`ui/public/README.md`](./ui/public/README.md), [`ui/public/skill.md`](./ui/public/skill.md), and [`ui/public/manifest.json`](./ui/public/manifest.json) — those carry the maintainer's identity and ship as-is to the deployed site (manifest.json drives the install-prompt + browser-tab name).
 
 ## First-time setup
 
@@ -247,7 +245,7 @@ Biome is configured in `biome.json` at the project root. Generated files (like `
 
 ## Related Projects
 
-- **[everything.dev](https://github.com/NEARBuilders/everything-dev)** - Upstream foundation: the runtime this template is built on
+- **[everything.dev](https://github.com/NEARBuilders/everything-dev)** - Upstream foundation and runtime
 - **[every-plugin](https://github.com/near-everything/every-plugin)** - Plugin framework for modular APIs
 - **[near-kit](https://kit.near.tools)** - Unified NEAR Protocol SDK
 - **[better-near-auth](https://github.com/elliotBraem/better-near-auth)** - NEAR authentication for Better-Auth
