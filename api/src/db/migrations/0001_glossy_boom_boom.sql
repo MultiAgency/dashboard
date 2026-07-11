@@ -1,1 +1,0 @@
-ALTER TABLE "agency"."settings" ADD COLUMN "dao_account_id" text;
