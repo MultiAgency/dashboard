@@ -184,3 +184,59 @@ export function displayToBaseUnits(decimalString: string, decimals: number): big
   const paddedFrac = (fracPart + "0".repeat(decimals)).slice(0, decimals);
   return BigInt(intPart + paddedFrac);
 }
+
+import { Effect } from "every-plugin/effect";
+import type { Database } from "../db";
+import { getDaoAccountId } from "../lib/org";
+import { getDaoTokenIds, getFtMetadata, getStorageBalance, networkOf } from "./sputnik";
+
+export function createTokensService(_db: Database) {
+  return {
+    list: (context: Record<string, unknown>) =>
+      Effect.gen(function* () {
+        const orgAccountId = yield* getDaoAccountId(context);
+        const orgNetwork = networkOf(orgAccountId);
+        const ids = yield* Effect.promise(() => getDaoTokenIds(orgAccountId));
+        const resolved = yield* Effect.promise(() =>
+          Promise.all(
+            ids.map(async (id) => {
+              if (id === NATIVE_TOKEN_ID) {
+                const native = getTokenMetadata(id);
+                return native ? { ...native, chainNetwork: orgNetwork } : null;
+              }
+              const known = getTokenMetadata(id);
+              if (known && known.chainNetwork === orgNetwork) return known;
+              const ft = await getFtMetadata(id, orgAccountId);
+              if (!ft) return null;
+              return {
+                tokenId: id,
+                network: "near",
+                chainNetwork: orgNetwork,
+                symbol: ft.symbol,
+                decimals: ft.decimals,
+                name: ft.name,
+                icon: ft.icon,
+              };
+            }),
+          ),
+        );
+        return {
+          tokens: resolved.filter(
+            (t): t is KnownToken & { chainNetwork: "mainnet" | "testnet" } => t !== null,
+          ),
+        };
+      }),
+
+    getStorageStatus: (context: Record<string, unknown>, input: { tokenId: string }) =>
+      Effect.gen(function* () {
+        const orgAccountId = yield* getDaoAccountId(context);
+        if (input.tokenId === NATIVE_TOKEN_ID) {
+          return { tokenId: input.tokenId, status: null };
+        }
+        const status = yield* Effect.promise(() => getStorageBalance(orgAccountId, input.tokenId));
+        return { tokenId: input.tokenId, status };
+      }),
+  };
+}
+
+export type TokensService = ReturnType<typeof createTokensService>;

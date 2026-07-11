@@ -5,8 +5,8 @@
 // This file exercises the cascade service against pglite — matching the existing
 // integration-test pattern in this repo (services tested with a real DB). The plugin-testing
 // skill's full-runtime composition pattern isn't applied here because the adminDelete handler
-// sits behind `gates.admin`, which would require mocking both the auth fetch and `userInRole`
-// — heavy mocking that obscures what's actually being verified (the cascade SQL). Both the
+// sits behind `gates.admin`, which would require mocking the better-auth org context —
+// heavy mocking that obscures what's actually being verified (the cascade SQL). Both the
 // handler and this test call `deleteProjectCascade` directly; the test is not a copy of the
 // handler logic, it's a coverage of the shared service.
 import type { PGlite } from "@electric-sql/pglite";

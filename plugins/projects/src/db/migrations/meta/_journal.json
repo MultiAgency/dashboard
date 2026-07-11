@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1778189697079,
+      "tag": "0000_nice_pepper_potts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778192982329,
+      "tag": "0001_wise_crusher_hogan",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778251917340,
+      "tag": "0002_lowly_darkstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778260000000,
+      "tag": "0003_tidy_ideas",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778515758620,
+      "tag": "0004_lively_hex",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1749700000000,
+      "tag": "0005_scope_result_mentions",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781818000000,
+      "tag": "0006_global_project_slugs",
+      "breakpoints": true
+    }
+  ]
+}

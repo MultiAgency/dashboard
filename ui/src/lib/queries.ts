@@ -18,7 +18,7 @@ export const publicSettingsQueryKey = ["settings", "public"] as const;
 export function publicSettingsQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...publicSettingsQueryKey, getNetwork()] as const,
-    queryFn: () => apiClient.settings.getPublic(),
+    queryFn: () => apiClient.agencyConfig.getPublic(),
     staleTime: 5 * 60_000,
   });
 }
@@ -28,7 +28,7 @@ export const adminSettingsQueryKey = ["settings", "admin"] as const;
 export function adminSettingsQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...adminSettingsQueryKey, getNetwork()] as const,
-    queryFn: () => apiClient.settings.adminGet(),
+    queryFn: () => apiClient.agencyConfig.get(),
     staleTime: 30_000,
     retry: false,
   });
@@ -98,7 +98,7 @@ export const adminProjectsListQueryKey = ["admin", "projects", "list"] as const;
 export function adminProjectsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: adminProjectsListQueryKey,
-    queryFn: () => apiClient.agency.projects.adminList(),
+    queryFn: () => apiClient.agency.projects.list(),
     retry: false,
   });
 }
@@ -108,7 +108,7 @@ export const adminContributorsListQueryKey = ["admin", "contributors", "list"] a
 export function adminContributorsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: adminContributorsListQueryKey,
-    queryFn: () => apiClient.contributors.adminList(),
+    queryFn: () => apiClient.contributors.list(),
     retry: false,
   });
 }
@@ -128,7 +128,7 @@ export const adminProjectDetailQueryKey = ["admin", "projects", "detail"] as con
 export function adminProjectDetailQueryOptions(apiClient: ApiClient, slug: string) {
   return queryOptions({
     queryKey: [...adminProjectDetailQueryKey, getNetwork(), slug] as const,
-    queryFn: () => apiClient.agency.projects.adminGet({ slug }),
+    queryFn: () => apiClient.agency.projects.get({ slug }),
     retry: false,
   });
 }
@@ -148,7 +148,7 @@ export const adminInternalListingQueryKey = ["admin", "listings", "internal"] as
 export function adminInternalListingQueryOptions(apiClient: ApiClient, projectId: string) {
   return queryOptions({
     queryKey: [...adminInternalListingQueryKey, getNetwork(), projectId] as const,
-    queryFn: () => apiClient.agency.listings.adminGet({ projectId }),
+    queryFn: () => apiClient.agency.listings.get({ projectId }),
     retry: false,
   });
 }

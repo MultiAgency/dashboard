@@ -1,4 +1,8 @@
+import { Effect } from "every-plugin/effect";
+import { ORPCError } from "every-plugin/orpc";
+import { getDaoAccountId } from "../lib/org";
 import { fetchWithTimeout } from "./fetch";
+import { defaultNearnAccountId } from "./settings-admin";
 
 const NEARN_BASE_URL = "https://nearn.io";
 const LISTING_TTL_MS = 60_000;
@@ -321,3 +325,67 @@ export async function getNearnListingSubmissions(slug: string): Promise<NearnSub
   submissionsCache.set(slug, { submissions, expiresAt: Date.now() + SUBMISSIONS_TTL_MS });
   return submissions;
 }
+
+export function createNearnService() {
+  return {
+    getListing: (context: Record<string, unknown>, input: { slug: string }) =>
+      Effect.gen(function* () {
+        const orgAccountId = yield* getDaoAccountId(context);
+        if (!isNearnAvailable(orgAccountId)) {
+          return yield* Effect.fail(
+            new ORPCError("NOT_FOUND", {
+              message: "NEARN not available on this network",
+            }),
+          );
+        }
+        try {
+          const listing = yield* Effect.promise(() => getNearnListing(input.slug));
+          return { listing };
+        } catch (err) {
+          const message = (err as Error).message ?? "";
+          if (message.includes("not found")) {
+            return yield* Effect.fail(new ORPCError("NOT_FOUND", { message }));
+          }
+          throw err;
+        }
+      }),
+
+    listSponsorBounties: (context: Record<string, unknown>) =>
+      Effect.gen(function* () {
+        const orgAccountId = yield* getDaoAccountId(context);
+        if (!isNearnAvailable(orgAccountId)) {
+          return { sponsorSlug: null, bounties: [] };
+        }
+        const sponsorSlug = yield* Effect.sync(() => defaultNearnAccountId());
+        if (!sponsorSlug) {
+          return { sponsorSlug: null, bounties: [] };
+        }
+        const bounties = yield* Effect.promise(() => listNearnBountiesForSponsor(sponsorSlug));
+        return { sponsorSlug, bounties };
+      }),
+
+    listSubmissions: (context: Record<string, unknown>, input: { slug: string }) =>
+      Effect.gen(function* () {
+        const orgAccountId = yield* getDaoAccountId(context);
+        if (!isNearnAvailable(orgAccountId)) {
+          return yield* Effect.fail(
+            new ORPCError("NOT_FOUND", {
+              message: "NEARN not available on this network",
+            }),
+          );
+        }
+        try {
+          const submissions = yield* Effect.promise(() => getNearnListingSubmissions(input.slug));
+          return { submissions };
+        } catch (err) {
+          const message = (err as Error).message ?? "";
+          if (message.includes("not found")) {
+            return yield* Effect.fail(new ORPCError("NOT_FOUND", { message }));
+          }
+          throw err;
+        }
+      }),
+  };
+}
+
+export type NearnService = ReturnType<typeof createNearnService>;

@@ -609,3 +609,15 @@ export async function getTreasuryBalances(
   });
   return result;
 }
+
+export async function enrichWithChainStatus<T extends { proposalId: string }>(
+  db: Database,
+  b: T,
+  orgAccountId: string,
+): Promise<T & { status: DaoProposalStatus }> {
+  const proposalId = Number.parseInt(b.proposalId, 10);
+  if (Number.isNaN(proposalId)) return { ...b, status: "InProgress" as const };
+  const proposal = await getProposal(db, orgAccountId, proposalId);
+  const status = (proposal?.status ?? "InProgress") as DaoProposalStatus;
+  return { ...b, status };
+}

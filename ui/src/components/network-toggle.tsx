@@ -1,74 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { useApiClient, useAuthClient } from "@/app";
+import { Globe } from "lucide-react";
+import { useAuthClient } from "@/app";
 import { sessionQueryOptions } from "@/lib/auth";
-import { getNetwork, setNetwork } from "@/lib/network";
-import { publicSettingsQueryOptions } from "@/lib/queries";
-
-type Network = "mainnet" | "testnet";
 
 export function NetworkToggle() {
-  // Skip SSR — cookie/URL-driven hydration risks class mismatch with runtime config.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const auth = useAuthClient();
+  const { data: session } = useQuery(sessionQueryOptions(auth));
+  const supportedNetworks = auth.near.getSupportedNetworks();
+  const currentNetwork = auth.useActiveNetwork();
 
-  const apiClient = useApiClient();
-  const authClient = useAuthClient();
-  const { data: session } = useQuery(sessionQueryOptions(authClient));
-  const { data: publicSettings } = useQuery(publicSettingsQueryOptions(apiClient));
-
-  if (!mounted) return null;
-  // Server pin (NEAR_NETWORK env set) forces single-network mode.
-  if (publicSettings?.networkPinned) return null;
-
-  const current = getNetwork();
-
-  // Signed in: wallet network IS the network; sign out to switch.
   if (session?.user) return null;
+  if (supportedNetworks.length <= 1) return null;
 
   return (
-    <fieldset className="inline-flex items-center gap-0 font-mono text-[10px] uppercase tracking-wide border border-border rounded-sm overflow-hidden">
-      <legend className="sr-only">NEAR network</legend>
-      <NetworkOption value="mainnet" current={current} label="mainnet" />
-      <NetworkOption value="testnet" current={current} label="testnet" />
-    </fieldset>
-  );
-}
-
-function NetworkOption({
-  value,
-  current,
-  label,
-}: {
-  value: Network;
-  current: Network;
-  label: string;
-}) {
-  const active = value === current;
-  const id = `network-${value}`;
-  return (
-    <>
-      <input
-        type="radio"
-        id={id}
-        name="agency-network"
-        value={value}
-        checked={active}
-        onChange={() => {
-          void setNetwork(value);
-        }}
-        className="sr-only peer"
-      />
-      <label
-        htmlFor={id}
-        className={
-          active
-            ? "px-2 h-6 inline-flex items-center bg-foreground text-background cursor-pointer"
-            : "px-2 h-6 inline-flex items-center bg-transparent text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-        }
-      >
-        {label}
-      </label>
-    </>
+    <div className="flex items-center gap-2 p-1 border border-border rounded-lg bg-muted/30">
+      {supportedNetworks.map((network) => (
+        <button
+          type="button"
+          key={network}
+          onClick={() => {
+            auth.near.setNetwork(network);
+          }}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            currentNetwork === network
+              ? "bg-background text-foreground shadow-sm border border-border/50"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <span className="flex items-center gap-1.5">
+            <Globe className="h-3 w-3" />
+            {network === "mainnet" ? "Mainnet" : "Testnet"}
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }

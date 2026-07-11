@@ -1,3 +1,10 @@
+/**
+ * Better-Auth client with NEAR SIWN, passkey, API key, and organization plugins.
+ *
+ * BE CAREFUL MODIFYING THIS FILE — changes will be overwritten by `bos sync` / `bos upgrade`.
+ * Prefer upstream changes at https://github.com/nearbuilders/everything-dev
+ */
+
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { useQuery } from "@tanstack/react-query";
@@ -169,26 +176,6 @@ type PasskeyListResult = Awaited<ReturnType<AuthClient["passkey"]["listUserPassk
 export type SessionData = AuthClient["$Infer"]["Session"];
 export type Organization = NonNullable<OrganizationListResult["data"]>[number];
 export type Passkey = NonNullable<PasskeyListResult["data"]>[number];
-
-export type NearProfile = {
-  name?: string;
-  description?: string;
-  image?: { url?: string; ipfs_cid?: string };
-};
-
-export function nearProfileOptions(authClient: AuthClient) {
-  const nearAccountId = authClient.near.getAccountId();
-  return {
-    queryKey: ["me", "near-profile", nearAccountId ?? null] as const,
-    queryFn: async () => {
-      const res = await authClient.near.getProfile();
-      return (res?.data ?? null) as NearProfile | null;
-    },
-    enabled: !!nearAccountId,
-    staleTime: 5 * 60_000,
-    retry: false,
-  };
-}
 
 export function useAuthClient(): AuthClient {
   return useRouter().options.context.authClient;

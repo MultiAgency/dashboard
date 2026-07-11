@@ -1,7 +1,9 @@
-// Per-request network: NEAR_NETWORK env pin > current_near_network cookie > mainnet default.
-// The client sets the cookie (ui/src/lib/network.ts setNetwork); it rides the api client's
-// credentials:include, so no framework-synced file is touched.
-import { type Network, pinnedNetwork } from "./default-org-account";
+export type Network = "mainnet" | "testnet";
+
+export function pinnedNetwork(): Network | null {
+  const v = process.env.NEAR_NETWORK?.toLowerCase();
+  return v === "testnet" || v === "mainnet" ? (v as Network) : null;
+}
 
 export function getNetwork(reqHeaders: Headers | undefined): Network {
   const pinned = pinnedNetwork();

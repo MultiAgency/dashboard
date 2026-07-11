@@ -7,7 +7,7 @@ Thank you for contributing to everything-dev! 🎉
 ```bash
 bun install              # Install dependencies
 bun db:migrate           # Run database migrations
-bos dev                  # Start development
+bos dev                  # Start development (host mode auto-detected)
 ```
 
 Visit http://localhost:3003 (UI), http://localhost:3001 (API), and http://localhost:3002 (Auth).

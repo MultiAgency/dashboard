@@ -1,6 +1,6 @@
 {
   "extends": "bos://dev.everything.near/dev.everything.dev",
-  "account": "multiagentic.near",
+  "account": "work.efiz.near",
   "domain": "dev.multiagency.ai",
   "title": "MultiAgency",
   "description": "Human-led, AI-native agencies for hire.",
@@ -23,6 +23,28 @@
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
+      ]
+    },
+    "auth": {
+      "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
+      "variables": {
+        "email": {
+          "from": "noreply@multiagency.ai"
+        },
+        "siwn": {
+          "recipients": {
+            "mainnet": "multiagency.sputnik-dao.near",
+            "testnet": "multiagency.sputnikv2.testnet"
+          }
+        }
+      }
+    }
+  },
+  "plugins": {
+    "projects": {
+      "development": "local:plugins/projects",
+      "secrets": [
+        "PROJECTS_DATABASE_URL"
       ]
     }
   }

@@ -212,6 +212,7 @@ export type NewProposal = typeof proposals.$inferInsert;
 
 export const settings = agency.table("settings", {
   orgAccountId: text("org_account_id").primaryKey(),
+  daoAccountId: text("dao_account_id"),
   nearnAccountId: text("nearn_account_id"),
   websiteUrl: text("website_url"),
   docsUrl: text("docs_url"),

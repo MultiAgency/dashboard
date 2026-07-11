@@ -109,7 +109,7 @@ describe("settings-admin (integration)", () => {
   });
 
   test("getResolvedPublicSettings merges DB over env/hardcoded for editable fields", async () => {
-    const before = await getResolvedPublicSettings(db as never, "mainnet", MAINNET_ORG);
+    const before = await getResolvedPublicSettings(db as never, "mainnet");
     expect(before.name).toBe("MultiAgency");
     expect(before.orgAccountId).toBe(MAINNET_ORG);
     // Operational fields fall back to env/hardcoded; on this dev env, hardcoded fallbacks apply
@@ -127,7 +127,7 @@ describe("settings-admin (integration)", () => {
       },
       "admin.near",
     );
-    const after = await getResolvedPublicSettings(db as never, "mainnet", MAINNET_ORG);
+    const after = await getResolvedPublicSettings(db as never, "mainnet");
     expect(after.orgAccountId).toBe(MAINNET_ORG);
     expect(after.nearnAccountId).toBe("agency");
     expect(after.websiteUrl).toBe("https://agency.example");
@@ -151,7 +151,7 @@ describe("settings-admin (integration)", () => {
       "testadmin.testnet",
     );
     // Looking up the mainnet org's row — no row exists → falls back to hardcoded defaults.
-    const mainnet = await getResolvedPublicSettings(db as never, "mainnet", MAINNET_ORG);
+    const mainnet = await getResolvedPublicSettings(db as never, "mainnet");
     expect(mainnet.orgAccountId).toBe(MAINNET_ORG);
     expect(mainnet.nearnAccountId).toBe("multiagency");
     expect(mainnet.websiteUrl).toBe("https://multiagency.ai");

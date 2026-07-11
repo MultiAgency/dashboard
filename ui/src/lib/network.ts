@@ -43,6 +43,7 @@ export async function setNetwork(network: Network): Promise<void> {
   if (typeof window === "undefined") return;
   if (getNetwork() === network) return;
   // Cookie carries the choice to the server, read per-request by api/src/lib/network.ts.
+  // biome-ignore lint/suspicious/noDocumentCookie: server needs to read this cookie per-request
   document.cookie = `${NETWORK_COOKIE}=${network}; path=/; max-age=31536000; samesite=lax; secure`;
   // URL is authoritative; full reload so loaders re-fetch on the new network.
   const url = new URL(window.location.href);

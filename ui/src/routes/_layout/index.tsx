@@ -1,35 +1,170 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useRef } from "react";
 import trezuLogo from "@/assets/brand/trezu.svg";
 import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
 import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
-import { ReactionDiffusionField } from "@/components/reaction-diffusion-field";
 import { useApiClient } from "@/lib/api";
-import { nearnSponsorUrl } from "@/lib/nearn";
-import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
+import { projectsListQueryOptions } from "@/lib/queries";
 import { getRepoUrl } from "@/lib/repo";
-import { trezuTreasuryUrl } from "@/lib/trezu";
 import { Route as RootRoute } from "../__root";
 
-const META_DESCRIPTION = "Human-led, AI-native agencies for hire.";
+const RD_W = 200;
+const RD_H = 130;
+const RD_STEPS_PER_FRAME = 6;
 
-const FALLBACK = {
+const RD_PRESETS = {
+  worms: { du: 0.16, dv: 0.08, f: 0.06, k: 0.062 },
+  solitons: { du: 0.16, dv: 0.08, f: 0.0367, k: 0.0649 },
+  mitosis: { du: 0.16, dv: 0.08, f: 0.014, k: 0.054 },
+  spots: { du: 0.16, dv: 0.08, f: 0.062, k: 0.0609 },
+  coral: { du: 0.16, dv: 0.08, f: 0.039, k: 0.058 },
+  waves: { du: 0.16, dv: 0.08, f: 0.026, k: 0.051 },
+  bacteria: { du: 0.16, dv: 0.08, f: 0.078, k: 0.061 },
+} as const;
+
+type RdPreset = keyof typeof RD_PRESETS;
+
+function ReactionDiffusionField({
+  preset = "worms",
+  className,
+}: {
+  preset?: RdPreset;
+  className?: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { du: DU, dv: DV, f: F, k: K } = RD_PRESETS[preset];
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    canvas.width = RD_W;
+    canvas.height = RD_H;
+    const N = RD_W * RD_H;
+
+    let u = new Float32Array(N).fill(1);
+    let v = new Float32Array(N).fill(0);
+    let un = new Float32Array(N).fill(1);
+    let vn = new Float32Array(N).fill(0);
+
+    for (let s = 0; s < 14; s++) {
+      const cx = 20 + Math.floor(Math.random() * (RD_W - 40));
+      const cy = 20 + Math.floor(Math.random() * (RD_H - 40));
+      const r = 4 + Math.floor(Math.random() * 4);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = cx + dx;
+          const y = cy + dy;
+          if (x >= 0 && x < RD_W && y >= 0 && y < RD_H) {
+            u[y * RD_W + x] = 0.25 + Math.random() * 0.1;
+            v[y * RD_W + x] = 0.5 + Math.random() * 0.1;
+          }
+        }
+      }
+    }
+
+    const probe = document.createElement("canvas");
+    probe.width = probe.height = 1;
+    const probeCtx = probe.getContext("2d", { willReadFrequently: true });
+    const readToken = (varName: string): [number, number, number] => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+      if (!probeCtx || !raw) return [0, 0, 0];
+      probeCtx.fillStyle = raw;
+      probeCtx.fillRect(0, 0, 1, 1);
+      const d = probeCtx.getImageData(0, 0, 1, 1).data;
+      return [d[0], d[1], d[2]];
+    };
+    let bg = readToken("--paper");
+    let fg = readToken("--ink");
+
+    const themeObserver = new MutationObserver(() => {
+      bg = readToken("--paper");
+      fg = readToken("--ink");
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    const img = ctx.createImageData(RD_W, RD_H);
+
+    const step = () => {
+      for (let y = 1; y < RD_H - 1; y++) {
+        const row = y * RD_W;
+        for (let x = 1; x < RD_W - 1; x++) {
+          const i = row + x;
+          const lu = u[i - 1] + u[i + 1] + u[i - RD_W] + u[i + RD_W] - 4 * u[i];
+          const lv = v[i - 1] + v[i + 1] + v[i - RD_W] + v[i + RD_W] - 4 * v[i];
+          const uvv = u[i] * v[i] * v[i];
+          un[i] = u[i] + DU * lu - uvv + F * (1 - u[i]);
+          vn[i] = v[i] + DV * lv + uvv - (F + K) * v[i];
+        }
+      }
+      for (let x = 0; x < RD_W; x++) {
+        un[x] = u[x];
+        vn[x] = v[x];
+        un[(RD_H - 1) * RD_W + x] = u[(RD_H - 1) * RD_W + x];
+        vn[(RD_H - 1) * RD_W + x] = v[(RD_H - 1) * RD_W + x];
+      }
+      for (let y = 0; y < RD_H; y++) {
+        un[y * RD_W] = u[y * RD_W];
+        vn[y * RD_W] = v[y * RD_W];
+        un[y * RD_W + RD_W - 1] = u[y * RD_W + RD_W - 1];
+        vn[y * RD_W + RD_W - 1] = v[y * RD_W + RD_W - 1];
+      }
+      [u, un] = [un, u];
+      [v, vn] = [vn, v];
+    };
+
+    const render = () => {
+      const data = img.data;
+      const [bgR, bgG, bgB] = bg;
+      const [fgR, fgG, fgB] = fg;
+      for (let i = 0; i < N; i++) {
+        const vi = Math.min(1, Math.max(0, v[i] * 1.2));
+        const idx = i * 4;
+        data[idx] = bgR + (fgR - bgR) * vi;
+        data[idx + 1] = bgG + (fgG - bgG) * vi;
+        data[idx + 2] = bgB + (fgB - bgB) * vi;
+        data[idx + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    };
+
+    let rafId = 0;
+    const tick = () => {
+      for (let s = 0; s < RD_STEPS_PER_FRAME; s++) step();
+      render();
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      themeObserver.disconnect();
+    };
+  }, [DU, DV, F, K]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden
+      className={className ?? "absolute inset-0 pointer-events-none w-full h-full opacity-55"}
+      style={{ imageRendering: "pixelated" }}
+    />
+  );
+}
+
+const LANDING = {
   name: "MultiAgency",
   headline: "Open Books · Open Source · Open Doors",
   tagline: "The future of work is near…",
+  description: "Human-led, AI-native agencies for hire.",
 };
-
-function getLandingName(settings?: { name?: string | null } | null) {
-  return settings?.name?.trim() || FALLBACK.name;
-}
-
-function getLandingTagline(settings?: { tagline?: string | null } | null) {
-  return settings?.tagline?.trim() || FALLBACK.tagline;
-}
-
-function getLandingDescription(settings?: { description?: string | null } | null) {
-  return settings?.description?.trim() || META_DESCRIPTION;
-}
 
 const STANDARD = [
   { label: "Website", note: "landing, work, contact" },
@@ -40,24 +175,16 @@ const STANDARD = [
 
 export const Route = createFileRoute("/_layout/")({
   loader: async ({ context }) => {
-    const [settings] = await Promise.all([
-      context.queryClient
-        .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
-        .catch(() => null),
-      context.queryClient
-        .ensureQueryData(projectsListQueryOptions(context.apiClient))
-        .catch(() => null),
-    ]);
+    await context.queryClient
+      .ensureQueryData(projectsListQueryOptions(context.apiClient))
+      .catch(() => null);
 
-    return {
-      landingTitle: `${getLandingName(settings)} — ${getLandingTagline(settings)}`,
-      landingDescription: getLandingDescription(settings),
-    };
+    return null;
   },
-  head: ({ loaderData }) => ({
+  head: () => ({
     meta: [
-      { title: loaderData?.landingTitle ?? `${FALLBACK.name} — ${FALLBACK.tagline}` },
-      { name: "description", content: loaderData?.landingDescription ?? META_DESCRIPTION },
+      { title: `${LANDING.name} — ${LANDING.tagline}` },
+      { name: "description", content: LANDING.description },
     ],
   }),
   component: Landing,
@@ -75,18 +202,9 @@ function Landing() {
   const loaderData = RootRoute.useLoaderData();
   const assetsUrl = loaderData?.runtimeConfig?.assetsUrl ?? "";
 
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
 
-  const s = settingsQuery.data;
-  const agencyName = getLandingName(s);
-  const headline = s?.headline?.trim() || FALLBACK.headline;
-  const description = s?.description?.trim() || null;
-  const contactEmail = s?.contactEmail?.trim() || null;
-  const docsUrl = s?.docsUrl?.trim() || null;
-  const treasuryUrl = s?.orgAccountId ? trezuTreasuryUrl(s.orgAccountId) : null;
   const repositoryUrl = getRepoUrl();
-  const sponsorUrl = s?.nearnAccountId ? nearnSponsorUrl(s.nearnAccountId) : null;
 
   const projects = (projectsQuery.data?.data ?? []) as LandingProject[];
   const visibleProjects = projects.slice(0, 6);
@@ -107,7 +225,7 @@ function Landing() {
                 textRendering: "geometricPrecision",
               }}
             >
-              {agencyName}
+              {LANDING.name}
             </h1>
             <div className="mt-3 flex items-center gap-3">
               <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-[0.22em] text-accent">
@@ -120,13 +238,8 @@ function Landing() {
             </div>
           </div>
           <p className="max-w-2xl pl-3 font-display text-xl sm:text-2xl uppercase font-extrabold tracking-tight leading-tight">
-            {headline}
+            {LANDING.headline}
           </p>
-          {description && (
-            <p className="max-w-2xl pl-3 text-sm leading-relaxed text-foreground/80">
-              {description}
-            </p>
-          )}
           <div className="flex flex-wrap items-center gap-3 pl-3 pt-2">
             <Button asChild variant="outline" className="font-display uppercase tracking-wide">
               <Link to="/apply">join →</Link>
@@ -271,9 +384,7 @@ function Landing() {
       </section>
 
       <footer className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 pt-8 border-t-2 border-foreground/15">
-        {treasuryUrl && <FooterLink href={treasuryUrl}>open books →</FooterLink>}
         <FooterLink href={repositoryUrl}>open source →</FooterLink>
-        {sponsorUrl && <FooterLink href={sponsorUrl}>open doors →</FooterLink>}
         <Link
           to="/docs"
           className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
@@ -281,15 +392,6 @@ function Landing() {
           docs →
         </Link>
         <FooterLink href="https://x.com/_multiagency">x →</FooterLink>
-        {docsUrl && <FooterLink href={docsUrl}>docs site →</FooterLink>}
-        {contactEmail && (
-          <a
-            href={`mailto:${contactEmail}`}
-            className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
-          >
-            {contactEmail}
-          </a>
-        )}
       </footer>
     </div>
   );
