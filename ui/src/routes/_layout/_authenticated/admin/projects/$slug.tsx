@@ -5,7 +5,6 @@ import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { useAuthClient } from "@/app";
 import {
   Alert,
   AlertDescription,
@@ -67,24 +66,21 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/projects/$sl
   }),
   loader: async ({ context, params }) => {
     const projectData = await context.queryClient
-      .ensureQueryData(
-        adminProjectDetailQueryOptions(context.apiClient, context.authClient, params.slug),
-      )
+      .ensureQueryData(adminProjectDetailQueryOptions(context.apiClient, params.slug))
       .catch(() => null);
     if (!projectData) return;
     const projectId = projectData.project.id;
     await Promise.allSettled([
       context.queryClient.ensureQueryData(
-        adminProjectBudgetQueryOptions(context.apiClient, context.authClient, projectId),
+        adminProjectBudgetQueryOptions(context.apiClient, projectId),
       ),
       context.queryClient.ensureQueryData(
-        adminInternalListingQueryOptions(context.apiClient, context.authClient, projectId),
+        adminInternalListingQueryOptions(context.apiClient, projectId),
       ),
       projectData.project.nearnListingId
         ? context.queryClient.ensureQueryData(
             adminNearnSubmissionsQueryOptions(
               context.apiClient,
-              context.authClient,
               projectData.project.nearnListingId,
             ),
           )
@@ -97,13 +93,12 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/projects/$sl
 function AdminProjectDetail() {
   const { slug } = Route.useParams();
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
 
-  const projectQuery = useQuery(adminProjectDetailQueryOptions(apiClient, authClient, slug));
+  const projectQuery = useQuery(adminProjectDetailQueryOptions(apiClient, slug));
 
   const projectId = projectQuery.data?.project.id;
   const budgetQuery = useQuery({
-    ...adminProjectBudgetQueryOptions(apiClient, authClient, projectId ?? ""),
+    ...adminProjectBudgetQueryOptions(apiClient, projectId ?? ""),
     enabled: !!projectId,
   });
 
@@ -217,9 +212,8 @@ function AdminProjectDetail() {
 
 function NearnSubmissionsSection({ slug }: { slug: string }) {
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
   const queryClient = useQueryClient();
-  const query = useQuery(adminNearnSubmissionsQueryOptions(apiClient, authClient, slug));
+  const query = useQuery(adminNearnSubmissionsQueryOptions(apiClient, slug));
   const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
   const contributorByNearAccount = new Map(
     (contributorsQuery.data?.data ?? [])
@@ -428,10 +422,9 @@ function BillingsSection({
   contributors: ProjectContributor[];
 }) {
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
   const [creating, setCreating] = useState(false);
 
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient, authClient));
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
 
   const billingsQuery = useInfiniteQuery({
@@ -827,11 +820,10 @@ function InternalListingSection({
   hasNearnListing: boolean;
 }) {
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const listingQuery = useQuery(adminInternalListingQueryOptions(apiClient, authClient, projectId));
+  const listingQuery = useQuery(adminInternalListingQueryOptions(apiClient, projectId));
 
   const row = listingQuery.data?.listing ?? null;
 

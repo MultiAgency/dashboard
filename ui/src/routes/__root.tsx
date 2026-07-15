@@ -23,10 +23,12 @@ import type { RouterContext } from "@/app";
 import { getBaseStyles } from "@/app";
 import { Toaster } from "@/components/ui/sonner";
 import { sessionQueryKey } from "@/lib/auth";
+import { setAuthClient } from "@/lib/network";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   beforeLoad: async ({ context }) => {
+    setAuthClient(context.authClient);
     const session = context.session;
 
     return {

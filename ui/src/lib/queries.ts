@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "./api";
-import type { AuthClient } from "./auth";
+import { getNetwork } from "./network";
 
 // Loader-hit queries include the active network in their queryKey so data
 // cached under one network can't be served when the visitor switches to
@@ -15,9 +15,9 @@ import type { AuthClient } from "./auth";
 
 export const publicSettingsQueryKey = ["settings", "public"] as const;
 
-export function publicSettingsQueryOptions(apiClient: ApiClient, authClient: AuthClient) {
+export function publicSettingsQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: [...publicSettingsQueryKey, authClient.near.getNetwork()] as const,
+    queryKey: [...publicSettingsQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.agencyConfig.getPublic(),
     staleTime: 5 * 60_000,
   });
@@ -25,9 +25,9 @@ export function publicSettingsQueryOptions(apiClient: ApiClient, authClient: Aut
 
 export const adminSettingsQueryKey = ["settings", "admin"] as const;
 
-export function adminSettingsQueryOptions(apiClient: ApiClient, authClient: AuthClient) {
+export function adminSettingsQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: [...adminSettingsQueryKey, authClient.near.getNetwork()] as const,
+    queryKey: [...adminSettingsQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.agencyConfig.get(),
     staleTime: 30_000,
     retry: false,
@@ -36,9 +36,9 @@ export function adminSettingsQueryOptions(apiClient: ApiClient, authClient: Auth
 
 export const meRolesQueryKey = ["me", "roles"] as const;
 
-export function meRolesQueryOptions(apiClient: ApiClient, authClient: AuthClient) {
+export function meRolesQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: [...meRolesQueryKey, authClient.near.getNetwork()] as const,
+    queryKey: [...meRolesQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.me.roles(),
     staleTime: 60_000,
     retry: false,
@@ -47,9 +47,9 @@ export function meRolesQueryOptions(apiClient: ApiClient, authClient: AuthClient
 
 export const teamListQueryKey = ["team", "list"] as const;
 
-export function teamListQueryOptions(apiClient: ApiClient, authClient: AuthClient) {
+export function teamListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: [...teamListQueryKey, authClient.near.getNetwork()] as const,
+    queryKey: [...teamListQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.team.list(),
     staleTime: 60_000,
     retry: false,
@@ -58,9 +58,9 @@ export function teamListQueryOptions(apiClient: ApiClient, authClient: AuthClien
 
 export const projectsListQueryKey = ["projects", "list"] as const;
 
-export function projectsListQueryOptions(apiClient: ApiClient, authClient: AuthClient) {
+export function projectsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: [...projectsListQueryKey, authClient.near.getNetwork()] as const,
+    queryKey: [...projectsListQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.agency.projects.list(),
     staleTime: 60_000,
   });
@@ -68,26 +68,22 @@ export function projectsListQueryOptions(apiClient: ApiClient, authClient: AuthC
 
 export const tokensListQueryKey = ["tokens", "list"] as const;
 
-export function tokensListQueryOptions(apiClient: ApiClient, authClient: AuthClient) {
+export function tokensListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: [...tokensListQueryKey, authClient.near.getNetwork()] as const,
+    queryKey: [...tokensListQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.tokens.list(),
     staleTime: 60 * 60_000,
     retry: false,
   });
 }
 
-export function treasuryPublicBalancesQueryOptions(
-  apiClient: ApiClient,
-  authClient: AuthClient,
-  tokenIds: string[],
-) {
+export function treasuryPublicBalancesQueryOptions(apiClient: ApiClient, tokenIds: string[]) {
   return queryOptions({
     queryKey: [
       "treasury",
       "balances",
       "public",
-      authClient.near.getNetwork(),
+      getNetwork(),
       [...tokenIds].sort().join(","),
     ] as const,
     queryFn: () => apiClient.treasury.getPublicBalances({ tokenIds }),
@@ -129,13 +125,9 @@ export function adminTokensQueryOptions(apiClient: ApiClient) {
 
 export const adminProjectDetailQueryKey = ["admin", "projects", "detail"] as const;
 
-export function adminProjectDetailQueryOptions(
-  apiClient: ApiClient,
-  authClient: AuthClient,
-  slug: string,
-) {
+export function adminProjectDetailQueryOptions(apiClient: ApiClient, slug: string) {
   return queryOptions({
-    queryKey: [...adminProjectDetailQueryKey, authClient.near.getNetwork(), slug] as const,
+    queryKey: [...adminProjectDetailQueryKey, getNetwork(), slug] as const,
     queryFn: () => apiClient.agency.projects.get({ slug }),
     retry: false,
   });
@@ -143,13 +135,9 @@ export function adminProjectDetailQueryOptions(
 
 export const adminProjectBudgetQueryKey = ["admin", "projects", "budget"] as const;
 
-export function adminProjectBudgetQueryOptions(
-  apiClient: ApiClient,
-  authClient: AuthClient,
-  projectId: string,
-) {
+export function adminProjectBudgetQueryOptions(apiClient: ApiClient, projectId: string) {
   return queryOptions({
-    queryKey: [...adminProjectBudgetQueryKey, authClient.near.getNetwork(), projectId] as const,
+    queryKey: [...adminProjectBudgetQueryKey, getNetwork(), projectId] as const,
     queryFn: () => apiClient.agency.projects.getBudget({ projectId }),
     staleTime: 30_000,
   });
@@ -157,13 +145,9 @@ export function adminProjectBudgetQueryOptions(
 
 export const adminInternalListingQueryKey = ["admin", "listings", "internal"] as const;
 
-export function adminInternalListingQueryOptions(
-  apiClient: ApiClient,
-  authClient: AuthClient,
-  projectId: string,
-) {
+export function adminInternalListingQueryOptions(apiClient: ApiClient, projectId: string) {
   return queryOptions({
-    queryKey: [...adminInternalListingQueryKey, authClient.near.getNetwork(), projectId] as const,
+    queryKey: [...adminInternalListingQueryKey, getNetwork(), projectId] as const,
     queryFn: () => apiClient.agency.listings.get({ projectId }),
     retry: false,
   });
@@ -171,13 +155,9 @@ export function adminInternalListingQueryOptions(
 
 export const adminNearnSubmissionsQueryKey = ["admin", "nearn", "submissions"] as const;
 
-export function adminNearnSubmissionsQueryOptions(
-  apiClient: ApiClient,
-  authClient: AuthClient,
-  slug: string,
-) {
+export function adminNearnSubmissionsQueryOptions(apiClient: ApiClient, slug: string) {
   return queryOptions({
-    queryKey: [...adminNearnSubmissionsQueryKey, authClient.near.getNetwork(), slug] as const,
+    queryKey: [...adminNearnSubmissionsQueryKey, getNetwork(), slug] as const,
     queryFn: () => apiClient.nearn.listSubmissions({ slug }),
     staleTime: 60_000,
     retry: false,

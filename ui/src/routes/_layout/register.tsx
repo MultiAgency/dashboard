@@ -4,9 +4,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { getRepository } from "@/app";
 import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { useApiClient } from "@/lib/api";
+import { getRepoUrl } from "@/lib/repo";
 
 export const Route = createFileRoute("/_layout/register")({
   head: () => ({
@@ -238,7 +238,7 @@ function RegisterPage() {
             </Button>
           </form>
           <a
-            href={getRepository() ?? "https://github.com/MultiAgency/dashboard"}
+            href={getRepoUrl()}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"

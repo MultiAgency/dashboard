@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { getNetwork, setNetwork } from "@/lib/network";
 import { meRolesQueryKey, meRolesQueryOptions } from "@/lib/queries";
 
 type Network = "mainnet" | "testnet";
@@ -78,10 +79,7 @@ export function UserNav() {
     staleTime: 5 * 60_000,
     retry: false,
   });
-  const { data: roles } = useQuery({
-    ...meRolesQueryOptions(apiClient, authClient),
-    enabled: !!user,
-  });
+  const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
   const orgRole = roles?.orgRole ?? null;
   const isSuperAdmin = session?.user?.role === "admin";
   const avatarUrl =
@@ -101,7 +99,7 @@ export function UserNav() {
           "Sign-in completed but no NEAR account was found on the session. Try again — if the issue persists, check that the auth server is running and your wallet is connected.",
         );
       }
-      const dashboardNetwork = authClient.near.getNetwork();
+      const dashboardNetwork = getNetwork();
       const walletNetwork = networkOf(account);
       if (walletNetwork !== dashboardNetwork) {
         // Swallow signOut failures — the toast fires regardless, and the user's recovery click
@@ -127,7 +125,7 @@ export function UserNav() {
             action: {
               label: `switch to ${error.walletNetwork}`,
               onClick: () => {
-                void authClient.near.setNetwork(error.walletNetwork);
+                void setNetwork(error.walletNetwork);
               },
             },
             duration: 15_000,

@@ -8,7 +8,6 @@ import {
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useAuthClient } from "@/app";
 import {
   Badge,
   Button,
@@ -44,7 +43,7 @@ export const Route = createFileRoute("/_layout/team")({
   }),
   loader: async ({ context }) => {
     const team = await context.queryClient
-      .ensureQueryData(teamListQueryOptions(context.apiClient, context.authClient))
+      .ensureQueryData(teamListQueryOptions(context.apiClient))
       .catch(() => null);
 
     return { team };
@@ -62,12 +61,11 @@ type Role = {
 function Team() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
   const { canAccessAdmin, isLoaded } = useMeRoles();
   const [selectedMember, setSelectedMember] = useState<string | null>(null);
 
   const teamQuery = useQuery({
-    ...teamListQueryOptions(apiClient, authClient),
+    ...teamListQueryOptions(apiClient),
     initialData: loaderData.team ?? undefined,
   });
 

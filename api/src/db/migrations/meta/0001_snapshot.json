@@ -1,6 +1,6 @@
 {
-  "id": "e93a702c-6840-46b6-b1f7-015a8a329985",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "2c9acd39-674f-41d7-8376-f08fd780053f",
+  "prevId": "e93a702c-6840-46b6-b1f7-015a8a329985",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -915,6 +915,12 @@
           "type": "text",
           "primaryKey": true,
           "notNull": true
+        },
+        "dao_account_id": {
+          "name": "dao_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "nearn_account_id": {
           "name": "nearn_account_id",
