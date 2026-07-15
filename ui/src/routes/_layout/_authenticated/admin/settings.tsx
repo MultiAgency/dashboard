@@ -3,7 +3,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
+import {
+  Button,
+  Card,
+  CardContent,
+  Input,
+  Spinner,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Textarea,
+} from "@/components";
+import { MembersAdminSection } from "@/components/admin/members-section";
 import { AdminError } from "@/components/admin-error";
 import { useApiClient } from "@/lib/api";
 import {
@@ -12,12 +24,58 @@ import {
   publicSettingsQueryKey,
 } from "@/lib/queries";
 
+const settingsSearchSchema = z.object({
+  tab: z.enum(["agency", "members"]).optional().catch("agency"),
+});
+
 export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
   head: () => ({
     meta: [{ title: "Settings | Admin" }],
   }),
-  component: AdminSettings,
+  validateSearch: settingsSearchSchema,
+  loader: ({ context }) =>
+    context.queryClient.ensureQueryData(adminSettingsQueryOptions(context.apiClient)),
+  component: AdminSettingsPage,
 });
+
+function AdminSettingsPage() {
+  const { tab } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  const activeTab = tab === "members" ? "members" : "agency";
+
+  return (
+    <div className="space-y-6">
+      <header className="space-y-2">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          admin · settings
+        </div>
+        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
+          Settings
+        </h1>
+      </header>
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          void navigate({
+            search: { tab: value === "members" ? "members" : undefined },
+            replace: true,
+          });
+        }}
+      >
+        <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.22em]">
+          <TabsTrigger value="agency">agency</TabsTrigger>
+          <TabsTrigger value="members">members</TabsTrigger>
+        </TabsList>
+        <TabsContent value="agency" className="mt-6">
+          <AdminSettings />
+        </TabsContent>
+        <TabsContent value="members" className="mt-6">
+          <MembersAdminSection />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
 
 const optionalUrl = z
   .string()

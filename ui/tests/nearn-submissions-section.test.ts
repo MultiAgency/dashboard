@@ -10,9 +10,9 @@ const source = readFileSync(
     "routes",
     "_layout",
     "_authenticated",
-    "_admin",
     "admin",
-    "projects.$slug.tsx",
+    "projects",
+    "$slug.tsx",
   ),
   "utf8",
 );
@@ -28,13 +28,11 @@ describe("NearnSubmissionsSection — wiring guarantees", () => {
 
   test("link href goes through safeHttpHref (no raw user-supplied URL)", () => {
     expect(source).toMatch(/safeHttpHref\(s\.link\)/);
-    // and the safeHttpHref import is present
     expect(source).toMatch(/import\s*\{\s*safeHttpHref\s*\}\s*from\s*"@\/lib\/url"/);
   });
 
   test("contributor match uses adminContributorsListQueryOptions + nearAccountId join key", () => {
     expect(source).toMatch(/adminContributorsListQueryOptions\(apiClient\)/);
-    // The Map is keyed on nearAccountId — the bridge field
     expect(source).toMatch(/nearAccountId/);
     expect(source).toMatch(/contributorByNearAccount\.has\(s\.user\.publicKey\)/);
   });
@@ -50,13 +48,12 @@ describe("NearnSubmissionsSection — wiring guarantees", () => {
 });
 
 describe("NearnSubmissionsSection — add-contributor CTA", () => {
-  test("mutation calls contributors.adminCreate", () => {
+  test("mutation calls contributors.create", () => {
     expect(source).toMatch(/const\s+addContributorMutation\s*=\s*useMutation/);
-    expect(source).toMatch(/apiClient\.contributors\.adminCreate\(input\)/);
+    expect(source).toMatch(/apiClient\.contributors\.create\(input\)/);
   });
 
   test("mutation input pulls name from submission fields with publicKey fallback", () => {
-    // name: s.user.name ?? s.user.username ?? s.user.publicKey!
     expect(source).toMatch(
       /name:\s*s\.user\.name\s*\?\?\s*s\.user\.username\s*\?\?\s*s\.user\.publicKey!/,
     );
@@ -73,23 +70,18 @@ describe("NearnSubmissionsSection — add-contributor CTA", () => {
   });
 
   test("CTA renders only when publicKey is unmatched (mirror of the match badge)", () => {
-    // The ternary that toggles match-badge vs add-contributor button:
-    // contributorByNearAccount.has(s.user.publicKey) ? <Badge ...> : <Button ...>
     expect(source).toMatch(
       /contributorByNearAccount\.has\(s\.user\.publicKey\)\s*\?[\s\S]*?\+ add contributor/,
     );
   });
 
   test("badge + CTA are both gated on contributorsQuery.isSuccess (no duplicate-create window)", () => {
-    // Loading/error states for the contributors list must hide both surfaces;
-    // otherwise an unmatched-looking row could trigger a duplicate adminCreate.
     expect(source).toMatch(
       /contributorsQuery\.isSuccess\s*&&[\s\S]*?contributorByNearAccount\.has/,
     );
   });
 
   test("button shows 'adding…' while the mutation for that specific publicKey is in flight", () => {
-    // Per-row pending state via mutation.variables match
     expect(source).toMatch(
       /addContributorMutation\.isPending\s*&&[\s\S]*?addContributorMutation\.variables\?\.nearAccountId\s*===\s*s\.user\.publicKey/,
     );

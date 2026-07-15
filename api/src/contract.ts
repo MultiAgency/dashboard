@@ -88,6 +88,7 @@ const project = z.object({
 export const publicProject = project.omit({ description: true, nearnListingId: true });
 
 const nearnListing = z.object({
+  id: z.string().nullable(),
   slug: z.string(),
   title: z.string().nullable(),
   description: z.string().nullable(),
@@ -162,6 +163,7 @@ const listing = z.object({
   isPublished: z.boolean().nullable(),
   isArchived: z.boolean().nullable(),
   isWinnersAnnounced: z.boolean().nullable(),
+  lifecycle: z.enum(["draft", "published", "winners_announced", "archived"]),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -174,9 +176,7 @@ const internalListingCreate = z.object({
   rewardAmount: decimalAmount,
   description: z.string().max(16000).optional(),
   deadline: z.date().nullable().optional(),
-  isPublished: z.boolean().optional(),
-  isArchived: z.boolean().optional(),
-  isWinnersAnnounced: z.boolean().optional(),
+  lifecycle: z.enum(["draft", "published", "winners_announced", "archived"]).optional(),
 });
 
 const internalListingUpdate = z.object({
@@ -187,9 +187,7 @@ const internalListingUpdate = z.object({
   rewardAmount: decimalAmount.optional(),
   description: z.string().max(16000).nullable().optional(),
   deadline: z.date().nullable().optional(),
-  isPublished: z.boolean().optional(),
-  isArchived: z.boolean().optional(),
-  isWinnersAnnounced: z.boolean().optional(),
+  lifecycle: z.enum(["draft", "published", "winners_announced", "archived"]).optional(),
 });
 
 const contributor = z.object({
@@ -279,7 +277,7 @@ export const contract = oc.router({
           kind: applicationKind,
           name: z.string().min(1).max(200),
           email: z.string().email().max(320),
-          nearAccountId: z.string().max(200).optional(),
+          nearAccountId: nearAccountId.optional(),
           message: z.string().max(4000).optional(),
           metadata: z.record(z.string(), z.unknown()).optional(),
         }),
@@ -358,7 +356,7 @@ export const contract = oc.router({
             slug,
             title: z.string().min(1).max(200),
             description: z.string().max(16000).optional(),
-            repository: httpUrl.optional(),
+            repository: httpUrl,
             nearnListingId: z.string().max(200).optional(),
             kind: projectKind.default("project"),
             status: projectStatus.default("active"),
@@ -465,6 +463,24 @@ export const contract = oc.router({
               role: z.string().nullable(),
               createdAt: z.date(),
               contributor,
+            }),
+          ),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    listAll: oc
+      .route({ method: "GET", path: "/admin/assignments" })
+      .output(
+        z.object({
+          data: z.array(
+            z.object({
+              projectId: z.string(),
+              projectSlug: z.string(),
+              projectTitle: z.string(),
+              contributorId: z.string(),
+              role: z.string().nullable(),
+              createdAt: z.date(),
             }),
           ),
         }),
@@ -725,6 +741,7 @@ export const contract = oc.router({
           sponsorSlug: z.string().nullable(),
           bounties: z.array(
             z.object({
+              id: z.string().nullable(),
               slug: z.string(),
               title: z.string().nullable(),
               type: z.string().nullable(),

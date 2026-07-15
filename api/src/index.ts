@@ -8,6 +8,7 @@ import { loadMigrations } from "./db/load-migrations";
 import { migrate } from "./db/migrator";
 import { createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
+import { flagsToLifecycle, lifecycleToFlags } from "./lib/listing-lifecycle";
 import { getNetwork, pinnedNetwork } from "./lib/network";
 import { getDaoAccountIdOrThrow } from "./lib/org";
 import type { PluginsClient } from "./lib/plugins-types.gen";
@@ -69,6 +70,19 @@ export default createPlugin.withPlugins<PluginsClient>()({
   createRouter: (services, builder) => {
     const { db, notifyConfig, plugins } = services;
     const auth = createAuthMiddleware(builder);
+
+    const withLifecycle = <
+      T extends {
+        isPublished?: boolean | null;
+        isWinnersAnnounced?: boolean | null;
+        isArchived?: boolean | null;
+      },
+    >(
+      listing: T,
+    ) => ({
+      ...listing,
+      lifecycle: flagsToLifecycle(listing),
+    });
 
     const applications = createApplicationsService(db, notifyConfig);
     const agency = createAgencyService(db, plugins);
@@ -149,7 +163,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
                       skipRefresh: true,
                     }),
                   ),
-                  Effect.map((listing) => ({ listing })),
+                  Effect.map((listing) => ({
+                    listing: listing ? withLifecycle(listing) : null,
+                  })),
                 ),
               );
               return row;
@@ -164,6 +180,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
                   agency.requireProjectInOrg(input.projectId, orgId, context),
                 ).pipe(
                   Effect.andThen(() => {
+                    const flags = lifecycleToFlags(input.lifecycle ?? "draft");
                     const fields = {
                       title: input.title,
                       type: input.type,
@@ -171,13 +188,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
                       rewardAmount: input.rewardAmount,
                       description: input.description ?? null,
                       deadline: input.deadline ?? null,
-                      isPublished: input.isPublished ?? false,
-                      isArchived: input.isArchived ?? false,
-                      isWinnersAnnounced: input.isWinnersAnnounced ?? false,
+                      ...flags,
                     };
                     return listings.createInternalListing(input.projectId, fields);
                   }),
-                  Effect.map((listing) => ({ listing })),
+                  Effect.map((listing) => ({ listing: withLifecycle(listing) })),
                 ),
               );
             }),
@@ -186,7 +201,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
             .use(auth.requireOrgRole("admin", "owner", "member"))
             .handler(async ({ context, input }) => {
               const orgAccountId = getDaoAccountIdOrThrow(context);
-              const { projectId, ...patch } = input;
+              const { projectId, lifecycle, ...rest } = input;
+              const patch = {
+                ...rest,
+                ...(lifecycle ? lifecycleToFlags(lifecycle) : {}),
+              };
               return runEffect(
                 Effect.promise(() =>
                   agency.requireProjectInOrg(projectId, orgAccountId, context),
@@ -200,7 +219,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
                         }),
                       );
                     }
-                    return Effect.succeed({ listing: row });
+                    return Effect.succeed({ listing: withLifecycle(row) });
                   }),
                 ),
               );
@@ -255,6 +274,32 @@ export default createPlugin.withPlugins<PluginsClient>()({
                 agency.requireProjectInOrg(input.projectId, orgAccountId, context),
               ).pipe(Effect.andThen(() => assignments.list(input.projectId))),
             );
+          }),
+
+        listAll: builder.assignments.listAll
+          .use(auth.requireOrgRole("admin", "owner", "member"))
+          .handler(async ({ context }) => {
+            const orgAccountId = getDaoAccountIdOrThrow(context);
+            const [rows, byId] = await Promise.all([
+              runEffect(assignments.listAll()),
+              agency.fetchOrgProjectsById(orgAccountId, context),
+            ]);
+            return {
+              data: rows.data
+                .map((row) => {
+                  const project = byId.get(row.projectId);
+                  if (!project) return null;
+                  return {
+                    projectId: row.projectId,
+                    projectSlug: project.slug,
+                    projectTitle: project.title,
+                    contributorId: row.contributorId,
+                    role: row.role,
+                    createdAt: row.createdAt,
+                  };
+                })
+                .filter((r): r is NonNullable<typeof r> => r !== null),
+            };
           }),
 
         create: builder.assignments.create

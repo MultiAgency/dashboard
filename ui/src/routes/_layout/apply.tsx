@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { useApiClient } from "@/lib/api";
+import { isValidNearAccountId } from "@/lib/near-account";
 import { nearnSponsorUrl } from "@/lib/nearn";
 import { publicSettingsQueryOptions } from "@/lib/queries";
 
@@ -22,7 +23,11 @@ export const Route = createFileRoute("/_layout/apply")({
 const applySchema = z.object({
   name: z.string().trim().min(1, "name required"),
   email: z.string().trim().min(1, "email required").email("not a valid email"),
-  nearAccountId: z.string().trim().optional(),
+  nearAccountId: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => !v || isValidNearAccountId(v), "not a valid NEAR account id"),
   message: z.string().trim().optional(),
 });
 

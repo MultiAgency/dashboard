@@ -2,12 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
-// The agent-browser audit couldn't exercise these cases because the testnet DAO fixture has
-// no proposals with `Failed`/`Removed`/`Expired`/`Moved` status or a `Remove` vote. Source-level
-// assertions lock the rendering logic in place so the unverified branches don't silently rot.
-
 const source = readFileSync(
-  resolve(import.meta.dirname, "..", "src", "components", "proposals-list.tsx"),
+  resolve(import.meta.dirname, "..", "src", "routes", "_layout", "treasury.tsx"),
   "utf8",
 );
 
@@ -30,7 +26,6 @@ describe("proposals-list — STATUS_ROW_TINT map covers every status with the ex
 
   test("tint is applied to the TableRow className via STATUS_ROW_TINT lookup", () => {
     expect(source).toMatch(/STATUS_ROW_TINT\[proposal\.status\]/);
-    // The fallback `?? ""` guards against any future status that bypasses the map.
     expect(source).toMatch(/STATUS_ROW_TINT\[proposal\.status\]\s*\?\?\s*""/);
   });
 });

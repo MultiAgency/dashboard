@@ -68,7 +68,7 @@ export function createProposalsService(db: Database, agency: AgencyService) {
     list: (context: Record<string, unknown>, input: { fromIndex?: number; limit: number }) =>
       Effect.gen(function* () {
         const orgAccountId = yield* agency.getDaoAccountId(context);
-        const isContributor = ["admin", "contributor"].includes(
+        const isContributor = ["admin", "owner", "contributor"].includes(
           (context as any).organization?.member?.role ?? "",
         );
 

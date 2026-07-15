@@ -150,10 +150,13 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
       Effect.gen(function* () {
         const orgAccountId = yield* getDaoAccountId(context);
         const memberRole = (context as any).organization?.member?.role as string | undefined;
-        const isContributor = memberRole === "admin" || memberRole === "contributor";
+        // Better Auth org roles are admin/owner/member. "contributor" is a legacy alias.
+        // Owners/admins must see private projects — create defaults to visibility=private.
+        const canSeePrivate =
+          memberRole === "admin" || memberRole === "owner" || memberRole === "contributor";
 
         const upstream = yield* Effect.promise(() =>
-          isContributor
+          canSeePrivate
             ? fetchOrgProjects(orgAccountId, context)
             : fetchOrgProjectsPaginated(plugins, orgAccountId, context, {
                 visibility: "public",
@@ -165,7 +168,7 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
         const linkByProjectId = isNearnAvailable(orgAccountId)
           ? yield* Effect.promise(() =>
               getListingsForProjects(projectIds, "nearn", orgAccountId, db, {
-                skipRefresh: !isContributor,
+                skipRefresh: !canSeePrivate,
               }),
             )
           : new Map();
@@ -189,10 +192,11 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
       Effect.gen(function* () {
         const orgAccountId = yield* getDaoAccountId(context);
         const memberRole = (context as any).organization?.member?.role as string | undefined;
-        const isContributor = memberRole === "admin" || memberRole === "contributor";
+        const canSeePrivate =
+          memberRole === "admin" || memberRole === "owner" || memberRole === "contributor";
 
         let upstreamMatch: UpstreamProject | undefined;
-        if (isContributor) {
+        if (canSeePrivate) {
           const all = yield* Effect.promise(() => fetchOrgProjects(orgAccountId, context));
           upstreamMatch = all.find((p) => p.slug === slug);
         } else {
@@ -209,7 +213,7 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Project not found" }));
         }
 
-        if (!isContributor) {
+        if (!canSeePrivate) {
           return {
             project: {
               ...toContractProject(upstreamMatch, null, orgAccountId),
@@ -312,7 +316,7 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
         slug: string;
         title: string;
         description?: string;
-        repository?: string;
+        repository: string;
         nearnListingId?: string;
         kind?: "project" | "idea";
         status?: string;

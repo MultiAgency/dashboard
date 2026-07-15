@@ -108,21 +108,22 @@
     "@changesets/cli": "^2.29.8"
   },
   "dependencies": {
-    "@electric-sql/pglite": "catalog:",
-    "@orpc/contract": "catalog:",
-    "better-near-auth": "catalog:",
-    "every-plugin": "catalog:",
-    "everything-dev": "catalog:",
     "@better-auth/api-key": "catalog:",
+    "@better-auth/core": "catalog:",
     "@better-auth/passkey": "catalog:",
+    "@electric-sql/pglite": "catalog:",
     "@hot-labs/near-connect": "0.11.2",
+    "@libsql/client": "catalog:",
+    "@opentelemetry/api": "catalog:",
+    "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
     "better-auth": "catalog:",
+    "better-near-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "zod": "catalog:",
-    "@opentelemetry/api": "catalog:",
-    "@libsql/client": "catalog:",
-    "@better-auth/core": "catalog:"
+    "every-plugin": "catalog:",
+    "everything-dev": "catalog:",
+    "mermaid": "^11.16.0",
+    "zod": "catalog:"
   }
 }

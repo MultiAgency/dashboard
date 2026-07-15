@@ -169,7 +169,8 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
   });
 
   const isPending = createMutation.isPending;
-  const canSubmit = name.trim() && adminEmail.trim();
+  const canSubmit =
+    !!name.trim() && !!adminEmail.trim() && (orgType !== "agency" || !!daoAccountId.trim());
 
   return (
     <Card>
@@ -221,7 +222,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
         {orgType === "agency" && (
           <div className="space-y-1">
             <label htmlFor="org-dao" className={LABEL_CLS}>
-              sputnik dao account
+              sputnik dao account (required)
             </label>
             <Input
               id="org-dao"
@@ -231,7 +232,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
               disabled={isPending}
             />
             <p className="font-mono text-[10px] text-muted-foreground">
-              optional — links this agency to a Sputnik DAO for treasury/proposals.
+              required for agency — links this workspace to a Sputnik DAO for treasury/proposals.
             </p>
           </div>
         )}

@@ -60,7 +60,7 @@ export function Field({
 }
 
 export const textareaClass =
-  "flex w-full border-2 border-input bg-card px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-accent disabled:cursor-not-allowed disabled:opacity-50";
+  "flex w-full border-2 border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/45 placeholder:italic focus-visible:outline-none focus-visible:border-accent disabled:cursor-not-allowed disabled:opacity-50";
 
 export const selectClass =
-  "flex h-10 w-full border-2 border-input bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:border-accent disabled:cursor-not-allowed disabled:opacity-50";
+  "flex h-10 w-full border-2 border-input bg-card px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:border-accent disabled:cursor-not-allowed disabled:opacity-50";

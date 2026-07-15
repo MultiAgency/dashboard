@@ -15,6 +15,13 @@
       "when": 1783284287178,
       "tag": "0001_glossy_boom_boom",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784064000000,
+      "tag": "0002_nearn_external_uuid",
+      "breakpoints": true
     }
   ]
 }

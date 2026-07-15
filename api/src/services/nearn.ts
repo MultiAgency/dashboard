@@ -27,6 +27,7 @@ export type NearnCompensationType = "fixed" | "range" | "variable";
 export type NearnSubmissionLimit = "single" | "multiple";
 
 export interface NearnListing {
+  id: string | null;
   slug: string;
   title: string | null;
   description: string | null;
@@ -110,6 +111,7 @@ export interface NearnSubmission {
 // (rewards/maxBonusSpots/usdValue/region/applicationType/multipleSubmissionRule/timeToComplete/etc.)
 // require a follow-up details fetch.
 export interface NearnSponsorBounty {
+  id: string | null;
   slug: string;
   sequentialId: number | null;
   title: string | null;
@@ -154,6 +156,7 @@ export async function getNearnListing(slug: string): Promise<NearnListing> {
   const sponsorRaw = (raw.sponsor as Record<string, unknown> | undefined) ?? null;
   const countsRaw = (raw.BountyCounts as Record<string, unknown> | undefined) ?? null;
   const listing: NearnListing = {
+    id: typeof raw.id === "string" ? (raw.id as string) : null,
     slug: (raw.slug as string) ?? slug,
     title: (raw.title as string) ?? null,
     description: (raw.description as string) ?? null,
@@ -244,6 +247,7 @@ export async function listNearnBountiesForSponsor(
     .map((b) => {
       const countsRaw = (b.BountyCounts as Record<string, unknown> | undefined) ?? null;
       return {
+        id: typeof b.id === "string" ? (b.id as string) : null,
         slug: b.slug,
         sequentialId: typeof b.sequentialId === "number" ? (b.sequentialId as number) : null,
         title: (b.title as string) ?? null,

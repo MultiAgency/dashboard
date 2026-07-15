@@ -27,6 +27,7 @@ function uniqueSlug(): string {
 
 function sample(slug: string, overrides: Partial<NearnListing> = {}): NearnListing {
   return {
+    id: "0e6ba6ef-6e50-4149-89fe-f16f531e79cf",
     slug,
     title: "Build portal",
     description: "desc",

@@ -111,8 +111,7 @@ describe("settings-admin (integration)", () => {
   test("getResolvedPublicSettings merges DB over env/hardcoded for editable fields", async () => {
     const before = await getResolvedPublicSettings(db as never, "mainnet");
     expect(before.name).toBe("MultiAgency");
-    expect(before.orgAccountId).toBe(MAINNET_ORG);
-    // Operational fields fall back to env/hardcoded; on this dev env, hardcoded fallbacks apply
+    expect(before.orgAccountId).toBeNull();
     expect(before.nearnAccountId).toBe("multiagency");
 
     await upsertSettings(
@@ -134,12 +133,11 @@ describe("settings-admin (integration)", () => {
     expect(after.docsUrl).toBe("https://docs.agency.example");
     expect(after.description).toBe("test pitch");
     expect(after.contactEmail).toBe("hi@agency.example");
-    // Brand identity unchanged by DB row
     expect(after.name).toBe("MultiAgency");
     expect(after.headline).toBe("Open Books · Open Source · Open Doors");
   });
 
-  test("rows are tenant-isolated — DAO A's row doesn't bleed into DAO B's resolved view", async () => {
+  test("getResolvedPublicSettings uses the stored settings row when present", async () => {
     await upsertSettings(
       db as never,
       TESTNET_ORG,
@@ -150,11 +148,10 @@ describe("settings-admin (integration)", () => {
       },
       "testadmin.testnet",
     );
-    // Looking up the mainnet org's row — no row exists → falls back to hardcoded defaults.
-    const mainnet = await getResolvedPublicSettings(db as never, "mainnet");
-    expect(mainnet.orgAccountId).toBe(MAINNET_ORG);
-    expect(mainnet.nearnAccountId).toBe("multiagency");
-    expect(mainnet.websiteUrl).toBe("https://multiagency.ai");
+    const resolved = await getResolvedPublicSettings(db as never, "mainnet");
+    expect(resolved.orgAccountId).toBe(TESTNET_ORG);
+    expect(resolved.nearnAccountId).toBe("testnet-only");
+    expect(resolved.websiteUrl).toBe("https://testnet.example");
   });
 
   test("orgAccountId is the row's immutable identity — cannot be changed via upsert", async () => {

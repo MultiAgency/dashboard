@@ -8,6 +8,7 @@ description: NEARN (NEAR talent marketplace) integration — what NEARN is, the 
 ## When to use this skill
 
 Read this skill when:
+
 - Reading NEARN listings or sponsor bounties from any backend
 - Deciding whether to mirror NEARN content locally or link out
 - Adding a public-facing surface that should defer to NEARN for narrative
@@ -16,20 +17,15 @@ Read this skill when:
 
 ## System diagram
 
-```
-                  NEARN (nearn.io)
-            Sponsors / Bounties / Submissions
-                        │
-       ┌────────────────┼────────────────┐
-       ▼                ▼                ▼
-  Sponsors post    Third-party       Contributors
-  listings on      reads via         apply via
-  NEARN UI         observed API      NEARN UI;
-  (operator)       (read-only;       get paid via
-                   no write-back)    "Pay with NEAR
-                                     Treasury" →
-                                     Sputnik DAO
-                                     proposal
+```mermaid
+flowchart TB
+  N["NEARN (nearn.io)<br/>Sponsors / Bounties / Submissions"]
+  S["Sponsors post listings<br/>on NEARN UI<br/>(operator)"]
+  T["Third-party reads via<br/>observed API<br/>(read-only; no write-back)"]
+  C["Contributors apply via NEARN UI;<br/>paid via Pay with NEAR Treasury<br/>→ Sputnik DAO proposal"]
+  N --> S
+  N --> T
+  N --> C
 ```
 
 ## What NEARN is
@@ -44,9 +40,9 @@ Public docs (`https://docs.nearn.io/`) are user-facing only — no API reference
 
 Most integrations need to track two distinct slugs:
 
-| Layer | What it is | Used for |
-|---|---|---|
-| **Sponsor slug** | A NEARN sponsor's URL slug (the unique `slug` field on the `Sponsors` Prisma model) | Listing all bounties an account has posted via `POST /api/listings/sponsor` |
+| Layer            | What it is                                                                            | Used for                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Sponsor slug** | A NEARN sponsor's URL slug (the unique `slug` field on the `Sponsors` Prisma model)   | Listing all bounties an account has posted via `POST /api/listings/sponsor`                               |
 | **Listing slug** | A specific bounty's URL slug (the unique `slug` field on the `Bounties` Prisma model) | Fetching one listing via `GET /api/listings/details/{slug}` and deep-linking to `nearn.io/listing/<slug>` |
 
 Both are pure foreign-key strings. NEARN does not currently expose write APIs to third parties, so integrations are read-only.
@@ -233,22 +229,22 @@ For reference when extending an integration:
 
 NEARN itself is the system of record for sponsor and contributor activity. A third-party integration typically does only a thin slice:
 
-| Action | Where the operator does it | Third-party integration's role |
-|---|---|---|
-| Post a new bounty | NEARN UI (sponsor account) | Operator separately copies the resulting slug into the integrating system |
-| Approve/reject contributor applications | NEARN UI | None — separate from any inbound-interest forms the integrating system maintains |
-| Pay a contributor | NEARN UI ("Pay with NEAR Treasury") or directly via Trezu/the treasury layer | Optionally record the on-chain payment after the fact |
+| Action                                  | Where the operator does it                                                   | Third-party integration's role                                                   |
+| --------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Post a new bounty                       | NEARN UI (sponsor account)                                                   | Operator separately copies the resulting slug into the integrating system        |
+| Approve/reject contributor applications | NEARN UI                                                                     | None — separate from any inbound-interest forms the integrating system maintains |
+| Pay a contributor                       | NEARN UI ("Pay with NEAR Treasury") or directly via Trezu/the treasury layer | Optionally record the on-chain payment after the fact                            |
 
 ## Decision guidance
 
-| Question | Answer |
-|---|---|
-| Need to read a NEARN listing from a backend route? | `GET /api/listings/details/{slug}`; gate the route with whatever role-canonical middleware your app uses |
-| Public surface needs project narrative? | Link out to `https://nearn.io/listing/<slug>` — don't render NEARN copy locally |
-| Need a sponsor's currently-open listings? | `POST /api/listings/sponsor` with `{ sponsor: <sponsorSlug> }`. Returns only listings with `status: 'OPEN'` (also gated on `isPublished`, `isActive`, `!isArchived`, `!isPrivate`). For closed/historical listings, NEARN exposes no documented endpoint. |
-| Want to write to NEARN? | **Don't** — NEARN exposes no public write API. Submissions/applications/payouts happen on NEARN's side. |
-| NEARN endpoint changed shape and broke parsing? | Update your schema, add a regression test, treat as a fragile dependency |
-| Adding a new field from NEARN's response? | First confirm via curl that the field is stable across listing types; some are conditional |
+| Question                                           | Answer                                                                                                                                                                                                                                                    |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Need to read a NEARN listing from a backend route? | `GET /api/listings/details/{slug}`; gate the route with whatever role-canonical middleware your app uses                                                                                                                                                  |
+| Public surface needs project narrative?            | Link out to `https://nearn.io/listing/<slug>` — don't render NEARN copy locally                                                                                                                                                                           |
+| Need a sponsor's currently-open listings?          | `POST /api/listings/sponsor` with `{ sponsor: <sponsorSlug> }`. Returns only listings with `status: 'OPEN'` (also gated on `isPublished`, `isActive`, `!isArchived`, `!isPrivate`). For closed/historical listings, NEARN exposes no documented endpoint. |
+| Want to write to NEARN?                            | **Don't** — NEARN exposes no public write API. Submissions/applications/payouts happen on NEARN's side.                                                                                                                                                   |
+| NEARN endpoint changed shape and broke parsing?    | Update your schema, add a regression test, treat as a fragile dependency                                                                                                                                                                                  |
+| Adding a new field from NEARN's response?          | First confirm via curl that the field is stable across listing types; some are conditional                                                                                                                                                                |
 
 ## Worked example: fetch one listing with graceful 404 handling
 
@@ -266,11 +262,15 @@ export async function getNearnListing(slug: string): Promise<NearnListing> {
     `${NEARN_BASE_URL}/api/listings/details/${encodeURIComponent(slug)}`,
     { headers: { Accept: "application/json" } },
   );
-  if (response.status === 404) throw new Error(`NEARN listing not found: ${slug}`);
-  if (!response.ok) throw new Error(`NEARN listing fetch failed: ${response.status}`);
+  if (response.status === 404)
+    throw new Error(`NEARN listing not found: ${slug}`);
+  if (!response.ok)
+    throw new Error(`NEARN listing fetch failed: ${response.status}`);
 
   const raw = (await response.json()) as Record<string, unknown>;
-  const listing: NearnListing = { /* extract documented fields, default null */ };
+  const listing: NearnListing = {
+    /* extract documented fields, default null */
+  };
   cache.set(slug, { listing, expiresAt: Date.now() + 60_000 });
   return listing;
 }

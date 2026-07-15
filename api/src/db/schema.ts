@@ -44,7 +44,10 @@ export const listings = agency.table(
     id: text("id").primaryKey(),
     projectId: text("project_id").notNull(),
     source: text("source", { enum: ["nearn", "internal"] }).notNull(),
+    /** NEARN listing slug — user input + details/submissions API key. */
     externalId: text("external_id"),
+    /** NEARN listing UUID — public URL key (`nearn.io/{sponsor}/{uuid}/`). */
+    externalUuid: text("external_uuid"),
     title: text("title"),
     description: text("description"),
     type: text("type"),

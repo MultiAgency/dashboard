@@ -113,6 +113,23 @@ export function adminContributorsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const adminAssignmentsListQueryKey = ["admin", "assignments", "list"] as const;
+
+export function adminAssignmentsListQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: adminAssignmentsListQueryKey,
+    queryFn: () => apiClient.assignments.listAll(),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export const adminBillingsListQueryKey = ["admin", "billings", "list"] as const;
+
+export function adminApplicationsListQueryKey(kind?: string | null, status?: string | null) {
+  return ["admin", "applications", "list", kind ?? null, status ?? null] as const;
+}
+
 export const adminTokensQueryKey = ["admin", "tokens"] as const;
 
 export function adminTokensQueryOptions(apiClient: ApiClient) {

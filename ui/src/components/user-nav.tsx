@@ -190,8 +190,8 @@ export function UserNav() {
           </DropdownMenuItem>
           {(orgRole === "admin" || orgRole === "member" || orgRole === "owner") && (
             <DropdownMenuItem asChild>
-              <Link to="/admin/settings" className="font-mono text-xs uppercase tracking-wide">
-                settings
+              <Link to="/admin/projects" className="font-mono text-xs uppercase tracking-wide">
+                admin
               </Link>
             </DropdownMenuItem>
           )}
