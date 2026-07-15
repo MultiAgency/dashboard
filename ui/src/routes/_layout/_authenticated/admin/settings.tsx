@@ -186,7 +186,7 @@ function SettingsForm({
         </h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Agency-level configuration for the {data.network} deployment. Editable fields write to the{" "}
-          settings row for this organization. Read-only fields are deploy-time config — env vars or
+          settings row for this workspace. Read-only fields are deploy-time config — env vars or
           hardcoded brand identity.
         </p>
       </div>
@@ -198,7 +198,7 @@ function SettingsForm({
               editable
             </div>
             <p className="text-sm text-muted-foreground">
-              NEARN account link and basic metadata. Saved to this organization's settings row.
+              NEARN account link and basic metadata. Saved to this workspace's settings row.
             </p>
           </div>
           <form
@@ -218,7 +218,7 @@ function SettingsForm({
                 {data.orgAccountId ?? "—"}
               </div>
               <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                row identity — set when the agency org was created.
+                row identity — set when the agency workspace was created.
               </p>
             </div>
             <form.Field name="daoAccountId">
@@ -242,8 +242,8 @@ function SettingsForm({
                       aria-describedby={err ? errId : undefined}
                     />
                     <p className="font-mono text-[10px] text-muted-foreground">
-                      Links this organization to a Sputnik DAO for treasury/proposals display. Not
-                      used for access control.
+                      Links this workspace to a Sputnik DAO for treasury/proposals display. Not used
+                      for access control.
                     </p>
                     {err && (
                       <p id={errId} aria-live="polite" className={ERROR_CLS}>

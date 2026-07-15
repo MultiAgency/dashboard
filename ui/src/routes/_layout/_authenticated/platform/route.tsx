@@ -29,7 +29,7 @@ function PlatformLayout() {
           activeProps={{ className: `${TAB_BASE} ${TAB_ACTIVE}` }}
           inactiveProps={{ className: `${TAB_BASE} ${TAB_INACTIVE}` }}
         >
-          orgs
+          workspaces
         </Link>
       </nav>
       <Outlet />

@@ -19,7 +19,9 @@ Built with [Tanstack Start](https://tanstack.com/start/latest/docs/framework/rea
 
 ## Status
 
-This repo is shaped as the template described above. Phase 0 cleanup removed the upstream surfaces that don't fit the agency model (organizations, admin dashboard, apps browser, registry plugin). The agency-specific modules below are wired end-to-end in this commit.
+[![CI](https://github.com/NEARBuilders/multiagency.ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NEARBuilders/multiagency.ai/actions/workflows/ci.yml)
+
+This repo is shaped as the template described above. Phase 0 cleanup removed the upstream surfaces that don't fit the agency model (generic org CRUD UI, admin dashboard, apps browser, registry plugin). The agency-specific modules below are wired end-to-end in this commit.
 
 **Public surface:**
 
@@ -111,6 +113,21 @@ bos publish             # Publish config to the FastKV registry under `account`
 bos publish --deploy    # Build/deploy all workspaces, then publish
 bun run publish         # Same publish command via root script
 ```
+
+Production CI/CD is already wired:
+
+1. **CI** (`.github/workflows/ci.yml`) — on every PR and push to `main`: install (Bun install cache), audit, lint, typecheck, test
+2. **Deploy** (`.github/workflows/deploy.yml`) — after CI succeeds on `main`: `bos publish --deploy`, then `railway redeploy`
+
+App env vars stay in the **Railway dashboard** (not committed). GitHub Actions needs these **repository secrets** for deploy to run unattended:
+
+| Secret | Used by | Purpose |
+|---|---|---|
+| `RAILWAY_TOKEN` | Deploy | Production Railway redeploy (`railway redeploy --service app`) |
+| `RAILWAY_STAGING_TOKEN` | Staging | Staging Railway redeploy (`.github/workflows/staging.yml`) |
+| `ZEPHYR_AUTH_TOKEN` | Deploy / Staging | Zephyr CDN auth for `bos publish --deploy` (`ZE_SERVER_TOKEN`) |
+| `ZEPHYR_USER_EMAIL` | Deploy / Staging | Zephyr user email (`ZE_USER_EMAIL`) |
+| `NEAR_PRIVATE_KEY` | Deploy / Staging | NEAR key for FastKV / publish |
 
 ### Project Management
 

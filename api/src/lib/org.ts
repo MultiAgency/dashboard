@@ -13,7 +13,7 @@ function extractDaoAccountId(context: {
   const daoAccountId = context.organization?.organization?.metadata?.daoAccountId;
   if (typeof daoAccountId === "string" && daoAccountId.length > 0) return daoAccountId;
   throw new ORPCError("INTERNAL_SERVER_ERROR", {
-    message: "No DAO account configured. A platform admin must create an agency org.",
+    message: "No DAO account configured. A platform admin must create an agency workspace.",
   });
 }
 

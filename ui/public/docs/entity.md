@@ -1,6 +1,6 @@
 ---
 name: entity
-description: What MultiAgency LLC is, what it owns, and how the legal entity relates to the on-chain treasury and the contributor network. Read first when onboarding a new admin or advising a new agency.
+description: What MultiAgency LLC is, what a workspace is, and how the legal entity relates to the on-chain treasury and the contributor network. Read first when onboarding a new admin or advising a new agency.
 ---
 
 # Entity
@@ -39,6 +39,10 @@ flowchart TB
 
 Trezu is the UI over the Sputnik DAO. NEARN is the inbound channel for contributors and the helper that turns a paid bounty into a Sputnik proposal. The dashboard is the agency's own operating console on top of all of it.
 
+## Workspace (product term)
+
+In the dashboard, a **workspace** is the signed-in tenant: members, settings, projects, and treasury context for one agency (or client) deployment. It is not the LLC itself — the LLC is the legal counterparty; the workspace is the product container that maps to that agency's ops. Switch workspaces in the shell when you belong to more than one.
+
 ## What this model does not handle
 
 This is a working example, not a turnkey compliance system. Gaps a new agency closes on its own:
@@ -49,8 +53,8 @@ This is a working example, not a turnkey compliance system. Gaps a new agency cl
 
 ## Today vs. shaped-into
 
-- **Today:** one LLC, one DAO, one admin/approver. Single-tenant.
-- **Shaped into:** a model that other agencies can adopt — same LLC pattern, same dashboard, their own DAO and contributors.
+- **Today:** one LLC, one DAO, one workspace, one admin/approver.
+- **Shaped into:** a model that other agencies can adopt — same LLC pattern, same dashboard, their own workspace, DAO, and contributors.
 
 This page describes the current state; the replication path is covered separately.
 
