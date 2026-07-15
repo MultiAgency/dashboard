@@ -89,8 +89,8 @@ export function createProposalsService(db: Database, agency: AgencyService) {
           }
 
           const proposalIdStrs = transfers.map((p) => String(p.id));
-          const orgProjectsById = yield* Effect.promise(() =>
-            agency.fetchOrgProjectsById(orgAccountId, context),
+          const orgProjects = yield* Effect.promise(() =>
+            agency.fetchOrgProjects(orgAccountId, context),
           );
 
           const localBillings =
@@ -107,15 +107,16 @@ export function createProposalsService(db: Database, agency: AgencyService) {
                 )
               : [];
 
+          const orgProjectIds = new Set(orgProjects.map((p) => p.id));
           const mappingByProposal = new Map(
             localBillings
-              .filter((b) => orgProjectsById.has(b.projectId))
+              .filter((b) => orgProjectIds.has(b.projectId))
               .map((b) => [b.proposalId, b]),
           );
 
           const data = transfers.map((p) => {
             const m = mappingByProposal.get(String(p.id));
-            const project = m ? orgProjectsById.get(m.projectId) : undefined;
+            const project = m ? orgProjects.find((p) => p.id === m.projectId) : undefined;
             return {
               ...toProposalPublicItem(p),
               mapping:

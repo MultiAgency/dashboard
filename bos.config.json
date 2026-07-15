@@ -13,10 +13,10 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://elliot-braem-6006-ui-multiagency-ai-nearbuilders-201b56e39-ze.zephyrcloud.app",
-      "integrity": "sha384-sQJrdfJZ+0kj+TIZFkwogEZWOZeKWHfkQOCB1jPXLbxXqPrZDRyiTVjK4ruuhEal",
-      "ssr": "https://elliot-braem-6009-ui-multiagency-ai-nearbuilders-775f517a7-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-diIO7z6vg6ihI1eYbNcx5nqAZemWlInJoBWJIiwNCIsxpzII1w1pNMS+xIe2pGFJ"
+      "production": "https://elliot-braem-6014-ui-multiagency-ai-nearbuilders-65702a2e4-ze.zephyrcloud.app",
+      "integrity": "sha384-v5oCBlQyJ2ut7MtcDUFH0GrRfJJEKltHEo+AoDGJGPO15QQSbHS/FV8WnPd6xwtS",
+      "ssr": "https://elliot-braem-6017-ui-multiagency-ai-nearbuilders-221bf63af-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-gjwzRxkVIVCNGo5oVMIfrEql+MGHdH6vE18vSOlQ1xbd/Kub4xI+kROzZrQgNzQD"
     },
     "api": {
       "name": "api",
@@ -28,7 +28,7 @@
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
       ],
-      "production": "https://elliot-braem-6008-api-multiagency-ai-nearbuilders-d56ff38cd-ze.zephyrcloud.app",
+      "production": "https://elliot-braem-6016-api-multiagency-ai-nearbuilders-d87916323-ze.zephyrcloud.app",
       "integrity": "sha384-Mci2hxT9BwytD4vdArZl+OmlvnZ937aiKUqAyAuHc3jcCzhnMfuJXUHBNT3O6kx1"
     },
     "auth": {

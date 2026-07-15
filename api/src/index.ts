@@ -51,14 +51,42 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const db = driver.db;
       const migrations = await loadMigrations();
       await migrate(db, migrations);
-      console.log("[API] Services Initialized");
 
       const notifyConfig = {
         webhookUrl: config.secrets.APPLICATIONS_WEBHOOK_URL,
         resendApiKey: config.secrets.RESEND_API_KEY,
         fromEmail: config.secrets.NOTIFY_FROM_EMAIL,
       };
-      return { db, driver, plugins, notifyConfig };
+
+      const applications = createApplicationsService(db, notifyConfig);
+      const agency = createAgencyService(db, plugins);
+      const listings = createListingsService(db);
+      const contributors = createContributorsService(db);
+      const assignments = createAssignmentsService(db);
+      const budgets = createBudgetsService(db);
+      const billings = createBillingsService(db, agency);
+      const proposals = createProposalsService(db, agency);
+      const tokens = createTokensService(db);
+      const treasury = createTreasuryService(db, agency, listings);
+      const nearn = createNearnService();
+
+      console.log("[API] plugins.projects available:", typeof plugins?.projects);
+      console.log("[API] Services Initialized");
+      return {
+        db,
+        driver,
+        applications,
+        agency,
+        listings,
+        contributors,
+        assignments,
+        budgets,
+        billings,
+        proposals,
+        tokens,
+        treasury,
+        nearn,
+      };
     }),
 
   shutdown: (services) =>
@@ -68,7 +96,20 @@ export default createPlugin.withPlugins<PluginsClient>()({
     }),
 
   createRouter: (services, builder) => {
-    const { db, notifyConfig, plugins } = services;
+    const { db } = services;
+    const {
+      applications,
+      agency,
+      listings,
+      contributors,
+      assignments,
+      budgets,
+      billings,
+      proposals,
+      tokens,
+      treasury,
+      nearn,
+    } = services;
     const auth = createAuthMiddleware(builder);
 
     const withLifecycle = <
@@ -83,18 +124,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
       ...listing,
       lifecycle: flagsToLifecycle(listing),
     });
-
-    const applications = createApplicationsService(db, notifyConfig);
-    const agency = createAgencyService(db, plugins);
-    const listings = createListingsService(db);
-    const contributors = createContributorsService(db);
-    const assignments = createAssignmentsService(db);
-    const budgets = createBudgetsService(db);
-    const billings = createBillingsService(db, agency);
-    const proposals = createProposalsService(db, agency);
-    const tokens = createTokensService(db);
-    const treasury = createTreasuryService(db, agency, listings);
-    const nearn = createNearnService();
 
     return {
       ping: builder.ping.handler(async () => ({
@@ -280,14 +309,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(auth.requireOrgRole("admin", "owner", "member"))
           .handler(async ({ context }) => {
             const orgAccountId = getDaoAccountIdOrThrow(context);
-            const [rows, byId] = await Promise.all([
+            const [rows, orgProjects] = await Promise.all([
               runEffect(assignments.listAll()),
-              agency.fetchOrgProjectsById(orgAccountId, context),
+              agency.fetchOrgProjects(orgAccountId, context),
             ]);
             return {
               data: rows.data
                 .map((row) => {
-                  const project = byId.get(row.projectId);
+                  const project = orgProjects.find((p) => p.id === row.projectId);
                   if (!project) return null;
                   return {
                     projectId: row.projectId,

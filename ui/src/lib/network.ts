@@ -14,7 +14,7 @@ function authClient(): AuthClient {
 }
 
 export function getNetwork(): Network {
-  if (!_authClient) return "testnet";
+  if (!_authClient) return "mainnet";
   return _authClient.near.getNetwork();
 }
 
