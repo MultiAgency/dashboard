@@ -8,6 +8,7 @@ import {
 import type { NearnListing } from "../../src/services/nearn";
 
 const FULL_PAYLOAD: NearnListing = {
+  id: "0e6ba6ef-6e50-4149-89fe-f16f531e79cf",
   slug: "build-agency-portal",
   title: "Build agency portal",
   description: "Standard description",
@@ -60,6 +61,7 @@ function nearnRow(overrides: Partial<Listing> = {}): Listing {
     projectId: "project-1",
     source: "nearn" as const,
     externalId: "build-agency-portal",
+    externalUuid: "0e6ba6ef-6e50-4149-89fe-f16f531e79cf",
     title: "Build agency portal",
     description: "Standard description",
     type: "Project",
@@ -221,6 +223,7 @@ describe("listingRowToNearnPayload", () => {
     const row = nearnRow();
     const payload = listingRowToNearnPayload(row);
     expect(payload).toEqual({
+      id: "0e6ba6ef-6e50-4149-89fe-f16f531e79cf",
       slug: "build-agency-portal",
       title: "Build agency portal",
       description: "Standard description",

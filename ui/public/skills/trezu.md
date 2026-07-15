@@ -17,21 +17,15 @@ Read this skill when:
 
 ## System diagram
 
-```
-                  Sputnik DAO contract
-                  <name>.sputnik-dao.near
-            (funds, role policy, proposals, voting)
-                          │
-       ┌──────────────────┼──────────────────┐
-       ▼                  ▼                  ▼
-  Trezu surfaces    Third-party indexer  Wallet / Trezu UI
-  (manage from UI)  (read-only via       (signs writes:
-   • nt-fe (web)     NEAR RPC,            add_proposal,
-   • nt-cli (term)   never writes)        act_proposal)
-   • bulk-payment   • get_policy
-     contract      • get_proposal
-   • goldsky       • get_available_amount
-     subgraph      • ft_balance_of (NEP-141)
+```mermaid
+flowchart TB
+  DAO["Sputnik DAO contract<br/>&lt;name&gt;.sputnik-dao.near<br/>(funds, role policy, proposals, voting)"]
+  T["Trezu surfaces<br/>nt-fe · nt-cli · bulk-payment · goldsky"]
+  I["Third-party indexer<br/>read-only via NEAR RPC<br/>(never writes)"]
+  W["Wallet / Trezu UI<br/>signs writes:<br/>add_proposal, act_proposal"]
+  DAO --> T
+  DAO --> I
+  DAO --> W
 ```
 
 ## What Trezu is

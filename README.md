@@ -5,11 +5,11 @@
 
 <div align="center">
 
-<h1 style="font-size: 4.25rem; font-weight: 800; line-height: 1; margin: 0;">multiagency.ai</h1>
+<h1 style="font-size: 4.25rem; font-weight: 800; line-height: 1; margin: 0;">Agency Dashboard Template</h1>
 
 </div>
 
-The dashboard for multiagency.ai — an on-chain agency: a DAO-shaped entity sourcing contributors, budgeting treasury to projects, and billing against those budgets.
+A customizable dashboard template for on-chain agencies — DAO-shaped entities sourcing contributors, budgeting treasury to projects, and billing against those budgets.
 
 Maintained by [MultiAgency](https://github.com/MultiAgency). Built on [everything.dev](https://github.com/NEARBuilders/everything-dev).
 
@@ -17,35 +17,57 @@ A [Module Federation](https://module-federation.io/) site composed at runtime, u
 
 Built with [Tanstack Start](https://tanstack.com/start/latest/docs/framework/react/quick-start), [Hono.js](https://hono.dev/), [oRPC](https://orpc.dev/), [better-auth](https://better-auth.com/), and [rsbuild](https://rsbuild.rs/).
 
-## Application
+## Status
 
-The app is split into four auth-gated sections plus public pages:
+[![CI](https://github.com/NEARBuilders/multiagency.ai/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NEARBuilders/multiagency.ai/actions/workflows/ci.yml)
 
-- **Public** (`/`) — Landing, projects directory, apply forms, contact, docs, treasury, team, work
-- **`/platform`** — Super admin only (`user.role === "admin"`). App owner dashboard for creating and managing all organizations. Init the agency org here on first deploy.
-- **`/admin`** — Agency admin & owner (Better Auth org role `admin` or `owner`). Manage agency settings (`/admin/settings`), members (`/admin/members`), and projects (`/admin/projects/:slug`).
-- **`/dashboard`** — Agency members, admins, and owners (org role `member`, `admin`, or `owner`).
-- **`/client`** — Any authenticated user. Client portal for organizations with metadata `type: "client"`.
+This repo is shaped as the template described above. Phase 0 cleanup removed the upstream surfaces that don't fit the agency model (generic org CRUD UI, admin dashboard, apps browser, registry plugin). The agency-specific modules below are wired end-to-end in this commit.
 
-API routes are gated server-side with Better Auth organization roles:
-- **Read-only** (list projects, contributors, budgets, etc.): `admin`, `owner`, `member`
-- **Write & financial** (create/delete, budget transfers, billing): `admin`, `owner`
-- **Platform** (org creation, global listing): `user.role === "admin"` super admin only
+**Public surface:**
 
-On-chain treasury operations (proposals, token balances, FT holdings) integrate with Sputnik DAO contracts when the org's metadata includes a `daoAccountId`. Non-DAO orgs treat the org account as self-owned.
+- Landing — operating model + docs links + CTAs
+- Projects directory (title + status + slug per row; full project listings live on NEARN, not this dashboard)
+- Express interest forms (founder / contributor / client)
+- Connect (NEAR sign-in via `better-near-auth` SIWN — only auth method)
+
+**Authenticated workspace:**
+
+- Home
+- Admin / Projects — list, create, edit, assign contributors
+- Admin / Contributors — list, create, edit (compliance status + docs)
+- Admin / Budgets — per-project rollup (budgeted / allocated / committed / paid / remaining) with budget / deallocate / transfer actions, audit log
+- Admin / Billings — flat list with project / contributor filters; create new billings as project-scoped pointers to Sputnik DAO proposals (`proposalId` required, `NOT NULL UNIQUE`). Status is read live from chain per-request (seven-state Sputnik enum); no local lifecycle field, no manual status override. Per-row Trezu deep-link for the live chain view.
+- Admin / Applications — flat list with kind / status filters; review submissions from `/apply`, transition status (new → reviewing → accepted/declined). Submissions themselves are immutable
+
+Admin routes are gated server-side by a `gates` registry that checks Sputnik DAO role membership (strict `Admin` / `Approver` / `Requestor` tiers plus named compositions like `operator` for Admin OR Approver) for the signed-in NEAR account against the resolved `orgAccountId` (`getOrgAccountId(reqHeaders)` → `defaultOrgAccount(network)`, env-driven). Time-series admin lists (billings, budgets, applications) are paginated cursor-style; the UI exposes a "load more" button.
+
+Instantiate a new agency via `bunx everything-dev init` (the canonical entry point — pulls the template, scaffolds a fresh repo and DB). Remove or extend any of the modules above, and customize per agency. Before deploying, rewrite [`ui/public/README.md`](./ui/public/README.md), [`ui/public/skill.md`](./ui/public/skill.md), and [`ui/public/manifest.json`](./ui/public/manifest.json) — those carry the maintainer's identity and ship as-is to the deployed site (manifest.json drives the install-prompt + browser-tab name).
 
 ## First-time setup
 
-Deploy the app, then make yourself a super admin to set up the initial agency.
+A fresh deployment points at the maintainer's DAO (`multiagency.sputnik-dao.near`) and renders live data immediately. To take over a fresh deployment as your own agency, point it at your DAO.
 
-1. Sign in with your NEAR wallet at the deployed URL.
-2. Open the auth database and set your user role to `admin`:
-   ```bash
-   bun bos db studio auth
-   ```
-   In the Drizzle Studio UI, navigate to the `user` table and set the `role` column to `admin` for your user row.
-3. Visit `/platform` and create your agency organization (`type: "agency"`) with an optional `daoAccountId` if you have a Sputnik DAO.
-4. Invite agency admins and members from `/admin/members`.
+**Prerequisites**: NEAR account, Sputnik DAO contract on NEAR, Admin role in that DAO.
+
+**Either** override the per-network default before deploying:
+
+```bash
+export AGENCY_ORG_ACCOUNT_MAINNET=your-dao.sputnik-dao.near
+bun install
+bun run db:migrate
+bos dev --host remote
+```
+
+Admin nav appears once you sign in with a NEAR account that holds the `Admin` role on the configured DAO. If admin endpoints return FORBIDDEN, the dashboard is still pointed at a DAO you don't admin — update the env var and restart.
+
+**Pointing at a testnet DAO.** The network is derived from the account's TLD — a `.sputnikv2.testnet` suffix routes Sputnik RPC to a testnet endpoint automatically. Set `NEAR_NETWORK=testnet` to switch the no-row fallback to `AGENCY_ORG_ACCOUNT_TESTNET` (default `multiagency.sputnikv2.testnet`):
+
+```bash
+export NEAR_NETWORK=testnet
+export AGENCY_ORG_ACCOUNT_TESTNET=your-dao.sputnikv2.testnet
+```
+
+Override the RPC endpoint per network with `NEAR_RPC_URL_MAINNET=...` / `NEAR_RPC_URL_TESTNET=...` if you run a private RPC; otherwise the public fastnear endpoints route correctly per-account. `NEARN` integrations gracefully short-circuit on testnet (no testnet endpoints). Trezu deep-links use the mainnet URL pattern and may dead-link until Trezu publishes a testnet routing scheme. To stand up a testnet Sputnik DAO, use the `sputnikv2.testnet` factory's `create` method via `near-cli` or `near-cli-rs` with a policy mirroring mainnet's role shape — see the [Sputnik DAO contract README](https://github.com/near-daos/sputnik-dao-contract) for ABI reference.
 
 ## Quick Start
 
@@ -56,15 +78,7 @@ bun run dev:postgres    # Boot docker compose Postgres + start dev (persistent l
 bun run db:migrate && bun run dev   # Use the configured API_DATABASE_URL, or in-memory pglite by default
 ```
 
-The API plugin uses PostgreSQL via Drizzle. Without `API_DATABASE_URL` set, it boots against an in-memory `pglite` database — fine for quick exploration but state resets on every restart. For persistent local dev, `bun run dev:postgres` boots PostgreSQL instances via `docker-compose.yml` (api/auth/projects on 5432/5433/5434) and starts the dev server. Migrations run automatically on startup; `bun run db:migrate` applies them manually against the configured database.
-
-To inspect databases locally:
-```bash
-bos db studio api       # API database (agency schema)
-bos db studio auth      # Auth database (users, sessions, organizations)
-bos db studio projects  # Projects plugin database
-bos db studio <plugin>  # Any registered plugin database
-```
+The API plugin uses PostgreSQL via Drizzle. Without `API_DATABASE_URL` set, it boots against an in-memory `pglite` database — fine for quick exploration but state resets on every restart. For persistent local dev, `bun run dev:postgres` boots three Postgres instances via `docker-compose.yml` (api/auth/projects on 5432/5433/5434) and starts the dev server. Migrations live in `api/src/db/migrations/`; `bun run db:migrate` applies them against the configured database. Operational identity reads the `agency.settings` row (keyed by `orgAccountId`) when present, else falls through to env (`AGENCY_*` / `AGENCY_ORG_ACCOUNT_*`) and hardcoded defaults — a fresh database renders correctly with no manual seed.
 
 This serves the UI and API locally and mounts them on a remote host (loaded via `bos.config.json`'s `extends`). See [AGENTS.md](./AGENTS.md#environment) for the full port table. UI defaults to `http://localhost:3003` (rsbuild auto-bumps if occupied — check the dev server output).
 
@@ -99,6 +113,21 @@ bos publish             # Publish config to the FastKV registry under `account`
 bos publish --deploy    # Build/deploy all workspaces, then publish
 bun run publish         # Same publish command via root script
 ```
+
+Production CI/CD is already wired:
+
+1. **CI** (`.github/workflows/ci.yml`) — on every PR and push to `main`: install (Bun install cache), audit, lint, typecheck, test
+2. **Deploy** (`.github/workflows/deploy.yml`) — after CI succeeds on `main`: `bos publish --deploy`, then `railway redeploy`
+
+App env vars stay in the **Railway dashboard** (not committed). GitHub Actions needs these **repository secrets** for deploy to run unattended:
+
+| Secret | Used by | Purpose |
+|---|---|---|
+| `RAILWAY_TOKEN` | Deploy | Production Railway redeploy (`railway redeploy --service app`) |
+| `RAILWAY_STAGING_TOKEN` | Staging | Staging Railway redeploy (`.github/workflows/staging.yml`) |
+| `ZEPHYR_AUTH_TOKEN` | Deploy / Staging | Zephyr CDN auth for `bos publish --deploy` (`ZE_SERVER_TOKEN`) |
+| `ZEPHYR_USER_EMAIL` | Deploy / Staging | Zephyr user email (`ZE_USER_EMAIL`) |
+| `NEAR_PRIVATE_KEY` | Deploy / Staging | NEAR key for FastKV / publish |
 
 ### Project Management
 
@@ -174,7 +203,26 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines in
 
 ## Configuration
 
-All runtime configuration lives in [`bos.config.json`](./bos.config.json). The agency surface lives in `api/`, which proxies the upstream `projects` plugin via `pluginsClient.projects(proxyCtx(orgAccountId))` for project CRUD (list/get/create/update). See [AGENTS.md](./AGENTS.md) for the plugin model and proxy-as-org rule.
+All runtime configuration lives in `bos.config.json`. The shape used by this repo:
+
+```json
+{
+  "account": "multiagentic.near",
+  "extends": "bos://dev.everything.near/everything.dev",
+  "domain": "multiagency.ai",
+  "testnet": "agency.testnet",
+  "staging": { "domain": "dev.multiagency.ai" },
+  "repository": "https://github.com/MultiAgency/dashboard",
+  "plugins": { /* upstream projects plugin; see bos.config.json */ },
+  "app": {
+    "host": { "development": "local:host" },
+    "ui": { "name": "ui", "development": "local:ui" },
+    "api": { "name": "api", "development": "local:api", "secrets": [] }
+  }
+}
+```
+
+The agency surface lives in `api/`, which proxies the upstream `projects` plugin via `pluginsClient.projects(proxyCtx(orgAccountId))` for project CRUD (list/get/create/update). See `AGENTS.md` for the plugin model and proxy-as-org rule.
 
 `bos publish --deploy` is the release path when you want Zephyr URLs refreshed before publishing the config.
 
@@ -216,7 +264,7 @@ Biome is configured in `biome.json` at the project root. Generated files (like `
 
 ## Related Projects
 
-- **[everything.dev](https://github.com/NEARBuilders/everything-dev)** - Upstream foundation and runtime
+- **[everything.dev](https://github.com/NEARBuilders/everything-dev)** - Upstream foundation: the runtime this template is built on
 - **[every-plugin](https://github.com/near-everything/every-plugin)** - Plugin framework for modular APIs
 - **[near-kit](https://kit.near.tools)** - Unified NEAR Protocol SDK
 - **[better-near-auth](https://github.com/elliotBraem/better-near-auth)** - NEAR authentication for Better-Auth

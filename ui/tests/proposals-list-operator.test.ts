@@ -3,13 +3,12 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const source = readFileSync(
-  resolve(import.meta.dirname, "..", "src", "components", "proposals-list.tsx"),
+  resolve(import.meta.dirname, "..", "src", "routes", "_layout", "treasury.tsx"),
   "utf8",
 );
 
 describe("proposals-list operator overlay — structural commitments", () => {
   test("row attribution renders ONLY when showAttribution is true (operator path)", () => {
-    // Both badges must be guarded by showAttribution so visitors see a clean row.
     expect(source).toMatch(/showAttribution\s*&&\s*proposal\.mapping/);
     expect(source).toMatch(/showAttribution\s*&&\s*!proposal\.mapping/);
   });
@@ -28,7 +27,7 @@ describe("proposals-list operator overlay — structural commitments", () => {
 
   test("contributor field uses a non-empty sentinel (Radix Select forbids empty-string value)", () => {
     expect(source).toMatch(/NO_CONTRIBUTOR_SENTINEL\s*=\s*"__none__"/);
-    expect(source).toMatch(/value=\{NO_CONTRIBUTOR_SENTINEL\}/);
+    expect(source).toMatch(/value=\{contributorId \|\| NO_CONTRIBUTOR_SENTINEL\}/);
     expect(source).toMatch(/===\s*NO_CONTRIBUTOR_SENTINEL\s*\?\s*""/);
   });
 
@@ -43,9 +42,9 @@ describe("proposals-list operator overlay — structural commitments", () => {
   });
 
   test("billing mutations invalidate the full set of stale caches", () => {
-    expect(source).toMatch(/"proposals",\s*"adminList"/);
-    expect(source).toMatch(/"admin",\s*"billings",\s*"list"/);
-    expect(source).toMatch(/"admin",\s*"projects",\s*"budget"/);
-    expect(source).toMatch(/"treasury",\s*"rollups"/);
+    expect(source).toMatch(/\["proposals",\s*"list"\]/);
+    expect(source).toMatch(/\["admin",\s*"billings",\s*"list"\]/);
+    expect(source).toMatch(/\["admin",\s*"projects",\s*"budget"\]/);
+    expect(source).toMatch(/\["treasury",\s*"rollups"\]/);
   });
 });

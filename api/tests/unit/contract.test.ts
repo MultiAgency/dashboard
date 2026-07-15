@@ -126,33 +126,40 @@ describe("decimalAmount validator — positive display-unit amount for internal 
 });
 
 describe("agency.listings contract — internal-listing CRUD surface", () => {
-  test("exposes adminGet, adminCreate, adminUpdate, adminDelete", () => {
-    expect(contract.agency.listings).toHaveProperty("adminGet");
-    expect(contract.agency.listings).toHaveProperty("adminCreate");
-    expect(contract.agency.listings).toHaveProperty("adminUpdate");
-    expect(contract.agency.listings).toHaveProperty("adminDelete");
+  test("exposes get, create, update, delete", () => {
+    expect(contract.agency.listings).toHaveProperty("get");
+    expect(contract.agency.listings).toHaveProperty("create");
+    expect(contract.agency.listings).toHaveProperty("update");
+    expect(contract.agency.listings).toHaveProperty("delete");
   });
 });
 
 describe("budgets contract — verb surface", () => {
-  test("exposes adminCreate, adminDeallocate, adminTransfer", () => {
-    expect(contract.budgets).toHaveProperty("adminCreate");
-    expect(contract.budgets).toHaveProperty("adminDeallocate");
-    expect(contract.budgets).toHaveProperty("adminTransfer");
+  test("exposes create, deallocate, transfer", () => {
+    expect(contract.budgets).toHaveProperty("create");
+    expect(contract.budgets).toHaveProperty("deallocate");
+    expect(contract.budgets).toHaveProperty("transfer");
   });
 });
 
 describe("proposals contract — inverse mapping surface", () => {
-  test("exposes adminList", () => {
-    expect(contract.proposals).toHaveProperty("adminList");
+  test("exposes list", () => {
+    expect(contract.proposals).toHaveProperty("list");
   });
 });
 
 describe("billings contract — registry surface", () => {
-  test("exposes adminList and adminCreate; no adminUpdate (immutable registry)", () => {
-    expect(contract.billings).toHaveProperty("adminList");
-    expect(contract.billings).toHaveProperty("adminCreate");
-    expect(contract.billings).not.toHaveProperty("adminUpdate");
+  test("exposes list and create; no update (immutable registry)", () => {
+    expect(contract.billings).toHaveProperty("list");
+    expect(contract.billings).toHaveProperty("create");
+    expect(contract.billings).not.toHaveProperty("update");
+  });
+});
+
+describe("assignments contract — org-wide list", () => {
+  test("exposes listAll alongside per-project list", () => {
+    expect(contract.assignments).toHaveProperty("list");
+    expect(contract.assignments).toHaveProperty("listAll");
   });
 });
 

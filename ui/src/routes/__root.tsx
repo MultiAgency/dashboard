@@ -22,11 +22,14 @@ import { ThemeProvider } from "next-themes";
 import type { RouterContext } from "@/app";
 import { getBaseStyles } from "@/app";
 import { Toaster } from "@/components/ui/sonner";
+import { useMediaQuery } from "@/hooks";
 import { sessionQueryKey } from "@/lib/auth";
+import { setAuthClient } from "@/lib/network";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   beforeLoad: async ({ context }) => {
+    setAuthClient(context.authClient);
     const session = context.session;
 
     return {
@@ -141,6 +144,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 
 function RootComponent() {
   const { cspNonce } = Route.useRouteContext();
+  const isDesktop = useMediaQuery("(min-width: 640px)");
   return (
     <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <head>
@@ -152,7 +156,7 @@ function RootComponent() {
           <div id="root">
             <Outlet />
           </div>
-          <Toaster position="bottom-right" richColors closeButton />
+          <Toaster position={isDesktop ? "bottom-right" : "top-center"} closeButton />
         </ThemeProvider>
         <Scripts />
         {process.env.NODE_ENV === "development" && (

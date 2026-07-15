@@ -15,6 +15,7 @@ const mkListing = (overrides: Partial<Listing>): Listing => ({
   projectId: "p-test",
   source: "nearn",
   externalId: "slug-test",
+  externalUuid: null,
   title: null,
   description: null,
   type: null,

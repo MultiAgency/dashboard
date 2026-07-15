@@ -60,7 +60,8 @@ export async function getSettingsRow(db: Database, orgAccountId: string) {
 }
 
 export async function getResolvedPublicSettings(db: Database, network: Network) {
-  const row = await db.query.settings.findFirst();
+  const rows = await db.select().from(settingsTable).limit(1);
+  const row = rows[0] ?? null;
   const resolvedOrgId = row?.orgAccountId ?? null;
   const base = defaultPublicSettings(network);
   return {

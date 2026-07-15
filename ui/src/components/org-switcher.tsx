@@ -30,7 +30,7 @@ export function OrgSwitcher() {
   const switchMutation = useMutation({
     mutationFn: async (orgId: string) => {
       const { error } = await auth.organization.setActive({ organizationId: orgId });
-      if (error) throw new Error(error.message || "Failed to switch organization");
+      if (error) throw new Error(error.message || "Failed to switch workspace");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["session"] });
@@ -56,9 +56,7 @@ export function OrgSwitcher() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
-          organizations
-        </DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">workspaces</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {organizations.map((org) => (
           <DropdownMenuItem
@@ -72,7 +70,7 @@ export function OrgSwitcher() {
         ))}
         {organizations.length === 0 && (
           <DropdownMenuItem disabled className="text-muted-foreground">
-            no organizations
+            no workspaces
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

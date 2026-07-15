@@ -24,6 +24,21 @@ export function createAssignmentsService(db: Database) {
         return { data: rows };
       }),
 
+    listAll: () =>
+      Effect.gen(function* () {
+        const rows = yield* Effect.promise(() =>
+          db
+            .select({
+              projectId: projectContributors.projectId,
+              contributorId: projectContributors.contributorId,
+              role: projectContributors.role,
+              createdAt: projectContributors.createdAt,
+            })
+            .from(projectContributors),
+        );
+        return { data: rows };
+      }),
+
     create: (input: { projectId: string; contributorId: string; role?: string }) =>
       Effect.gen(function* () {
         const contributorExists = yield* Effect.promise(() =>

@@ -73,29 +73,29 @@ function PlatformOrgs() {
     <div className="space-y-8">
       <div className="space-y-2">
         <h2 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Organizations
+          Workspaces
         </h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Create and manage organizations. Agency orgs have a Sputnik DAO linked. Client orgs are
-          separate organizations that see the agency's work scoped to them.
+          Create and manage workspaces. Agency workspaces have a Sputnik DAO linked. Client
+          workspaces are separate tenants that see the agency's work scoped to them.
         </p>
       </div>
 
       <section className="space-y-3">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          create organization
+          create workspace
         </div>
         <CreateOrgForm onCreated={invalidate} />
       </section>
 
       <section className="space-y-3">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          all organizations ({orgs.length})
+          all workspaces ({orgs.length})
         </div>
         {orgsQuery.isError ? (
           <div className="space-y-2">
             <p className="text-sm text-destructive">
-              {orgsQuery.error?.message || "Failed to load organizations"}
+              {orgsQuery.error?.message || "Failed to load workspaces"}
             </p>
             <Button variant="outline" size="sm" onClick={invalidate}>
               retry
@@ -106,8 +106,8 @@ function PlatformOrgs() {
             columns={columns}
             data={orgs}
             isLoading={orgsQuery.isLoading}
-            emptyMessage="No organizations yet."
-            csvFilename="organizations"
+            emptyMessage="No workspaces yet."
+            csvFilename="workspaces"
           />
         )}
       </section>
@@ -149,7 +149,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
         slug: finalSlug,
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       });
-      if (!org.data?.id) throw new Error("Failed to create organization");
+      if (!org.data?.id) throw new Error("Failed to create workspace");
       await authClient.organization.inviteMember({
         email: adminEmail.trim(),
         role: "admin",
@@ -158,18 +158,19 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
       return org.data;
     },
     onSuccess: (org) => {
-      toast.success(`Organization "${org.name}" created`);
+      toast.success(`Workspace "${org.name}" created`);
       setName("");
       setSlug("");
       setDaoAccountId("");
       setAdminEmail("");
       onCreated();
     },
-    onError: (e: Error) => toast.error(e.message || "Failed to create organization"),
+    onError: (e: Error) => toast.error(e.message || "Failed to create workspace"),
   });
 
   const isPending = createMutation.isPending;
-  const canSubmit = name.trim() && adminEmail.trim();
+  const canSubmit =
+    !!name.trim() && !!adminEmail.trim() && (orgType !== "agency" || !!daoAccountId.trim());
 
   return (
     <Card>
@@ -221,7 +222,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
         {orgType === "agency" && (
           <div className="space-y-1">
             <label htmlFor="org-dao" className={LABEL_CLS}>
-              sputnik dao account
+              sputnik dao account (required)
             </label>
             <Input
               id="org-dao"
@@ -231,7 +232,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
               disabled={isPending}
             />
             <p className="font-mono text-[10px] text-muted-foreground">
-              optional — links this agency to a Sputnik DAO for treasury/proposals.
+              required for agency — links this workspace to a Sputnik DAO for treasury/proposals.
             </p>
           </div>
         )}
@@ -248,7 +249,7 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
             disabled={isPending}
           />
           <p className="font-mono text-[10px] text-muted-foreground">
-            This person will receive an email invitation to join as the org's first admin.
+            This person will receive an email invitation to join as the workspace's first admin.
           </p>
         </div>
         <Button

@@ -126,6 +126,7 @@ export function mapNearnPayloadToListingFields(payload: NearnListing): ListingDa
 export function listingRowToNearnPayload(row: Listing): NearnListing | null {
   if (row.source !== "nearn" || !row.externalId) return null;
   return {
+    id: row.externalUuid,
     slug: row.externalId,
     title: row.title,
     description: row.description,
@@ -198,7 +199,12 @@ export async function refreshNearnListing(
     const fields = mapNearnPayloadToListingFields(payload);
     const [updated] = await db
       .update(listings)
-      .set({ ...fields, syncedAt: now, updatedAt: now })
+      .set({
+        ...fields,
+        externalUuid: payload.id,
+        syncedAt: now,
+        updatedAt: now,
+      })
       .where(eq(listings.id, row.id))
       .returning();
     return updated ?? row;
@@ -240,12 +246,19 @@ export async function attachNearnListing(
       projectId,
       source: "nearn",
       externalId: slug,
+      externalUuid: payload.id,
       ...fields,
       syncedAt: now,
     })
     .onConflictDoUpdate({
       target: [listings.projectId, listings.source],
-      set: { externalId: slug, ...fields, syncedAt: now, updatedAt: now },
+      set: {
+        externalId: slug,
+        externalUuid: payload.id,
+        ...fields,
+        syncedAt: now,
+        updatedAt: now,
+      },
     })
     .returning();
   if (!row) throw new Error("listings upsert returned no row");
@@ -277,6 +290,7 @@ export async function createInternalListing(
   fields: InternalListingFields,
   db: Database,
 ): Promise<Listing> {
+  const now = new Date();
   const [row] = await db
     .insert(listings)
     .values({
@@ -295,6 +309,8 @@ export async function createInternalListing(
       isArchived: fields.isArchived ?? false,
       isWinnersAnnounced: fields.isWinnersAnnounced ?? false,
       syncedAt: null,
+      createdAt: now,
+      updatedAt: now,
     })
     .returning();
   if (!row) throw new Error("internal listing insert returned no row");

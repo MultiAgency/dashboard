@@ -1,5 +1,5 @@
 {
-  "id": "f213a10a-72b8-4ffa-aeb1-4bcbbed5e405",
+  "id": "e93a702c-6840-46b6-b1f7-015a8a329985",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -220,12 +220,8 @@
           "tableFrom": "billings",
           "tableTo": "contributors",
           "schemaTo": "agency",
-          "columnsFrom": [
-            "contributor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["contributor_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -802,12 +798,8 @@
           "tableFrom": "project_contributors",
           "tableTo": "contributors",
           "schemaTo": "agency",
-          "columnsFrom": [
-            "contributor_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["contributor_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -815,10 +807,7 @@
       "compositePrimaryKeys": {
         "project_contributors_project_id_contributor_id_pk": {
           "name": "project_contributors_project_id_contributor_id_pk",
-          "columns": [
-            "project_id",
-            "contributor_id"
-          ]
+          "columns": ["project_id", "contributor_id"]
         }
       },
       "uniqueConstraints": {},
@@ -909,10 +898,7 @@
       "compositePrimaryKeys": {
         "proposals_dao_account_id_proposal_id_pk": {
           "name": "proposals_dao_account_id_proposal_id_pk",
-          "columns": [
-            "dao_account_id",
-            "proposal_id"
-          ]
+          "columns": ["dao_account_id", "proposal_id"]
         }
       },
       "uniqueConstraints": {},
@@ -929,12 +915,6 @@
           "type": "text",
           "primaryKey": true,
           "notNull": true
-        },
-        "dao_account_id": {
-          "name": "dao_account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "nearn_account_id": {
           "name": "nearn_account_id",

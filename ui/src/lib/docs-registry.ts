@@ -14,7 +14,7 @@ export const DOCS: readonly DocEntry[] = [
   {
     slug: "entity",
     title: "Entity",
-    desc: "What MultiAgency LLC is, what it owns, and why the dashboard is shaped this way.",
+    desc: "What MultiAgency LLC is, what a workspace is, and why the dashboard is shaped this way.",
     section: "operating",
     source: "docs",
   },

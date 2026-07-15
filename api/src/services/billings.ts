@@ -79,10 +79,10 @@ export function createBillingsService(db: Database, agency: AgencyService) {
       context: Record<string, unknown>,
     ) =>
       Effect.gen(function* () {
-        const orgProjectsById = yield* Effect.promise(() =>
-          agency.fetchOrgProjectsById(orgAccountId, context),
+        const orgProjects = yield* Effect.promise(() =>
+          agency.fetchOrgProjects(orgAccountId, context),
         );
-        if (!orgProjectsById.has(input.projectId)) {
+        if (!orgProjects.some((p) => p.id === input.projectId)) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Project not found" }));
         }
 
@@ -102,7 +102,7 @@ export function createBillingsService(db: Database, agency: AgencyService) {
         );
         if (existing.length > 0) {
           const e = existing[0]!;
-          const project = orgProjectsById.get(e.projectId);
+          const project = orgProjects.find((p) => p.id === e.projectId);
           return yield* Effect.fail(
             new ORPCError("BAD_REQUEST", {
               message: `Proposal ${input.proposalId} is already assigned to ${

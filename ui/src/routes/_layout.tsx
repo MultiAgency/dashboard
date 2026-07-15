@@ -7,7 +7,7 @@ export const Route = createFileRoute("/_layout")({
   beforeLoad: async ({ context }) => {
     if (context.session) {
       await context.queryClient
-        .ensureQueryData(meRolesQueryOptions(context.apiClient, context.authClient))
+        .ensureQueryData(meRolesQueryOptions(context.apiClient))
         .catch(() => {});
     }
   },

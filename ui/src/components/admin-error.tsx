@@ -13,7 +13,8 @@ function isNoOrgContext(error: unknown): boolean {
     typeof error === "object" && error && "message" in error
       ? String((error as { message?: unknown }).message ?? "")
       : "";
-  return message.toLowerCase().includes("organization required");
+  const lower = message.toLowerCase();
+  return lower.includes("organization required") || lower.includes("workspace required");
 }
 
 export function AdminError({ error }: { error: unknown }) {
@@ -30,7 +31,7 @@ export function AdminError({ error }: { error: unknown }) {
         <Badge variant="outline">{isAccess ? "access denied" : "could not load"}</Badge>
         <p className="text-sm text-muted-foreground max-w-md mx-auto">
           {noOrg
-            ? "This org hasn't been set up yet. Create it in the platform admin to enable member management, settings, and projects."
+            ? "This workspace hasn't been set up yet. Create it in the platform admin to enable member management, settings, and projects."
             : isAccess
               ? message || "You don't have access to this surface."
               : "We couldn't load this data. Try again, or check the API logs if this keeps happening."}
@@ -43,7 +44,7 @@ export function AdminError({ error }: { error: unknown }) {
         <div className="flex gap-2 justify-center">
           {noOrg && (
             <Button asChild size="sm">
-              <Link to="/platform">set up org</Link>
+              <Link to="/platform">set up workspace</Link>
             </Button>
           )}
           <Button asChild variant="outline" size="sm">

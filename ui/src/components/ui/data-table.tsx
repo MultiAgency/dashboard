@@ -1,14 +1,18 @@
 import {
   type ColumnDef,
+  type ColumnFiltersState,
   flexRender,
   getCoreRowModel,
+  getFilteredRowModel,
+  getPaginationRowModel,
   getSortedRowModel,
   type SortingState,
   useReactTable,
+  type VisibilityState,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { useState } from "react";
-import { Button, Skeleton } from "@/components";
+import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Button, Input, Skeleton } from "@/components";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 
 export type { ColumnDef };
@@ -20,7 +24,12 @@ export type DataTableProps<TData, TValue> = {
   error?: Error | null;
   onRetry?: () => void;
   emptyMessage?: string;
+  emptyAction?: React.ReactNode;
   csvFilename?: string;
+  viewId?: string;
+  pageSizeOptions?: number[];
+  enableSearch?: boolean;
+  searchPlaceholder?: string;
 };
 
 const TH_CLS =
@@ -60,6 +69,16 @@ function SortHeader({
   );
 }
 
+function loadVisibility(viewId: string | undefined): VisibilityState {
+  if (!viewId || typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(`datatable-cols-${viewId}`);
+    return raw ? (JSON.parse(raw) as VisibilityState) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function DataTable<TData, TValue>({
   columns,
   data,
@@ -67,17 +86,41 @@ export function DataTable<TData, TValue>({
   error,
   onRetry,
   emptyMessage = "No data",
+  emptyAction,
   csvFilename,
+  viewId,
+  pageSizeOptions = [10, 25, 50],
+  enableSearch = true,
+  searchPlaceholder = "Filter…",
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [globalFilter, setGlobalFilter] = useState("");
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
+    loadVisibility(viewId),
+  );
+  const [colsOpen, setColsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!viewId || typeof window === "undefined") return;
+    localStorage.setItem(`datatable-cols-${viewId}`, JSON.stringify(columnVisibility));
+  }, [columnVisibility, viewId]);
 
   const table = useReactTable({
     data,
     columns,
-    state: { sorting },
+    state: { sorting, columnFilters, globalFilter, columnVisibility },
     onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onGlobalFilterChange: setGlobalFilter,
+    onColumnVisibilityChange: setColumnVisibility,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: { pageSize: pageSizeOptions[0] ?? 10 },
+    },
   });
 
   if (error) {
@@ -98,20 +141,10 @@ export function DataTable<TData, TValue>({
   if (isLoading) {
     return (
       <div data-slot="data-table" className="space-y-2">
+        <Skeleton className="h-9 w-full" />
         {Array.from({ length: 5 }).map((_, i) => (
           <Skeleton key={i} className="h-10 w-full" />
         ))}
-      </div>
-    );
-  }
-
-  if (data.length === 0) {
-    return (
-      <div
-        data-slot="data-table"
-        className="rounded-sm border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground"
-      >
-        <p>{emptyMessage}</p>
       </div>
     );
   }
@@ -129,10 +162,65 @@ export function DataTable<TData, TValue>({
       };
     });
 
+  const rows = table.getRowModel().rows;
+  const filteredEmpty = data.length > 0 && rows.length === 0;
+
   return (
     <div data-slot="data-table" className="space-y-3">
-      {csvFilename && exportColumns.length > 0 && (
-        <div className="flex justify-end">
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          {enableSearch && (
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <Input
+                value={globalFilter}
+                onChange={(e) => setGlobalFilter(e.target.value)}
+                placeholder={searchPlaceholder}
+                className="pl-7 h-8 w-48 sm:w-64"
+              />
+            </div>
+          )}
+          <div className="relative">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setColsOpen((v) => !v)}
+              className="gap-1.5"
+            >
+              <Columns3 className="size-3.5" />
+              columns
+            </Button>
+            {colsOpen && (
+              <div className="absolute z-20 mt-1 w-48 rounded-sm border border-border bg-background p-2 shadow-md space-y-1">
+                {table
+                  .getAllColumns()
+                  .filter((c) => {
+                    if (!c.getCanHide()) return false;
+                    const header = c.columnDef.header;
+                    if (typeof header === "string" && header.trim() === "") return false;
+                    return true;
+                  })
+                  .map((column) => (
+                    <label
+                      key={column.id}
+                      className="flex items-center gap-2 px-1 py-1 text-xs font-mono cursor-pointer hover:bg-muted/40 rounded-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={column.getIsVisible()}
+                        onChange={column.getToggleVisibilityHandler()}
+                        className="accent-foreground"
+                      />
+                      {typeof column.columnDef.header === "string"
+                        ? column.columnDef.header
+                        : column.id}
+                    </label>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+        {csvFilename && exportColumns.length > 0 && (
           <Button
             variant="outline"
             size="sm"
@@ -140,49 +228,98 @@ export function DataTable<TData, TValue>({
           >
             export csv
           </Button>
-        </div>
-      )}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  const label = flexRender(header.column.columnDef.header, header.getContext());
-                  const isSortable = header.column.getCanSort();
-                  return (
-                    <th key={header.id} scope="col" className={TH_CLS}>
-                      {isSortable ? (
-                        <SortHeader
-                          column={{
-                            id: header.column.id,
-                            getIsSorted: () => header.column.getIsSorted(),
-                            getToggleSortingHandler: header.column.getToggleSortingHandler,
-                          }}
-                          label={label as string}
-                        />
-                      ) : (
-                        label
-                      )}
-                    </th>
-                  );
-                })}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="hover:bg-muted/30 transition-colors">
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className={TD_CLS}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        )}
       </div>
+
+      {data.length === 0 || filteredEmpty ? (
+        <div className="rounded-sm border border-dashed border-border px-4 py-8 text-center space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {filteredEmpty ? "No rows match the current filter." : emptyMessage}
+          </p>
+          {!filteredEmpty && emptyAction}
+        </div>
+      ) : (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <tr key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => {
+                      const label = flexRender(header.column.columnDef.header, header.getContext());
+                      const isSortable = header.column.getCanSort();
+                      return (
+                        <th key={header.id} scope="col" className={TH_CLS}>
+                          {isSortable ? (
+                            <SortHeader
+                              column={{
+                                id: header.column.id,
+                                getIsSorted: () => header.column.getIsSorted(),
+                                getToggleSortingHandler: header.column.getToggleSortingHandler,
+                              }}
+                              label={label as string}
+                            />
+                          ) : (
+                            label
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className="hover:bg-muted/30 transition-colors">
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className={TD_CLS}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+              <span>
+                page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
+              </span>
+              <select
+                value={table.getState().pagination.pageSize}
+                onChange={(e) => table.setPageSize(Number(e.target.value))}
+                className="h-7 border border-input bg-background px-2 rounded-sm"
+              >
+                {pageSizeOptions.map((n) => (
+                  <option key={n} value={n}>
+                    {n} / page
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+              >
+                prev
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+              >
+                next
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

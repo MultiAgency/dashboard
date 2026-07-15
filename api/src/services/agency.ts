@@ -19,8 +19,6 @@ import { deleteProjectCascade } from "./projects";
 import { resolveActiveListing, rollupForToken } from "./rollups";
 import { enrichWithChainStatus, networkOf } from "./sputnik";
 
-const DAO_PROJECTS_TTL_MS = 5_000;
-
 type UpstreamProject = {
   id: string;
   ownerId: string;
@@ -50,7 +48,7 @@ function toContractProject(
     description: p.description,
     repository: p.repository ?? null,
     nearnListingId,
-    kind: ((p as any).kind ?? "project") as "project" | "idea",
+    kind: (p.kind ?? "project") as "project" | "idea",
     status: p.status as "active" | "paused" | "archived",
     visibility: p.visibility as "public" | "unlisted" | "private",
     createdAt: new Date(p.createdAt),
@@ -58,55 +56,62 @@ function toContractProject(
   };
 }
 
-async function fetchOrgProjectsPaginated(
-  plugins: PluginsClient,
-  orgAccountId: string,
-  context: Record<string, unknown>,
-  extra?: { visibility?: string; status?: string },
-): Promise<UpstreamProject[]> {
-  const out: UpstreamProject[] = [];
-  let cursor: string | undefined;
-  do {
-    const result = await plugins.projects(context).listProjects({
-      organizationId: orgAccountId,
-      ...(extra?.visibility ? { visibility: extra.visibility as any } : {}),
-      ...(extra?.status ? { status: extra.status as any } : {}),
-      limit: 100,
-      cursor,
-    });
-    out.push(...(result.data as unknown as UpstreamProject[]));
-    cursor = result.meta.nextCursor ?? undefined;
-  } while (cursor);
-  return out;
-}
-
 export function createAgencyService(db: Database, plugins: PluginsClient) {
-  const daoProjectsCache = new Map<string, { projects: UpstreamProject[]; expiresAt: number }>();
-
-  function invalidateOrgProjects(orgAccountId: string): void {
-    daoProjectsCache.delete(orgAccountId);
-  }
-
   async function fetchOrgProjects(
     orgAccountId: string,
     context: Record<string, unknown>,
+    extra?: { visibility?: string; status?: string },
   ): Promise<UpstreamProject[]> {
-    const cached = daoProjectsCache.get(orgAccountId);
-    if (cached && cached.expiresAt > Date.now()) return cached.projects;
-    const projects = await fetchOrgProjectsPaginated(plugins, orgAccountId, context);
-    daoProjectsCache.set(orgAccountId, {
-      projects,
-      expiresAt: Date.now() + DAO_PROJECTS_TTL_MS,
-    });
-    return projects;
+    const out: UpstreamProject[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await plugins.projects(context).listProjects({
+        organizationId: orgAccountId,
+        ...(extra?.visibility ? { visibility: extra.visibility as any } : {}),
+        ...(extra?.status ? { status: extra.status as any } : {}),
+        limit: 100,
+        cursor,
+      });
+      out.push(...(result.data as unknown as UpstreamProject[]));
+      cursor = result.meta.nextCursor ?? undefined;
+    } while (cursor);
+    return out;
   }
 
-  async function fetchOrgProjectsById(
+  function canSeePrivateProjects(context: Record<string, unknown>): boolean {
+    const memberRole = (context as any).organization?.member?.role as string | undefined;
+    return memberRole === "admin" || memberRole === "owner" || memberRole === "contributor";
+  }
+
+  async function fetchVisibleProjects(
     orgAccountId: string,
     context: Record<string, unknown>,
-  ): Promise<Map<string, UpstreamProject>> {
-    const ps = await fetchOrgProjects(orgAccountId, context);
-    return new Map(ps.map((p) => [p.id, p]));
+  ): Promise<{ projects: UpstreamProject[]; canSeePrivate: boolean }> {
+    const canSeePrivate = canSeePrivateProjects(context);
+    const projects = canSeePrivate
+      ? await fetchOrgProjects(orgAccountId, context)
+      : await fetchOrgProjects(orgAccountId, context, { visibility: "public", status: "active" });
+    return { projects, canSeePrivate };
+  }
+
+  async function nearnConflictError(
+    err: unknown,
+    orgAccountId: string,
+    context: Record<string, unknown>,
+  ) {
+    if (err instanceof NearnListingConflictError) {
+      const orgProjects = await fetchOrgProjects(orgAccountId, context);
+      const conflicting = orgProjects.find((p) => p.id === err.conflictingProjectId);
+      const label = conflicting
+        ? `${conflicting.title} (@${conflicting.slug})`
+        : err.conflictingProjectId;
+      return new ORPCError("BAD_REQUEST", {
+        message: `NEARN listing "${err.slug}" is already attached to ${label}; detach there first.`,
+      });
+    }
+    return new ORPCError("BAD_REQUEST", {
+      message: `NEARN listing attach failed: ${(err as Error).message}`,
+    });
   }
 
   async function requireProjectInOrg(
@@ -114,11 +119,6 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
     orgAccountId: string,
     context: Record<string, unknown>,
   ): Promise<UpstreamProject> {
-    const cached = daoProjectsCache.get(orgAccountId);
-    if (cached && cached.expiresAt > Date.now()) {
-      const hit = cached.projects.find((p) => p.id === projectId);
-      if (hit) return hit;
-    }
     try {
       const result = await plugins.projects(context).getProject({ id: projectId });
       if (result.data.organizationId !== orgAccountId) {
@@ -133,39 +133,21 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
 
   return {
     getDaoAccountId,
-
-    fetchOrgProjects: (orgAccountId: string, context: Record<string, unknown>) =>
-      fetchOrgProjects(orgAccountId, context),
-
-    fetchOrgProjectsById: (orgAccountId: string, context: Record<string, unknown>) =>
-      fetchOrgProjectsById(orgAccountId, context),
-
-    requireProjectInOrg: (
-      projectId: string,
-      orgAccountId: string,
-      context: Record<string, unknown>,
-    ) => requireProjectInOrg(projectId, orgAccountId, context),
+    fetchOrgProjects,
+    requireProjectInOrg,
 
     listProjects: (context: Record<string, unknown>) =>
       Effect.gen(function* () {
         const orgAccountId = yield* getDaoAccountId(context);
-        const memberRole = (context as any).organization?.member?.role as string | undefined;
-        const isContributor = memberRole === "admin" || memberRole === "contributor";
-
-        const upstream = yield* Effect.promise(() =>
-          isContributor
-            ? fetchOrgProjects(orgAccountId, context)
-            : fetchOrgProjectsPaginated(plugins, orgAccountId, context, {
-                visibility: "public",
-                status: "active",
-              }),
+        const { projects: upstream, canSeePrivate } = yield* Effect.promise(() =>
+          fetchVisibleProjects(orgAccountId, context),
         );
 
         const projectIds = upstream.map((p) => p.id);
         const linkByProjectId = isNearnAvailable(orgAccountId)
           ? yield* Effect.promise(() =>
               getListingsForProjects(projectIds, "nearn", orgAccountId, db, {
-                skipRefresh: !isContributor,
+                skipRefresh: !canSeePrivate,
               }),
             )
           : new Map();
@@ -188,28 +170,17 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
     getProject: (context: Record<string, unknown>, slug: string) =>
       Effect.gen(function* () {
         const orgAccountId = yield* getDaoAccountId(context);
-        const memberRole = (context as any).organization?.member?.role as string | undefined;
-        const isContributor = memberRole === "admin" || memberRole === "contributor";
+        const { projects: upstream, canSeePrivate } = yield* Effect.promise(() =>
+          fetchVisibleProjects(orgAccountId, context),
+        );
 
-        let upstreamMatch: UpstreamProject | undefined;
-        if (isContributor) {
-          const all = yield* Effect.promise(() => fetchOrgProjects(orgAccountId, context));
-          upstreamMatch = all.find((p) => p.slug === slug);
-        } else {
-          const result = yield* Effect.promise(() =>
-            fetchOrgProjectsPaginated(plugins, orgAccountId, context, {
-              visibility: "public",
-              status: "active",
-            }),
-          );
-          upstreamMatch = result.find((p) => p.slug === slug);
-        }
+        const upstreamMatch = upstream.find((p) => p.slug === slug);
 
         if (!upstreamMatch) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Project not found" }));
         }
 
-        if (!isContributor) {
+        if (!canSeePrivate) {
           return {
             project: {
               ...toContractProject(upstreamMatch, null, orgAccountId),
@@ -312,7 +283,7 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
         slug: string;
         title: string;
         description?: string;
-        repository?: string;
+        repository: string;
         nearnListingId?: string;
         kind?: "project" | "idea";
         status?: string;
@@ -344,8 +315,6 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
           return created as unknown as UpstreamProject;
         });
 
-        invalidateOrgProjects(orgAccountId);
-
         let attachedSlug: string | null = null;
         if (input.nearnListingId) {
           if (!isNearnAvailable(orgAccountId)) {
@@ -361,24 +330,8 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
             );
             attachedSlug = row.externalId;
           } catch (err) {
-            if (err instanceof NearnListingConflictError) {
-              const conflicting = yield* Effect.promise(() =>
-                fetchOrgProjectsById(orgAccountId, context),
-              );
-              const conflictingProject = conflicting.get(err.conflictingProjectId);
-              const label = conflictingProject
-                ? `${conflictingProject.title} (@${conflictingProject.slug})`
-                : err.conflictingProjectId;
-              return yield* Effect.fail(
-                new ORPCError("BAD_REQUEST", {
-                  message: `NEARN listing "${err.slug}" is already attached to ${label}; detach there first.`,
-                }),
-              );
-            }
             return yield* Effect.fail(
-              new ORPCError("BAD_REQUEST", {
-                message: `NEARN listing attach failed: ${(err as Error).message}`,
-              }),
+              yield* Effect.promise(() => nearnConflictError(err, orgAccountId, context)),
             );
           }
         }
@@ -439,24 +392,8 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
               );
               finalListingId = row.externalId;
             } catch (err) {
-              if (err instanceof NearnListingConflictError) {
-                const byId = yield* Effect.promise(() =>
-                  fetchOrgProjectsById(orgAccountId, context),
-                );
-                const conflicting = byId.get(err.conflictingProjectId);
-                const label = conflicting
-                  ? `${conflicting.title} (@${conflicting.slug})`
-                  : err.conflictingProjectId;
-                return yield* Effect.fail(
-                  new ORPCError("BAD_REQUEST", {
-                    message: `NEARN listing "${err.slug}" is already attached to ${label}; detach there first.`,
-                  }),
-                );
-              }
               return yield* Effect.fail(
-                new ORPCError("BAD_REQUEST", {
-                  message: `NEARN listing attach failed: ${(err as Error).message}`,
-                }),
+                yield* Effect.promise(() => nearnConflictError(err, orgAccountId, context)),
               );
             }
           }
@@ -475,8 +412,6 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
           yield* Effect.promise(() => setListingsArchived(id, false, db));
         }
 
-        if (hasProjectChanges) invalidateOrgProjects(orgAccountId);
-
         return {
           project: toContractProject(updated, finalListingId, orgAccountId),
         };
@@ -489,7 +424,6 @@ export function createAgencyService(db: Database, plugins: PluginsClient) {
 
         yield* Effect.promise(() => deleteProjectCascade(db, input.id));
         yield* Effect.promise(() => plugins.projects(context).deleteProject({ id: input.id }));
-        invalidateOrgProjects(orgAccountId);
         return { deleted: true as const };
       }),
   };

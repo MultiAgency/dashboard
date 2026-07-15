@@ -2,7 +2,6 @@ import { Link, useMatchRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import type * as React from "react";
 import type { ReactNode } from "react";
-import { getRepository } from "@/app";
 import { NetworkToggle } from "@/components/network-toggle";
 import { OrgSwitcher } from "@/components/org-switcher";
 import {
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UserNav } from "@/components/user-nav";
 import { useMeRoles } from "@/hooks/use-me-roles";
+import { getRepoUrl } from "@/lib/repo";
 import { cn } from "@/lib/utils";
 
 function GithubIcon({ className, ...props }: React.ComponentProps<"svg">) {
@@ -127,7 +127,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 <NavLink key={item.to} item={item} active={linkActive(item.to)} />
               ))}
               <a
-                href={getRepository() ?? "https://github.com/MultiAgency/dashboard"}
+                href={getRepoUrl()}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="github"
@@ -164,7 +164,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   ))}
                   <DropdownMenuItem asChild>
                     <a
-                      href={getRepository() ?? "https://github.com/MultiAgency/dashboard"}
+                      href={getRepoUrl()}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-mono text-xs uppercase tracking-wide"

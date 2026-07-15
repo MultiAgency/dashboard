@@ -1,0 +1,53 @@
+# Agency Dashboard skill
+
+## Purpose
+
+Understand and interact with this Agency Dashboard deployment as a runtime-composed site on NEAR, extending the everything.dev runtime. This deployment is maintained by MultiAgency. The underlying template is at github.com/MultiAgency/dashboard — instantiate via `bunx everything-dev init` to customize per agency.
+
+## Core model
+
+- `bos.config.json` is the canonical runtime manifest.
+- The host is the runtime shell and trust boundary.
+- The UI is loaded at runtime through Module Federation.
+- The API is loaded at runtime through `every-plugin`.
+- Public metadata may describe the runtime, but should not replace the runtime manifest.
+
+## Bootstrap flow
+
+- Publish the root `bos.config.json` first at `dev.everything.near/everything.dev`.
+- The root record should not extend anything while it is the bootstrap source of truth.
+- After that root is live, other configs can extend it with `bos://dev.everything.near/everything.dev`.
+- `domain` is the public open-app URL; use it for app launch links, not `hostUrl`.
+
+## Useful assumptions
+
+- The bootstrap site is published from `dev.everything.near/everything.dev`.
+- This site extends the everything.dev bootstrap (`bos://dev.everything.near/everything.dev`).
+- Agency-specific surfaces — public projects directory, apply form, and the authenticated admin workspace (projects, contributors, budgets, billings, applications) — are wired end-to-end via the API plugin. Admin routes are gated server-side by Sputnik DAO role membership.
+- Multiple sites may share the same host configuration.
+- Host URLs can stay stable while published runtime records change over time.
+- The project is meant to be continuously built over and around.
+
+## Good tasks
+
+- Explain how a published runtime is assembled
+- Inspect the relationship between host, UI, and API
+- Compare canonical config with public metadata
+- Help authors understand runtime inheritance and composition
+
+## Public entry points
+
+- `/` — landing
+- `/work` — projects directory (enriched live from NEARN where linked)
+- `/apply` — express-interest form (contributor)
+- `/register` — express-interest form (founder)
+- `/contact` — express-interest form (client)
+- `/README.md`
+- `/skill.md`
+- `/llms.txt`
+
+## Tone
+
+Prefer runtime-first explanations.
+Keep NEAR-specific context, but avoid reducing the site to branding alone.
+Treat the project as a living public runtime surface, not a fixed demo.
