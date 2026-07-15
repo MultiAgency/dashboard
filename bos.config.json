@@ -51,7 +51,9 @@
       "development": "local:plugins/projects",
       "secrets": [
         "PROJECTS_DATABASE_URL"
-      ]
+      ],
+      "production": "https://elliot-braem-6018-everything-dev-projects-plugin--51034192f-ze.zephyrcloud.app",
+      "integrity": "sha384-CBYHI3KOSD0x5iQcaYS76XlfqGti6KRVNGD7ECNv8+j99rshyyzsPbyF3bBGliAT"
     }
   }
 }

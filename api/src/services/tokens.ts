@@ -165,7 +165,13 @@ for (const t of KNOWN_TOKENS) {
   if (!map.has(t.symbol)) map.set(t.symbol, t);
 }
 
-export function getTokenMetadata(tokenId: string): KnownToken | null {
+export function getTokenMetadata(
+  tokenId: string,
+  network?: "mainnet" | "testnet",
+): KnownToken | null {
+  if (network) {
+    return KNOWN_TOKENS.find((t) => t.tokenId === tokenId && t.chainNetwork === network) ?? null;
+  }
   return REGISTRY_BY_ID.get(tokenId) ?? null;
 }
 
@@ -201,11 +207,11 @@ export function createTokensService(_db: Database) {
           Promise.all(
             ids.map(async (id) => {
               if (id === NATIVE_TOKEN_ID) {
-                const native = getTokenMetadata(id);
+                const native = getTokenMetadata(id, orgNetwork);
                 return native ? { ...native, chainNetwork: orgNetwork } : null;
               }
-              const known = getTokenMetadata(id);
-              if (known && known.chainNetwork === orgNetwork) return known;
+              const known = getTokenMetadata(id, orgNetwork);
+              if (known) return known;
               const ft = await getFtMetadata(id, orgAccountId);
               if (!ft) return null;
               return {

@@ -16,3 +16,19 @@ describe("getTokenMetadata — by-id lookup is network-agnostic", () => {
     expect(getTokenMetadata("wrap.testnet")?.chainNetwork).toBe("testnet");
   });
 });
+
+describe("getTokenMetadata — network-aware lookup", () => {
+  test("resolves mainnet NEAR, not testnet", () => {
+    expect(getTokenMetadata("near", "mainnet")?.name).toBe("NEAR Protocol");
+    expect(getTokenMetadata("near", "mainnet")?.chainNetwork).toBe("mainnet");
+  });
+
+  test("resolves testnet NEAR when requested", () => {
+    expect(getTokenMetadata("near", "testnet")?.name).toBe("NEAR Protocol (testnet)");
+    expect(getTokenMetadata("near", "testnet")?.chainNetwork).toBe("testnet");
+  });
+
+  test("returns null when no entry matches the network", () => {
+    expect(getTokenMetadata("wrap.testnet", "mainnet")).toBeNull();
+  });
+});

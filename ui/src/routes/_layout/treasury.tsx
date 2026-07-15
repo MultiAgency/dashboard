@@ -60,8 +60,6 @@ const searchSchema = z.object({
   status: z.string().optional(),
   token: z.string().optional(),
   q: z.string().optional(),
-  // Declared so `navigate({ search })` preserves `?network=` across filter clicks.
-  network: z.enum(["mainnet", "testnet"]).optional(),
 });
 
 type TreasurySearch = z.infer<typeof searchSchema>;
@@ -718,7 +716,6 @@ function normalizeSearch(s: TreasurySearch): TreasurySearch {
   if (s.status) out.status = s.status;
   if (s.token) out.token = s.token;
   if (s.q) out.q = s.q;
-  if (s.network) out.network = s.network;
   return out;
 }
 
