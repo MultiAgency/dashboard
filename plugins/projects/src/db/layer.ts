@@ -1,33 +1,30 @@
 import { Context, Effect, Layer } from "every-plugin/effect";
-import type { ProjectsDatabase } from "./index";
-import { migrate } from "./migrator";
+import { createDatabaseDriver, type Database, DatabaseError } from "./index";
+import { loadMigrations, migrate } from "./migrate";
 
-export const DatabaseTag = Context.Tag("projects/Database")<ProjectsDatabase, ProjectsDatabase>();
+export class DatabaseTag extends Context.Tag("Database")<Database, Database>() {}
 
 export const DatabaseLive = (url: string) =>
   Layer.scoped(
     DatabaseTag,
-    Effect.acquireRelease(
-      Effect.promise(async () => {
-        console.log("[Projects] Initializing database...");
+    Effect.gen(function* () {
+      const driver = yield* Effect.acquireRelease(
+        Effect.tryPromise({
+          try: () => createDatabaseDriver(url),
+          catch: (cause) => new DatabaseError({ stage: "driver", cause }),
+        }),
+        (driver) =>
+          Effect.tryPromise({
+            try: () => driver.close(),
+            catch: (cause) => new DatabaseError({ stage: "close", cause }),
+          }).pipe(Effect.ignore),
+      );
 
-        try {
-          const { createDatabaseDriver } = await import("./index");
-          const driver = await createDatabaseDriver(url);
+      const migrations = yield* loadMigrations();
+      yield* migrate(driver.db, migrations);
 
-          const migrations = await import("virtual:drizzle-migrations.sql");
-          await migrate(driver.db, migrations.default);
-          console.log("[Projects] Migrations applied");
+      yield* Effect.logInfo("[Database] Migrations applied");
 
-          return driver.db;
-        } catch (error) {
-          console.error(
-            "[Projects] Database initialization failed:",
-            error instanceof Error ? error.message : String(error),
-          );
-          throw error;
-        }
-      }),
-      () => Effect.void,
-    ),
+      return driver.db;
+    }),
   );

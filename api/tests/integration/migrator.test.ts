@@ -1,8 +1,9 @@
 import type { Migration } from "virtual:drizzle-migrations.sql";
 import { sql } from "drizzle-orm";
+import { Effect } from "every-plugin/effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createDatabaseDriver, type DatabaseDriver } from "../../src/db";
-import { migrate } from "../../src/db/migrator";
+import { migrate } from "../../src/db/migrate";
 
 const probeTable: Migration = {
   idx: 0,
@@ -39,7 +40,7 @@ describe("migrate — runtime migrator", () => {
   test(
     "tracks applied hashes in drizzle.__drizzle_migrations, not public",
     async () => {
-      await migrate(driver.db, [probeTable]);
+      await Effect.runPromise(migrate(driver.db, [probeTable]));
 
       const rawTracking = await driver.db.execute(
         sql`SELECT hash FROM "drizzle"."__drizzle_migrations"`,
@@ -62,9 +63,9 @@ describe("migrate — runtime migrator", () => {
   test(
     "skips a migration whose hash is already applied (idempotent)",
     async () => {
-      await migrate(driver.db, [probeTable]);
+      await Effect.runPromise(migrate(driver.db, [probeTable]));
       // Second call with the same migration must not re-run the CREATE TABLE.
-      await migrate(driver.db, [probeTable]);
+      await Effect.runPromise(migrate(driver.db, [probeTable]));
 
       const rawCount = await driver.db.execute(
         sql`SELECT count(*)::int AS n FROM "drizzle"."__drizzle_migrations"`,
@@ -78,8 +79,8 @@ describe("migrate — runtime migrator", () => {
   test(
     "applies only new migrations on a subsequent call",
     async () => {
-      await migrate(driver.db, [probeTable]);
-      await migrate(driver.db, [probeTable, probeInsert]);
+      await Effect.runPromise(migrate(driver.db, [probeTable]));
+      await Effect.runPromise(migrate(driver.db, [probeTable, probeInsert]));
 
       const rawRows = await driver.db.execute(sql`SELECT id FROM "probe"`);
       const ids = (rawRows as unknown as { rows: { id: string }[] }).rows.map((r) => r.id);
@@ -99,8 +100,8 @@ describe("migrate — runtime migrator", () => {
   test(
     "CREATE SCHEMA IF NOT EXISTS is idempotent across multiple migrate() calls",
     async () => {
-      await migrate(driver.db, []);
-      await migrate(driver.db, []);
+      await Effect.runPromise(migrate(driver.db, []));
+      await Effect.runPromise(migrate(driver.db, []));
       const rawSchemas = await driver.db.execute(
         sql`SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'drizzle'`,
       );
