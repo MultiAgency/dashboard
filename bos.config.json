@@ -12,10 +12,7 @@
   "app": {
     "ui": {
       "name": "ui",
-      "development": "local:ui",
-      "production": "https://elliot-braem-6019-ui-multiagency-ai-nearbuilders-73a767f08-ze.zephyrcloud.app",
-      "ssr": "https://elliot-braem-6022-ui-multiagency-ai-nearbuilders-73a15c539-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-OHix1OnSI51XqAVyhd4YXrQRnVpDL0SYTrOq7R7XI6Vdykv1oYJodYINeZrBr/5+"
+      "development": "local:ui"
     },
     "api": {
       "name": "api",
@@ -26,9 +23,7 @@
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
-      ],
-      "production": "https://elliot-braem-6021-api-multiagency-ai-nearbuilders-9b7964d8f-ze.zephyrcloud.app",
-      "integrity": "sha384-Mci2hxT9BwytD4vdArZl+OmlvnZ937aiKUqAyAuHc3jcCzhnMfuJXUHBNT3O6kx1"
+      ]
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
@@ -50,9 +45,7 @@
       "development": "local:plugins/projects",
       "secrets": [
         "PROJECTS_DATABASE_URL"
-      ],
-      "production": "https://elliot-braem-6018-everything-dev-projects-plugin--51034192f-ze.zephyrcloud.app",
-      "integrity": "sha384-CBYHI3KOSD0x5iQcaYS76XlfqGti6KRVNGD7ECNv8+j99rshyyzsPbyF3bBGliAT"
+      ]
     }
   }
 }

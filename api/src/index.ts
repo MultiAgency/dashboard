@@ -3,9 +3,7 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 import { contract } from "./contract";
-import { createDatabaseDriver } from "./db";
-import { loadMigrations } from "./db/load-migrations";
-import { migrate } from "./db/migrator";
+import { DatabaseTag, DatabaseLive } from "./db/layer";
 import { createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
 import { flagsToLifecycle, lifecycleToFlags } from "./lib/listing-lifecycle";
@@ -46,11 +44,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
   contract,
 
   initialize: (config, plugins) =>
-    Effect.promise(async () => {
-      const driver = await createDatabaseDriver(config.secrets.API_DATABASE_URL);
-      const db = driver.db;
-      const migrations = await loadMigrations();
-      await migrate(db, migrations);
+    Effect.gen(function* () {
+      const db = yield* Effect.gen(function* () {
+        return yield* DatabaseTag;
+      }).pipe(Effect.provide(DatabaseLive(config.secrets.API_DATABASE_URL)));
 
       const notifyConfig = {
         webhookUrl: config.secrets.APPLICATIONS_WEBHOOK_URL,
@@ -70,11 +67,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const treasury = createTreasuryService(db, agency, listings);
       const nearn = createNearnService();
 
-      console.log("[API] plugins.projects available:", typeof plugins?.projects);
-      console.log("[API] Services Initialized");
+      yield* Effect.logInfo("[API] plugins.projects available: " + typeof plugins?.projects);
+      yield* Effect.logInfo("[API] Services Initialized");
       return {
         db,
-        driver,
         applications,
         agency,
         listings,
@@ -89,11 +85,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       };
     }),
 
-  shutdown: (services) =>
-    Effect.promise(async () => {
-      console.log("[API] Shutdown");
-      await services.driver.close();
-    }),
+  shutdown: () => Effect.logInfo("[API] Shutdown"),
 
   createRouter: (services, builder) => {
     const { db } = services;

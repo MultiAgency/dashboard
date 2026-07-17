@@ -328,8 +328,6 @@ node_modules/.federation
 # Already-tracked .md files (README, docs) stay tracked; changesets are kept.
 *.md
 !**/skills/**/*.md
-!ui/public/skill.md
-!ui/public/docs/**/*.md
 !AGENTS.md
 !CONTRIBUTING.md
 !**/README.md

@@ -20,7 +20,7 @@
       "drizzle-kit": "^0.31.8",
       "better-auth": "1.6.9",
       "better-near-auth": "1.7.0",
-      "every-plugin": "^2.7.1",
+      "every-plugin": "^2.9.0",
       "typescript": "^5.9.3",
       "vitest": "^4.1.8",
       "@types/node": "^25.0.3",
@@ -37,7 +37,7 @@
       "@orpc/contract": "1.14.3",
       "@better-auth/api-key": "1.6.9",
       "@better-auth/passkey": "1.6.9",
-      "everything-dev": "^1.46.1",
+      "everything-dev": "^1.47.0",
       "@scure/base": "^2.2.0",
       "pg": "^8.12.0",
       "@types/pg": "^8.11.6",
@@ -96,7 +96,7 @@
     "dev:postgres:reset": "docker compose down -v && docker compose up -d --wait",
     "bos": "node_modules/.bin/bos"
   },
-  "packageManager": "bun@1.3.8",
+  "packageManager": "bun@1.2.20",
   "type": "module",
   "devDependencies": {
     "@biomejs/biome": "2.4.14",
