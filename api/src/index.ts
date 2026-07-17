@@ -3,7 +3,7 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 import { contract } from "./contract";
-import { DatabaseTag, DatabaseLive } from "./db/layer";
+import { DatabaseLive, DatabaseTag } from "./db/layer";
 import { createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
 import { flagsToLifecycle, lifecycleToFlags } from "./lib/listing-lifecycle";
@@ -67,7 +67,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const treasury = createTreasuryService(db, agency, listings);
       const nearn = createNearnService();
 
-      yield* Effect.logInfo("[API] plugins.projects available: " + typeof plugins?.projects);
+      yield* Effect.logInfo(`[API] plugins.projects available: ${typeof plugins?.projects}`);
       yield* Effect.logInfo("[API] Services Initialized");
       return {
         db,

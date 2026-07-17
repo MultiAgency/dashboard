@@ -1,8 +1,8 @@
 import type { Migration } from "virtual:drizzle-migrations.sql";
 import { sql } from "drizzle-orm";
+import { Effect } from "every-plugin/effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createDatabaseDriver, type DatabaseDriver } from "../../src/db";
-import { Effect } from "every-plugin/effect";
 import { migrate } from "../../src/db/migrate";
 
 const probeTable: Migration = {
