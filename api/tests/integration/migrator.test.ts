@@ -30,7 +30,7 @@ describe("migrate — runtime migrator", () => {
   let driver: DatabaseDriver;
 
   beforeEach(async () => {
-    driver = await createDatabaseDriver("memory://");
+    driver = await createDatabaseDriver(":memory:");
   });
 
   afterEach(async () => {

@@ -89,7 +89,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         { name: "format-detection", content: "telephone=no" },
         { name: "robots", content: "index, follow" },
         ...getSocialImageMeta({
-          imageUrl: "/metadata.png",
+          imageUrl: siteUrl ? `${siteUrl}/metadata.png` : "/metadata.png",
           title,
           description,
           siteName: title,
@@ -110,8 +110,6 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         },
         { rel: "shortcut icon", href: "/favicon.ico" },
         { rel: "icon", type: "image/svg+xml", href: "/icon.svg" },
-        { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon-32x32.png" },
-        { rel: "icon", type: "image/png", sizes: "16x16", href: "/favicon-16x16.png" },
         {
           rel: "apple-touch-icon",
           sizes: "180x180",

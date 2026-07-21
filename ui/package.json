@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist/types",
     "generate-metadata": "bun run ./scripts/generate-metadata.ts",
-    "dev:ssr": "PORT=3004 BUILD_TARGET=server rsbuild dev",
+    "dev:ssr": "BUILD_TARGET=server rsbuild dev",
     "build:ssr": "BUILD_TARGET=server rsbuild build"
   },
   "dependencies": {

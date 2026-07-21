@@ -20,7 +20,7 @@
       "drizzle-kit": "^0.31.8",
       "better-auth": "1.6.9",
       "better-near-auth": "1.7.0",
-      "every-plugin": "^2.9.0",
+      "every-plugin": "^2.9.1",
       "typescript": "^5.9.3",
       "vitest": "^4.1.8",
       "@types/node": "^25.0.3",
@@ -37,7 +37,7 @@
       "@orpc/contract": "1.14.3",
       "@better-auth/api-key": "1.6.9",
       "@better-auth/passkey": "1.6.9",
-      "everything-dev": "^1.47.0",
+      "everything-dev": "^1.50.0",
       "@scure/base": "^2.2.0",
       "pg": "^8.12.0",
       "@types/pg": "^8.11.6",
@@ -72,7 +72,7 @@
     "build": "node_modules/.bin/bos build",
     "deploy": "node_modules/.bin/bos build --deploy",
     "publish": "node_modules/.bin/bos publish",
-    "typecheck": "bun run types:gen && if [ -d ui ]; then bun run --cwd ui typecheck; fi && if [ -d api ]; then bun run --cwd api typecheck; fi && if [ -d plugins ]; then for dir in plugins/*; do if [ -f \"$dir/package.json\" ]; then bun run --cwd \"$dir\" typecheck; fi; done; fi",
+    "typecheck": "bun run types:gen && if [ -d ui ]; then bun run --cwd ui typecheck; fi && if [ -d api ]; then bun run --cwd api typecheck; fi && if [ -d plugins ]; then for dir in plugins/*; do if [ -f \"$dir/package.json\" ]; then bun run --cwd \"$dir\" typecheck || exit 1; fi; done; fi",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
@@ -96,7 +96,7 @@
     "dev:postgres:reset": "docker compose down -v && docker compose up -d --wait",
     "bos": "node_modules/.bin/bos"
   },
-  "packageManager": "bun@1.3.8",
+  "packageManager": "bun@1.3.14",
   "type": "module",
   "devDependencies": {
     "@biomejs/biome": "2.4.14",
@@ -105,7 +105,8 @@
     "tsx": "^4.21.0",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "catalog:",
-    "@changesets/cli": "^2.29.8"
+    "@changesets/cli": "^2.29.8",
+    "@types/pg": "catalog:"
   },
   "dependencies": {
     "@better-auth/api-key": "catalog:",
@@ -124,6 +125,10 @@
     "every-plugin": "catalog:",
     "everything-dev": "catalog:",
     "mermaid": "^11.16.0",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "pg": "catalog:"
+  },
+  "engines": {
+    "node": ">=20.11"
   }
 }

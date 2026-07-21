@@ -228,11 +228,11 @@ function Landing() {
               {LANDING.name}
             </h1>
             <div className="mt-3 flex items-center gap-3">
-              <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-[0.22em] text-accent">
+              <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-[0.22em] text-accent-strong">
                 Build Agencies Together
               </span>
-              <div className="flex-1 h-px bg-accent/80" />
-              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] text-accent tabular-nums">
+              <div className="flex-1 h-px bg-accent-strong/80" />
+              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] text-accent-strong tabular-nums">
                 v0.1
               </span>
             </div>

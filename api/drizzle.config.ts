@@ -1,24 +1,30 @@
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { config } from "dotenv";
 import { defineConfig } from "drizzle-kit";
+import { getDatabaseUrlSecretName, getMigrationSlug, getMigrationStorage } from "everything-dev/db";
 
-// Load root .env for monorepo setup
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
-config({ path: resolve(__dirname, "../.env") });
-
-const url = process.env.API_DATABASE_URL;
-if (!url) {
-  throw new Error(
-    "API_DATABASE_URL must be set for drizzle-kit (postgres://...); pglite is runtime-only.",
-  );
-}
+const slug = getMigrationSlug(import.meta.dirname);
+const databaseSecret = getDatabaseUrlSecretName(slug);
+const storage = getMigrationStorage(slug);
+const isDrizzleKit = process.argv[1]?.includes("drizzle-kit");
 
 export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./src/db/migrations",
   dialect: "postgresql",
-  dbCredentials: { url },
+  dbCredentials: {
+    url:
+      process.env[databaseSecret] ??
+      (process.env.NODE_ENV === "production" && isDrizzleKit
+        ? (() => {
+            throw new Error(
+              `Missing ${databaseSecret} — required in production for drizzle-kit operations`,
+            );
+          })()
+        : `pglite:.bos/${slug}/:memory:`),
+  },
+  migrations: {
+    schema: storage.schema,
+    table: storage.table,
+  },
   verbose: true,
   strict: true,
 });
