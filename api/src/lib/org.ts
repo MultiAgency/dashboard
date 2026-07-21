@@ -3,6 +3,15 @@ import { ORPCError } from "every-plugin/orpc";
 
 export type OrgMetadata = { daoAccountId?: string; type?: "agency" | "client" };
 
+// Deployment-level default, set once at plugin initialize from
+// bos.config.json (app.api.variables.agencyDaoAccount). Used for
+// anonymous requests, which have no organization context.
+let defaultDaoAccountId: string | undefined;
+
+export function setDefaultDaoAccountId(id: string | undefined): void {
+  defaultDaoAccountId = id;
+}
+
 function extractDaoAccountId(context: {
   organization?: {
     organization?: {
@@ -12,6 +21,7 @@ function extractDaoAccountId(context: {
 }): string {
   const daoAccountId = context.organization?.organization?.metadata?.daoAccountId;
   if (typeof daoAccountId === "string" && daoAccountId.length > 0) return daoAccountId;
+  if (defaultDaoAccountId) return defaultDaoAccountId;
   throw new ORPCError("INTERNAL_SERVER_ERROR", {
     message: "No DAO account configured. A platform admin must create an agency workspace.",
   });

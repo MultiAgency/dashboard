@@ -8,7 +8,7 @@ import { createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
 import { flagsToLifecycle, lifecycleToFlags } from "./lib/listing-lifecycle";
 import { getNetwork, pinnedNetwork } from "./lib/network";
-import { getDaoAccountIdOrThrow } from "./lib/org";
+import { getDaoAccountIdOrThrow, setDefaultDaoAccountId } from "./lib/org";
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
 import { createApplicationsService } from "./services/applications";
@@ -30,7 +30,9 @@ import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
 
 export default createPlugin.withPlugins<PluginsClient>()({
-  variables: z.object({}),
+  variables: z.object({
+    agencyDaoAccount: z.string().optional(),
+  }),
 
   secrets: z.object({
     API_DATABASE_URL: z.string().default("pglite:.bos/api/:memory:"),
@@ -45,6 +47,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
   initialize: (config, plugins) =>
     Effect.gen(function* () {
+      setDefaultDaoAccountId(config.variables.agencyDaoAccount);
+
       const db = yield* Effect.gen(function* () {
         return yield* DatabaseTag;
       }).pipe(Effect.provide(DatabaseLive(config.secrets.API_DATABASE_URL)));

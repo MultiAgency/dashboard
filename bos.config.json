@@ -21,6 +21,9 @@
     "api": {
       "name": "api",
       "development": "local:api",
+      "variables": {
+        "agencyDaoAccount": "multiagency.sputnik-dao.near"
+      },
       "secrets": [
         "API_DATABASE_URL",
         "APPLICATIONS_WEBHOOK_URL",
