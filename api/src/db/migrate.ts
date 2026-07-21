@@ -35,7 +35,7 @@ export interface DriftReport {
 }
 
 /**
- * Check which of the given expected tables already exist in the public schema,
+ * Check which of the given expected tables already exist in any user schema,
  * using a proper PostgreSQL array literal to avoid Drizzle's broken array binding.
  */
 function getExistingTables(
@@ -47,7 +47,7 @@ function getExistingTables(
     try: () =>
       db.execute(sql`
         SELECT table_name FROM information_schema.tables
-        WHERE table_schema = 'public'
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
           AND table_name = ANY(${sql.raw(toSqlArray(tables))})
       `),
     catch: (cause) =>

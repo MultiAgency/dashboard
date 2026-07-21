@@ -150,7 +150,7 @@ function migrateLegacyTable(db: Database): Effect.Effect<void, DatabaseError> {
       try: () =>
         db.execute(sql`
           SELECT table_name FROM information_schema.tables
-          WHERE table_schema = 'public' AND table_name = 'drizzle_migrations'
+          WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_name = 'drizzle_migrations'
         `),
       catch: (cause) =>
         new DatabaseError({ stage: "migration", migrationTag: "legacy-check", cause }),
