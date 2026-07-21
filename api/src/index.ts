@@ -141,9 +141,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       agency: {
         projects: {
-          list: builder.agency.projects.list
-            .use(auth.requireOrganization)
-            .handler(async ({ context }) => runEffect(agency.listProjects(context))),
+          list: builder.agency.projects.list.handler(async ({ context }) =>
+            runEffect(agency.listProjects(context)),
+          ),
 
           get: builder.agency.projects.get
             .use(auth.requireOrganization)
