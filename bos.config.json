@@ -13,9 +13,9 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-57-ui-dashboard-multiagency-fe7ba287e-ze.zephyrcloud.app",
+      "production": "https://multiagentic-61-ui-dashboard-multiagency-7fe2f01f8-ze.zephyrcloud.app",
       "integrity": "sha384-Am06gpSU6bxLP01dO5TIFbg5kYaQvD1PktduPIHbfu/kkTbieEZWoy0bnN2mup9y",
-      "ssr": "https://multiagentic-60-ui-dashboard-multiagency-8a2bca2e1-ze.zephyrcloud.app",
+      "ssr": "https://multiagentic-64-ui-dashboard-multiagency-5f2107c6f-ze.zephyrcloud.app",
       "ssrIntegrity": "sha384-Ez4Zwn90eoZH4zyqFbTh+eD7yd7EeoSGqAZtdkyqz/HTTPv4+uUWb3Tr2hASow6G"
     },
     "api": {
@@ -28,7 +28,7 @@
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
       ],
-      "production": "https://multiagentic-59-api-dashboard-multiagency-b7f309933-ze.zephyrcloud.app",
+      "production": "https://multiagentic-63-api-dashboard-multiagency-6cb2db91e-ze.zephyrcloud.app",
       "integrity": "sha384-3jcmVfDYw6dD/lebsZW1uHSe2YjuOrRYstxJNNSRgkwLG/IQ7WEz773afGXfU5eQ"
     },
     "auth": {
@@ -52,7 +52,7 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-58-everything-dev-projects-plugin-da-9d0bd2255-ze.zephyrcloud.app",
+      "production": "https://multiagentic-62-everything-dev-projects-plugin-da-46f2f1b32-ze.zephyrcloud.app",
       "integrity": "sha384-JoU1+xNumUqj7bjvJcOXsbRC/1OX1J7EeAAVmNdgg5KwtYAs2ntioOTkbuGrCIjj"
     }
   }
