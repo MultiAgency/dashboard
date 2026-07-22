@@ -63,14 +63,25 @@ export async function createDatabaseDriver(url: string): Promise<DatabaseDriver>
     connectionString: url,
     ssl: isLocal
       ? false
-      : { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== "false" },
+      : { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === "true" },
     max: Number(process.env.DB_POOL_MAX) || 10,
     connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS) || 30_000,
     idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS) || 30_000,
   });
+  pool.on("error", (err: Error) => {
+    console.error("[Database] Unexpected pool error:", err.message);
+  });
+  let closed = false;
   return {
     db: drizzle(pool, { schema }),
     close: async () => {
+      if (closed) return;
+      closed = true;
+      pool.removeAllListeners("error");
+      console.error(
+        "[Database] pool.end() called from:",
+        new Error("pool.end() stack trace").stack,
+      );
       await pool.end();
     },
   };
