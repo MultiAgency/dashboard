@@ -34,8 +34,6 @@ jobs:
       NEAR_PRIVATE_KEY: ${{ secrets.NEAR_PRIVATE_KEY }}
       # Zephyr CI token — see https://docs.zephyr-cloud.io/migrations/ci-token-migration#create-a-ci-token
       ZE_CI_TOKEN: ${{ secrets.ZEPHYR_CI_TOKEN }}
-      # CI-token exchange requires an actor identity even when the token is set
-      ZE_USER_EMAIL: ${{ secrets.ZEPHYR_USER_EMAIL }}
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       TARGET_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       TARGET_BRANCH: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref_name }}
