@@ -3,16 +3,14 @@ import {
   boolean,
   index,
   integer,
-  pgSchema,
+  pgTable,
   primaryKey,
   text,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-export const agency = pgSchema("agency");
-
-export const applications = agency.table(
+export const applications = pgTable(
   "applications",
   {
     id: text("id").primaryKey(),
@@ -38,7 +36,7 @@ export type Application = typeof applications.$inferSelect;
 export type NewApplication = typeof applications.$inferInsert;
 
 // Listings keyed to upstream project id; NEARN-sourced rows are a lazy-refresh cache from nearn.io.
-export const listings = agency.table(
+export const listings = pgTable(
   "listings",
   {
     id: text("id").primaryKey(),
@@ -104,7 +102,7 @@ export const listings = agency.table(
 export type Listing = typeof listings.$inferSelect;
 export type NewListing = typeof listings.$inferInsert;
 
-export const contributors = agency.table(
+export const contributors = pgTable(
   "contributors",
   {
     id: text("id").primaryKey(),
@@ -127,7 +125,7 @@ export const contributors = agency.table(
 export type Contributor = typeof contributors.$inferSelect;
 export type NewContributor = typeof contributors.$inferInsert;
 
-export const projectContributors = agency.table(
+export const projectContributors = pgTable(
   "project_contributors",
   {
     projectId: text("project_id").notNull(),
@@ -142,7 +140,7 @@ export const projectContributors = agency.table(
   }),
 );
 
-export const budgets = agency.table(
+export const budgets = pgTable(
   "budgets",
   {
     id: text("id").primaryKey(),
@@ -163,7 +161,7 @@ export const budgets = agency.table(
 export type Budget = typeof budgets.$inferSelect;
 export type NewBudget = typeof budgets.$inferInsert;
 
-export const billings = agency.table(
+export const billings = pgTable(
   "billings",
   {
     id: text("id").primaryKey(),
@@ -187,7 +185,7 @@ export const billings = agency.table(
 export type Billing = typeof billings.$inferSelect;
 export type NewBilling = typeof billings.$inferInsert;
 
-export const proposals = agency.table(
+export const proposals = pgTable(
   "proposals",
   {
     daoAccountId: text("dao_account_id").notNull(),
@@ -213,7 +211,7 @@ export const proposals = agency.table(
 export type Proposal = typeof proposals.$inferSelect;
 export type NewProposal = typeof proposals.$inferInsert;
 
-export const settings = agency.table("settings", {
+export const settings = pgTable("settings", {
   orgAccountId: text("org_account_id").primaryKey(),
   daoAccountId: text("dao_account_id"),
   nearnAccountId: text("nearn_account_id"),

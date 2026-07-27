@@ -12,11 +12,7 @@
   "app": {
     "ui": {
       "name": "ui",
-      "development": "local:ui",
-      "production": "https://multiagentic-69-ui-dashboard-multiagency-12ea4cf02-ze.zephyrcloud.app",
-      "integrity": "sha384-jE7/spmz/qTnkOqIey0bAy2km3Lv0JGZc1mXXfzPEWI/fGfQ4/lw2yS+LasKdczc",
-      "ssr": "https://multiagentic-72-ui-dashboard-multiagency-98629cfc8-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-vOJUYYEWRfPjvZSIkV/BaStaqSHVJfeHXP/jP1NsnVoFGZxq2h8YUhQ6FvtJW1Fy"
+      "development": "local:ui"
     },
     "api": {
       "name": "api",
@@ -30,9 +26,7 @@
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
-      ],
-      "production": "https://multiagentic-71-api-dashboard-multiagency-6a64b7560-ze.zephyrcloud.app",
-      "integrity": "sha384-ql2PIa7Y1URAHFvmHC9gZjPLAEyk95bdiVr44P6+vfG2D15mCc7zeI4RKanpIhQw"
+      ]
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
@@ -54,9 +48,7 @@
       "development": "local:plugins/projects",
       "secrets": [
         "PROJECTS_DATABASE_URL"
-      ],
-      "production": "https://multiagentic-70-everything-dev-projects-plugin-da-32630212d-ze.zephyrcloud.app",
-      "integrity": "sha384-+40yAjqY8k5YFTxLz3H1MaloaN7bPRD0+Ks5DGuGT+mPgteaMcQ3SaY/WoMZX6am"
+      ]
     }
   }
 }

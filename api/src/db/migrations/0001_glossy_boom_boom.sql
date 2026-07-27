@@ -1,1 +1,1 @@
-ALTER TABLE "agency"."settings" ADD COLUMN "dao_account_id" text;
+ALTER TABLE "settings" ADD COLUMN IF NOT EXISTS "dao_account_id" text;

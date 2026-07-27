@@ -2,11 +2,10 @@
 -- Drizzle-generated structure preserved; running `db:generate` would strip the guards — re-add them on regeneration.
 -- The legacy `agency.settings` table from pre-SPEC-cut deployments used a network-PK shape;
 -- v1 keys by orgAccountId (multi-tenant native), so DROP the legacy table first to avoid schema shadowing.
-DROP TABLE IF EXISTS "agency"."settings";
+DROP TABLE IF EXISTS "settings";
 --> statement-breakpoint
-CREATE SCHEMA IF NOT EXISTS "agency";
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "agency"."applications" (
+CREATE TABLE IF NOT EXISTS "applications" (
 	"id" text PRIMARY KEY NOT NULL,
 	"kind" text NOT NULL,
 	"name" text NOT NULL,
@@ -20,7 +19,7 @@ CREATE TABLE IF NOT EXISTS "agency"."applications" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "agency"."billings" (
+CREATE TABLE IF NOT EXISTS "billings" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
 	"contributor_id" text,
@@ -31,7 +30,7 @@ CREATE TABLE IF NOT EXISTS "agency"."billings" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "agency"."budgets" (
+CREATE TABLE IF NOT EXISTS "budgets" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
 	"token_id" text NOT NULL,
@@ -42,7 +41,7 @@ CREATE TABLE IF NOT EXISTS "agency"."budgets" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "agency"."contributors" (
+CREATE TABLE IF NOT EXISTS "contributors" (
 	"id" text PRIMARY KEY NOT NULL,
 	"near_account_id" text,
 	"name" text NOT NULL,
@@ -52,7 +51,7 @@ CREATE TABLE IF NOT EXISTS "agency"."contributors" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "agency"."listings" (
+CREATE TABLE IF NOT EXISTS "listings" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
 	"source" text NOT NULL,
@@ -102,7 +101,7 @@ CREATE TABLE IF NOT EXISTS "agency"."listings" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "agency"."project_contributors" (
+CREATE TABLE IF NOT EXISTS "project_contributors" (
 	"project_id" text NOT NULL,
 	"contributor_id" text NOT NULL,
 	"role" text,
@@ -110,7 +109,7 @@ CREATE TABLE IF NOT EXISTS "agency"."project_contributors" (
 	CONSTRAINT "project_contributors_project_id_contributor_id_pk" PRIMARY KEY("project_id","contributor_id")
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "agency"."proposals" (
+CREATE TABLE IF NOT EXISTS "proposals" (
 	"dao_account_id" text NOT NULL,
 	"proposal_id" integer NOT NULL,
 	"proposer" text NOT NULL,
@@ -126,7 +125,7 @@ CREATE TABLE IF NOT EXISTS "agency"."proposals" (
 	CONSTRAINT "proposals_dao_account_id_proposal_id_pk" PRIMARY KEY("dao_account_id","proposal_id")
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "agency"."settings" (
+CREATE TABLE IF NOT EXISTS "settings" (
 	"org_account_id" text PRIMARY KEY NOT NULL,
 	"nearn_account_id" text,
 	"website_url" text,
@@ -139,17 +138,17 @@ CREATE TABLE IF NOT EXISTS "agency"."settings" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "agency"."billings" DROP CONSTRAINT IF EXISTS "billings_contributor_id_contributors_id_fk";--> statement-breakpoint
-ALTER TABLE "agency"."billings" ADD CONSTRAINT "billings_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "agency"."contributors"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "agency"."project_contributors" DROP CONSTRAINT IF EXISTS "project_contributors_contributor_id_contributors_id_fk";--> statement-breakpoint
-ALTER TABLE "agency"."project_contributors" ADD CONSTRAINT "project_contributors_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "agency"."contributors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "applications_cursor" ON "agency"."applications" USING btree ("created_at","id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "billings_cursor" ON "agency"."billings" USING btree ("created_at","id");--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "billings_proposal_unique" ON "agency"."billings" USING btree ("proposal_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "billings_project_id" ON "agency"."billings" USING btree ("project_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "budgets_cursor" ON "agency"."budgets" USING btree ("created_at","id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "budgets_project_id" ON "agency"."budgets" USING btree ("project_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "contributors_near_account_id" ON "agency"."contributors" USING btree ("near_account_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "listings_project_id" ON "agency"."listings" USING btree ("project_id");--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "listings_project_source" ON "agency"."listings" USING btree ("project_id","source");--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "listings_source_external_id" ON "agency"."listings" USING btree ("source","external_id") WHERE "agency"."listings"."external_id" IS NOT NULL;
+ALTER TABLE "billings" DROP CONSTRAINT IF EXISTS "billings_contributor_id_contributors_id_fk";--> statement-breakpoint
+ALTER TABLE "billings" ADD CONSTRAINT "billings_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "contributors"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "project_contributors" DROP CONSTRAINT IF EXISTS "project_contributors_contributor_id_contributors_id_fk";--> statement-breakpoint
+ALTER TABLE "project_contributors" ADD CONSTRAINT "project_contributors_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "contributors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "applications_cursor" ON "applications" USING btree ("created_at","id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "billings_cursor" ON "billings" USING btree ("created_at","id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "billings_proposal_unique" ON "billings" USING btree ("proposal_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "billings_project_id" ON "billings" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "budgets_cursor" ON "budgets" USING btree ("created_at","id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "budgets_project_id" ON "budgets" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "contributors_near_account_id" ON "contributors" USING btree ("near_account_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "listings_project_id" ON "listings" USING btree ("project_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "listings_project_source" ON "listings" USING btree ("project_id","source");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "listings_source_external_id" ON "listings" USING btree ("source","external_id") WHERE "listings"."external_id" IS NOT NULL;
