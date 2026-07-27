@@ -45,13 +45,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
   contract,
 
-  initialize: (config, plugins) =>
+  initialize: (config, plugins, tools) =>
     Effect.gen(function* () {
       setDefaultDaoAccountId(config.variables.agencyDaoAccount);
 
-      const db = yield* Effect.gen(function* () {
-        return yield* DatabaseTag;
-      }).pipe(Effect.provide(DatabaseLive(config.secrets.API_DATABASE_URL)));
+      const db = yield* tools.buildService(
+        DatabaseTag,
+        DatabaseLive(config.secrets.API_DATABASE_URL),
+      );
 
       const notifyConfig = {
         webhookUrl: config.secrets.APPLICATIONS_WEBHOOK_URL,

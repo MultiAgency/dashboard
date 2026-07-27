@@ -42,8 +42,8 @@ export async function createDatabaseDriver(url: string): Promise<DatabaseDriver>
     const { drizzle } = await import("drizzle-orm/pglite");
     const { PGlite } = await import("@electric-sql/pglite");
     const rawDir = url === ":memory:" ? ":memory:" : url.replace("pglite:", "");
-    const dataDir = rawDir.endsWith("/:memory:") || rawDir === ":memory:" ? "memory://" : rawDir;
-    if (dataDir !== "memory://") {
+    const dataDir = rawDir.endsWith("/:memory:") || rawDir === ":memory:" ? ":memory:" : rawDir;
+    if (dataDir !== ":memory:") {
       mkdirSync(dirname(dataDir), { recursive: true });
     }
     const pglite = new PGlite(dataDir);
@@ -63,7 +63,7 @@ export async function createDatabaseDriver(url: string): Promise<DatabaseDriver>
     connectionString: url,
     ssl: isLocal
       ? false
-      : { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== "false" },
+      : { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === "true" },
     max: Number(process.env.DB_POOL_MAX) || 10,
     connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS) || 30_000,
     idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS) || 30_000,
@@ -78,6 +78,10 @@ export async function createDatabaseDriver(url: string): Promise<DatabaseDriver>
       if (closed) return;
       closed = true;
       pool.removeAllListeners("error");
+      console.error(
+        "[Database] pool.end() called from:",
+        new Error("pool.end() stack trace").stack,
+      );
       await pool.end();
     },
   };

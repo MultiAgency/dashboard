@@ -18,7 +18,7 @@ Public surface:
 - /contact — express-interest form (client)
 - /README.md
 - /skill.md
-- /manifest.json
+- /site.webmanifest
 - /llms.txt
 
 Authenticated surface (DAO members only):
