@@ -23,11 +23,15 @@ function AdminProjectsPage() {
     <div className="space-y-6">
       <header className="space-y-2">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          admin · projects
+          work · projects
         </div>
         <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
           Projects
         </h1>
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          Start here — each project holds the team, budget, and billings for work you deliver to
+          clients.
+        </p>
       </header>
       <ProjectsAdminSection />
     </div>

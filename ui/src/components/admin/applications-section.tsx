@@ -7,9 +7,10 @@ import { AdminError } from "@/components/admin-error";
 import { Field, selectClass } from "@/components/admin-form";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
+import { adminContributorsListQueryKey } from "@/lib/queries";
 
 type ApplicationKind = "founder" | "contributor" | "client";
-type ApplicationStatus = "new" | "reviewing" | "accepted" | "declined";
+type ApplicationStatus = "new" | "reviewing" | "accepted" | "declined" | "converted";
 
 type Application = Awaited<ReturnType<ApiClient["applications"]["list"]>>["data"][number];
 
@@ -54,7 +55,22 @@ export function ApplicationsAdminSection() {
           <div className="font-mono text-[10px] text-muted-foreground break-all">
             {row.original.email}
           </div>
+          {row.original.nearAccountId && (
+            <div className="font-mono text-[10px] text-muted-foreground">
+              {row.original.nearAccountId}
+            </div>
+          )}
         </div>
+      ),
+    },
+    {
+      id: "message",
+      header: "Message",
+      accessorKey: "message",
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground line-clamp-2 max-w-xs">
+          {row.original.message ?? "—"}
+        </span>
       ),
     },
     {
@@ -121,6 +137,7 @@ export function ApplicationsAdminSection() {
               <option value="reviewing">reviewing</option>
               <option value="accepted">accepted</option>
               <option value="declined">declined</option>
+              <option value="converted">converted</option>
             </select>
           </Field>
           <div className="flex items-end">
@@ -185,15 +202,44 @@ function ApplicationActions({ application }: { application: Application }) {
     onError: (err: Error) => toast.error(err.message || "Failed to update status"),
   });
 
+  const convertMutation = useMutation({
+    mutationFn: async () => apiClient.applications.convertToBuilder({ id: application.id }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin", "applications", "list"] }),
+        queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey }),
+      ]);
+      toast.success("Converted to builder");
+    },
+    onError: (err: Error) => toast.error(err.message || "Failed to convert"),
+  });
+
   return (
     <div className="flex flex-wrap gap-1 justify-end">
+      {application.kind === "contributor" &&
+        application.status === "accepted" &&
+        application.nearAccountId && (
+          <Button
+            size="sm"
+            variant="default"
+            onClick={() => convertMutation.mutate()}
+            disabled={convertMutation.isPending}
+          >
+            {convertMutation.isPending ? "converting..." : "convert to builder"}
+          </Button>
+        )}
+      {application.status === "converted" && (
+        <Badge variant="secondary" className="text-[10px]">
+          converted
+        </Badge>
+      )}
       {transitionsFor(application.status).map((t) => (
         <Button
           key={t.to}
           variant={t.variant}
           size="sm"
           onClick={() => updateMutation.mutate(t.to)}
-          disabled={updateMutation.isPending}
+          disabled={updateMutation.isPending || application.status === "converted"}
         >
           {t.label}
         </Button>
@@ -230,5 +276,7 @@ function transitionsFor(status: ApplicationStatus): {
         { to: "reviewing", label: "reopen", variant: "outline" },
         { to: "accepted", label: "accept", variant: "default" },
       ];
+    case "converted":
+      return [];
   }
 }

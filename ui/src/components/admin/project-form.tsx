@@ -8,6 +8,7 @@ import { useApiClient } from "@/lib/api";
 import { nearnListingHref } from "@/lib/nearn";
 import {
   adminProjectsListQueryKey,
+  adminProjectsListQueryOptions,
   projectsListQueryKey,
   publicSettingsQueryOptions,
 } from "@/lib/queries";
@@ -24,6 +25,7 @@ function isHttpUrl(value: string): boolean {
 
 export type ProjectStatus = "active" | "paused" | "archived";
 export type Visibility = "public" | "unlisted" | "private";
+export type ProjectKind = "project" | "idea" | "scope" | "result";
 
 export type Project = {
   id?: string;
@@ -61,9 +63,15 @@ export function ProjectForm({
   const [nearnListingId, setNearnListingId] = useState(defaultValues?.nearnListingId ?? "");
   const [status, setStatus] = useState<ProjectStatus>(defaultValues?.status ?? "active");
   const [vis, setVis] = useState<Visibility>(defaultValues?.visibility ?? "private");
+  const [kind, setKind] = useState<ProjectKind>("project");
+  const [parentSlug, setParentSlug] = useState("");
 
   const nearnSlug = nearnListingId.trim();
   const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
+  const parentOptions = (projectsQuery.data?.data ?? []).filter((p) =>
+    kind === "scope" ? (p as { kind?: string }).kind !== "result" : true,
+  );
   const nearnListingQuery = useQuery({
     queryKey: ["admin", "nearn", "listing", nearnSlug],
     queryFn: () => apiClient.nearn.getListing({ slug: nearnSlug }),
@@ -97,8 +105,10 @@ export function ProjectForm({
           slug: slugTrimmed,
           title: title.trim(),
           description: description.trim() || undefined,
-          repository: repositoryTrimmed,
+          repository: kind === "project" ? repositoryTrimmed : undefined,
           nearnListingId: nearnSlug || undefined,
+          kind,
+          parentSlug: kind === "scope" || kind === "result" ? parentSlug.trim() : undefined,
           status,
           visibility: vis,
         });
@@ -129,8 +139,13 @@ export function ProjectForm({
 
   const isPending = mutation.isPending;
   const slugOk = mode === "edit" || isValidSlug(slugTrimmed);
+  const repositoryRequired = kind === "project";
   const canSubmit =
-    title.trim().length > 0 && slugOk && repositoryTrimmed.length > 0 && repositoryOk && !isPending;
+    title.trim().length > 0 &&
+    slugOk &&
+    (!repositoryRequired || (repositoryTrimmed.length > 0 && repositoryOk)) &&
+    (kind === "project" || kind === "idea" || parentSlug.trim().length > 0) &&
+    !isPending;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -138,7 +153,7 @@ export function ProjectForm({
       toast.error("Enter a valid project slug before creating");
       return;
     }
-    if (!repositoryOk) {
+    if (repositoryRequired && !repositoryOk) {
       toast.error("Repository must be an http:// or https:// URL");
       return;
     }
@@ -209,10 +224,58 @@ export function ProjectForm({
             className={textareaClass}
           />
         </Field>
+        {mode === "create" && (
+          <>
+            <Field label="kind" htmlFor={`project-kind-${mode}`}>
+              <select
+                id={`project-kind-${mode}`}
+                value={kind}
+                onChange={(e) => setKind(e.target.value as ProjectKind)}
+                disabled={isPending}
+                className={selectClass}
+              >
+                <option value="project">project</option>
+                <option value="idea">idea</option>
+                <option value="scope">scope</option>
+                <option value="result">result</option>
+              </select>
+            </Field>
+            {(kind === "scope" || kind === "result") && (
+              <Field
+                label={kind === "scope" ? "parent project slug" : "parent scope slug"}
+                htmlFor={`project-parent-${mode}`}
+                helper={
+                  kind === "scope"
+                    ? "Scope must mention its parent project."
+                    : "Result must mention its parent scope."
+                }
+              >
+                <select
+                  id={`project-parent-${mode}`}
+                  value={parentSlug}
+                  onChange={(e) => setParentSlug(e.target.value)}
+                  className={selectClass}
+                  disabled={isPending}
+                >
+                  <option value="">Select parent…</option>
+                  {parentOptions.map((p) => (
+                    <option key={p.id} value={p.slug}>
+                      {p.title} (@{p.slug})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+          </>
+        )}
         <Field
           label="repository url"
           htmlFor={`project-repo-${mode}`}
-          helper="Required. Must start with http:// or https://."
+          helper={
+            repositoryRequired
+              ? "Required. Must start with http:// or https://."
+              : "Optional for idea/scope/result."
+          }
         >
           <Input
             id={`project-repo-${mode}`}
@@ -220,9 +283,9 @@ export function ProjectForm({
             onChange={(e) => setRepository(e.target.value)}
             placeholder="https://github.com/org/repo"
             disabled={isPending}
-            required
+            required={repositoryRequired}
           />
-          {repositoryTrimmed && !repositoryOk && (
+          {repositoryRequired && repositoryTrimmed && !repositoryOk && (
             <p className="text-xs text-destructive">Enter a full http(s) URL</p>
           )}
         </Field>

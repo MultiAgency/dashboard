@@ -2,6 +2,7 @@ import { Link, useMatchRoute } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import type * as React from "react";
 import type { ReactNode } from "react";
+import { AuthHashToasts } from "@/components/auth-hash-toasts";
 import { NetworkToggle } from "@/components/network-toggle";
 import { OrgSwitcher } from "@/components/org-switcher";
 import {
@@ -105,6 +106,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen w-full flex bg-background text-foreground">
+      <AuthHashToasts />
       <div className="flex-1 flex flex-col min-w-0">
         <a
           href="#main"

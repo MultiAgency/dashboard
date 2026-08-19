@@ -1,14 +1,24 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Budget, Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field, selectClass } from "@/components/admin-form";
 import { useBudgetActions } from "@/hooks/use-budget-actions";
+import {
+  reconcileBudgetAuditFilters,
+  resolveBudgetAuditDropdownOptions,
+} from "@/lib/admin-filter-graph";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount, parseDecimalToBase } from "@/lib/format-amount";
-import { adminProjectsListQueryOptions, adminTokensQueryOptions } from "@/lib/queries";
+import {
+  adminClientsListQueryOptions,
+  adminProjectBudgetQueryOptions,
+  adminProjectsListQueryOptions,
+  adminTokensQueryOptions,
+  clientPortalProjectBudgetQueryOptions,
+} from "@/lib/queries";
 
 function budgetVerb(amount: string, relatedBudgetId: string | null): string {
   const negative = amount.startsWith("-");
@@ -210,13 +220,94 @@ function AgencyAuditLogPanel({
 
   const [filterProject, setFilterProject] = useState<string>("");
   const [filterToken, setFilterToken] = useState<string>("");
+  const [filterClient, setFilterClient] = useState<string>("");
+
+  const clientsQuery = useQuery(adminClientsListQueryOptions(apiClient));
+  const clients = clientsQuery.data?.data ?? [];
+  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+
+  const clientProjectIds = useMemo(() => {
+    if (!filterClient) return null;
+    return new Set(clients.find((c) => c.id === filterClient)?.projectIds ?? []);
+  }, [filterClient, clients]);
+
+  const projectBudgetQuery = useQuery({
+    ...adminProjectBudgetQueryOptions(apiClient, filterProject),
+    enabled: !!filterProject,
+  });
+
+  const projectsForTokenQuery = useQuery({
+    queryKey: ["admin", "budgets", "projects-for-token", filterToken],
+    queryFn: async () => {
+      const result = await apiClient.budgets.list({ tokenId: filterToken, limit: 200 });
+      return new Set(result.data.map((row) => row.projectId));
+    },
+    enabled: !!filterToken,
+    staleTime: 60_000,
+  });
+
+  const tokensByProject = useMemo(() => {
+    if (!filterProject) return null;
+    const ids = projectBudgetQuery.data?.budgets.map((b) => b.tokenId) ?? [];
+    return ids.length > 0 ? new Set(ids) : null;
+  }, [filterProject, projectBudgetQuery.data?.budgets]);
+
+  const projectsByToken = projectsForTokenQuery.data ?? null;
+  const allProjectIds = useMemo(() => projects.map((p) => p.id), [projects]);
+  const allTokenIds = useMemo(() => tokens.map((t) => t.tokenId), [tokens]);
+
+  const dropdownOptions = useMemo(
+    () =>
+      resolveBudgetAuditDropdownOptions(
+        allProjectIds,
+        allTokenIds,
+        { projectId: filterProject, tokenId: filterToken },
+        projectsByToken,
+        tokensByProject,
+      ),
+    [allProjectIds, allTokenIds, filterProject, filterToken, projectsByToken, tokensByProject],
+  );
+
+  const filterProjects = useMemo(
+    () =>
+      projects.filter(
+        (p) =>
+          dropdownOptions.projects.has(p.id) && (!clientProjectIds || clientProjectIds.has(p.id)),
+      ),
+    [projects, dropdownOptions.projects, clientProjectIds],
+  );
+  const filterTokens = useMemo(
+    () => tokens.filter((t) => dropdownOptions.tokens.has(t.tokenId)),
+    [tokens, dropdownOptions.tokens],
+  );
+
+  const applyAuditFilters = (patch: Partial<{ projectId: string; tokenId: string }>) => {
+    const next = reconcileBudgetAuditFilters(
+      { projectId: filterProject, tokenId: filterToken },
+      patch,
+      allProjectIds,
+      allTokenIds,
+      projectsByToken,
+      tokensByProject,
+    );
+    setFilterProject(next.projectId);
+    setFilterToken(next.tokenId);
+  };
 
   const logQuery = useInfiniteQuery({
-    queryKey: ["admin", "budgets", "agency", filterProject || null, filterToken || null],
+    queryKey: [
+      "admin",
+      "budgets",
+      "agency",
+      filterProject || null,
+      filterToken || null,
+      filterClient || null,
+    ],
     queryFn: ({ pageParam }) =>
       apiClient.budgets.list({
         projectId: filterProject || undefined,
         tokenId: filterToken || undefined,
+        clientId: filterClient || undefined,
         cursor: pageParam,
       }),
     initialPageParam: undefined as string | undefined,
@@ -224,7 +315,7 @@ function AgencyAuditLogPanel({
   });
 
   const rows = logQuery.data?.pages.flatMap((p) => p.data) ?? [];
-  const filtersActive = filterProject !== "" || filterToken !== "";
+  const filtersActive = filterProject !== "" || filterToken !== "" || filterClient !== "";
 
   return (
     <section className="space-y-3">
@@ -236,16 +327,37 @@ function AgencyAuditLogPanel({
         linked rows.
       </p>
       <Card>
-        <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_auto]">
+        <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_1fr_auto]">
+          <Field label="client" htmlFor="audit-filter-client">
+            <select
+              id="audit-filter-client"
+              value={filterClient}
+              onChange={(e) => {
+                setFilterClient(e.target.value);
+                if (e.target.value && filterProject) {
+                  const allowed = clients.find((c) => c.id === e.target.value)?.projectIds ?? [];
+                  if (!allowed.includes(filterProject)) setFilterProject("");
+                }
+              }}
+              className={selectClass}
+            >
+              <option value="">all clients</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="project" htmlFor="audit-filter-project">
             <select
               id="audit-filter-project"
               value={filterProject}
-              onChange={(e) => setFilterProject(e.target.value)}
+              onChange={(e) => applyAuditFilters({ projectId: e.target.value })}
               className={selectClass}
             >
               <option value="">all projects</option>
-              {projects.map((p) => (
+              {filterProjects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.title}
                 </option>
@@ -256,11 +368,11 @@ function AgencyAuditLogPanel({
             <select
               id="audit-filter-token"
               value={filterToken}
-              onChange={(e) => setFilterToken(e.target.value)}
+              onChange={(e) => applyAuditFilters({ tokenId: e.target.value })}
               className={selectClass}
             >
               <option value="">all tokens</option>
-              {tokens.map((t) => (
+              {filterTokens.map((t) => (
                 <option key={t.tokenId} value={t.tokenId}>
                   {t.symbol} ({t.tokenId})
                 </option>
@@ -273,8 +385,8 @@ function AgencyAuditLogPanel({
               size="sm"
               disabled={!filtersActive}
               onClick={() => {
-                setFilterProject("");
-                setFilterToken("");
+                setFilterClient("");
+                applyAuditFilters({ projectId: "", tokenId: "" });
               }}
             >
               clear
@@ -306,6 +418,12 @@ function AgencyAuditLogPanel({
                     </div>
                     <div className="text-xs text-muted-foreground font-mono">
                       project: {project ? `${project.title} (@${project.slug})` : a.projectId}
+                      {a.clientId && (
+                        <>
+                          {" · client: "}
+                          {clientById.get(a.clientId)?.name ?? a.clientId}
+                        </>
+                      )}
                     </div>
                     {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
                     <div className="text-xs text-muted-foreground font-mono">
@@ -456,11 +574,13 @@ function TransferPanel({
                 disabled={isPending}
                 className={selectClass}
               >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title} (@{p.slug})
-                  </option>
-                ))}
+                {projects
+                  .filter((p) => p.id !== fromProjectId)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title} (@{p.slug})
+                    </option>
+                  ))}
               </select>
             </Field>
           </div>
@@ -549,24 +669,47 @@ function TransferPanel({
   );
 }
 
-export function ProjectBudgetPanel({ projectId }: { projectId: string }) {
+export function ProjectBudgetPanel({
+  projectId,
+  readOnly = false,
+  showAgencyBudgetLink = false,
+  clientPortal = false,
+  agencyDaoAccountId,
+}: {
+  projectId: string;
+  readOnly?: boolean;
+  /** Link to /admin/budgets for cross-project transfers (project detail page). */
+  showAgencyBudgetLink?: boolean;
+  /** Use client-portal API (read-only client access). */
+  clientPortal?: boolean;
+  agencyDaoAccountId?: string;
+}) {
   const apiClient = useApiClient();
   const { allocate, deallocate } = useBudgetActions(projectId);
 
-  const budgetQuery = useQuery({
-    queryKey: ["admin", "projects", "budget", projectId],
-    queryFn: () => apiClient.agency.projects.getBudget({ projectId }),
+  const adminBudgetQuery = useQuery({
+    ...adminProjectBudgetQueryOptions(apiClient, projectId),
+    enabled: !clientPortal,
   });
+  const clientBudgetQuery = useQuery({
+    ...clientPortalProjectBudgetQueryOptions(apiClient, agencyDaoAccountId ?? "", projectId),
+    enabled: clientPortal && !!agencyDaoAccountId,
+  });
+  const budgetQuery = clientPortal ? clientBudgetQuery : adminBudgetQuery;
   const budgetsQuery = useInfiniteQuery({
     queryKey: ["admin", "budgets", projectId],
     queryFn: ({ pageParam }) => apiClient.budgets.list({ projectId, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: !readOnly && !clientPortal,
   });
 
   const budgetRows = budgetsQuery.data?.pages.flatMap((p) => p.data) ?? [];
 
-  const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
+  const tokensQuery = useQuery({
+    ...adminTokensQueryOptions(apiClient),
+    enabled: !readOnly && !clientPortal,
+  });
   const tokens = tokensQuery.data?.tokens ?? [];
 
   const [tokenSelection, setTokenSelection] = useState("near");
@@ -628,12 +771,26 @@ export function ProjectBudgetPanel({ projectId }: { projectId: string }) {
   const isPending = createMutation.isPending || deallocateMutation.isPending;
   const canSubmit = effectiveTokenId.length > 0 && isValidAmount && !isPending;
 
+  if (budgetQuery.isError) {
+    return <AdminError error={budgetQuery.error} />;
+  }
+
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-          Budget
-        </h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+            Budget
+          </h2>
+          {showAgencyBudgetLink && (
+            <Link
+              to="/admin/budgets"
+              className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              cross-project transfers →
+            </Link>
+          )}
+        </div>
         {budgetQuery.isLoading ? (
           <div className="text-sm text-muted-foreground">Loading budget...</div>
         ) : budgetQuery.data && budgetQuery.data.budgets.length > 0 ? (
@@ -647,122 +804,128 @@ export function ProjectBudgetPanel({ projectId }: { projectId: string }) {
         )}
       </section>
 
-      <section className="space-y-3">
-        <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-          New budget
-        </h2>
-        <Card>
-          <CardContent className="p-5 grid gap-4">
-            <TokenAmountFields
-              idPrefix="budget"
-              tokens={tokens}
-              tokenSelection={tokenSelection}
-              setTokenSelection={setTokenSelection}
-              customTokenId={customTokenId}
-              setCustomTokenId={setCustomTokenId}
-              amount={amount}
-              setAmount={setAmount}
-              amountError={amountError}
-              disabled={isPending}
-            />
-            {showPreview && (
-              <div className="text-xs text-muted-foreground space-x-2">
-                <span>{effectiveTokenId} budget:</span>
-                <span className="font-mono tabular-nums">
-                  {formatTokenAmount(currentBudgetBigInt.toString(), effectiveTokenId)}
-                </span>
-                <span>→</span>
-                <span className={`font-mono ${previewBudgetBigInt < 0n ? "text-destructive" : ""}`}>
-                  {formatTokenAmount(previewBudgetBigInt.toString(), effectiveTokenId)}
-                </span>
-                {knownToken && (
-                  <span className="font-mono tabular-nums">
-                    ({amount.trim()} {knownToken.symbol} = {amountInBase})
-                  </span>
-                )}
-              </div>
-            )}
-            <Field label="note (optional)" htmlFor="budget-note">
-              <Input
-                id="budget-note"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
+      {!readOnly && !clientPortal && (
+        <section className="space-y-3">
+          <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+            New budget
+          </h2>
+          <Card>
+            <CardContent className="p-5 grid gap-4">
+              <TokenAmountFields
+                idPrefix="budget"
+                tokens={tokens}
+                tokenSelection={tokenSelection}
+                setTokenSelection={setTokenSelection}
+                customTokenId={customTokenId}
+                setCustomTokenId={setCustomTokenId}
+                amount={amount}
+                setAmount={setAmount}
+                amountError={amountError}
                 disabled={isPending}
               />
-            </Field>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => createMutation.mutate()} disabled={!canSubmit}>
-                {createMutation.isPending ? "recording..." : "record budget"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => deallocateMutation.mutate()}
-                disabled={!canSubmit}
-              >
-                {deallocateMutation.isPending ? "recording..." : "record deallocation"}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Recorded to the audit log; nothing is executed on-chain. Project budgets are allowed
-              to go negative — over-budget is shown visually, not blocked.
-            </p>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-          Audit log
-        </h2>
-        {budgetsQuery.isLoading ? (
-          <div className="text-sm text-muted-foreground">Loading budget events...</div>
-        ) : budgetRows.length > 0 ? (
-          <>
-            <div className="space-y-2">
-              {budgetRows.map((a) => (
-                <div
-                  key={a.id}
-                  className="rounded-sm border border-border bg-muted/10 p-3 grid gap-1 sm:grid-cols-[140px_1fr] sm:gap-4"
-                >
-                  <div className="text-xs font-mono text-muted-foreground">
-                    {new Date(a.createdAt).toISOString().slice(0, 19).replace("T", " ")}
-                  </div>
-                  <div className="text-sm break-all space-y-1">
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
-                      <span className="font-mono tabular-nums">
-                        {formatTokenAmount(a.amount, a.tokenId)}
-                      </span>
-                    </div>
-                    {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
-                    <div className="text-xs text-muted-foreground font-mono">
-                      by {a.actorAccountId}
-                    </div>
-                  </div>
+              {showPreview && (
+                <div className="text-xs text-muted-foreground space-x-2">
+                  <span>{effectiveTokenId} budget:</span>
+                  <span className="font-mono tabular-nums">
+                    {formatTokenAmount(currentBudgetBigInt.toString(), effectiveTokenId)}
+                  </span>
+                  <span>→</span>
+                  <span
+                    className={`font-mono ${previewBudgetBigInt < 0n ? "text-destructive" : ""}`}
+                  >
+                    {formatTokenAmount(previewBudgetBigInt.toString(), effectiveTokenId)}
+                  </span>
+                  {knownToken && (
+                    <span className="font-mono tabular-nums">
+                      ({amount.trim()} {knownToken.symbol} = {amountInBase})
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-            {budgetsQuery.hasNextPage && (
-              <div className="flex justify-center pt-2">
+              )}
+              <Field label="note (optional)" htmlFor="budget-note">
+                <Input
+                  id="budget-note"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  disabled={isPending}
+                />
+              </Field>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => createMutation.mutate()} disabled={!canSubmit}>
+                  {createMutation.isPending ? "recording..." : "record budget"}
+                </Button>
                 <Button
                   variant="outline"
-                  size="sm"
-                  onClick={() => budgetsQuery.fetchNextPage()}
-                  disabled={budgetsQuery.isFetchingNextPage}
+                  onClick={() => deallocateMutation.mutate()}
+                  disabled={!canSubmit}
                 >
-                  {budgetsQuery.isFetchingNextPage ? "loading..." : "load more"}
+                  {deallocateMutation.isPending ? "recording..." : "record deallocation"}
                 </Button>
               </div>
-            )}
-          </>
-        ) : (
-          <Card>
-            <CardContent className="p-6 text-center text-sm text-muted-foreground">
-              No budget events recorded yet.
+              <p className="text-xs text-muted-foreground">
+                Recorded to the audit log; nothing is executed on-chain. Project budgets are allowed
+                to go negative — over-budget is shown visually, not blocked.
+              </p>
             </CardContent>
           </Card>
-        )}
-      </section>
+        </section>
+      )}
+
+      {!clientPortal && (
+        <section className="space-y-3">
+          <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+            Audit log
+          </h2>
+          {budgetsQuery.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading budget events...</div>
+          ) : budgetRows.length > 0 ? (
+            <>
+              <div className="space-y-2">
+                {budgetRows.map((a) => (
+                  <div
+                    key={a.id}
+                    className="rounded-sm border border-border bg-muted/10 p-3 grid gap-1 sm:grid-cols-[140px_1fr] sm:gap-4"
+                  >
+                    <div className="text-xs font-mono text-muted-foreground">
+                      {new Date(a.createdAt).toISOString().slice(0, 19).replace("T", " ")}
+                    </div>
+                    <div className="text-sm break-all space-y-1">
+                      <div className="flex flex-wrap items-baseline gap-2">
+                        <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
+                        <span className="font-mono tabular-nums">
+                          {formatTokenAmount(a.amount, a.tokenId)}
+                        </span>
+                      </div>
+                      {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
+                      <div className="text-xs text-muted-foreground font-mono">
+                        by {a.actorAccountId}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {budgetsQuery.hasNextPage && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => budgetsQuery.fetchNextPage()}
+                    disabled={budgetsQuery.isFetchingNextPage}
+                  >
+                    {budgetsQuery.isFetchingNextPage ? "loading..." : "load more"}
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="p-6 text-center text-sm text-muted-foreground">
+                No budget events recorded yet.
+              </CardContent>
+            </Card>
+          )}
+        </section>
+      )}
     </div>
   );
 }

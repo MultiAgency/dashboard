@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "@tanstack/react-router";
 import { Building2, Check } from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { sessionQueryOptions } from "@/lib/auth";
+import { organizationsListQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { isAgencyWorkspace } from "@/lib/org-metadata";
+import { invalidateWorkspaceQueries } from "@/lib/queries";
+import { switchAgencyWorkspace } from "@/lib/workspace";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -15,12 +21,14 @@ import {
 export function OrgSwitcher() {
   const auth = useAuthClient();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const recoveredRef = useRef(false);
 
   const { data: session } = useQuery(sessionQueryOptions(auth));
   const activeOrgId = session?.session?.activeOrganizationId ?? null;
 
   const orgsQuery = useQuery({
-    queryKey: ["organizations", "list"],
+    queryKey: organizationsListQueryKey,
     queryFn: async () => {
       const res = await auth.organization.list();
       return res.data ?? [];
@@ -28,20 +36,35 @@ export function OrgSwitcher() {
   });
 
   const switchMutation = useMutation({
-    mutationFn: async (orgId: string) => {
-      const { error } = await auth.organization.setActive({ organizationId: orgId });
-      if (error) throw new Error(error.message || "Failed to switch workspace");
+    mutationFn: (orgId: string) => switchAgencyWorkspace(auth, orgId),
+    onSuccess: async (ok) => {
+      if (!ok) {
+        toast.error("Could not switch agency — try signing out and back in.");
+        return;
+      }
+      await queryClient.fetchQuery(
+        sessionQueryOptions(auth, undefined, { disableCookieCache: true }),
+      );
+      await invalidateWorkspaceQueries(queryClient, router);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["session"] });
-      queryClient.invalidateQueries({ queryKey: ["organizations"] });
-      queryClient.invalidateQueries({ queryKey: ["members"] });
-      queryClient.invalidateQueries({ queryKey: ["me", "roles"] });
+    onError: () => {
+      toast.error("Could not switch agency — try signing out and back in.");
     },
   });
 
-  const organizations = orgsQuery.data ?? [];
+  const organizations = useMemo(
+    () => (orgsQuery.data ?? []).filter((org) => isAgencyWorkspace(org.metadata)),
+    [orgsQuery.data],
+  );
   const activeOrg = organizations.find((o) => o.id === activeOrgId);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (recoveredRef.current || orgsQuery.isLoading || switchMutation.isPending) return;
+    if (organizations.length === 0 || activeOrg) return;
+    recoveredRef.current = true;
+    switchMutation.mutate(organizations[0]!.id);
+  }, [activeOrg, organizations, orgsQuery.isLoading, switchMutation]);
 
   return (
     <DropdownMenu>
@@ -52,11 +75,11 @@ export function OrgSwitcher() {
           className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground max-w-[180px]"
         >
           <Building2 className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate min-w-0">{activeOrg?.name ?? "workspace"}</span>
+          <span className="truncate min-w-0">{activeOrg?.name ?? "agency"}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">workspaces</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">agencies</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {organizations.map((org) => (
           <DropdownMenuItem
@@ -70,7 +93,7 @@ export function OrgSwitcher() {
         ))}
         {organizations.length === 0 && (
           <DropdownMenuItem disabled className="text-muted-foreground">
-            no workspaces
+            no agencies
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

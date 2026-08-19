@@ -3,7 +3,7 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
-import { billings, contributors } from "../db/schema";
+import { billings } from "../db/schema";
 import type { AgencyService } from "./agency";
 import { enrichWithChainStatus, getProposal } from "./sputnik";
 import { NATIVE_TOKEN_ID } from "./tokens";
@@ -13,7 +13,8 @@ export function createBillingsService(db: Database, agency: AgencyService) {
     list: (
       input: {
         projectId?: string;
-        contributorId?: string;
+        nearAccount?: string;
+        clientId?: string;
         cursor?: string;
         limit: number;
       },
@@ -32,10 +33,15 @@ export function createBillingsService(db: Database, agency: AgencyService) {
               (p: { id: string }) => p.id,
             );
 
+        if (projectIds.length === 0) {
+          return { data: [], nextCursor: null };
+        }
+
         const selectBillingCols = {
           id: billings.id,
           projectId: billings.projectId,
-          contributorId: billings.contributorId,
+          nearAccount: billings.nearAccount,
+          clientId: billings.clientId,
           tokenId: billings.tokenId,
           amount: billings.amount,
           proposalId: billings.proposalId,
@@ -50,7 +56,8 @@ export function createBillingsService(db: Database, agency: AgencyService) {
             .where(
               and(
                 inArray(billings.projectId, projectIds),
-                input.contributorId ? eq(billings.contributorId, input.contributorId) : undefined,
+                input.nearAccount ? eq(billings.nearAccount, input.nearAccount) : undefined,
+                input.clientId ? eq(billings.clientId, input.clientId) : undefined,
                 cursorWhere(billings.createdAt, billings.id, input.cursor),
               ),
             )
@@ -71,7 +78,8 @@ export function createBillingsService(db: Database, agency: AgencyService) {
     create: (
       input: {
         projectId: string;
-        contributorId?: string;
+        nearAccount?: string;
+        clientId?: string;
         proposalId: string;
         note?: string;
       },
@@ -136,17 +144,7 @@ export function createBillingsService(db: Database, agency: AgencyService) {
           amount: string;
         };
 
-        let contributorId = input.contributorId ?? null;
-        if (!contributorId) {
-          const found = yield* Effect.promise(() =>
-            db
-              .select({ id: contributors.id })
-              .from(contributors)
-              .where(eq(contributors.nearAccountId, transferKind.receiverId))
-              .limit(1),
-          );
-          contributorId = found[0]?.id ?? null;
-        }
+        const nearAccount = input.nearAccount ?? transferKind.receiverId ?? null;
 
         const id = crypto.randomUUID();
         const result = yield* Effect.promise(() =>
@@ -155,7 +153,8 @@ export function createBillingsService(db: Database, agency: AgencyService) {
             .values({
               id,
               projectId: input.projectId,
-              contributorId,
+              nearAccount,
+              clientId: input.clientId ?? null,
               tokenId: transferKind.tokenId === "" ? NATIVE_TOKEN_ID : transferKind.tokenId,
               amount: transferKind.amount,
               proposalId: input.proposalId,

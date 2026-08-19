@@ -41,12 +41,14 @@ export type BudgetListItem = Pick<
   | "note"
   | "actorAccountId"
   | "relatedBudgetId"
+  | "clientId"
   | "createdAt"
 >;
 
 export interface ListBudgetsInput {
   projectIds: string[] | null;
   tokenId?: string;
+  clientId?: string;
   cursor?: string;
   limit: number;
 }
@@ -72,6 +74,7 @@ export async function listBudgets(
       note: budgets.note,
       actorAccountId: budgets.actorAccountId,
       relatedBudgetId: budgets.relatedBudgetId,
+      clientId: budgets.clientId,
       createdAt: budgets.createdAt,
     })
     .from(budgets)
@@ -79,6 +82,7 @@ export async function listBudgets(
       and(
         input.projectIds !== null ? inArray(budgets.projectId, input.projectIds) : undefined,
         input.tokenId ? eq(budgets.tokenId, input.tokenId) : undefined,
+        input.clientId ? eq(budgets.clientId, input.clientId) : undefined,
         cursorWhere(budgets.createdAt, budgets.id, input.cursor),
       ),
     )
@@ -98,6 +102,7 @@ export interface CreateBudgetInput {
   amount: string;
   note: string | null;
   actorAccountId: string;
+  clientId?: string | null;
 }
 
 export async function createBudget(db: Database, input: CreateBudgetInput): Promise<Budget> {
@@ -111,6 +116,7 @@ export async function createBudget(db: Database, input: CreateBudgetInput): Prom
       amount: input.amount,
       note: input.note,
       actorAccountId: input.actorAccountId,
+      clientId: input.clientId ?? null,
     })
     .returning();
   if (!row) throw new Error("budgets insert returned no row");

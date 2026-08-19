@@ -15,7 +15,7 @@ import {
 import { useApiClient } from "@/lib/api";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
 import { getNetwork, setNetwork } from "@/lib/network";
-import { meRolesQueryKey, meRolesQueryOptions } from "@/lib/queries";
+import { clientLookupQueryOptions, meRolesQueryKey, meRolesQueryOptions } from "@/lib/queries";
 
 type Network = "mainnet" | "testnet";
 
@@ -66,7 +66,11 @@ export function UserNav() {
   const authClient = useAuthClient();
   const apiClient = useApiClient();
 
-  const { data: session } = useQuery(sessionQueryOptions(authClient));
+  const { data: session } = useQuery({
+    ...sessionQueryOptions(authClient, undefined, { disableCookieCache: true }),
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
   const user = session?.user;
   const nearAccountId = authClient.near.getAccountId();
   const { data: profile } = useQuery({
@@ -80,6 +84,10 @@ export function UserNav() {
     retry: false,
   });
   const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
+  const { data: clientLookup } = useQuery({
+    ...clientLookupQueryOptions(apiClient, nearAccountId ?? ""),
+    enabled: !!user && !!nearAccountId,
+  });
   const orgRole = roles?.orgRole ?? null;
   const isSuperAdmin = session?.user?.role === "admin";
   const avatarUrl =
@@ -191,7 +199,14 @@ export function UserNav() {
           {(orgRole === "admin" || orgRole === "member" || orgRole === "owner") && (
             <DropdownMenuItem asChild>
               <Link to="/admin/projects" className="font-mono text-xs uppercase tracking-wide">
-                admin
+                agency dashboard
+              </Link>
+            </DropdownMenuItem>
+          )}
+          {clientLookup && clientLookup.memberships.length > 0 && (
+            <DropdownMenuItem asChild>
+              <Link to="/client" className="font-mono text-xs uppercase tracking-wide">
+                client portal
               </Link>
             </DropdownMenuItem>
           )}

@@ -1,21 +1,9 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { z } from "zod";
-import {
-  Button,
-  Card,
-  CardContent,
-  Input,
-  Spinner,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  Textarea,
-} from "@/components";
-import { MembersAdminSection } from "@/components/admin/members-section";
+import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { useApiClient } from "@/lib/api";
 import {
@@ -24,25 +12,24 @@ import {
   publicSettingsQueryKey,
 } from "@/lib/queries";
 
-const settingsSearchSchema = z.object({
-  tab: z.enum(["agency", "members"]).optional().catch("agency"),
-});
-
 export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
   head: () => ({
     meta: [{ title: "Settings | Admin" }],
   }),
-  validateSearch: settingsSearchSchema,
+  validateSearch: z.object({
+    tab: z.enum(["members"]).optional(),
+  }),
+  beforeLoad: ({ search }) => {
+    if (search.tab === "members") {
+      throw redirect({ to: "/admin/members" });
+    }
+  },
   loader: ({ context }) =>
     context.queryClient.ensureQueryData(adminSettingsQueryOptions(context.apiClient)),
   component: AdminSettingsPage,
 });
 
 function AdminSettingsPage() {
-  const { tab } = Route.useSearch();
-  const navigate = Route.useNavigate();
-  const activeTab = tab === "members" ? "members" : "agency";
-
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -53,26 +40,7 @@ function AdminSettingsPage() {
           Settings
         </h1>
       </header>
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => {
-          void navigate({
-            search: { tab: value === "members" ? "members" : undefined },
-            replace: true,
-          });
-        }}
-      >
-        <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.22em]">
-          <TabsTrigger value="agency">agency</TabsTrigger>
-          <TabsTrigger value="members">members</TabsTrigger>
-        </TabsList>
-        <TabsContent value="agency" className="mt-6">
-          <AdminSettings />
-        </TabsContent>
-        <TabsContent value="members" className="mt-6">
-          <MembersAdminSection />
-        </TabsContent>
-      </Tabs>
+      <AdminSettings />
     </div>
   );
 }
@@ -90,7 +58,6 @@ const optionalEmail = z
   .refine((s) => s === "" || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s), "not a valid email");
 
 const settingsFormSchema = z.object({
-  daoAccountId: z.string().trim().max(120),
   nearnAccountId: z.string().trim().max(120),
   websiteUrl: optionalUrl,
   docsUrl: optionalUrl,
@@ -146,7 +113,6 @@ function SettingsForm({
   const submit = useMutation({
     mutationFn: (values: SettingsFormValues) =>
       apiClient.agencyConfig.update({
-        daoAccountId: values.daoAccountId.trim() || null,
         nearnAccountId: values.nearnAccountId.trim() || null,
         websiteUrl: values.websiteUrl.trim() || null,
         docsUrl: values.docsUrl.trim() || null,
@@ -163,7 +129,6 @@ function SettingsForm({
 
   const form = useForm({
     defaultValues: {
-      daoAccountId: data.editable.daoAccountId ?? "",
       nearnAccountId: data.editable.nearnAccountId ?? "",
       websiteUrl: data.editable.websiteUrl ?? "",
       docsUrl: data.editable.docsUrl ?? "",
@@ -180,16 +145,11 @@ function SettingsForm({
 
   return (
     <section className="space-y-8">
-      <div className="space-y-2">
-        <h2 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Settings
-        </h2>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Agency-level configuration for the {data.network} deployment. Editable fields write to the{" "}
-          settings row for this workspace. Read-only fields are deploy-time config — env vars or
-          hardcoded brand identity.
-        </p>
-      </div>
+      <p className="text-sm text-muted-foreground max-w-2xl">
+        Agency-level configuration for the {data.network} deployment. Editable fields write to the
+        settings row for this workspace. Read-only fields are deploy-time config — env vars or
+        hardcoded brand identity.
+      </p>
 
       <Card>
         <CardContent className="space-y-4">
@@ -213,47 +173,15 @@ function SettingsForm({
             }}
           >
             <div className="space-y-2">
-              <div className={LABEL_CLS}>agency account</div>
+              <div className={LABEL_CLS}>sputnik dao account</div>
               <div className="font-mono text-sm break-all px-3 py-2 border border-border bg-muted/30">
                 {data.orgAccountId ?? "—"}
               </div>
               <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                row identity — set when the agency workspace was created.
+                set when the agency workspace was created on platform — used for treasury and
+                proposals.
               </p>
             </div>
-            <form.Field name="daoAccountId">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      sputnik dao account
-                    </label>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="multiagency.sputnik-dao.near"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
-                    />
-                    <p className="font-mono text-[10px] text-muted-foreground">
-                      Links this workspace to a Sputnik DAO for treasury/proposals display. Not used
-                      for access control.
-                    </p>
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
             <form.Field name="nearnAccountId">
               {(field) => {
                 const err = field.state.meta.errors[0];

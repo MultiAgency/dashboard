@@ -61,7 +61,7 @@ export function createTreasuryService(
                     .select({
                       id: billings.id,
                       projectId: billings.projectId,
-                      contributorId: billings.contributorId,
+                      nearAccount: billings.nearAccount,
                       tokenId: billings.tokenId,
                       amount: billings.amount,
                       proposalId: billings.proposalId,
@@ -134,7 +134,7 @@ export function createTreasuryService(
                     .select({
                       id: billings.id,
                       projectId: billings.projectId,
-                      contributorId: billings.contributorId,
+                      nearAccount: billings.nearAccount,
                       tokenId: billings.tokenId,
                       amount: billings.amount,
                       proposalId: billings.proposalId,

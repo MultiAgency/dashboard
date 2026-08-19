@@ -1,16 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Card, CardContent, DataTable, Input } from "@/components";
+import { Badge, Button, Card, CardContent, DataTable, Input, Textarea } from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Field, selectClass } from "@/components/admin-form";
+import { Field } from "@/components/admin-form";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
+import {
+  buildContributorLinks,
+  formatSkillsInput,
+  parseSkillsInput,
+  splitContributorLinks,
+} from "@/lib/contributor-profile";
 import { isValidNearAccountId } from "@/lib/near-account";
 import { adminContributorsListQueryKey, adminContributorsListQueryOptions } from "@/lib/queries";
-
-type OnboardingStatus = "pending" | "complete" | "expired";
 
 type Contributor = Awaited<ReturnType<ApiClient["contributors"]["list"]>>["data"][number];
 
@@ -18,7 +23,6 @@ export function ContributorsAdminSection() {
   const apiClient = useApiClient();
   const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
   const [creating, setCreating] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   if (contributorsQuery.isError) {
     return <AdminError error={contributorsQuery.error} />;
@@ -30,37 +34,46 @@ export function ContributorsAdminSection() {
       header: "Name",
       accessorKey: "name",
       cell: ({ row }) => (
-        <span className="font-display text-sm uppercase tracking-tight font-bold">
-          {row.original.name}
-        </span>
+        <Link
+          to="/admin/contributors/$nearAccount"
+          params={{ nearAccount: row.original.nearAccount }}
+          className="font-display text-sm uppercase tracking-tight font-bold hover:underline"
+        >
+          {row.original.name ?? row.original.nearAccount}
+        </Link>
       ),
     },
     {
-      id: "nearAccountId",
+      id: "nearAccount",
       header: "NEAR",
-      accessorKey: "nearAccountId",
+      accessorKey: "nearAccount",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
-          {row.original.nearAccountId ?? "—"}
-        </span>
+        <span className="font-mono text-xs text-muted-foreground">{row.original.nearAccount}</span>
       ),
     },
     {
-      id: "email",
-      header: "Email",
-      accessorKey: "email",
+      id: "skills",
+      header: "Skills",
+      accessorFn: (row) => row.skills.join(", "),
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">{row.original.email ?? "—"}</span>
+        <div className="flex flex-wrap gap-1">
+          {row.original.skills.slice(0, 3).map((s) => (
+            <Badge key={s} variant="outline" className="text-[10px]">
+              {s}
+            </Badge>
+          ))}
+          {row.original.skills.length > 3 && (
+            <span className="text-xs text-muted-foreground">+{row.original.skills.length - 3}</span>
+          )}
+        </div>
       ),
     },
     {
-      id: "onboardingStatus",
-      header: "Onboarding",
-      accessorKey: "onboardingStatus",
+      id: "location",
+      header: "Location",
+      accessorKey: "location",
       cell: ({ row }) => (
-        <Badge variant={row.original.onboardingStatus === "complete" ? "default" : "outline"}>
-          {row.original.onboardingStatus}
-        </Badge>
+        <span className="text-sm text-muted-foreground">{row.original.location ?? "—"}</span>
       ),
     },
     {
@@ -69,18 +82,16 @@ export function ContributorsAdminSection() {
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setSelectedId((s) => (s === row.original.id ? null : row.original.id))}
+        <Link
+          to="/admin/contributors/$nearAccount"
+          params={{ nearAccount: row.original.nearAccount }}
+          className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground hover:underline"
         >
-          {selectedId === row.original.id ? "close" : "edit"}
-        </Button>
+          edit
+        </Link>
       ),
     },
   ];
-
-  const selected = contributorsQuery.data?.data.find((c) => c.id === selectedId);
 
   return (
     <div className="space-y-6">
@@ -90,7 +101,7 @@ export function ContributorsAdminSection() {
           variant={creating ? "outline" : "default"}
           className="font-display uppercase tracking-wide"
         >
-          {creating ? "cancel" : "+ new contributor"}
+          {creating ? "cancel" : "+ new builder"}
         </Button>
       </header>
 
@@ -102,19 +113,11 @@ export function ContributorsAdminSection() {
         isLoading={contributorsQuery.isLoading}
         error={contributorsQuery.error}
         onRetry={() => contributorsQuery.refetch()}
-        emptyMessage="No contributors yet. Create your first one above."
-        csvFilename="contributors"
-        viewId="admin-contributors"
-        searchPlaceholder="Search contributors…"
+        emptyMessage="No builders yet. Create your first one above."
+        csvFilename="builders"
+        viewId="admin-builders"
+        searchPlaceholder="Search builders…"
       />
-
-      {selected && (
-        <Card>
-          <CardContent className="p-5">
-            <ContributorEditForm contributor={selected} />
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
@@ -123,35 +126,56 @@ function ContributorCreateForm({ onDone }: { onDone: () => void }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [nearAccountId, setNearAccountId] = useState("");
-  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus>("pending");
+  const [nearAccount, setNearAccount] = useState("");
+  const [bio, setBio] = useState("");
+  const [skills, setSkills] = useState("");
+  const [location, setLocation] = useState("");
+  const [github, setGithub] = useState("");
+  const [website, setWebsite] = useState("");
 
   const createMutation = useMutation({
     mutationFn: async () =>
       apiClient.contributors.create({
-        name: name.trim(),
-        email: email.trim() || undefined,
-        nearAccountId: nearAccountId.trim() || undefined,
-        onboardingStatus,
+        nearAccount: nearAccount.trim(),
+        name: name.trim() || undefined,
+        bio: bio.trim() || undefined,
+        skills: parseSkillsInput(skills),
+        location: location.trim() || undefined,
+        links: buildContributorLinks(github, website),
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
-      toast.success("Contributor created");
+      toast.success("Builder created");
       onDone();
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to create contributor"),
+    onError: (err: Error) => toast.error(err.message || "Failed to create builder"),
   });
 
   const isPending = createMutation.isPending;
-  const nearTrimmed = nearAccountId.trim();
-  const nearOk = !nearTrimmed || isValidNearAccountId(nearTrimmed);
-  const canSubmit = name.trim().length > 0 && nearOk && !isPending;
+  const nearTrimmed = nearAccount.trim();
+  const nearOk = nearTrimmed.length > 0 && isValidNearAccountId(nearTrimmed);
+  const canSubmit = nearOk && !isPending;
 
   return (
     <Card>
       <CardContent className="p-5 grid gap-4">
-        <Field label="name" htmlFor="new-name">
+        <Field
+          label="near account"
+          htmlFor="new-near"
+          helper="Required — builders are keyed by NEAR account."
+        >
+          <Input
+            id="new-near"
+            value={nearAccount}
+            onChange={(e) => setNearAccount(e.target.value)}
+            placeholder="contributor.near"
+            disabled={isPending}
+          />
+          {nearTrimmed && !nearOk && (
+            <p className="text-xs text-destructive">Invalid NEAR account id</p>
+          )}
+        </Field>
+        <Field label="name (optional)" htmlFor="new-name">
           <Input
             id="new-name"
             value={name}
@@ -159,49 +183,59 @@ function ContributorCreateForm({ onDone }: { onDone: () => void }) {
             disabled={isPending}
           />
         </Field>
+        <Field label="bio (optional)" htmlFor="new-bio">
+          <Textarea
+            id="new-bio"
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            rows={3}
+            disabled={isPending}
+          />
+        </Field>
+        <Field
+          label="skills (optional)"
+          htmlFor="new-skills"
+          helper="Comma-separated, e.g. react, rust, design"
+        >
+          <Input
+            id="new-skills"
+            value={skills}
+            onChange={(e) => setSkills(e.target.value)}
+            disabled={isPending}
+          />
+        </Field>
+        <Field label="location (optional)" htmlFor="new-location">
+          <Input
+            id="new-location"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="Berlin, DE"
+            disabled={isPending}
+          />
+        </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="email (optional)" htmlFor="new-email">
+          <Field label="github (optional)" htmlFor="new-github">
             <Input
-              id="new-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="new-github"
+              value={github}
+              onChange={(e) => setGithub(e.target.value)}
+              placeholder="https://github.com/..."
               disabled={isPending}
             />
           </Field>
-          <Field
-            label="near account (optional)"
-            htmlFor="new-near"
-            helper="Lowercase NEAR account id when set."
-          >
+          <Field label="website (optional)" htmlFor="new-website">
             <Input
-              id="new-near"
-              value={nearAccountId}
-              onChange={(e) => setNearAccountId(e.target.value)}
-              placeholder="contributor.near"
+              id="new-website"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="https://..."
               disabled={isPending}
             />
-            {nearTrimmed && !nearOk && (
-              <p className="text-xs text-destructive">Invalid NEAR account id</p>
-            )}
           </Field>
         </div>
-        <Field label="onboarding status" htmlFor="new-onboarding">
-          <select
-            id="new-onboarding"
-            value={onboardingStatus}
-            onChange={(e) => setOnboardingStatus(e.target.value as OnboardingStatus)}
-            disabled={isPending}
-            className={selectClass}
-          >
-            <option value="pending">pending</option>
-            <option value="complete">complete</option>
-            <option value="expired">expired</option>
-          </select>
-        </Field>
         <div className="flex gap-2">
           <Button onClick={() => createMutation.mutate()} disabled={!canSubmit}>
-            {isPending ? "creating..." : "create contributor"}
+            {isPending ? "creating..." : "create builder"}
           </Button>
           <Button onClick={onDone} variant="outline" disabled={isPending}>
             cancel
@@ -212,97 +246,112 @@ function ContributorCreateForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-function ContributorEditForm({ contributor }: { contributor: Contributor }) {
+export function ContributorProfileForm({
+  nearAccount,
+  contributor,
+}: {
+  nearAccount: string;
+  contributor: Contributor;
+}) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  const [name, setName] = useState(contributor.name);
-  const [email, setEmail] = useState(contributor.email ?? "");
-  const [nearAccountId, setNearAccountId] = useState(contributor.nearAccountId ?? "");
-  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus>(
-    contributor.onboardingStatus,
-  );
+  const linkFields = splitContributorLinks(contributor.links);
 
-  useEffect(() => {
-    setName(contributor.name);
-    setEmail(contributor.email ?? "");
-    setNearAccountId(contributor.nearAccountId ?? "");
-    setOnboardingStatus(contributor.onboardingStatus);
-  }, [contributor]);
+  const [name, setName] = useState(contributor.name ?? "");
+  const [bio, setBio] = useState(contributor.bio ?? "");
+  const [skills, setSkills] = useState(formatSkillsInput(contributor.skills));
+  const [location, setLocation] = useState(contributor.location ?? "");
+  const [github, setGithub] = useState(linkFields.github);
+  const [website, setWebsite] = useState(linkFields.website);
 
-  const updateMutation = useMutation({
+  const saveMutation = useMutation({
     mutationFn: async () =>
       apiClient.contributors.update({
-        id: contributor.id,
-        name: name.trim(),
-        email: email.trim() || null,
-        nearAccountId: nearAccountId.trim() || null,
-        onboardingStatus,
+        nearAccount,
+        name: name.trim() || undefined,
+        bio: bio.trim() || undefined,
+        skills: parseSkillsInput(skills),
+        location: location.trim() || undefined,
+        links: buildContributorLinks(github, website),
       }),
     onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["admin", "contributors", "detail", nearAccount],
+      });
       await queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
-      toast.success("Contributor updated");
+      toast.success("Profile saved");
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to update contributor"),
+    onError: (err: Error) => toast.error(err.message || "Failed to save profile"),
   });
 
-  const isPending = updateMutation.isPending;
-  const nearTrimmed = nearAccountId.trim();
-  const nearOk = !nearTrimmed || isValidNearAccountId(nearTrimmed);
-  const canSubmit = name.trim().length > 0 && nearOk && !isPending;
-
   return (
-    <div className="grid gap-4">
-      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-        edit · {contributor.name}
-      </div>
-      <Field label="name" htmlFor={`edit-name-${contributor.id}`}>
-        <Input
-          id={`edit-name-${contributor.id}`}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={isPending}
-        />
-      </Field>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="email (optional)" htmlFor={`edit-email-${contributor.id}`}>
-          <Input
-            id={`edit-email-${contributor.id}`}
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={isPending}
-          />
-        </Field>
-        <Field label="near account (optional)" htmlFor={`edit-near-${contributor.id}`}>
-          <Input
-            id={`edit-near-${contributor.id}`}
-            value={nearAccountId}
-            onChange={(e) => setNearAccountId(e.target.value)}
-            disabled={isPending}
-          />
-          {nearTrimmed && !nearOk && (
-            <p className="text-xs text-destructive">Invalid NEAR account id</p>
+    <Card>
+      <CardContent className="p-5 grid gap-4">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          edit profile
+          {!contributor.registered && (
+            <span className="ml-2 text-muted-foreground/80">(not registered as builder yet)</span>
           )}
+        </div>
+        <Field label="name" htmlFor="edit-name">
+          <Input
+            id="edit-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={saveMutation.isPending}
+          />
         </Field>
-      </div>
-      <Field label="onboarding status" htmlFor={`edit-onboarding-${contributor.id}`}>
-        <select
-          id={`edit-onboarding-${contributor.id}`}
-          value={onboardingStatus}
-          onChange={(e) => setOnboardingStatus(e.target.value as OnboardingStatus)}
-          disabled={isPending}
-          className={selectClass}
+        <Field label="bio" htmlFor="edit-bio">
+          <Textarea
+            id="edit-bio"
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            rows={3}
+            disabled={saveMutation.isPending}
+          />
+        </Field>
+        <Field label="skills" htmlFor="edit-skills" helper="Comma-separated">
+          <Input
+            id="edit-skills"
+            value={skills}
+            onChange={(e) => setSkills(e.target.value)}
+            disabled={saveMutation.isPending}
+          />
+        </Field>
+        <Field label="location" htmlFor="edit-location">
+          <Input
+            id="edit-location"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            disabled={saveMutation.isPending}
+          />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="github" htmlFor="edit-github">
+            <Input
+              id="edit-github"
+              value={github}
+              onChange={(e) => setGithub(e.target.value)}
+              disabled={saveMutation.isPending}
+            />
+          </Field>
+          <Field label="website" htmlFor="edit-website">
+            <Input
+              id="edit-website"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              disabled={saveMutation.isPending}
+            />
+          </Field>
+        </div>
+        <Button
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          className="w-fit font-display uppercase tracking-wide"
         >
-          <option value="pending">pending</option>
-          <option value="complete">complete</option>
-          <option value="expired">expired</option>
-        </select>
-      </Field>
-      <div>
-        <Button onClick={() => updateMutation.mutate()} disabled={!canSubmit} size="sm">
-          {isPending ? "saving..." : "save changes"}
+          {saveMutation.isPending ? "saving..." : "save profile"}
         </Button>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

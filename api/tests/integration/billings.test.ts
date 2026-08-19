@@ -26,7 +26,7 @@ describe("billings — adminDelete persistence", () => {
     await db.insert(billings).values({
       id,
       projectId: PROJECT_A,
-      contributorId: null,
+      nearAccount: null,
       tokenId: "near",
       amount: "1000",
       proposalId,

@@ -30,6 +30,8 @@ export type DataTableProps<TData, TValue> = {
   pageSizeOptions?: number[];
   enableSearch?: boolean;
   searchPlaceholder?: string;
+  /** Hide CSV export and column picker when tables are read-only. */
+  readOnly?: boolean;
 };
 
 const TH_CLS =
@@ -37,6 +39,32 @@ const TH_CLS =
 const TD_CLS = "px-3 py-2 text-sm border-b border-border";
 const SORT_BTN_CLS =
   "inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer";
+
+type ExportMeta<TData> = {
+  exportValue?: (row: TData) => string;
+};
+
+function columnExportValue<TData>(col: ColumnDef<TData, unknown>, row: TData): string {
+  const meta = col.meta as ExportMeta<TData> | undefined;
+  if (meta?.exportValue) return meta.exportValue(row);
+
+  const def = col as {
+    accessorFn?: (row: TData, index: number) => unknown;
+    accessorKey?: keyof TData & string;
+  };
+
+  if (typeof def.accessorFn === "function") {
+    const value = def.accessorFn(row, 0);
+    return value == null ? "" : String(value);
+  }
+
+  if (def.accessorKey) {
+    const value = row[def.accessorKey];
+    return value == null ? "" : String(value);
+  }
+
+  return "";
+}
 
 function SortHeader({
   column,
@@ -92,6 +120,7 @@ export function DataTable<TData, TValue>({
   pageSizeOptions = [10, 25, 50],
   enableSearch = true,
   searchPlaceholder = "Filter…",
+  readOnly = false,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -152,15 +181,14 @@ export function DataTable<TData, TValue>({
   const exportColumns: CsvColumn<TData>[] = columns
     .filter((c) => "header" in c && typeof (c as { header?: string }).header === "string")
     .map((c) => {
-      const col = c as { id?: string; header?: string; accessorKey?: string };
+      const col = c as ColumnDef<TData, unknown>;
       return {
-        header: col.header ?? col.id ?? "",
-        value: (row: TData) => {
-          const key = col.accessorKey as keyof TData;
-          return key ? String(row[key] ?? "") : "";
-        },
+        header: (typeof col.header === "string" ? col.header : col.id) ?? "",
+        value: (row: TData) => columnExportValue(col, row),
       };
     });
+
+  const exportRows = table.getFilteredRowModel().rows.map((row) => row.original);
 
   const rows = table.getRowModel().rows;
   const filteredEmpty = data.length > 0 && rows.length === 0;
@@ -180,51 +208,55 @@ export function DataTable<TData, TValue>({
               />
             </div>
           )}
-          <div className="relative">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setColsOpen((v) => !v)}
-              className="gap-1.5"
-            >
-              <Columns3 className="size-3.5" />
-              columns
-            </Button>
-            {colsOpen && (
-              <div className="absolute z-20 mt-1 w-48 rounded-sm border border-border bg-background p-2 shadow-md space-y-1">
-                {table
-                  .getAllColumns()
-                  .filter((c) => {
-                    if (!c.getCanHide()) return false;
-                    const header = c.columnDef.header;
-                    if (typeof header === "string" && header.trim() === "") return false;
-                    return true;
-                  })
-                  .map((column) => (
-                    <label
-                      key={column.id}
-                      className="flex items-center gap-2 px-1 py-1 text-xs font-mono cursor-pointer hover:bg-muted/40 rounded-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={column.getIsVisible()}
-                        onChange={column.getToggleVisibilityHandler()}
-                        className="accent-foreground"
-                      />
-                      {typeof column.columnDef.header === "string"
-                        ? column.columnDef.header
-                        : column.id}
-                    </label>
-                  ))}
-              </div>
-            )}
-          </div>
+          {!readOnly && (
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setColsOpen((v) => !v)}
+                className="gap-1.5"
+              >
+                <Columns3 className="size-3.5" />
+                columns
+              </Button>
+              {colsOpen && (
+                <div className="absolute z-20 mt-1 w-48 rounded-sm border border-border bg-background p-2 shadow-md space-y-1">
+                  {table
+                    .getAllColumns()
+                    .filter((c) => {
+                      if (!c.getCanHide()) return false;
+                      const header = c.columnDef.header;
+                      if (typeof header === "string" && header.trim() === "") return false;
+                      return true;
+                    })
+                    .map((column) => (
+                      <label
+                        key={column.id}
+                        className="flex items-center gap-2 px-1 py-1 text-xs font-mono cursor-pointer hover:bg-muted/40 rounded-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={column.getIsVisible()}
+                          onChange={column.getToggleVisibilityHandler()}
+                          className="accent-foreground"
+                        />
+                        {typeof column.columnDef.header === "string"
+                          ? column.columnDef.header
+                          : column.id}
+                      </label>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        {csvFilename && exportColumns.length > 0 && (
+        {!readOnly && csvFilename && exportColumns.length > 0 && (
           <Button
             variant="outline"
             size="sm"
-            onClick={() => downloadCsv(`${csvFilename}-${csvTimestamp()}.csv`, data, exportColumns)}
+            onClick={() =>
+              downloadCsv(`${csvFilename}-${csvTimestamp()}.csv`, exportRows, exportColumns)
+            }
           >
             export csv
           </Button>
