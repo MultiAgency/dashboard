@@ -84,6 +84,7 @@
     "db:studio": "node_modules/.bin/bos db:studio",
     "db:generate": "bun run --cwd api drizzle-kit generate",
     "db:migrate": "bun run --cwd api drizzle-kit migrate",
+    "db:migrate:contributors": "tsx scripts/migrate-contributors-to-builders.ts",
     "types:gen": "node_modules/.bin/bos types gen",
     "postinstall": "node_modules/.bin/bos types gen || true",
     "changeset": "changeset",

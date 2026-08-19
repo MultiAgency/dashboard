@@ -20,7 +20,9 @@ export const applications = pgTable(
     nearAccountId: text("near_account_id"),
     message: text("message"),
     metadata: text("metadata"),
-    status: text("status", { enum: ["new", "reviewing", "accepted", "declined"] })
+    status: text("status", {
+      enum: ["new", "reviewing", "accepted", "declined", "converted"],
+    })
       .notNull()
       .default("new"),
     reviewedBy: text("reviewed_by"),
@@ -42,9 +44,7 @@ export const listings = pgTable(
     id: text("id").primaryKey(),
     projectId: text("project_id").notNull(),
     source: text("source", { enum: ["nearn", "internal"] }).notNull(),
-    /** NEARN listing slug — user input + details/submissions API key. */
     externalId: text("external_id"),
-    /** NEARN listing UUID — public URL key (`nearn.io/{sponsor}/{uuid}/`). */
     externalUuid: text("external_uuid"),
     title: text("title"),
     description: text("description"),
@@ -102,41 +102,55 @@ export const listings = pgTable(
 export type Listing = typeof listings.$inferSelect;
 export type NewListing = typeof listings.$inferInsert;
 
-export const contributors = pgTable(
-  "contributors",
+export const clients = pgTable(
+  "clients",
   {
     id: text("id").primaryKey(),
-    nearAccountId: text("near_account_id"),
+    orgId: text("org_id").notNull(),
+    agencyDaoAccountId: text("agency_dao_account_id"),
     name: text("name").notNull(),
-    email: text("email"),
-    onboardingStatus: text("onboarding_status", {
-      enum: ["pending", "complete", "expired"],
-    })
-      .notNull()
-      .default("pending"),
+    nearAccountId: text("near_account_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
-    nearAccountIdx: index("contributors_near_account_id").on(t.nearAccountId),
+    orgIdx: index("clients_org_id").on(t.orgId),
+    agencyNearIdx: uniqueIndex("clients_agency_near_unique")
+      .on(t.agencyDaoAccountId, t.nearAccountId)
+      .where(sql`${t.nearAccountId} IS NOT NULL AND ${t.agencyDaoAccountId} IS NOT NULL`),
   }),
 );
 
-export type Contributor = typeof contributors.$inferSelect;
-export type NewContributor = typeof contributors.$inferInsert;
+export type Client = typeof clients.$inferSelect;
+export type NewClient = typeof clients.$inferInsert;
+
+export const clientProjects = pgTable(
+  "client_projects",
+  {
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.clientId, t.projectId] }),
+    projectIdx: index("client_projects_project_id").on(t.projectId),
+  }),
+);
 
 export const projectContributors = pgTable(
   "project_contributors",
   {
     projectId: text("project_id").notNull(),
-    contributorId: text("contributor_id")
-      .notNull()
-      .references(() => contributors.id, { onDelete: "cascade" }),
+    nearAccount: text("near_account").notNull(),
     role: text("role"),
+    onboardingStatus: text("onboarding_status").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
-    pk: primaryKey({ columns: [t.projectId, t.contributorId] }),
+    pk: primaryKey({ columns: [t.projectId, t.nearAccount] }),
+    nearAccountIdx: index("project_contributors_near_account").on(t.nearAccount),
   }),
 );
 
@@ -150,11 +164,13 @@ export const budgets = pgTable(
     note: text("note"),
     actorAccountId: text("actor_account_id").notNull(),
     relatedBudgetId: text("related_budget_id"),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     cursor: index("budgets_cursor").on(t.createdAt, t.id),
     projectIdx: index("budgets_project_id").on(t.projectId),
+    clientIdx: index("budgets_client_id").on(t.clientId),
   }),
 );
 
@@ -166,9 +182,8 @@ export const billings = pgTable(
   {
     id: text("id").primaryKey(),
     projectId: text("project_id").notNull(),
-    contributorId: text("contributor_id").references(() => contributors.id, {
-      onDelete: "set null",
-    }),
+    nearAccount: text("near_account"),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     tokenId: text("token_id").notNull(),
     amount: text("amount").notNull(),
     proposalId: text("proposal_id").notNull(),
@@ -179,6 +194,8 @@ export const billings = pgTable(
     cursor: index("billings_cursor").on(t.createdAt, t.id),
     proposalUnique: uniqueIndex("billings_proposal_unique").on(t.proposalId),
     projectIdx: index("billings_project_id").on(t.projectId),
+    clientIdx: index("billings_client_id").on(t.clientId),
+    nearAccountIdx: index("billings_near_account").on(t.nearAccount),
   }),
 );
 

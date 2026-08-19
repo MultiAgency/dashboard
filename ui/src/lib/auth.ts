@@ -190,12 +190,19 @@ export function useAuthClient(): AuthClient {
 }
 
 export const sessionQueryKey = ["session"] as const;
+export const organizationsListQueryKey = ["organizations", "list"] as const;
 
-export function sessionQueryOptions(authClient: AuthClient, initialSession?: SessionData | null) {
+export function sessionQueryOptions(
+  authClient: AuthClient,
+  initialSession?: SessionData | null,
+  options?: { disableCookieCache?: boolean },
+) {
   const baseOptions = {
     queryKey: sessionQueryKey,
     queryFn: async () => {
-      const { data: session } = await authClient.getSession();
+      const { data: session } = await authClient.getSession(
+        options?.disableCookieCache ? { query: { disableCookieCache: true } } : undefined,
+      );
       return session ?? null;
     },
     staleTime: 60 * 1000,

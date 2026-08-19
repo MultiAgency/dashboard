@@ -42,7 +42,6 @@ export function defaultPublicSettings(_network: Network) {
 }
 
 type EditableSettings = {
-  daoAccountId?: string | null;
   nearnAccountId: string | null;
   websiteUrl: string | null;
   docsUrl: string | null;
@@ -67,7 +66,6 @@ export async function getResolvedPublicSettings(db: Database, network: Network) 
   return {
     ...base,
     orgAccountId: resolvedOrgId,
-    daoAccountId: row?.daoAccountId ?? null,
     nearnAccountId: row?.nearnAccountId ?? defaultNearnAccountId(),
     websiteUrl: row?.websiteUrl ?? defaultWebsiteUrl(),
     docsUrl: row?.docsUrl ?? defaultDocsUrl(),
@@ -87,7 +85,6 @@ export async function upsertSettings(
     .insert(settingsTable)
     .values({
       orgAccountId,
-      daoAccountId: fields.daoAccountId ?? null,
       nearnAccountId: fields.nearnAccountId,
       websiteUrl: fields.websiteUrl,
       docsUrl: fields.docsUrl,
@@ -102,7 +99,6 @@ export async function upsertSettings(
       target: settingsTable.orgAccountId,
       // Excludes createdBy/createdAt — those stay from the original insert.
       set: {
-        daoAccountId: fields.daoAccountId ?? null,
         nearnAccountId: fields.nearnAccountId,
         websiteUrl: fields.websiteUrl,
         docsUrl: fields.docsUrl,

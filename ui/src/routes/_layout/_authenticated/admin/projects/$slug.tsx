@@ -1,19 +1,19 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ArrowUpRight } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
   Badge,
-  Budget,
   Button,
   Card,
   CardContent,
   Input,
 } from "@/components";
+import { AssignmentsSection } from "@/components/admin/assignments-section";
 import { InternalListingSection } from "@/components/admin/internal-listing-form";
 import { ProjectBudgetPanel } from "@/components/admin/project-budget-panel";
 import { AdminError } from "@/components/admin-error";
@@ -23,6 +23,7 @@ import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingHref } from "@/lib/nearn";
 import {
+  adminClientsListQueryOptions,
   adminContributorsListQueryKey,
   adminContributorsListQueryOptions,
   adminInternalListingQueryOptions,
@@ -104,10 +105,6 @@ function AdminProjectDetail() {
     retry: false,
     staleTime: 60_000,
   });
-  const budgetQuery = useQuery({
-    ...adminProjectBudgetQueryOptions(apiClient, projectId ?? ""),
-    enabled: !!projectId,
-  });
 
   if (projectQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading project…</p>;
@@ -128,7 +125,7 @@ function AdminProjectDetail() {
     <div className="space-y-6">
       <div>
         <Link
-          to="/work"
+          to="/admin/projects"
           className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
         >
           ← all projects
@@ -155,43 +152,10 @@ function AdminProjectDetail() {
       )}
 
       <section className="space-y-3">
-        <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Contributors</h2>
-        {contributors.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No contributors assigned.</p>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {contributors.map((c) => (
-              <Card key={c.id}>
-                <CardContent className="p-4 space-y-1">
-                  <div className="text-sm font-medium">{c.name}</div>
-                  {c.role && <div className="text-xs text-muted-foreground">{c.role}</div>}
-                  {c.nearAccountId && (
-                    <div className="text-xs font-mono text-muted-foreground break-all">
-                      {c.nearAccountId}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        <AssignmentsSection projectId={projectId!} />
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Budget</h2>
-        {budgetQuery.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading budget…</p>
-        ) : budgetQuery.data && budgetQuery.data.budgets.length > 0 ? (
-          <div className="space-y-4">
-            {budgetQuery.data.budgets.map((b) => (
-              <Budget key={b.tokenId} budget={b} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">No budget yet.</p>
-        )}
-        {projectId && <ProjectBudgetPanel projectId={projectId} />}
-      </section>
+      {projectId && <ProjectBudgetPanel projectId={projectId} showAgencyBudgetLink />}
 
       {projectId && <BillingsSection projectId={projectId} contributors={contributors} />}
 
@@ -227,19 +191,17 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
   const query = useQuery(adminNearnSubmissionsQueryOptions(apiClient, slug));
   const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
   const contributorByNearAccount = new Map(
-    (contributorsQuery.data?.data ?? [])
-      .filter((c): c is typeof c & { nearAccountId: string } => !!c.nearAccountId)
-      .map((c) => [c.nearAccountId, c]),
+    (contributorsQuery.data?.data ?? []).map((c) => [c.nearAccount, c]),
   );
   const addContributorMutation = useMutation({
-    mutationFn: (input: { name: string; nearAccountId: string }) =>
-      apiClient.contributors.create(input),
+    mutationFn: (input: { name: string; nearAccount: string }) =>
+      apiClient.contributors.create({ nearAccount: input.nearAccount, name: input.name }),
     onSuccess: (_data, vars) => {
-      toast.success(`Added ${vars.name} as a contributor`);
+      toast.success(`Added ${vars.name} as a builder`);
       queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
     },
     onError: (err) => {
-      toast.error(`Could not add contributor: ${(err as Error).message}`);
+      toast.error(`Could not add builder: ${(err as Error).message}`);
     },
   });
 
@@ -301,19 +263,19 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
                     size="sm"
                     disabled={
                       addContributorMutation.isPending &&
-                      addContributorMutation.variables?.nearAccountId === s.user.publicKey
+                      addContributorMutation.variables?.nearAccount === s.user.publicKey
                     }
                     onClick={() =>
                       addContributorMutation.mutate({
                         name: s.user.name ?? s.user.username ?? s.user.publicKey!,
-                        nearAccountId: s.user.publicKey!,
+                        nearAccount: s.user.publicKey!,
                       })
                     }
                   >
                     {addContributorMutation.isPending &&
-                    addContributorMutation.variables?.nearAccountId === s.user.publicKey
+                    addContributorMutation.variables?.nearAccount === s.user.publicKey
                       ? "adding…"
-                      : "+ add contributor"}
+                      : "+ add builder"}
                   </Button>
                 ))}
               {s.isWinner && (
@@ -390,7 +352,7 @@ function DeleteProjectSection({
         <AlertTriangle className="size-4" />
         <AlertTitle>Delete this project</AlertTitle>
         <AlertDescription>
-          Removes the project and cascades all local billings, budgets, contributor assignments, and
+          Removes the project and cascades all local billings, budgets, builder assignments, and
           listings. On-chain Sputnik proposals are unaffected — they survive via their proposalIds.
           This cannot be undone.
         </AlertDescription>
@@ -419,9 +381,8 @@ function DeleteProjectSection({
 }
 
 type ProjectContributor = {
-  id: string;
+  nearAccount: string;
   name: string;
-  nearAccountId: string | null;
   role: string | null;
 };
 
@@ -468,7 +429,9 @@ function BillingsSection({
         />
       )}
 
-      {billingsQuery.isLoading ? (
+      {billingsQuery.isError ? (
+        <AdminError error={billingsQuery.error} />
+      ) : billingsQuery.isLoading ? (
         <Loading label="Loading billings..." />
       ) : billings.length > 0 ? (
         <>
@@ -593,41 +556,50 @@ function BillingCreateForm({
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const [proposalId, setProposalId] = useState("");
-  const [contributorIdOverride, setContributorIdOverride] = useState("");
+  const [nearAccountOverride, setNearAccountOverride] = useState("");
   const [note, setNote] = useState("");
+  const [billingClientId, setBillingClientId] = useState("");
 
   const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
 
   const allContributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
-  const onboardingById = new Map(
-    (allContributorsQuery.data?.data ?? []).map((c) => [c.id, c.onboardingStatus]),
+  const clientsQuery = useQuery(adminClientsListQueryOptions(apiClient));
+  const linkedClients = useMemo(
+    () => (clientsQuery.data?.data ?? []).filter((c) => (c.projectIds ?? []).includes(projectId)),
+    [clientsQuery.data?.data, projectId],
   );
 
-  const payableContributors = contributors.filter((c) => c.nearAccountId);
-  const [prefillContributorId, setPrefillContributorId] = useState<string>(
-    () => payableContributors[0]?.id ?? "",
+  useEffect(() => {
+    if (linkedClients.length === 1 && !billingClientId) {
+      setBillingClientId(linkedClients[0]!.id);
+    }
+  }, [linkedClients, billingClientId]);
+
+  const payableContributors = contributors.filter((c) => c.nearAccount);
+  const [prefillNearAccount, setPrefillNearAccount] = useState<string>(
+    () => payableContributors[0]?.nearAccount ?? "",
   );
   const [prefillTokenId, setPrefillTokenId] = useState<string>("");
 
-  const prefillContributor = payableContributors.find((c) => c.id === prefillContributorId);
+  const prefillContributor = payableContributors.find((c) => c.nearAccount === prefillNearAccount);
   const prefillToken = tokens.find((t) => t.tokenId === prefillTokenId);
 
-  const targetContributorId = contributorIdOverride.trim() || prefillContributorId;
-  const targetOnboardingStatus = targetContributorId
-    ? onboardingById.get(targetContributorId)
-    : undefined;
-  const showOnboardingWarning =
-    targetOnboardingStatus !== undefined && targetOnboardingStatus !== "complete";
+  const targetNearAccount = nearAccountOverride.trim() || prefillNearAccount;
+  const targetContributor = allContributorsQuery.data?.data.find(
+    (c) => c.nearAccount === targetNearAccount,
+  );
+  const showBuilderWarning = !!targetNearAccount && targetContributor?.registered !== true;
   const targetContributorName =
-    contributors.find((c) => c.id === targetContributorId)?.name ??
-    allContributorsQuery.data?.data.find((c) => c.id === targetContributorId)?.name ??
-    "this contributor";
+    contributors.find((c) => c.nearAccount === targetNearAccount)?.name ??
+    targetContributor?.name ??
+    targetNearAccount ??
+    "this builder";
 
   const trezuPrefillUrl =
     orgAccountId &&
     trezuPaymentUrl(orgAccountId, {
-      receiverAddress: prefillContributor?.nearAccountId ?? undefined,
+      receiverAddress: prefillContributor?.nearAccount ?? undefined,
       token: prefillToken
         ? {
             tokenId: prefillToken.tokenId,
@@ -643,7 +615,8 @@ function BillingCreateForm({
       apiClient.billings.create({
         projectId,
         proposalId: proposalId.trim(),
-        contributorId: contributorIdOverride || undefined,
+        nearAccount: nearAccountOverride || undefined,
+        clientId: billingClientId || undefined,
         note: note.trim() || undefined,
       }),
     onSuccess: async () => {
@@ -673,13 +646,13 @@ function BillingCreateForm({
               <Field label="recipient" htmlFor="prefill-contributor">
                 <select
                   id="prefill-contributor"
-                  value={prefillContributorId}
-                  onChange={(e) => setPrefillContributorId(e.target.value)}
+                  value={prefillNearAccount}
+                  onChange={(e) => setPrefillNearAccount(e.target.value)}
                   className={selectClass}
                 >
                   {payableContributors.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.nearAccountId})
+                    <option key={c.nearAccount} value={c.nearAccount}>
+                      {c.name} ({c.nearAccount})
                     </option>
                   ))}
                 </select>
@@ -716,6 +689,24 @@ function BillingCreateForm({
             </p>
           </div>
         )}
+        {linkedClients.length > 0 && (
+          <Field label="client (optional)" htmlFor="new-bill-client">
+            <select
+              id="new-bill-client"
+              value={billingClientId}
+              onChange={(e) => setBillingClientId(e.target.value)}
+              className={selectClass}
+              disabled={isPending}
+            >
+              <option value="">— none —</option>
+              {linkedClients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="proposal id" htmlFor="new-bill-proposal">
           <Input
             id="new-bill-proposal"
@@ -731,14 +722,14 @@ function BillingCreateForm({
           rejected.
         </p>
         <Field
-          label="contributor override (optional, defaults to recipient lookup)"
+          label="builder override (optional, defaults to recipient lookup)"
           htmlFor="new-bill-contributor"
         >
           <Input
             id="new-bill-contributor"
-            value={contributorIdOverride}
-            onChange={(e) => setContributorIdOverride(e.target.value)}
-            placeholder="contributor id (rare; leave blank to auto-detect)"
+            value={nearAccountOverride}
+            onChange={(e) => setNearAccountOverride(e.target.value)}
+            placeholder="near account (rare; leave blank to auto-detect)"
             disabled={isPending}
           />
         </Field>
@@ -752,21 +743,19 @@ function BillingCreateForm({
             className={textareaClass}
           />
         </Field>
-        {showOnboardingWarning && (
+        {showBuilderWarning && (
           <Alert>
             <AlertTriangle />
-            <AlertTitle>
-              Onboarding {targetOnboardingStatus} for {targetContributorName}
-            </AlertTitle>
+            <AlertTitle>Not registered as a builder: {targetContributorName}</AlertTitle>
             <AlertDescription>
-              Confirm signed services agreement and tax form (W-9 or W-8BEN) are on file before
-              recording a payout.{" "}
+              Convert the contributor application to a builder profile, or add them as a builder,
+              before recording a payout.{" "}
               <Link
                 to="/docs/$slug"
                 params={{ slug: "contributors" }}
                 className="underline underline-offset-2"
               >
-                onboarding flow ↗
+                contributor flow ↗
               </Link>
             </AlertDescription>
           </Alert>

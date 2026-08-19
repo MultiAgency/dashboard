@@ -1,5 +1,8 @@
+import type { QueryClient } from "@tanstack/react-query";
 import { queryOptions } from "@tanstack/react-query";
+import type { AnyRouter } from "@tanstack/react-router";
 import type { ApiClient } from "./api";
+import { sessionQueryKey } from "./auth";
 import { getNetwork } from "./network";
 
 // Loader-hit queries include the active network in their queryKey so data
@@ -179,4 +182,134 @@ export function adminNearnSubmissionsQueryOptions(apiClient: ApiClient, slug: st
     staleTime: 60_000,
     retry: false,
   });
+}
+
+export const adminClientsListQueryKey = ["admin", "clients", "list"] as const;
+
+export function adminClientsListQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: adminClientsListQueryKey,
+    queryFn: () => apiClient.clients.list(),
+    retry: false,
+  });
+}
+
+export function adminClientDetailQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: ["admin", "clients", "detail", id] as const,
+    queryFn: () => apiClient.clients.get({ id }),
+    retry: false,
+  });
+}
+
+export function adminContributorDetailQueryOptions(apiClient: ApiClient, nearAccount: string) {
+  return queryOptions({
+    queryKey: ["admin", "contributors", "detail", nearAccount] as const,
+    queryFn: () => apiClient.contributors.get({ nearAccount }),
+    retry: false,
+  });
+}
+
+export function clientLookupQueryOptions(apiClient: ApiClient, nearAccountId: string) {
+  return queryOptions({
+    queryKey: ["client", "lookup", nearAccountId] as const,
+    queryFn: () => apiClient.clients.lookupByNearAccount({ nearAccountId }),
+    retry: false,
+  });
+}
+
+export function clientPortalDashboardSummaryQueryOptions(
+  apiClient: ApiClient,
+  agencyDaoAccountId: string,
+) {
+  return queryOptions({
+    queryKey: ["client", "portal", "dashboard", getNetwork(), agencyDaoAccountId] as const,
+    queryFn: () => apiClient.clientPortal.dashboard.summary({ agencyDaoAccountId }),
+    retry: false,
+  });
+}
+
+export const clientPortalProjectsListQueryKey = ["client", "portal", "projects"] as const;
+
+export function clientPortalProjectsListQueryOptions(
+  apiClient: ApiClient,
+  agencyDaoAccountId: string,
+) {
+  return queryOptions({
+    queryKey: [...clientPortalProjectsListQueryKey, getNetwork(), agencyDaoAccountId] as const,
+    queryFn: () => apiClient.clientPortal.projects.list({ agencyDaoAccountId }),
+    retry: false,
+  });
+}
+
+export const clientPortalProjectDetailQueryKey = [
+  "client",
+  "portal",
+  "projects",
+  "detail",
+] as const;
+
+export function clientPortalProjectDetailQueryOptions(
+  apiClient: ApiClient,
+  agencyDaoAccountId: string,
+  slug: string,
+) {
+  return queryOptions({
+    queryKey: [
+      ...clientPortalProjectDetailQueryKey,
+      getNetwork(),
+      agencyDaoAccountId,
+      slug,
+    ] as const,
+    queryFn: () => apiClient.clientPortal.projects.get({ slug, agencyDaoAccountId }),
+    retry: false,
+  });
+}
+
+export const clientPortalProjectBudgetQueryKey = [
+  "client",
+  "portal",
+  "projects",
+  "budget",
+] as const;
+
+export function clientPortalProjectBudgetQueryOptions(
+  apiClient: ApiClient,
+  agencyDaoAccountId: string,
+  projectId: string,
+) {
+  return queryOptions({
+    queryKey: [
+      ...clientPortalProjectBudgetQueryKey,
+      getNetwork(),
+      agencyDaoAccountId,
+      projectId,
+    ] as const,
+    queryFn: () => apiClient.clientPortal.projects.getBudget({ projectId, agencyDaoAccountId }),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+export async function invalidateWorkspaceQueries(
+  queryClient: QueryClient,
+  router: Pick<AnyRouter, "invalidate">,
+) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
+    queryClient.invalidateQueries({ queryKey: ["organizations"] }),
+    queryClient.invalidateQueries({ queryKey: ["members"] }),
+    queryClient.invalidateQueries({ queryKey: meRolesQueryKey }),
+    queryClient.invalidateQueries({ queryKey: projectsListQueryKey }),
+    queryClient.invalidateQueries({ queryKey: teamListQueryKey }),
+    queryClient.invalidateQueries({ queryKey: publicSettingsQueryKey }),
+    queryClient.invalidateQueries({ queryKey: adminSettingsQueryKey }),
+    queryClient.invalidateQueries({ queryKey: ["treasury"] }),
+    queryClient.invalidateQueries({ queryKey: ["proposals"] }),
+    queryClient.invalidateQueries({ queryKey: ["admin"] }),
+    queryClient.invalidateQueries({ queryKey: ["client"] }),
+    queryClient.invalidateQueries({ queryKey: ["me"] }),
+    queryClient.invalidateQueries({ queryKey: tokensListQueryKey }),
+    router.invalidate(),
+  ]);
 }

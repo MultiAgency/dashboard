@@ -4,10 +4,15 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { applications } from "../db/schema";
+import type { ContributorsService } from "./contributors";
 import { type NotifyConfig, notifyNewApplication } from "./notify";
 import { defaultContactEmail } from "./settings-admin";
 
-export function createApplicationsService(db: Database, notifyConfig: NotifyConfig) {
+export function createApplicationsService(
+  db: Database,
+  notifyConfig: NotifyConfig,
+  contributors?: ContributorsService,
+) {
   return {
     create: (input: {
       kind: "founder" | "contributor" | "client";
@@ -48,7 +53,7 @@ export function createApplicationsService(db: Database, notifyConfig: NotifyConf
 
     list: (input: {
       kind?: "founder" | "contributor" | "client";
-      status?: "new" | "reviewing" | "accepted" | "declined";
+      status?: "new" | "reviewing" | "accepted" | "declined" | "converted";
       cursor?: string;
       limit: number;
     }) =>
@@ -77,7 +82,10 @@ export function createApplicationsService(db: Database, notifyConfig: NotifyConf
 
     update: (
       context: { near?: { primaryAccountId?: string }; userId?: string },
-      input: { id: string; status: "new" | "reviewing" | "accepted" | "declined" },
+      input: {
+        id: string;
+        status: "new" | "reviewing" | "accepted" | "declined" | "converted";
+      },
     ) =>
       Effect.gen(function* () {
         const reviewed = input.status !== "new";
@@ -101,6 +109,65 @@ export function createApplicationsService(db: Database, notifyConfig: NotifyConf
           );
         }
         return { application: row };
+      }),
+
+    convertToBuilder: (context: Record<string, unknown>, input: { id: string }) =>
+      Effect.gen(function* () {
+        if (!contributors) {
+          return yield* Effect.fail(
+            new ORPCError("INTERNAL_SERVER_ERROR", { message: "Contributors service unavailable" }),
+          );
+        }
+
+        const rows = yield* Effect.promise(() =>
+          db.select().from(applications).where(eq(applications.id, input.id)).limit(1),
+        );
+        const app = rows[0];
+        if (!app) {
+          return yield* Effect.fail(
+            new ORPCError("NOT_FOUND", { message: "Application not found" }),
+          );
+        }
+        if (app.status === "converted") {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", { message: "Application already converted" }),
+          );
+        }
+        if (app.status !== "accepted") {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message: "Only accepted applications can be converted to builders",
+            }),
+          );
+        }
+        if (!app.nearAccountId) {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message: "Application must have a NEAR account to convert",
+            }),
+          );
+        }
+
+        yield* contributors.create(context, {
+          nearAccount: app.nearAccountId,
+          name: app.name,
+          bio: app.message ?? undefined,
+        });
+
+        const result = yield* Effect.promise(() =>
+          db
+            .update(applications)
+            .set({
+              status: "converted",
+              reviewedBy:
+                (context as any).near?.primaryAccountId ?? (context as any).userId ?? null,
+              reviewedAt: new Date(),
+            })
+            .where(eq(applications.id, input.id))
+            .returning(),
+        );
+
+        return { application: result[0]!, contributor: { nearAccount: app.nearAccountId } };
       }),
   };
 }

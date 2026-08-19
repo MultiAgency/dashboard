@@ -63,7 +63,7 @@ export default createPlugin({
           return { data: result };
         }),
 
-      createBuilder: builder.createBuilder.use(auth.requireAdmin).handler(async ({ input }) => {
+      createBuilder: builder.createBuilder.handler(async ({ input }) => {
         const result = await runEffect(services.builder.createBuilder(input));
         return { data: result };
       }),

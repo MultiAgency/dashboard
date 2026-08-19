@@ -1,8 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { contributors, projectContributors } from "../db/schema";
+import { projectContributors } from "../db/schema";
 
 export function createAssignmentsService(db: Database) {
   return {
@@ -10,47 +10,60 @@ export function createAssignmentsService(db: Database) {
       Effect.gen(function* () {
         const rows = yield* Effect.promise(() =>
           db
-            .select({
-              projectId: projectContributors.projectId,
-              contributorId: projectContributors.contributorId,
-              role: projectContributors.role,
-              createdAt: projectContributors.createdAt,
-              contributor: contributors,
-            })
+            .select()
             .from(projectContributors)
-            .innerJoin(contributors, eq(projectContributors.contributorId, contributors.id))
-            .where(eq(projectContributors.projectId, projectId)),
+            .where(eq(projectContributors.projectId, projectId))
+            .orderBy(desc(projectContributors.createdAt)),
         );
-        return { data: rows };
+        return {
+          data: rows.map((r) => ({
+            projectId: r.projectId,
+            nearAccount: r.nearAccount,
+            role: r.role,
+            onboardingStatus: r.onboardingStatus,
+            createdAt: r.createdAt,
+          })),
+        };
       }),
 
     listAll: () =>
       Effect.gen(function* () {
         const rows = yield* Effect.promise(() =>
+          db.select().from(projectContributors).orderBy(desc(projectContributors.createdAt)),
+        );
+        return {
+          data: rows.map((r) => ({
+            projectId: r.projectId,
+            nearAccount: r.nearAccount,
+            role: r.role,
+            onboardingStatus: r.onboardingStatus,
+            createdAt: r.createdAt,
+          })),
+        };
+      }),
+
+    listForContributor: (nearAccount: string) =>
+      Effect.gen(function* () {
+        const rows = yield* Effect.promise(() =>
           db
-            .select({
-              projectId: projectContributors.projectId,
-              contributorId: projectContributors.contributorId,
-              role: projectContributors.role,
-              createdAt: projectContributors.createdAt,
-            })
-            .from(projectContributors),
+            .select()
+            .from(projectContributors)
+            .where(eq(projectContributors.nearAccount, nearAccount))
+            .orderBy(desc(projectContributors.createdAt)),
         );
         return { data: rows };
       }),
 
-    create: (input: { projectId: string; contributorId: string; role?: string }) =>
+    create: (input: {
+      projectId: string;
+      nearAccount: string;
+      role?: string;
+      onboardingStatus?: string;
+    }) =>
       Effect.gen(function* () {
-        const contributorExists = yield* Effect.promise(() =>
-          db
-            .select({ id: contributors.id })
-            .from(contributors)
-            .where(eq(contributors.id, input.contributorId))
-            .limit(1),
-        );
-        if (contributorExists.length === 0) {
+        if (!input.nearAccount?.trim()) {
           return yield* Effect.fail(
-            new ORPCError("NOT_FOUND", { message: "Contributor not found" }),
+            new ORPCError("BAD_REQUEST", { message: "nearAccount is required" }),
           );
         }
 
@@ -59,23 +72,30 @@ export function createAssignmentsService(db: Database) {
             .insert(projectContributors)
             .values({
               projectId: input.projectId,
-              contributorId: input.contributorId,
+              nearAccount: input.nearAccount.trim(),
               role: input.role ?? null,
+              onboardingStatus: input.onboardingStatus ?? "pending",
             })
             .onConflictDoUpdate({
-              target: [projectContributors.projectId, projectContributors.contributorId],
-              set: { role: input.role ?? null },
+              target: [projectContributors.projectId, projectContributors.nearAccount],
+              set: {
+                role: input.role ?? null,
+                ...(input.onboardingStatus !== undefined
+                  ? { onboardingStatus: input.onboardingStatus }
+                  : {}),
+              },
             }),
         );
 
         return {
           projectId: input.projectId,
-          contributorId: input.contributorId,
+          nearAccount: input.nearAccount.trim(),
           role: input.role ?? null,
+          onboardingStatus: input.onboardingStatus ?? "pending",
         };
       }),
 
-    delete: (input: { projectId: string; contributorId: string }) =>
+    delete: (input: { projectId: string; nearAccount: string }) =>
       Effect.gen(function* () {
         yield* Effect.promise(() =>
           db
@@ -83,7 +103,7 @@ export function createAssignmentsService(db: Database) {
             .where(
               and(
                 eq(projectContributors.projectId, input.projectId),
-                eq(projectContributors.contributorId, input.contributorId),
+                eq(projectContributors.nearAccount, input.nearAccount),
               ),
             ),
         );

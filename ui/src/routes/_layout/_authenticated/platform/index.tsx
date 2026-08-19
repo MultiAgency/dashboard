@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, DataTable, Input } from "@/components";
 import type { ColumnDef } from "@/components/ui/data-table";
 import type { Organization } from "@/lib/auth";
-import { useAuthClient } from "@/lib/auth";
+import { organizationsListQueryKey, sessionQueryKey, useAuthClient } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/platform/")({
   head: () => ({
@@ -30,7 +30,11 @@ function PlatformOrgs() {
     },
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
+    queryClient.invalidateQueries({ queryKey: organizationsListQueryKey });
+    queryClient.invalidateQueries({ queryKey: sessionQueryKey });
+  };
 
   const orgs = orgsQuery.data ?? [];
 
@@ -76,16 +80,16 @@ function PlatformOrgs() {
           Workspaces
         </h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Create and manage workspaces. Agency workspaces have a Sputnik DAO linked. Client
-          workspaces are separate tenants that see the agency's work scoped to them.
+          Create agency workspaces with a linked Sputnik DAO. You become the owner; the admin email
+          receives a separate invite. Create paying clients from Admin → Clients instead.
         </p>
       </div>
 
       <section className="space-y-3">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          create workspace
+          create agency workspace
         </div>
-        <CreateOrgForm onCreated={invalidate} />
+        <CreateAgencyForm onCreated={invalidate} />
       </section>
 
       <section className="space-y-3">
@@ -122,11 +126,11 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, "");
 }
 
-function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
+function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
   const authClient = useAuthClient();
+  const [formKey, setFormKey] = useState(0);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const [orgType, setOrgType] = useState<"agency" | "client">("agency");
   const [daoAccountId, setDaoAccountId] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
 
@@ -135,130 +139,146 @@ function CreateOrgForm({ onCreated }: { onCreated: () => void }) {
     setSlug(slugify(value));
   };
 
+  const resetForm = () => {
+    setName("");
+    setSlug("");
+    setDaoAccountId("");
+    setAdminEmail("");
+    setFormKey((k) => k + 1);
+  };
+
   const createMutation = useMutation({
     mutationFn: async () => {
-      const metadata: Record<string, unknown> = {
-        type: orgType,
-      };
-      if (orgType === "agency" && daoAccountId.trim()) {
-        metadata.daoAccountId = daoAccountId.trim();
-      }
       const finalSlug = slug.trim() || slugify(name);
       const org = await authClient.organization.create({
         name: name.trim(),
         slug: finalSlug,
-        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+        metadata: {
+          type: "agency",
+          daoAccountId: daoAccountId.trim(),
+        },
       });
+      if (org.error) throw new Error(org.error.message || "Failed to create workspace");
       if (!org.data?.id) throw new Error("Failed to create workspace");
-      await authClient.organization.inviteMember({
+
+      const invite = await authClient.organization.inviteMember({
         email: adminEmail.trim(),
         role: "admin",
         organizationId: org.data.id,
       });
-      return org.data;
+
+      return {
+        org: org.data,
+        inviteError: invite.error?.message ?? null,
+      };
     },
-    onSuccess: (org) => {
-      toast.success(`Workspace "${org.name}" created`);
-      setName("");
-      setSlug("");
-      setDaoAccountId("");
-      setAdminEmail("");
+    onSuccess: ({ org, inviteError }) => {
+      if (inviteError) {
+        toast.warning(
+          `Agency "${org.name}" was created and you were added as owner, but the admin invite failed: ${inviteError}`,
+        );
+      } else {
+        toast.success(
+          `Agency "${org.name}" created — you are owner; invite sent to ${adminEmail.trim()}`,
+        );
+      }
+      resetForm();
       onCreated();
     },
     onError: (e: Error) => toast.error(e.message || "Failed to create workspace"),
   });
 
   const isPending = createMutation.isPending;
-  const canSubmit =
-    !!name.trim() && !!adminEmail.trim() && (orgType !== "agency" || !!daoAccountId.trim());
+  const canSubmit = !!name.trim() && !!adminEmail.trim() && !!daoAccountId.trim();
 
   return (
-    <Card>
+    <Card key={formKey}>
       <CardContent className="p-4 space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1">
-            <label htmlFor="org-name" className={LABEL_CLS}>
-              name
-            </label>
-            <Input
-              id="org-name"
-              value={name}
-              onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="My Agency"
-              disabled={isPending}
-            />
+        <form
+          autoComplete="off"
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (canSubmit && !isPending) createMutation.mutate();
+          }}
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label htmlFor="workspace-name" className={LABEL_CLS}>
+                name
+              </label>
+              <Input
+                id="workspace-name"
+                name="workspace-name"
+                autoComplete="off"
+                value={name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                placeholder="Acme Agency"
+                disabled={isPending}
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="workspace-slug" className={LABEL_CLS}>
+                slug
+              </label>
+              <Input
+                id="workspace-slug"
+                name="workspace-slug"
+                autoComplete="off"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
+                placeholder="acme-agency"
+                disabled={isPending}
+              />
+              <p className="font-mono text-[10px] text-muted-foreground">
+                auto-generated from name, but you can override.
+              </p>
+            </div>
           </div>
           <div className="space-y-1">
-            <label htmlFor="org-slug" className={LABEL_CLS}>
-              slug
-            </label>
-            <Input
-              id="org-slug"
-              value={slug}
-              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
-              placeholder="auto-generated"
-              disabled={isPending}
-            />
-            <p className="font-mono text-[10px] text-muted-foreground">
-              auto-generated from name, but you can override.
-            </p>
-          </div>
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="org-type" className={LABEL_CLS}>
-            type
-          </label>
-          <select
-            id="org-type"
-            value={orgType}
-            onChange={(e) => setOrgType(e.target.value as typeof orgType)}
-            disabled={isPending}
-            className="h-9 w-full rounded-md border border-input bg-background px-3 py-1 font-mono text-xs"
-          >
-            <option value="agency">agency</option>
-            <option value="client">client</option>
-          </select>
-        </div>
-        {orgType === "agency" && (
-          <div className="space-y-1">
-            <label htmlFor="org-dao" className={LABEL_CLS}>
+            <label htmlFor="workspace-dao" className={LABEL_CLS}>
               sputnik dao account (required)
             </label>
             <Input
-              id="org-dao"
+              id="workspace-dao"
+              name="workspace-dao"
+              autoComplete="off"
               value={daoAccountId}
               onChange={(e) => setDaoAccountId(e.target.value)}
-              placeholder="multagency.sputnik-dao.near"
+              placeholder="your-org.sputnik-dao.near"
               disabled={isPending}
             />
             <p className="font-mono text-[10px] text-muted-foreground">
-              required for agency — links this workspace to a Sputnik DAO for treasury/proposals.
+              links this workspace to a Sputnik DAO for treasury and proposals.
             </p>
           </div>
-        )}
-        <div className="space-y-1">
-          <label htmlFor="org-admin-email" className={LABEL_CLS}>
-            admin email
-          </label>
-          <Input
-            id="org-admin-email"
-            type="email"
-            value={adminEmail}
-            onChange={(e) => setAdminEmail(e.target.value)}
-            placeholder="admin@example.com"
-            disabled={isPending}
-          />
-          <p className="font-mono text-[10px] text-muted-foreground">
-            This person will receive an email invitation to join as the workspace's first admin.
-          </p>
-        </div>
-        <Button
-          onClick={() => createMutation.mutate()}
-          disabled={!canSubmit || isPending}
-          className="w-full font-display uppercase tracking-wide"
-        >
-          {isPending ? "creating…" : `create ${orgType} →`}
-        </Button>
+          <div className="space-y-1">
+            <label htmlFor="workspace-admin-email" className={LABEL_CLS}>
+              agency admin email
+            </label>
+            <Input
+              id="workspace-admin-email"
+              name="workspace-admin-email"
+              type="email"
+              autoComplete="off"
+              value={adminEmail}
+              onChange={(e) => setAdminEmail(e.target.value)}
+              placeholder="admin@example.com"
+              disabled={isPending}
+            />
+            <p className="font-mono text-[10px] text-muted-foreground">
+              invited as admin. You (the creator) are added as owner automatically — this email is
+              for the person who will run the agency day-to-day.
+            </p>
+          </div>
+          <Button
+            type="submit"
+            disabled={!canSubmit || isPending}
+            className="w-full font-display uppercase tracking-wide"
+          >
+            {isPending ? "creating…" : "create agency →"}
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );

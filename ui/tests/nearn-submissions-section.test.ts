@@ -31,9 +31,9 @@ describe("NearnSubmissionsSection — wiring guarantees", () => {
     expect(source).toMatch(/import\s*\{\s*safeHttpHref\s*\}\s*from\s*"@\/lib\/url"/);
   });
 
-  test("contributor match uses adminContributorsListQueryOptions + nearAccountId join key", () => {
+  test("contributor match uses adminContributorsListQueryOptions + nearAccount join key", () => {
     expect(source).toMatch(/adminContributorsListQueryOptions\(apiClient\)/);
-    expect(source).toMatch(/nearAccountId/);
+    expect(source).toMatch(/nearAccount/);
     expect(source).toMatch(/contributorByNearAccount\.has\(s\.user\.publicKey\)/);
   });
 
@@ -50,14 +50,14 @@ describe("NearnSubmissionsSection — wiring guarantees", () => {
 describe("NearnSubmissionsSection — add-contributor CTA", () => {
   test("mutation calls contributors.create", () => {
     expect(source).toMatch(/const\s+addContributorMutation\s*=\s*useMutation/);
-    expect(source).toMatch(/apiClient\.contributors\.create\(input\)/);
+    expect(source).toMatch(/apiClient\.contributors\.create\(/);
   });
 
   test("mutation input pulls name from submission fields with publicKey fallback", () => {
     expect(source).toMatch(
       /name:\s*s\.user\.name\s*\?\?\s*s\.user\.username\s*\?\?\s*s\.user\.publicKey!/,
     );
-    expect(source).toMatch(/nearAccountId:\s*s\.user\.publicKey!/);
+    expect(source).toMatch(/nearAccount:\s*s\.user\.publicKey!/);
   });
 
   test("success path invalidates the contributors list query so the match badge appears", () => {
@@ -71,7 +71,7 @@ describe("NearnSubmissionsSection — add-contributor CTA", () => {
 
   test("CTA renders only when publicKey is unmatched (mirror of the match badge)", () => {
     expect(source).toMatch(
-      /contributorByNearAccount\.has\(s\.user\.publicKey\)\s*\?[\s\S]*?\+ add contributor/,
+      /contributorByNearAccount\.has\(s\.user\.publicKey\)\s*\?[\s\S]*?\+ add builder/,
     );
   });
 
@@ -83,7 +83,7 @@ describe("NearnSubmissionsSection — add-contributor CTA", () => {
 
   test("button shows 'adding…' while the mutation for that specific publicKey is in flight", () => {
     expect(source).toMatch(
-      /addContributorMutation\.isPending\s*&&[\s\S]*?addContributorMutation\.variables\?\.nearAccountId\s*===\s*s\.user\.publicKey/,
+      /addContributorMutation\.isPending\s*&&[\s\S]*?addContributorMutation\.variables\?\.nearAccount\s*===\s*s\.user\.publicKey/,
     );
     expect(source).toMatch(/"adding…"/);
   });

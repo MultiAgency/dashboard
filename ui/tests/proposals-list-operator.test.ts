@@ -27,7 +27,7 @@ describe("proposals-list operator overlay — structural commitments", () => {
 
   test("contributor field uses a non-empty sentinel (Radix Select forbids empty-string value)", () => {
     expect(source).toMatch(/NO_CONTRIBUTOR_SENTINEL\s*=\s*"__none__"/);
-    expect(source).toMatch(/value=\{contributorId \|\| NO_CONTRIBUTOR_SENTINEL\}/);
+    expect(source).toMatch(/value=\{nearAccount \|\| NO_CONTRIBUTOR_SENTINEL\}/);
     expect(source).toMatch(/===\s*NO_CONTRIBUTOR_SENTINEL\s*\?\s*""/);
   });
 

@@ -1,74 +1,176 @@
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { contributors } from "../db/schema";
+import { projectContributors } from "../db/schema";
+import type { PluginsClient } from "../lib/plugins-types.gen";
 
-export function createContributorsService(db: Database) {
+export type BuilderProfile = {
+  nearAccount: string;
+  name: string | null;
+  bio: string | null;
+  skills: string[];
+  location: string | null;
+  links: Record<string, string> | null;
+  registered: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function toProfile(
+  data: {
+    nearAccount: string;
+    name: string | null;
+    bio: string | null;
+    skills: string[];
+    location: string | null;
+    links: Record<string, string> | null;
+    createdAt: string;
+    updatedAt: string;
+  },
+  registered = true,
+): BuilderProfile {
   return {
-    list: () =>
-      Effect.gen(function* () {
-        const rows = yield* Effect.promise(() =>
-          db.select().from(contributors).orderBy(desc(contributors.updatedAt)),
-        );
-        return { data: rows };
-      }),
+    nearAccount: data.nearAccount,
+    name: data.name,
+    bio: data.bio,
+    skills: data.skills,
+    location: data.location,
+    links: data.links,
+    registered,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
+  };
+}
 
-    create: (input: {
-      name: string;
-      email?: string;
-      nearAccountId?: string;
-      onboardingStatus?: "pending" | "complete" | "expired";
-    }) =>
+function stubProfile(nearAccount: string): BuilderProfile {
+  const now = new Date().toISOString();
+  return {
+    nearAccount,
+    name: null,
+    bio: null,
+    skills: [],
+    location: null,
+    links: null,
+    registered: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function createContributorsService(db: Database, plugins: PluginsClient) {
+  return {
+    list: (context: Record<string, unknown>) =>
       Effect.gen(function* () {
-        const id = crypto.randomUUID();
-        const now = new Date();
         const result = yield* Effect.promise(() =>
+          plugins.builders(context).listBuilders({ limit: 100 }),
+        );
+        const byNear = new Map(result.data.map((row) => [row.nearAccount, toProfile(row)]));
+
+        const assignmentRows = yield* Effect.promise(() =>
           db
-            .insert(contributors)
-            .values({
-              id,
-              name: input.name,
-              email: input.email ?? null,
-              nearAccountId: input.nearAccountId ?? null,
-              onboardingStatus: input.onboardingStatus ?? "pending",
-              createdAt: now,
-              updatedAt: now,
-            })
-            .returning(),
+            .selectDistinct({ nearAccount: projectContributors.nearAccount })
+            .from(projectContributors),
         );
-        const row = result[0];
-        if (!row) {
-          return yield* Effect.fail(
-            new ORPCError("INTERNAL_SERVER_ERROR", { message: "Insert failed" }),
-          );
+        for (const row of assignmentRows) {
+          if (!byNear.has(row.nearAccount)) {
+            byNear.set(row.nearAccount, stubProfile(row.nearAccount));
+          }
         }
-        return { contributor: row };
+
+        return { data: [...byNear.values()] };
       }),
 
-    update: (input: {
-      id: string;
-      name?: string;
-      email?: string | null;
-      nearAccountId?: string | null;
-      onboardingStatus?: "pending" | "complete" | "expired";
-    }) =>
+    get: (context: Record<string, unknown>, nearAccount: string) =>
       Effect.gen(function* () {
-        const { id, ...patch } = input;
-        const updates: Record<string, unknown> = { updatedAt: new Date() };
-        for (const [k, v] of Object.entries(patch)) {
-          if (v !== undefined) updates[k] = v;
-        }
-        const result = yield* Effect.promise(() =>
-          db.update(contributors).set(updates).where(eq(contributors.id, id)).returning(),
+        const assignmentRows = yield* Effect.promise(() =>
+          db
+            .select({ nearAccount: projectContributors.nearAccount })
+            .from(projectContributors)
+            .where(eq(projectContributors.nearAccount, nearAccount))
+            .limit(1),
         );
-        const row = result[0];
-        if (!row) {
+
+        try {
+          const result = yield* Effect.promise(() =>
+            plugins.builders(context).getBuilder({ nearAccount }),
+          );
+          return { contributor: toProfile(result.data) };
+        } catch {
+          if (assignmentRows.length === 0) {
+            return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Builder not found" }));
+          }
+          return { contributor: stubProfile(nearAccount) };
+        }
+      }),
+
+    create: (
+      context: Record<string, unknown>,
+      input: {
+        nearAccount: string;
+        name?: string;
+        bio?: string;
+        skills?: string[];
+        location?: string;
+        links?: Record<string, string>;
+      },
+    ) =>
+      Effect.gen(function* () {
+        if (!input.nearAccount?.trim()) {
           return yield* Effect.fail(
-            new ORPCError("NOT_FOUND", { message: "Contributor not found" }),
+            new ORPCError("BAD_REQUEST", { message: "nearAccount is required" }),
           );
         }
-        return { contributor: row };
+        const result = yield* Effect.promise(() =>
+          plugins.builders(context).createBuilder({
+            nearAccount: input.nearAccount.trim(),
+            name: input.name,
+            bio: input.bio,
+            skills: input.skills,
+            location: input.location,
+            links: input.links,
+          }),
+        );
+        return { contributor: toProfile(result.data) };
+      }),
+
+    update: (
+      context: Record<string, unknown>,
+      input: {
+        nearAccount: string;
+        name?: string;
+        bio?: string;
+        skills?: string[];
+        location?: string;
+        links?: Record<string, string>;
+      },
+    ) =>
+      Effect.gen(function* () {
+        try {
+          const result = yield* Effect.promise(() =>
+            plugins.builders(context).updateBuilderProfile({
+              nearAccount: input.nearAccount,
+              name: input.name,
+              bio: input.bio,
+              skills: input.skills,
+              location: input.location,
+              links: input.links,
+            }),
+          );
+          return { contributor: toProfile(result.data) };
+        } catch {
+          const created = yield* Effect.promise(() =>
+            plugins.builders(context).createBuilder({
+              nearAccount: input.nearAccount,
+              name: input.name,
+              bio: input.bio,
+              skills: input.skills,
+              location: input.location,
+              links: input.links,
+            }),
+          );
+          return { contributor: toProfile(created.data) };
+        }
       }),
   };
 }
