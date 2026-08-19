@@ -23,6 +23,8 @@ import type { ClientRuntimeConfig } from "everything-dev/types";
 import { getRuntimeConfig } from "everything-dev/ui/runtime";
 import type { Auth } from "./auth-types.gen";
 
+export type * from "./auth-types.gen";
+
 type RuntimeAuthVariables = {
   siwn: {
     recipient?: string;
@@ -190,19 +192,12 @@ export function useAuthClient(): AuthClient {
 }
 
 export const sessionQueryKey = ["session"] as const;
-export const organizationsListQueryKey = ["organizations", "list"] as const;
 
-export function sessionQueryOptions(
-  authClient: AuthClient,
-  initialSession?: SessionData | null,
-  options?: { disableCookieCache?: boolean },
-) {
+export function sessionQueryOptions(authClient: AuthClient, initialSession?: SessionData | null) {
   const baseOptions = {
     queryKey: sessionQueryKey,
     queryFn: async () => {
-      const { data: session } = await authClient.getSession(
-        options?.disableCookieCache ? { query: { disableCookieCache: true } } : undefined,
-      );
+      const { data: session } = await authClient.getSession();
       return session ?? null;
     },
     staleTime: 60 * 1000,

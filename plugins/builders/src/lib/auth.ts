@@ -14,6 +14,8 @@ import type {
   AuthPluginContext,
 } from "./auth-types.gen";
 
+export type * from "./auth-types.gen";
+
 export type AuthContext = AuthPluginContext;
 export type RequestAuthUser = NonNullable<AuthContext["user"]>;
 export type ApiKeyContext = NonNullable<AuthContext["apiKey"]>;
@@ -55,7 +57,7 @@ function parseOrgMetadata<TSchema extends z.ZodType | undefined>(
   const result = schema.safeParse(raw);
   if (result.success) return result.data as OrgMetaType<TSchema>;
   throw new ORPCError("INTERNAL_SERVER_ERROR", {
-    message: "Invalid workspace metadata",
+    message: "Invalid organization metadata",
     data: { errors: result.error.issues },
   });
 }
@@ -167,8 +169,8 @@ export function createAuthMiddleware<TOrgMetaSchema extends z.ZodType | undefine
       }
       if (!context.organization?.activeOrganizationId) {
         throw new ORPCError("FORBIDDEN", {
-          message: "Active workspace required",
-          data: { hint: "Select or create a workspace" },
+          message: "Active organization required",
+          data: { hint: "Select or create an organization" },
         });
       }
       const org = context.organization;
@@ -201,14 +203,14 @@ export function createAuthMiddleware<TOrgMetaSchema extends z.ZodType | undefine
       }
       if (!context.organization?.activeOrganizationId) {
         throw new ORPCError("FORBIDDEN", {
-          message: "Active workspace required",
-          data: { hint: "Select or create a workspace" },
+          message: "Active organization required",
+          data: { hint: "Select or create an organization" },
         });
       }
       const member = context.organization?.member;
       if (!member?.id || !member?.role || !roles.includes(member.role)) {
         throw new ORPCError("FORBIDDEN", {
-          message: `Requires workspace role: ${roles.join(" or ")}`,
+          message: `Requires organization role: ${roles.join(" or ")}`,
           data: { requiredRoles: roles, currentRole: member?.role ?? null },
         });
       }

@@ -317,10 +317,6 @@ docker-compose.yml
 **/*.gen.ts
 .bos/generated/
 
-# Local-only dev scripts (seed, fixtures, tests)
-scripts/*
-!scripts/migrate-contributors-to-builders.ts
-
 # Module Federation DTS artifacts
 .mf
 node_modules/.federation
@@ -338,3 +334,4 @@ node_modules/.federation
 !**/README.md
 !**/CHANGELOG.md
 !.changeset/**/*.md
+.bos/sync-backup/
