@@ -73,39 +73,33 @@ export function UserNav() {
     (profile?.image?.ipfs_cid ? `https://ipfs.io/ipfs/${profile.image.ipfs_cid}` : null);
 
   const connectMutation = useMutation({
-    mutationFn: async () => {
-      const connected = await authClient.near.ensureConnected();
-      if (!connected) {
-        throw new Error("NEAR wallet extension did not connect. Open your wallet and try again.");
-      }
-      await authClient.signIn.near();
-      let detected: { accountId: string; publicKey: string | null; networkId: string } | null =
-        null;
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const { data } = await authClient.getSession();
-        if (data?.user?.id) {
-          detected = await authClient.near.detectNearAccount();
-          if (detected) break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 400));
-      }
-      if (!detected) {
-        throw new Error(
-          "Wallet linked the session, but the extension dropped before we could read the account. Try again — keep your wallet popup open until the page reloads.",
-        );
-      }
-      // better-near-auth doesn't validate that the wallet's network matches the recipient's.
-      // A testnet-account sign-in into a mainnet-bound dashboard lands a session that 403s on
-      // every admin call. Catch it here and surface a recoverable error.
-      const dashboardNetwork = getNetwork();
-      const walletNetwork = detected.networkId as Network;
-      if (walletNetwork !== dashboardNetwork) {
-        // Swallow signOut failures — the toast fires regardless, and the user's recovery click
-        // hits setNetwork → full reload, which resets in-memory auth state either way.
-        await authClient.signOut().catch(() => {});
-        throw new NetworkMismatchError(detected.accountId, walletNetwork, dashboardNetwork);
-      }
-    },
+    mutationFn: () =>
+      new Promise<void>((resolve, reject) => {
+        authClient.signIn.near({
+          onSuccess: () => {
+            const state = authClient.near.getState();
+            if (!state?.accountId) {
+              reject(
+                new Error(
+                  "Sign-in completed but the NEAR wallet did not report the linked account. Try again — if the issue persists, reconnect your wallet extension.",
+                ),
+              );
+              return;
+            }
+            const dashboardNetwork = getNetwork();
+            const walletNetwork = state.networkId as Network;
+            if (walletNetwork !== dashboardNetwork) {
+              void authClient.signOut().catch(() => {});
+              reject(new NetworkMismatchError(state.accountId, walletNetwork, dashboardNetwork));
+              return;
+            }
+            resolve();
+          },
+          onError: (error) => {
+            reject(error);
+          },
+        });
+      }),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey }),
