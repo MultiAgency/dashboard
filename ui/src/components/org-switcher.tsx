@@ -4,7 +4,7 @@ import { Building2, Check } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { organizationsListQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { sessionQueryOptions } from "@/lib/auth";
 import { isAgencyWorkspace } from "@/lib/org-metadata";
 import { invalidateWorkspaceQueries } from "@/lib/queries";
 import { switchAgencyWorkspace } from "@/lib/workspace";
@@ -28,7 +28,7 @@ export function OrgSwitcher() {
   const activeOrgId = session?.session?.activeOrganizationId ?? null;
 
   const orgsQuery = useQuery({
-    queryKey: organizationsListQueryKey,
+    queryKey: ["organizations", "list"] as const,
     queryFn: async () => {
       const res = await auth.organization.list();
       return res.data ?? [];
@@ -42,9 +42,7 @@ export function OrgSwitcher() {
         toast.error("Could not switch agency — try signing out and back in.");
         return;
       }
-      await queryClient.fetchQuery(
-        sessionQueryOptions(auth, undefined, { disableCookieCache: true }),
-      );
+      await queryClient.fetchQuery(sessionQueryOptions(auth));
       await invalidateWorkspaceQueries(queryClient, router);
     },
     onError: () => {

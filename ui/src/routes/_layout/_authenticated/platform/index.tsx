@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, DataTable, Input } from "@/components";
 import type { ColumnDef } from "@/components/ui/data-table";
 import type { Organization } from "@/lib/auth";
-import { organizationsListQueryKey, sessionQueryKey, useAuthClient } from "@/lib/auth";
+import { sessionQueryKey, useAuthClient } from "@/lib/auth";
 
 export const Route = createFileRoute("/_layout/_authenticated/platform/")({
   head: () => ({
@@ -32,7 +32,7 @@ function PlatformOrgs() {
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
-    queryClient.invalidateQueries({ queryKey: organizationsListQueryKey });
+    queryClient.invalidateQueries({ queryKey: ["organizations", "list"] });
     queryClient.invalidateQueries({ queryKey: sessionQueryKey });
   };
 

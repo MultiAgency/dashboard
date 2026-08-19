@@ -7,7 +7,7 @@ export async function listAgencyOrganizations(authClient: AuthClient) {
 }
 
 export async function activeOrganizationId(authClient: AuthClient): Promise<string | null> {
-  const { data: session } = await authClient.getSession({ query: { disableCookieCache: true } });
+  const { data: session } = await authClient.getSession();
   return session?.session?.activeOrganizationId ?? null;
 }
 

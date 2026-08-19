@@ -67,7 +67,7 @@ export function UserNav() {
   const apiClient = useApiClient();
 
   const { data: session } = useQuery({
-    ...sessionQueryOptions(authClient, undefined, { disableCookieCache: true }),
+    ...sessionQueryOptions(authClient),
     staleTime: 0,
     refetchOnMount: "always",
   });
@@ -100,7 +100,6 @@ export function UserNav() {
       // better-near-auth doesn't validate that the wallet's account network matches the
       // recipient's. A testnet-account sign-in into a mainnet-bound dashboard lands a
       // session that 403s on every admin call. Catch it here and surface a recoverable error.
-      // Refetch session with a short retry to defend against any cookie-commit window.
       const account = await readFreshSessionAccount(authClient);
       if (!account) {
         throw new Error(
