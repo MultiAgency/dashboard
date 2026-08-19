@@ -38,28 +38,6 @@ class NetworkMismatchError extends Error {
   }
 }
 
-function networkOf(accountId: string): Network {
-  return accountId.endsWith(".testnet") ? "testnet" : "mainnet";
-}
-
-// Wait for the session to be committed after signIn.near(), then return the linked NEAR account.
-// better-near-auth's signIn promise resolves before the session cookie is always readable —
-// this loop absorbs the lag. Uses near.getAccountId() so we get the actual NEAR account ID
-// (e.g. "alice.near") rather than user.name (display name) or user.id (UUID).
-async function readFreshSessionAccount(
-  authClient: ReturnType<typeof useAuthClient>,
-): Promise<string | null> {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const { data } = await authClient.getSession();
-    if (data?.user?.id) {
-      const nearAccountId = authClient.near.getAccountId();
-      if (nearAccountId) return nearAccountId;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 400));
-  }
-  return null;
-}
-
 export function UserNav() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -96,23 +74,36 @@ export function UserNav() {
 
   const connectMutation = useMutation({
     mutationFn: async () => {
+      const connected = await authClient.near.ensureConnected();
+      if (!connected) {
+        throw new Error("NEAR wallet extension did not connect. Open your wallet and try again.");
+      }
       await authClient.signIn.near();
-      // better-near-auth doesn't validate that the wallet's account network matches the
-      // recipient's. A testnet-account sign-in into a mainnet-bound dashboard lands a
-      // session that 403s on every admin call. Catch it here and surface a recoverable error.
-      const account = await readFreshSessionAccount(authClient);
-      if (!account) {
+      let detected: { accountId: string; publicKey: string | null; networkId: string } | null =
+        null;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const { data } = await authClient.getSession();
+        if (data?.user?.id) {
+          detected = await authClient.near.detectNearAccount();
+          if (detected) break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+      if (!detected) {
         throw new Error(
-          "Sign-in completed but no NEAR account was found on the session. Try again — if the issue persists, check that the auth server is running and your wallet is connected.",
+          "Wallet linked the session, but the extension dropped before we could read the account. Try again — keep your wallet popup open until the page reloads.",
         );
       }
+      // better-near-auth doesn't validate that the wallet's network matches the recipient's.
+      // A testnet-account sign-in into a mainnet-bound dashboard lands a session that 403s on
+      // every admin call. Catch it here and surface a recoverable error.
       const dashboardNetwork = getNetwork();
-      const walletNetwork = networkOf(account);
+      const walletNetwork = detected.networkId as Network;
       if (walletNetwork !== dashboardNetwork) {
         // Swallow signOut failures — the toast fires regardless, and the user's recovery click
         // hits setNetwork → full reload, which resets in-memory auth state either way.
         await authClient.signOut().catch(() => {});
-        throw new NetworkMismatchError(account, walletNetwork, dashboardNetwork);
+        throw new NetworkMismatchError(detected.accountId, walletNetwork, dashboardNetwork);
       }
     },
     onSuccess: async () => {

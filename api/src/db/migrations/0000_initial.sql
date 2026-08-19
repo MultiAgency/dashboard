@@ -41,16 +41,6 @@ CREATE TABLE IF NOT EXISTS "budgets" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "contributors" (
-	"id" text PRIMARY KEY NOT NULL,
-	"near_account_id" text,
-	"name" text NOT NULL,
-	"email" text,
-	"onboarding_status" text DEFAULT 'pending' NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
-);
---> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "listings" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
@@ -138,17 +128,12 @@ CREATE TABLE IF NOT EXISTS "settings" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-ALTER TABLE "billings" DROP CONSTRAINT IF EXISTS "billings_contributor_id_contributors_id_fk";--> statement-breakpoint
-ALTER TABLE "billings" ADD CONSTRAINT "billings_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "contributors"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "project_contributors" DROP CONSTRAINT IF EXISTS "project_contributors_contributor_id_contributors_id_fk";--> statement-breakpoint
-ALTER TABLE "project_contributors" ADD CONSTRAINT "project_contributors_contributor_id_contributors_id_fk" FOREIGN KEY ("contributor_id") REFERENCES "contributors"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "applications_cursor" ON "applications" USING btree ("created_at","id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "billings_cursor" ON "billings" USING btree ("created_at","id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "billings_proposal_unique" ON "billings" USING btree ("proposal_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "billings_project_id" ON "billings" USING btree ("project_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "budgets_cursor" ON "budgets" USING btree ("created_at","id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "budgets_project_id" ON "budgets" USING btree ("project_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "contributors_near_account_id" ON "contributors" USING btree ("near_account_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "listings_project_id" ON "listings" USING btree ("project_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "listings_project_source" ON "listings" USING btree ("project_id","source");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "listings_source_external_id" ON "listings" USING btree ("source","external_id") WHERE "listings"."external_id" IS NOT NULL;

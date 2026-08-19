@@ -61,23 +61,6 @@ CREATE INDEX IF NOT EXISTS "client_projects_project_id" ON "client_projects" ("p
 ALTER TABLE "project_contributors"
 ADD COLUMN IF NOT EXISTS "near_account" text;
 --> statement-breakpoint
-UPDATE "project_contributors" pc
-SET
-    "near_account" = c."near_account_id"
-FROM "contributors" c
-WHERE
-    pc."contributor_id" = c."id"
-    AND pc."near_account" IS NULL
-    AND c."near_account_id" IS NOT NULL;
---> statement-breakpoint
-UPDATE "project_contributors" pc
-SET
-    "near_account" = c."id"
-FROM "contributors" c
-WHERE
-    pc."contributor_id" = c."id"
-    AND pc."near_account" IS NULL;
---> statement-breakpoint
 DELETE FROM "project_contributors"
 WHERE
     "near_account" IS NULL;
@@ -108,15 +91,6 @@ ADD COLUMN IF NOT EXISTS "near_account" text;
 ALTER TABLE "billings"
 ADD COLUMN IF NOT EXISTS "client_id" text REFERENCES "clients" ("id") ON DELETE SET NULL;
 --> statement-breakpoint
-UPDATE "billings" b
-SET
-    "near_account" = c."near_account_id"
-FROM "contributors" c
-WHERE
-    b."contributor_id" = c."id"
-    AND b."near_account" IS NULL
-    AND c."near_account_id" IS NOT NULL;
---> statement-breakpoint
 ALTER TABLE "billings"
 DROP COLUMN IF EXISTS "contributor_id";
 --> statement-breakpoint
@@ -129,6 +103,3 @@ ALTER TABLE "budgets"
 ADD COLUMN IF NOT EXISTS "client_id" text REFERENCES "clients" ("id") ON DELETE SET NULL;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "budgets_client_id" ON "budgets" ("client_id");
-
---> statement-breakpoint
-DROP TABLE IF EXISTS "contributors";
