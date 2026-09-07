@@ -14,8 +14,7 @@ export const Route = createFileRoute("/_layout/_authenticated")({
       throw redirect({ to: "/" });
     }
 
-    // Non-fatal prefetch — warms meRoles so operator sections don't flash on hydration.
-    await queryClient.ensureQueryData(meRolesQueryOptions(apiClient)).catch(() => {});
+    void queryClient.prefetchQuery(meRolesQueryOptions(apiClient));
 
     return {
       session,

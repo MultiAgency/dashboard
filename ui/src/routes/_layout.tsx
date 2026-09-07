@@ -4,11 +4,9 @@ import { meRolesQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout")({
   head: () => ({ meta: [{ name: "theme-color", content: "#ffff33" }] }),
-  beforeLoad: async ({ context }) => {
+  beforeLoad: ({ context }) => {
     if (context.session) {
-      await context.queryClient
-        .ensureQueryData(meRolesQueryOptions(context.apiClient))
-        .catch(() => {});
+      void context.queryClient.prefetchQuery(meRolesQueryOptions(context.apiClient));
     }
   },
   component: Layout,
