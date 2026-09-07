@@ -108,8 +108,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
           href: "https://fonts.gstatic.com",
           crossOrigin: "anonymous",
         },
-        { rel: "shortcut icon", href: "/favicon.ico" },
-        { rel: "icon", href: "/favicon.ico" },
+        { rel: "icon", type: "image/svg+xml", href: "/icon.svg" },
         { rel: "icon", type: "image/png", sizes: "96x96", href: "/favicon-96x96.png" },
         {
           rel: "apple-touch-icon",
