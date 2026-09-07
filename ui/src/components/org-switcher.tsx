@@ -45,8 +45,8 @@ export function OrgSwitcher() {
       await queryClient.fetchQuery(sessionQueryOptions(auth));
       await invalidateWorkspaceQueries(queryClient, router);
     },
-    onError: () => {
-      toast.error("Could not switch agency — try signing out and back in.");
+    onError: (error: Error) => {
+      toast.error(error.message || "Could not switch agency — try signing out and back in.");
     },
   });
 

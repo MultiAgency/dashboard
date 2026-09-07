@@ -140,6 +140,7 @@ async function ensureClientOrgId(authClient: AuthClient, name: string): Promise<
     name: trimmedName,
     slug,
     metadata: { type: "client" },
+    keepCurrentActiveOrganization: true,
   });
   if (created.data?.id) return created.data.id;
 
