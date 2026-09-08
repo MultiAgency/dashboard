@@ -120,6 +120,9 @@ function createClientConfig() {
           onDeployComplete: async (info) => {
             console.log("🚀 UI Client Deployed:", info.url);
             const integrity = await computeSriHashForUrl(info.url);
+            if (!integrity) {
+              throw new Error(`Failed to compute UI integrity for ${info.url}`);
+            }
             reportDeployResult({
               url: info.url,
               integrity,
@@ -232,6 +235,9 @@ function createServerConfig() {
             console.log("🚀 UI SSR Deployed:", info.url);
             const ssrEntryUrl = `${info.url.replace(/\/$/, "")}/remoteEntry.server.js`;
             const integrity = await computeSriHashForUrl(ssrEntryUrl, { resolveEntryUrl: false });
+            if (!integrity) {
+              throw new Error(`Failed to compute UI SSR integrity for ${ssrEntryUrl}`);
+            }
             reportDeployResult({
               url: info.url,
               integrity,

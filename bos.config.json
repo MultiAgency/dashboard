@@ -14,6 +14,7 @@
       "name": "ui",
       "development": "local:ui",
       "production": "https://multiagentic-101-ui-dashboard-multiagency-278561a2e-ze.zephyrcloud.app",
+      "integrity": "sha384-DbCWxkrBt4nGZKiGrzulg2s5cfPj06NaVcWXM3a8RBzPrbnFxNo1y3MTnkJ1Qd/y",
       "ssr": "https://multiagentic-105-ui-dashboard-multiagency-4e2907d57-ze.zephyrcloud.app",
       "ssrIntegrity": "sha384-zsFtz5U6CeUemEo2yeOww/OVBXC7wySSS25P8Sr8PmLLWTerBPU8g84Ed+tPBE/y"
     },
