@@ -14,16 +14,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { nearProfileQueryOptions } from "@/lib/near-profile";
 import { getNetwork, setNetwork } from "@/lib/network";
 import { clientLookupQueryOptions, meRolesQueryKey, meRolesQueryOptions } from "@/lib/queries";
 
 type Network = "mainnet" | "testnet";
-
-type NearProfile = {
-  name?: string;
-  description?: string;
-  image?: { url?: string; ipfs_cid?: string };
-};
 
 class NetworkMismatchError extends Error {
   readonly account: string;
@@ -51,16 +46,7 @@ export function UserNav() {
   });
   const user = session?.user;
   const nearAccountId = authClient.near.getAccountId();
-  const { data: profile } = useQuery({
-    queryKey: ["me", "near-profile", nearAccountId ?? null] as const,
-    queryFn: async () => {
-      const res = await authClient.near.getProfile();
-      return (res?.data ?? null) as NearProfile | null;
-    },
-    enabled: !!nearAccountId,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
+  const { data: profile } = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
   const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
   const { data: clientLookup } = useQuery({
     ...clientLookupQueryOptions(apiClient, nearAccountId ?? ""),

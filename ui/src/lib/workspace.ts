@@ -7,7 +7,13 @@ export async function listAgencyOrganizations(authClient: AuthClient) {
 }
 
 export async function activeOrganizationId(authClient: AuthClient): Promise<string | null> {
-  const { data: session } = await authClient.getSession();
+  const { data: session, error } = await authClient.getSession({
+    query: { disableCookieCache: true },
+  });
+  if (error) throw new Error(error.message ?? "Failed to validate session");
+  if (!session?.session || !session.user) {
+    throw new Error("Your session has expired. Sign in again to switch agencies.");
+  }
   return session?.session?.activeOrganizationId ?? null;
 }
 
@@ -29,13 +35,8 @@ export async function switchAgencyWorkspace(
   const currentId = await activeOrganizationId(authClient);
   if (currentId === organizationId) return true;
 
-  const first = await authClient.organization.setActive({ organizationId });
-  if (first.error) return false;
-
-  if ((await activeOrganizationId(authClient)) === organizationId) return true;
-
-  const second = await authClient.organization.setActive({ organizationId });
-  if (second.error) return false;
+  const result = await authClient.organization.setActive({ organizationId });
+  if (result.error) return false;
 
   return (await activeOrganizationId(authClient)) === organizationId;
 }

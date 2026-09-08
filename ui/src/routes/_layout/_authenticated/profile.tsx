@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage, Button, Card, CardContent } from "
 import { Field } from "@/components/admin-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { type NearProfile, nearProfileQueryOptions } from "@/lib/near-profile";
 
 export const Route = createFileRoute("/_layout/_authenticated/profile")({
   head: () => ({
@@ -13,12 +14,6 @@ export const Route = createFileRoute("/_layout/_authenticated/profile")({
   }),
   component: ProfilePage,
 });
-
-type NearProfile = {
-  name?: string;
-  description?: string;
-  image?: { url?: string; ipfs_cid?: string };
-};
 
 function resolveAvatarUrl(profile: NearProfile | null | undefined): string | null {
   const img = profile?.image;
@@ -36,16 +31,7 @@ function ProfilePage() {
   const user = session?.user;
   const nearAccountId = authClient.near.getAccountId();
 
-  const profileQuery = useQuery({
-    queryKey: ["me", "near-profile", nearAccountId ?? null],
-    queryFn: async () => {
-      const res = await authClient.near.getProfile();
-      return (res?.data ?? null) as NearProfile | null;
-    },
-    enabled: !!nearAccountId,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
+  const profileQuery = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
 
   const profile = profileQuery.data;
   const displayName =

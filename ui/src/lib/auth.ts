@@ -12,7 +12,6 @@ import { useRouter } from "@tanstack/react-router";
 import {
   adminClient,
   anonymousClient,
-  inferAdditionalFields,
   organizationClient,
   phoneNumberClient,
 } from "better-auth/client/plugins";
@@ -21,7 +20,6 @@ import type { RelayedTransactionT } from "better-near-auth";
 import { siwnClient } from "better-near-auth/client";
 import type { ClientRuntimeConfig } from "everything-dev/types";
 import { getRuntimeConfig } from "everything-dev/ui/runtime";
-import type { Auth } from "./auth-types.gen";
 
 export type * from "./auth-types.gen";
 
@@ -167,7 +165,6 @@ export function createAuthClient(options: CreateAuthClientOptions = {}) {
       ...(options.headers ? { headers: options.headers } : {}),
     },
     plugins: [
-      inferAdditionalFields<Auth>(),
       siwnClient(nearAuthConfig),
       adminClient(),
       anonymousClient(),
