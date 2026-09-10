@@ -15,9 +15,10 @@ export const Route = createFileRoute("/_layout/contact")({
 });
 
 const contactSchema = z.object({
-  name: z.string().trim().min(1, "name required"),
-  email: z.string().trim().min(1, "email required").email("not a valid email"),
-  message: z.string().trim().optional(),
+  name: z.string().trim().min(1, "name required").max(200, "too long"),
+  email: z.string().trim().min(1, "email required").email("not a valid email").max(320, "too long"),
+  company: z.string().trim().max(200, "too long").optional(),
+  message: z.string().trim().max(4000, "too long").optional(),
 });
 
 type ContactValues = z.infer<typeof contactSchema>;
@@ -31,10 +32,10 @@ function Contact() {
 
   const submitMutation = useMutation({
     mutationFn: async (values: ContactValues) =>
-      apiClient.applications.create({
-        kind: "client",
+      apiClient.contact.submit({
         name: values.name,
         email: values.email,
+        company: values.company || undefined,
         message: values.message || undefined,
       }),
     onSuccess: () => {
@@ -49,6 +50,7 @@ function Contact() {
     defaultValues: {
       name: "",
       email: "",
+      company: "",
       message: "",
     } as ContactValues,
     validators: { onChange: contactSchema, onSubmit: contactSchema },
@@ -182,24 +184,64 @@ function Contact() {
                 );
               }}
             </form.Field>
+            <form.Field name="company">
+              {(field) => {
+                const err = field.state.meta.errors[0];
+                const errId = `${field.name}-error`;
+                return (
+                  <div className="space-y-2">
+                    <label htmlFor={field.name} className={LABEL_CLS}>
+                      company
+                    </label>
+                    <Input
+                      id={field.name}
+                      name={field.name}
+                      value={field.state.value ?? ""}
+                      onBlur={field.handleBlur}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      placeholder="company or project"
+                      disabled={isPending}
+                      aria-invalid={err ? true : undefined}
+                      aria-describedby={err ? errId : undefined}
+                    />
+                    {err && (
+                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
+                        {fieldErrorMessage(err)}
+                      </p>
+                    )}
+                  </div>
+                );
+              }}
+            </form.Field>
             <form.Field name="message">
-              {(field) => (
-                <div className="space-y-2">
-                  <label htmlFor={field.name} className={LABEL_CLS}>
-                    message
-                  </label>
-                  <Textarea
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    rows={5}
-                    placeholder="a few sentences"
-                    disabled={isPending}
-                  />
-                </div>
-              )}
+              {(field) => {
+                const err = field.state.meta.errors[0];
+                const errId = `${field.name}-error`;
+                return (
+                  <div className="space-y-2">
+                    <label htmlFor={field.name} className={LABEL_CLS}>
+                      message
+                    </label>
+                    <Textarea
+                      id={field.name}
+                      name={field.name}
+                      value={field.state.value ?? ""}
+                      onBlur={field.handleBlur}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      rows={5}
+                      placeholder="a few sentences"
+                      disabled={isPending}
+                      aria-invalid={err ? true : undefined}
+                      aria-describedby={err ? errId : undefined}
+                    />
+                    {err && (
+                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
+                        {fieldErrorMessage(err)}
+                      </p>
+                    )}
+                  </div>
+                );
+              }}
             </form.Field>
             <Button
               type="submit"
