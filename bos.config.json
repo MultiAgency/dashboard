@@ -27,6 +27,8 @@
       "secrets": [
         "API_DATABASE_URL",
         "APPLICATIONS_WEBHOOK_URL",
+        "CONTACT_FORM_WEBHOOK_URL",
+        "CONTACT_FORM_WEBHOOK_SECRET",
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
