@@ -291,6 +291,25 @@ export const contract = oc.router({
     }),
   ),
 
+  contact: {
+    submit: oc
+      .route({ method: "POST", path: "/contact" })
+      .input(
+        z.object({
+          name: z.string().min(1).max(200),
+          email: z.string().email().max(320),
+          company: z.string().max(200).optional(),
+          message: z.string().max(4000).optional(),
+        }),
+      )
+      .output(
+        z.object({
+          status: z.literal("accepted"),
+          deliveryId: z.string().optional(),
+        }),
+      ),
+  },
+
   applications: {
     create: oc
       .route({ method: "POST", path: "/applications" })

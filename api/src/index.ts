@@ -17,6 +17,7 @@ import { createBillingsService } from "./services/billings";
 import { createBudgetsService } from "./services/budgets";
 import { createClientPortalService, getNearAccountFromContext } from "./services/client-portal";
 import { createClientsService } from "./services/clients";
+import { createContactFormService } from "./services/contact-form";
 import { createContributorsService } from "./services/contributors";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
@@ -41,6 +42,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
   secrets: z.object({
     API_DATABASE_URL: z.string().default("pglite:.bos/api/:memory:"),
     APPLICATIONS_WEBHOOK_URL: z.string().optional(),
+    CONTACT_FORM_WEBHOOK_URL: z.string().optional(),
+    CONTACT_FORM_WEBHOOK_SECRET: z.string().optional(),
     RESEND_API_KEY: z.string().optional(),
     NOTIFY_FROM_EMAIL: z.string().optional(),
   }),
@@ -68,6 +71,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const listings = createListingsService(db);
       const contributors = createContributorsService(db, plugins);
       const applications = createApplicationsService(db, notifyConfig, contributors);
+      const contactForm = createContactFormService({
+        webhookUrl: config.secrets.CONTACT_FORM_WEBHOOK_URL,
+        webhookSecret: config.secrets.CONTACT_FORM_WEBHOOK_SECRET,
+      });
       const clients = createClientsService(db);
       const assignments = createAssignmentsService(db);
       const budgets = createBudgetsService(db);
@@ -85,6 +92,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       return {
         db,
         applications,
+        contactForm,
         agency,
         listings,
         contributors,
@@ -108,6 +116,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
     const { db } = services;
     const {
       applications,
+      contactForm,
       agency,
       listings,
       contributors,
@@ -143,6 +152,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
         status: "ok" as const,
         timestamp: new Date().toISOString(),
       })),
+
+      contact: {
+        submit: builder.contact.submit.handler(async ({ input }) =>
+          runEffect(contactForm.submit(input)),
+        ),
+      },
 
       applications: {
         create: builder.applications.create.handler(async ({ input }) =>
