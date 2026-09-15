@@ -13,10 +13,10 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-111-ui-dashboard-multiagency-76c53738f-ze.zephyrcloud.app",
-      "integrity": "sha384-DbCWxkrBt4nGZKiGrzulg2s5cfPj06NaVcWXM3a8RBzPrbnFxNo1y3MTnkJ1Qd/y",
-      "ssr": "https://multiagentic-115-ui-dashboard-multiagency-682e6a3e7-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-zsFtz5U6CeUemEo2yeOww/OVBXC7wySSS25P8Sr8PmLLWTerBPU8g84Ed+tPBE/y"
+      "production": "https://multiagentic-116-ui-dashboard-multiagency-7e8999289-ze.zephyrcloud.app",
+      "integrity": "sha384-mA5iuNMcGPE+k2LlIgZiy4UsgogLNGKH87NbL40nXqRXIW4LZU6ZiW3gokt1Zl4u",
+      "ssr": "https://multiagentic-120-ui-dashboard-multiagency-bef19e0dd-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-v8BxbYuU0f1YyKoT7QKKXxgCrdmr2pjR/f8DvKwzjibqxFMuriuqeMGftmSX+QB5"
     },
     "api": {
       "name": "api",
@@ -33,8 +33,7 @@
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
       ],
-      "production": "https://multiagentic-114-api-dashboard-multiagency-a7fb10e8b-ze.zephyrcloud.app",
-      "integrity": "sha384-u0kavjB4xArh1pLW5WpxP8uuz/nztHXO2Rb81MjQR3nfHlNrXsP4xE6DASFtwvo0"
+      "production": "https://multiagentic-119-api-dashboard-multiagency-e6dfaa4d0-ze.zephyrcloud.app"
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
@@ -57,7 +56,7 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-113-everything-dev-projects-plugin-d-6315eb08c-ze.zephyrcloud.app",
+      "production": "https://multiagentic-117-everything-dev-projects-plugin-d-e842a79bf-ze.zephyrcloud.app",
       "integrity": "sha384-omKVmRzKps7u5Z1mqgv7nwmG58WotAQngRFrYr8sEHKT0tB8w+iIbm6kwvu1SGyz"
     },
     "builders": {
@@ -65,7 +64,7 @@
       "secrets": [
         "BUILDERS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-112-everything-dev-builders-plugin-d-3dac1b3e3-ze.zephyrcloud.app",
+      "production": "https://multiagentic-118-everything-dev-builders-plugin-d-c5e5ef56e-ze.zephyrcloud.app",
       "integrity": "sha384-SxdK807mpmECvN0qkkDaV6yArqmy/6i14CKxmTg8fRDDyw0hWuEeut0ljzTITTK5"
     }
   }
