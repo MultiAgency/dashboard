@@ -9,6 +9,7 @@ import { BuilderAvatar } from "@/components/builder-avatar";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminAssignmentsListQueryOptions,
+  adminContributorBillingsQueryKey,
   adminContributorDetailQueryOptions,
   adminProjectsListQueryOptions,
 } from "@/lib/queries";
@@ -53,7 +54,7 @@ function ContributorDetailPage() {
   const assignmentsQuery = useQuery(adminAssignmentsListQueryOptions(apiClient));
 
   const billingsQuery = useInfiniteQuery({
-    queryKey: ["admin", "billings", "contributor", nearAccount],
+    queryKey: adminContributorBillingsQueryKey(nearAccount),
     queryFn: ({ pageParam }) => apiClient.billings.list({ nearAccount, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,

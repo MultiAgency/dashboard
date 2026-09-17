@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useApiClient } from "@/lib/api";
+import { refreshAfter } from "@/lib/queries";
 
 export function useBudgetActions(projectId: string) {
   const apiClient = useApiClient();
@@ -10,10 +11,7 @@ export function useBudgetActions(projectId: string) {
 
   const invalidate = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["admin", "budgets", projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["admin", "projects", "budget", projectId] }),
-      queryClient.invalidateQueries({ queryKey: ["admin", "budgets", "agency"] }),
-      queryClient.invalidateQueries({ queryKey: ["admin", "treasury", "balances"] }),
+      refreshAfter(queryClient, { type: "budgetEntries", projectIds: [projectId] }),
       router.invalidate(),
     ]);
   };

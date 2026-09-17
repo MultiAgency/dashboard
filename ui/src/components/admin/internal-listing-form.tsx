@@ -25,10 +25,9 @@ import {
   LIFECYCLE_TRANSITIONS,
 } from "@/lib/listing-lifecycle";
 import {
-  adminInternalListingQueryKey,
   adminInternalListingQueryOptions,
-  adminProjectBudgetQueryKey,
   adminTokensQueryOptions,
+  refreshAfter,
 } from "@/lib/queries";
 
 type InternalListing = NonNullable<
@@ -176,11 +175,7 @@ function InternalListingForm({
   const isEdit = existing !== null;
 
   const invalidate = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: adminInternalListingQueryKey }),
-      queryClient.invalidateQueries({ queryKey: adminProjectBudgetQueryKey }),
-      queryClient.invalidateQueries({ queryKey: ["treasury", "rollups"] }),
-    ]);
+    await refreshAfter(queryClient, { type: "listing", projectId });
   };
 
   const submitMutation = useMutation({
@@ -441,11 +436,7 @@ function InternalListingDeleteDialog({
   const deleteMutation = useMutation({
     mutationFn: () => apiClient.agency.listings.delete({ projectId }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: adminInternalListingQueryKey }),
-        queryClient.invalidateQueries({ queryKey: adminProjectBudgetQueryKey }),
-        queryClient.invalidateQueries({ queryKey: ["treasury", "rollups"] }),
-      ]);
+      await refreshAfter(queryClient, { type: "listing", projectId });
       toast.success("Internal listing deleted");
     },
     onError: (err: Error) => toast.error(err.message || "Failed to delete internal listing"),

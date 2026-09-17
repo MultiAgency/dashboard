@@ -13,11 +13,15 @@ import {
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount, parseDecimalToBase } from "@/lib/format-amount";
 import {
+  adminBudgetsLogQueryKey,
   adminClientsListQueryOptions,
   adminProjectBudgetQueryOptions,
+  adminProjectBudgetsLogQueryKey,
+  adminProjectsForTokenQueryKey,
   adminProjectsListQueryOptions,
   adminTokensQueryOptions,
   clientPortalProjectBudgetQueryOptions,
+  refreshAfter,
 } from "@/lib/queries";
 
 function budgetVerb(amount: string, relatedBudgetId: string | null): string {
@@ -237,7 +241,7 @@ function AgencyAuditLogPanel({
   });
 
   const projectsForTokenQuery = useQuery({
-    queryKey: ["admin", "budgets", "projects-for-token", filterToken],
+    queryKey: adminProjectsForTokenQueryKey(filterToken),
     queryFn: async () => {
       const result = await apiClient.budgets.list({ tokenId: filterToken, limit: 200 });
       return new Set(result.data.map((row) => row.projectId));
@@ -295,14 +299,11 @@ function AgencyAuditLogPanel({
   };
 
   const logQuery = useInfiniteQuery({
-    queryKey: [
-      "admin",
-      "budgets",
-      "agency",
-      filterProject || null,
-      filterToken || null,
-      filterClient || null,
-    ],
+    queryKey: adminBudgetsLogQueryKey({
+      projectId: filterProject || null,
+      tokenId: filterToken || null,
+      clientId: filterClient || null,
+    }),
     queryFn: ({ pageParam }) =>
       apiClient.budgets.list({
         projectId: filterProject || undefined,
@@ -481,16 +482,12 @@ function TransferPanel({
   const { value: amountInBase, error: amountError } = deriveBaseAmount(amount, knownToken);
 
   const fromBudgetQuery = useQuery({
-    queryKey: ["admin", "projects", "budget", fromProjectId],
-    queryFn: () => apiClient.agency.projects.getBudget({ projectId: fromProjectId }),
+    ...adminProjectBudgetQueryOptions(apiClient, fromProjectId),
     enabled: fromProjectId !== "",
-    staleTime: 30_000,
   });
   const toBudgetQuery = useQuery({
-    queryKey: ["admin", "projects", "budget", toProjectId],
-    queryFn: () => apiClient.agency.projects.getBudget({ projectId: toProjectId }),
+    ...adminProjectBudgetQueryOptions(apiClient, toProjectId),
     enabled: toProjectId !== "",
-    staleTime: 30_000,
   });
 
   const fromTokenBudget = fromBudgetQuery.data?.budgets.find((b) => b.tokenId === effectiveTokenId);
@@ -514,18 +511,10 @@ function TransferPanel({
         note: note.trim() || undefined,
       }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["admin", "projects", "budget", fromProjectId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["admin", "projects", "budget", toProjectId],
-        }),
-        queryClient.invalidateQueries({ queryKey: ["admin", "budgets", fromProjectId] }),
-        queryClient.invalidateQueries({ queryKey: ["admin", "budgets", toProjectId] }),
-        queryClient.invalidateQueries({ queryKey: ["admin", "budgets", "agency"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin", "treasury", "balances"] }),
-      ]);
+      await refreshAfter(queryClient, {
+        type: "budgetEntries",
+        projectIds: [fromProjectId, toProjectId],
+      });
       setAmount("");
       setNote("");
       toast.success("Budget transferred");
@@ -697,7 +686,7 @@ export function ProjectBudgetPanel({
   });
   const budgetQuery = clientPortal ? clientBudgetQuery : adminBudgetQuery;
   const budgetsQuery = useInfiniteQuery({
-    queryKey: ["admin", "budgets", projectId],
+    queryKey: adminProjectBudgetsLogQueryKey(projectId),
     queryFn: ({ pageParam }) => apiClient.budgets.list({ projectId, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,

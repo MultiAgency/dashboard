@@ -49,11 +49,11 @@ type EditableSettings = {
   contactEmail: string | null;
 };
 
-export async function getSettingsRow(db: Database, orgAccountId: string) {
+export async function getSettingsRow(db: Database, agencyDao: string) {
   const rows = await db
     .select()
     .from(settingsTable)
-    .where(eq(settingsTable.orgAccountId, orgAccountId))
+    .where(eq(settingsTable.orgAccountId, agencyDao))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -76,7 +76,7 @@ export async function getResolvedPublicSettings(db: Database, network: Network) 
 
 export async function upsertSettings(
   db: Database,
-  orgAccountId: string,
+  agencyDao: string,
   fields: EditableSettings,
   byAccountId: string,
 ): Promise<void> {
@@ -84,7 +84,7 @@ export async function upsertSettings(
   await db
     .insert(settingsTable)
     .values({
-      orgAccountId,
+      orgAccountId: agencyDao,
       nearnAccountId: fields.nearnAccountId,
       websiteUrl: fields.websiteUrl,
       docsUrl: fields.docsUrl,
@@ -108,4 +108,33 @@ export async function upsertSettings(
         updatedAt: now,
       },
     });
+}
+
+export async function getAdminSettings(db: Database, agencyDao: string, network: Network) {
+  const row = await getSettingsRow(db, agencyDao);
+  const base = defaultPublicSettings(network);
+  return {
+    orgAccountId: row?.orgAccountId ?? agencyDao,
+    network,
+    editable: {
+      nearnAccountId: row?.nearnAccountId ?? base.nearnAccountId,
+      websiteUrl: row?.websiteUrl ?? base.websiteUrl,
+      docsUrl: row?.docsUrl ?? base.docsUrl,
+      description: row?.description ?? base.description,
+      contactEmail: row?.contactEmail ?? base.contactEmail,
+    },
+    readOnly: {
+      name: base.name,
+      headline: base.headline,
+      tagline: base.tagline,
+    },
+    audit: row
+      ? {
+          createdBy: row.createdBy,
+          createdAt: row.createdAt.toISOString(),
+          updatedBy: row.updatedBy,
+          updatedAt: row.updatedAt.toISOString(),
+        }
+      : null,
+  };
 }

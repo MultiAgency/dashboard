@@ -5,7 +5,14 @@ import type { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { billings, budgets, listings, projectContributors } from "../../src/db/schema";
+import {
+  billings,
+  budgets,
+  clientProjects,
+  clients,
+  listings,
+  projectContributors,
+} from "../../src/db/schema";
 import { deleteProjectCascade } from "../../src/services/projects";
 import { applyAllMigrations } from "./_pg";
 
@@ -73,6 +80,22 @@ describe("agency.projects.adminDelete — cascade transaction", () => {
     expect(await db.select().from(listings).where(eq(listings.projectId, PROJECT_A))).toHaveLength(
       0,
     );
+  });
+
+  test("unlinks the project from its clients but keeps the clients", async () => {
+    await db
+      .insert(clients)
+      .values({ id: "client-1", orgId: "org", agencyDaoAccountId: "agency.near", name: "Acme" });
+    await db.insert(clientProjects).values([
+      { clientId: "client-1", projectId: PROJECT_A },
+      { clientId: "client-1", projectId: PROJECT_B },
+    ]);
+
+    await cascade(PROJECT_A);
+
+    const links = await db.select().from(clientProjects);
+    expect(links.map((l) => l.projectId)).toEqual([PROJECT_B]);
+    expect(await db.select().from(clients)).toHaveLength(1);
   });
 
   test("leaves rows for OTHER projects untouched", async () => {

@@ -18,10 +18,11 @@ import { useApiClient } from "@/lib/api";
 import { type AuthClient, useAuthClient } from "@/lib/auth";
 import { isValidNearAccountId } from "@/lib/near-account";
 import {
-  adminClientsListQueryKey,
+  adminClientDetailQueryOptions,
   adminClientsListQueryOptions,
   adminProjectsListQueryOptions,
   invalidateWorkspaceQueries,
+  refreshAfter,
 } from "@/lib/queries";
 import { ensureAgencyWorkspaceActive, resolveAgencyOrgId } from "@/lib/workspace";
 
@@ -249,7 +250,7 @@ function ClientCreateForm({ onDone }: { onDone: () => void }) {
     },
     onSuccess: async (result) => {
       await invalidateWorkspaceQueries(queryClient, router);
-      await queryClient.invalidateQueries({ queryKey: adminClientsListQueryKey });
+      await refreshAfter(queryClient, { type: "clients" });
       toast.success(
         result.alreadyExists
           ? "Client workspace already existed — linked record restored"
@@ -325,11 +326,7 @@ export function ClientDetailSection({ clientId }: { clientId: string }) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const navigate = useNavigate();
-  const detailQuery = useQuery({
-    queryKey: ["admin", "clients", "detail", clientId],
-    queryFn: () => apiClient.clients.get({ id: clientId }),
-    retry: false,
-  });
+  const detailQuery = useQuery(adminClientDetailQueryOptions(apiClient, clientId));
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
 
   const [name, setName] = useState("");
@@ -353,8 +350,7 @@ export function ClientDetailSection({ clientId }: { clientId: string }) {
         projectIds,
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: adminClientsListQueryKey });
-      await queryClient.invalidateQueries({ queryKey: ["admin", "clients", "detail", clientId] });
+      await refreshAfter(queryClient, { type: "clients" });
       toast.success("Client updated");
     },
     onError: (err: Error) => toast.error(err.message || "Failed to update client"),
@@ -363,7 +359,7 @@ export function ClientDetailSection({ clientId }: { clientId: string }) {
   const deleteMutation = useMutation({
     mutationFn: async () => apiClient.clients.delete({ id: clientId }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: adminClientsListQueryKey });
+      await refreshAfter(queryClient, { type: "clients" });
       await router.invalidate();
       toast.success("Client deleted");
       void navigate({ to: "/admin/clients" });

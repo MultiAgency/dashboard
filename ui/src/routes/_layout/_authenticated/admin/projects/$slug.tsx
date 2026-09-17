@@ -23,15 +23,17 @@ import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingHref } from "@/lib/nearn";
 import {
+  adminBillingsQueryKey,
   adminClientsListQueryOptions,
-  adminContributorsListQueryKey,
   adminContributorsListQueryOptions,
   adminInternalListingQueryOptions,
+  adminNearnListingQueryOptions,
   adminNearnSubmissionsQueryOptions,
   adminProjectBudgetQueryOptions,
   adminProjectDetailQueryOptions,
   adminTokensQueryOptions,
   publicSettingsQueryOptions,
+  refreshAfter,
 } from "@/lib/queries";
 import { trezuPaymentUrl, trezuProposalUrl } from "@/lib/trezu";
 import { safeHttpHref } from "@/lib/url";
@@ -98,13 +100,7 @@ function AdminProjectDetail() {
 
   const projectId = projectQuery.data?.project.id;
   const nearnSlug = projectQuery.data?.project.nearnListingId ?? null;
-  const nearnListingQuery = useQuery({
-    queryKey: ["admin", "nearn", "listing", nearnSlug],
-    queryFn: () => apiClient.nearn.getListing({ slug: nearnSlug! }),
-    enabled: !!nearnSlug,
-    retry: false,
-    staleTime: 60_000,
-  });
+  const nearnListingQuery = useQuery(adminNearnListingQueryOptions(apiClient, nearnSlug ?? ""));
 
   if (projectQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading project…</p>;
@@ -198,7 +194,7 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
       apiClient.contributors.create({ nearAccount: input.nearAccount, name: input.name }),
     onSuccess: (_data, vars) => {
       toast.success(`Added ${vars.name} as a builder`);
-      queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
+      void refreshAfter(queryClient, { type: "builders" });
     },
     onError: (err) => {
       toast.error(`Could not add builder: ${(err as Error).message}`);
@@ -333,12 +329,7 @@ function DeleteProjectSection({
   const deleteMutation = useMutation({
     mutationFn: () => apiClient.agency.projects.delete({ id: projectId }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["admin", "projects"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin", "billings", "list"] }),
-        queryClient.invalidateQueries({ queryKey: ["treasury", "rollups"] }),
-        queryClient.invalidateQueries({ queryKey: ["proposals", "list"] }),
-      ]);
+      await refreshAfter(queryClient, { type: "projectDeleted" });
       toast.success(`Project @${projectSlug} deleted`);
       navigate({ to: "/work" });
     },
@@ -400,7 +391,7 @@ function BillingsSection({
   const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
 
   const billingsQuery = useInfiniteQuery({
-    queryKey: ["admin", "billings", "list", projectId],
+    queryKey: adminBillingsQueryKey({ projectId }),
     queryFn: ({ pageParam }) => apiClient.billings.list({ projectId, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
@@ -481,12 +472,7 @@ function BillingRow({
   const deleteMutation = useMutation({
     mutationFn: async () => apiClient.billings.delete({ id: billing.id }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["admin", "billings", "list"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin", "projects", "budget"] }),
-        queryClient.invalidateQueries({ queryKey: ["treasury", "rollups"] }),
-        queryClient.invalidateQueries({ queryKey: ["proposals", "list"] }),
-      ]);
+      await refreshAfter(queryClient, { type: "billings" });
       toast.success(`Billing for proposal #${billing.proposalId} deleted`);
     },
     onError: (err: Error) => toast.error(err.message || "Failed to delete billing"),
@@ -620,11 +606,7 @@ function BillingCreateForm({
         note: note.trim() || undefined,
       }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["admin", "billings", "list"] }),
-        queryClient.invalidateQueries({ queryKey: ["admin", "projects", "budget"] }),
-        queryClient.invalidateQueries({ queryKey: ["treasury", "rollups"] }),
-      ]);
+      await refreshAfter(queryClient, { type: "billings" });
       toast.success("Billing recorded");
       onDone();
     },

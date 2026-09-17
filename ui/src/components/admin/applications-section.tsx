@@ -7,7 +7,7 @@ import { AdminError } from "@/components/admin-error";
 import { Field, selectClass } from "@/components/admin-form";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
-import { adminContributorsListQueryKey } from "@/lib/queries";
+import { adminApplicationsListQueryKey, refreshAfter } from "@/lib/queries";
 
 type ApplicationKind = "founder" | "contributor" | "client";
 type ApplicationStatus = "new" | "reviewing" | "accepted" | "declined" | "converted";
@@ -20,7 +20,7 @@ export function ApplicationsAdminSection() {
   const [filterStatus, setFilterStatus] = useState<ApplicationStatus | "">("new");
 
   const applicationsQuery = useInfiniteQuery({
-    queryKey: ["admin", "applications", "list", filterKind || null, filterStatus || null],
+    queryKey: adminApplicationsListQueryKey(filterKind || null, filterStatus || null),
     queryFn: ({ pageParam }) =>
       apiClient.applications.list({
         kind: filterKind || undefined,
@@ -196,7 +196,7 @@ function ApplicationActions({ application }: { application: Application }) {
     mutationFn: async (status: ApplicationStatus) =>
       apiClient.applications.update({ id: application.id, status }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["admin", "applications", "list"] });
+      await refreshAfter(queryClient, { type: "applications" });
       toast.success("Status updated");
     },
     onError: (err: Error) => toast.error(err.message || "Failed to update status"),
@@ -205,10 +205,7 @@ function ApplicationActions({ application }: { application: Application }) {
   const convertMutation = useMutation({
     mutationFn: async () => apiClient.applications.convertToBuilder({ id: application.id }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["admin", "applications", "list"] }),
-        queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey }),
-      ]);
+      await refreshAfter(queryClient, { type: "applications" }, { type: "builders" });
       toast.success("Converted to builder");
     },
     onError: (err: Error) => toast.error(err.message || "Failed to convert"),

@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { queryOptions } from "@tanstack/react-query";
 import type { AnyRouter } from "@tanstack/react-router";
 import type { ApiClient } from "./api";
@@ -80,6 +80,16 @@ export function tokensListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export function tokenStorageStatusQueryOptions(apiClient: ApiClient, tokenId: string | null) {
+  return queryOptions({
+    queryKey: ["tokens", "storage-status", getNetwork(), tokenId ?? ""] as const,
+    queryFn: () => apiClient.tokens.getStorageStatus({ tokenId: tokenId ?? "" }),
+    enabled: !!tokenId,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export function treasuryPublicBalancesQueryOptions(apiClient: ApiClient, tokenIds: string[]) {
   return queryOptions({
     queryKey: [
@@ -100,7 +110,7 @@ export const adminProjectsListQueryKey = ["admin", "projects", "list"] as const;
 
 export function adminProjectsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: adminProjectsListQueryKey,
+    queryKey: [...adminProjectsListQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.agency.projects.list(),
     retry: false,
   });
@@ -110,7 +120,7 @@ export const adminContributorsListQueryKey = ["admin", "contributors", "list"] a
 
 export function adminContributorsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: adminContributorsListQueryKey,
+    queryKey: [...adminContributorsListQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.contributors.list(),
     retry: false,
   });
@@ -120,7 +130,7 @@ export const adminAssignmentsListQueryKey = ["admin", "assignments", "list"] as 
 
 export function adminAssignmentsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: adminAssignmentsListQueryKey,
+    queryKey: [...adminAssignmentsListQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.assignments.listAll(),
     staleTime: 60_000,
     retry: false,
@@ -128,6 +138,72 @@ export function adminAssignmentsListQueryOptions(apiClient: ApiClient) {
 }
 
 export const adminBillingsListQueryKey = ["admin", "billings", "list"] as const;
+
+export const clientBillingsListQueryKey = ["client", "billings", "list"] as const;
+
+type BillingFilters = {
+  projectId?: string | null;
+  nearAccount?: string | null;
+  clientId?: string | null;
+};
+
+export function adminBillingsQueryKey(filters: BillingFilters) {
+  return [
+    ...adminBillingsListQueryKey,
+    getNetwork(),
+    filters.projectId ?? null,
+    filters.nearAccount ?? null,
+    filters.clientId ?? null,
+  ] as const;
+}
+
+export function clientBillingsQueryKey(filters: BillingFilters) {
+  return [
+    ...clientBillingsListQueryKey,
+    getNetwork(),
+    filters.projectId ?? null,
+    filters.nearAccount ?? null,
+    filters.clientId ?? null,
+  ] as const;
+}
+
+export function adminContributorBillingsQueryKey(nearAccount: string) {
+  return ["admin", "billings", "contributor", getNetwork(), nearAccount] as const;
+}
+
+export function adminBudgetsLogQueryKey(filters: {
+  projectId: string | null;
+  tokenId: string | null;
+  clientId: string | null;
+}) {
+  return [
+    "admin",
+    "budgets",
+    "log",
+    getNetwork(),
+    filters.projectId,
+    filters.tokenId,
+    filters.clientId,
+  ] as const;
+}
+
+export function adminProjectBudgetsLogQueryKey(projectId: string) {
+  return ["admin", "budgets", "project", getNetwork(), projectId] as const;
+}
+
+export function adminProjectsForTokenQueryKey(tokenId: string) {
+  return ["admin", "budgets", "projects-for-token", getNetwork(), tokenId] as const;
+}
+
+export function adminAssignmentsForProjectQueryKey(projectId: string) {
+  return ["admin", "assignments", "project", getNetwork(), projectId] as const;
+}
+
+export const proposalsListQueryKey = ["proposals", "list"] as const;
+
+export function proposalsQueryKey() {
+  return [...proposalsListQueryKey, getNetwork()] as const;
+}
 
 export function adminApplicationsListQueryKey(kind?: string | null, status?: string | null) {
   return ["admin", "applications", "list", kind ?? null, status ?? null] as const;
@@ -137,7 +213,7 @@ export const adminTokensQueryKey = ["admin", "tokens"] as const;
 
 export function adminTokensQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: adminTokensQueryKey,
+    queryKey: [...adminTokensQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.tokens.list(),
     staleTime: 60 * 60_000,
   });
@@ -184,11 +260,32 @@ export function adminNearnSubmissionsQueryOptions(apiClient: ApiClient, slug: st
   });
 }
 
+export const adminNearnListingQueryKey = ["admin", "nearn", "listing"] as const;
+
+export function adminNearnListingQueryOptions(apiClient: ApiClient, slug: string) {
+  return queryOptions({
+    queryKey: [...adminNearnListingQueryKey, getNetwork(), slug] as const,
+    queryFn: () => apiClient.nearn.getListing({ slug }),
+    enabled: slug.length > 1,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function adminNearnSponsorBountiesQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: ["admin", "nearn", "sponsor-bounties", getNetwork()] as const,
+    queryFn: () => apiClient.nearn.listSponsorBounties(),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export const adminClientsListQueryKey = ["admin", "clients", "list"] as const;
 
 export function adminClientsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: adminClientsListQueryKey,
+    queryKey: [...adminClientsListQueryKey, getNetwork()] as const,
     queryFn: () => apiClient.clients.list(),
     retry: false,
   });
@@ -196,7 +293,7 @@ export function adminClientsListQueryOptions(apiClient: ApiClient) {
 
 export function adminClientDetailQueryOptions(apiClient: ApiClient, id: string) {
   return queryOptions({
-    queryKey: ["admin", "clients", "detail", id] as const,
+    queryKey: ["admin", "clients", "detail", getNetwork(), id] as const,
     queryFn: () => apiClient.clients.get({ id }),
     retry: false,
   });
@@ -204,7 +301,7 @@ export function adminClientDetailQueryOptions(apiClient: ApiClient, id: string) 
 
 export function adminContributorDetailQueryOptions(apiClient: ApiClient, nearAccount: string) {
   return queryOptions({
-    queryKey: ["admin", "contributors", "detail", nearAccount] as const,
+    queryKey: ["admin", "contributors", "detail", getNetwork(), nearAccount] as const,
     queryFn: () => apiClient.contributors.get({ nearAccount }),
     retry: false,
   });
@@ -218,12 +315,14 @@ export function clientLookupQueryOptions(apiClient: ApiClient, nearAccountId: st
   });
 }
 
+export const clientPortalDashboardQueryKey = ["client", "portal", "dashboard"] as const;
+
 export function clientPortalDashboardSummaryQueryOptions(
   apiClient: ApiClient,
   agencyDaoAccountId: string,
 ) {
   return queryOptions({
-    queryKey: ["client", "portal", "dashboard", getNetwork(), agencyDaoAccountId] as const,
+    queryKey: [...clientPortalDashboardQueryKey, getNetwork(), agencyDaoAccountId] as const,
     queryFn: () => apiClient.clientPortal.dashboard.summary({ agencyDaoAccountId }),
     retry: false,
   });
@@ -289,6 +388,78 @@ export function clientPortalProjectBudgetQueryOptions(
     staleTime: 30_000,
     retry: false,
   });
+}
+
+export type DataChange =
+  | { type: "budgetEntries"; projectIds: string[] }
+  | { type: "billings" }
+  | { type: "listing"; projectId: string }
+  | { type: "projects" }
+  | { type: "projectDeleted" }
+  | { type: "assignments" }
+  | { type: "applications" }
+  | { type: "builders" }
+  | { type: "clients" }
+  | { type: "settings" };
+
+function staleKeys(change: DataChange): QueryKey[] {
+  switch (change.type) {
+    case "budgetEntries":
+      return [
+        ["admin", "budgets"],
+        ...change.projectIds.map((projectId) => [
+          ...adminProjectBudgetQueryKey,
+          getNetwork(),
+          projectId,
+        ]),
+        clientPortalProjectBudgetQueryKey,
+        clientPortalDashboardQueryKey,
+      ];
+    case "billings":
+      return [
+        ["admin", "billings"],
+        adminProjectBudgetQueryKey,
+        proposalsListQueryKey,
+        ["client", "billings"],
+        ["client", "portal"],
+      ];
+    case "listing":
+      return [
+        [...adminInternalListingQueryKey, getNetwork(), change.projectId],
+        [...adminProjectBudgetQueryKey, getNetwork(), change.projectId],
+        clientPortalProjectBudgetQueryKey,
+        clientPortalDashboardQueryKey,
+      ];
+    case "projects":
+      return [["admin", "projects"], projectsListQueryKey];
+    case "projectDeleted":
+      return [
+        ["admin", "projects"],
+        projectsListQueryKey,
+        ["admin", "billings"],
+        ["admin", "budgets"],
+        ["admin", "assignments"],
+        ["admin", "clients"],
+        proposalsListQueryKey,
+        ["client"],
+      ];
+    case "assignments":
+      return [["admin", "assignments"]];
+    case "applications":
+      return [["admin", "applications"]];
+    case "builders":
+      return [["admin", "contributors"]];
+    case "clients":
+      return [["admin", "clients"]];
+    case "settings":
+      return [adminSettingsQueryKey, publicSettingsQueryKey];
+  }
+}
+
+export async function refreshAfter(queryClient: QueryClient, ...changes: DataChange[]) {
+  await Promise.all(
+    changes.flatMap(staleKeys).map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+  );
 }
 
 export async function invalidateWorkspaceQueries(

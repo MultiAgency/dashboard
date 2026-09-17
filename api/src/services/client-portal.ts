@@ -1,55 +1,19 @@
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
+import { type AgencyScope, agencyScopeForClient, type PluginContext } from "../lib/agency-scope";
 import type { AgencyService } from "./agency";
 import type { BillingsService } from "./billings";
 import type { ClientsService } from "./clients";
+import type { ProjectLedgers } from "./ledger";
+import type { ProjectDirectory } from "./project-directory";
 import { sumByToken } from "./report-tokens";
 import type { ReportsService } from "./reports";
-
-type ClientScope = {
-  client: {
-    id: string;
-    name: string;
-    nearAccountId: string | null;
-    orgId: string;
-    agencyDaoAccountId: string | null;
-  };
-  projectIds: string[];
-  orgAccountId: string | null;
-};
-
-export function getNearAccountFromContext(context: Record<string, unknown>): string {
-  const nearAccountId = (context as { near?: { primaryAccountId?: string } }).near
-    ?.primaryAccountId;
-  if (!nearAccountId) {
-    throw new ORPCError("FORBIDDEN", {
-      message: "Sign in with your NEAR wallet to use the client portal.",
-    });
-  }
-  return nearAccountId;
-}
-
-export function enrichContextForAgency(context: Record<string, unknown>, orgAccountId: string) {
-  return {
-    ...context,
-    organization: {
-      activeOrganizationId: orgAccountId,
-      organization: {
-        id: orgAccountId,
-        name: orgAccountId,
-        slug: orgAccountId,
-        metadata: { daoAccountId: orgAccountId, type: "agency" as const },
-      },
-      member: { role: "admin" as const },
-    },
-  };
-}
 
 async function resolveClientScope(
   clientsService: ClientsService,
   nearAccountId: string,
   agencyDaoAccountId: string,
-): Promise<ClientScope> {
+) {
   const lookup = await Effect.runPromise(
     clientsService.getByNearAndAgency(nearAccountId, agencyDaoAccountId),
   );
@@ -59,19 +23,7 @@ async function resolveClientScope(
         "No client portal for this wallet at this agency. Ask your agency to add your NEAR account under Clients.",
     });
   }
-
-  if (lookup.projectIds.length === 0) {
-    return { ...lookup, orgAccountId: null };
-  }
-
-  const orgAccountId = lookup.client.agencyDaoAccountId;
-  if (!orgAccountId) {
-    throw new ORPCError("FORBIDDEN", {
-      message: "Client projects could not be resolved. Contact your agency.",
-    });
-  }
-
-  return { ...lookup, orgAccountId };
+  return lookup;
 }
 
 function assertLinkedProject(projectIds: string[], projectId: string) {
@@ -85,169 +37,118 @@ export function createClientPortalService(
   agency: AgencyService,
   billings: BillingsService,
   reports: ReportsService,
+  directory: ProjectDirectory,
+  projectLedgers: ProjectLedgers,
 ) {
+  const notFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
+
+  const clientScope = (context: PluginContext, agencyDaoAccountId: string) =>
+    Effect.gen(function* () {
+      const nearAccountId = context.near?.primaryAccountId;
+      if (!nearAccountId) {
+        return yield* Effect.fail(
+          new ORPCError("FORBIDDEN", {
+            message: "Sign in with your NEAR wallet to use the client portal.",
+          }),
+        );
+      }
+      const client = yield* Effect.promise(() =>
+        resolveClientScope(clientsService, nearAccountId, agencyDaoAccountId),
+      );
+      const scope: AgencyScope | null =
+        client.projectIds.length === 0
+          ? null
+          : agencyScopeForClient(context, client.client.agencyDaoAccountId);
+      return { client: client.client, projectIds: client.projectIds, scope };
+    });
+
   return {
-    listProjects: (
-      nearAccountId: string,
-      agencyDaoAccountId: string,
-      context: Record<string, unknown>,
-    ) =>
+    listProjects: (context: PluginContext, input: { agencyDaoAccountId: string }) =>
       Effect.gen(function* () {
-        const scope = yield* Effect.promise(() =>
-          resolveClientScope(clientsService, nearAccountId, agencyDaoAccountId),
-        );
-        if (!scope.orgAccountId) return { data: [] };
-
-        const enriched = enrichContextForAgency(context, scope.orgAccountId);
-        const all = yield* Effect.promise(() =>
-          agency.fetchOrgProjects(scope.orgAccountId!, enriched),
-        );
-        const allowed = new Set(scope.projectIds);
-        const data = all
-          .filter((p) => allowed.has(p.id))
-          .map((p) => ({
-            id: p.id,
-            ownerId: p.ownerId,
-            organizationId: p.organizationId ?? scope.orgAccountId!,
-            slug: p.slug,
-            title: p.title,
-            description: p.description,
-            repository: p.repository ?? null,
-            nearnListingId: null as string | null,
-            kind: ((p as { kind?: string }).kind ?? "project") as
-              | "project"
-              | "idea"
-              | "scope"
-              | "result",
-            status: p.status as "active" | "paused" | "archived",
-            visibility: p.visibility as "public" | "unlisted" | "private",
-            createdAt: new Date(p.createdAt),
-            updatedAt: new Date(p.updatedAt),
-          }));
-
-        return { data };
+        const { scope, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
+        if (!scope) return { data: [] };
+        const linked = new Set(projectIds);
+        const all = yield* Effect.promise(() => directory.forAgency(scope).list());
+        return {
+          data: all.filter((p) => linked.has(p.id)).map((p) => ({ ...p, nearnListingId: null })),
+        };
       }),
 
-    getProject: (
-      nearAccountId: string,
-      agencyDaoAccountId: string,
-      slug: string,
-      context: Record<string, unknown>,
-    ) =>
+    getProject: (context: PluginContext, input: { agencyDaoAccountId: string; slug: string }) =>
       Effect.gen(function* () {
-        const scope = yield* Effect.promise(() =>
-          resolveClientScope(clientsService, nearAccountId, agencyDaoAccountId),
-        );
-        if (!scope.orgAccountId) {
-          return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Project not found" }));
-        }
-
-        const enriched = enrichContextForAgency(context, scope.orgAccountId);
-        const detail = yield* agency.getProject(enriched, slug);
-        assertLinkedProject(scope.projectIds, detail.project.id);
+        const { scope, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
+        if (!scope) return yield* Effect.fail(notFound());
+        const detail = yield* agency.getProject(scope, input.slug);
+        assertLinkedProject(projectIds, detail.project.id);
         return detail;
       }),
 
-    getBudget: (
-      nearAccountId: string,
-      agencyDaoAccountId: string,
-      projectId: string,
-      context: Record<string, unknown>,
-    ) =>
+    getBudget: (context: PluginContext, input: { agencyDaoAccountId: string; projectId: string }) =>
       Effect.gen(function* () {
-        const scope = yield* Effect.promise(() =>
-          resolveClientScope(clientsService, nearAccountId, agencyDaoAccountId),
-        );
-        if (!scope.orgAccountId) {
-          return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Project not found" }));
-        }
-        assertLinkedProject(scope.projectIds, projectId);
-        const enriched = enrichContextForAgency(context, scope.orgAccountId);
-        return yield* agency.getBudget(enriched, projectId);
+        const { scope, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
+        if (!scope) return yield* Effect.fail(notFound());
+        assertLinkedProject(projectIds, input.projectId);
+        return yield* agency.getBudget(scope, input.projectId);
       }),
 
     listBillings: (
-      nearAccountId: string,
-      agencyDaoAccountId: string,
-      input: { projectId?: string; cursor?: string; limit: number },
-      context: Record<string, unknown>,
+      context: PluginContext,
+      input: { agencyDaoAccountId: string; projectId?: string; cursor?: string; limit: number },
     ) =>
       Effect.gen(function* () {
-        const scope = yield* Effect.promise(() =>
-          resolveClientScope(clientsService, nearAccountId, agencyDaoAccountId),
-        );
-        if (!scope.orgAccountId) return { data: [], nextCursor: null };
-        if (input.projectId) assertLinkedProject(scope.projectIds, input.projectId);
-
-        const enriched = enrichContextForAgency(context, scope.orgAccountId);
-        return yield* billings.list(
-          {
-            projectId: input.projectId,
-            clientId: scope.client.id,
-            cursor: input.cursor,
-            limit: input.limit,
-          },
-          scope.orgAccountId,
-          enriched,
-        );
+        const { scope, client, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
+        if (!scope) return { data: [], nextCursor: null };
+        if (input.projectId) assertLinkedProject(projectIds, input.projectId);
+        return yield* billings.list(scope, {
+          projectId: input.projectId,
+          projectIds,
+          clientId: client.id,
+          cursor: input.cursor,
+          limit: input.limit,
+        });
       }),
 
     generateReport: (
-      nearAccountId: string,
-      agencyDaoAccountId: string,
-      input: { note?: string; startDate?: string; endDate?: string },
-      context: Record<string, unknown>,
+      context: PluginContext,
+      input: { agencyDaoAccountId: string; note?: string; startDate?: string; endDate?: string },
     ) =>
       Effect.gen(function* () {
-        const scope = yield* Effect.promise(() =>
-          resolveClientScope(clientsService, nearAccountId, agencyDaoAccountId),
-        );
-        if (!scope.orgAccountId) {
+        const { scope, client } = yield* clientScope(context, input.agencyDaoAccountId);
+        if (!scope) {
           return yield* Effect.fail(
             new ORPCError("NOT_FOUND", { message: "No projects linked to this client account." }),
           );
         }
-        const enriched = enrichContextForAgency(context, scope.orgAccountId);
-        return yield* reports.generate(enriched, scope.orgAccountId, {
-          clientId: scope.client.id,
+        return yield* reports.generate(scope, {
+          clientId: client.id,
           note: input.note,
           startDate: input.startDate,
           endDate: input.endDate,
         });
       }),
 
-    dashboardSummary: (
-      nearAccountId: string,
-      agencyDaoAccountId: string,
-      context: Record<string, unknown>,
-    ) =>
+    dashboardSummary: (context: PluginContext, input: { agencyDaoAccountId: string }) =>
       Effect.gen(function* () {
-        const scope = yield* Effect.promise(() =>
-          resolveClientScope(clientsService, nearAccountId, agencyDaoAccountId),
+        const { scope, projectIds: linked } = yield* clientScope(context, input.agencyDaoAccountId);
+        if (!scope || linked.length === 0) return { projectCount: 0, remainingByToken: [] };
+
+        const agencyProjectIds = new Set(
+          (yield* Effect.promise(() => directory.forAgency(scope).list())).map((p) => p.id),
         );
-        if (!scope.orgAccountId || scope.projectIds.length === 0) {
-          return { projectCount: 0, remainingByToken: [] };
-        }
+        const projectIds = linked.filter((id) => agencyProjectIds.has(id));
+        const ledger = yield* Effect.promise(() => projectLedgers.load(scope, projectIds));
 
-        const enriched = enrichContextForAgency(context, scope.orgAccountId);
         const remainingRows: Array<{ tokenId: string; amount: string }> = [];
-
-        for (const projectId of scope.projectIds) {
-          const budget = yield* agency.getBudget(enriched, projectId);
-          for (const row of budget.budgets) {
-            try {
-              const remaining = BigInt(row.remaining);
-              if (remaining > 0n) {
-                remainingRows.push({ tokenId: row.tokenId, amount: remaining.toString() });
-              }
-            } catch {
-              // skip invalid amounts
+        for (const projectId of projectIds) {
+          for (const row of ledger.rollupsFor(projectId)) {
+            if (BigInt(row.remaining) > 0n) {
+              remainingRows.push({ tokenId: row.tokenId, amount: row.remaining });
             }
           }
         }
 
         return {
-          projectCount: scope.projectIds.length,
+          projectCount: projectIds.length,
           remainingByToken: sumByToken(remainingRows),
         };
       }),

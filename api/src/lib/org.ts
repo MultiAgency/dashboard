@@ -1,4 +1,3 @@
-import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 
 export type OrgMetadata = {
@@ -47,15 +46,6 @@ function extractDaoAccountId(context: {
       metadata.isPersonal || metadata.type === "client"
         ? "This workspace has no DAO. Switch to an agency using the agency menu in the header."
         : "No DAO account configured. A platform admin must create an agency workspace with a Sputnik DAO.",
-  });
-}
-
-export function getDaoAccountId(
-  context: Parameters<typeof extractDaoAccountId>[0],
-): Effect.Effect<string, ORPCError<string, unknown>> {
-  return Effect.try({
-    try: () => extractDaoAccountId(context),
-    catch: (err) => err as ORPCError<string, unknown>,
   });
 }
 

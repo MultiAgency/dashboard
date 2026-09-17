@@ -1,8 +1,9 @@
 import { eq } from "drizzle-orm";
-import { Effect } from "every-plugin/effect";
+import { Effect, Either } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
+import type { PluginContext } from "../lib/agency-scope";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 
 export type BuilderProfile = {
@@ -60,7 +61,7 @@ function stubProfile(nearAccount: string): BuilderProfile {
 
 export function createContributorsService(db: Database, plugins: PluginsClient) {
   return {
-    list: (context: Record<string, unknown>) =>
+    list: (context: PluginContext) =>
       Effect.gen(function* () {
         const result = yield* Effect.promise(() =>
           plugins.builders(context).listBuilders({ limit: 100 }),
@@ -81,7 +82,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         return { data: [...byNear.values()] };
       }),
 
-    get: (context: Record<string, unknown>, nearAccount: string) =>
+    get: (context: PluginContext, nearAccount: string) =>
       Effect.gen(function* () {
         const assignmentRows = yield* Effect.promise(() =>
           db
@@ -91,21 +92,18 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
             .limit(1),
         );
 
-        try {
-          const result = yield* Effect.promise(() =>
-            plugins.builders(context).getBuilder({ nearAccount }),
-          );
-          return { contributor: toProfile(result.data) };
-        } catch {
-          if (assignmentRows.length === 0) {
-            return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Builder not found" }));
-          }
-          return { contributor: stubProfile(nearAccount) };
+        const builder = yield* Effect.either(
+          Effect.tryPromise(() => plugins.builders(context).getBuilder({ nearAccount })),
+        );
+        if (Either.isRight(builder)) return { contributor: toProfile(builder.right.data) };
+        if (assignmentRows.length === 0) {
+          return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Builder not found" }));
         }
+        return { contributor: stubProfile(nearAccount) };
       }),
 
     create: (
-      context: Record<string, unknown>,
+      context: PluginContext,
       input: {
         nearAccount: string;
         name?: string;
@@ -135,7 +133,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
       }),
 
     update: (
-      context: Record<string, unknown>,
+      context: PluginContext,
       input: {
         nearAccount: string;
         name?: string;
@@ -146,31 +144,22 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
       },
     ) =>
       Effect.gen(function* () {
-        try {
-          const result = yield* Effect.promise(() =>
-            plugins.builders(context).updateBuilderProfile({
-              nearAccount: input.nearAccount,
-              name: input.name,
-              bio: input.bio,
-              skills: input.skills,
-              location: input.location,
-              links: input.links,
-            }),
-          );
-          return { contributor: toProfile(result.data) };
-        } catch {
-          const created = yield* Effect.promise(() =>
-            plugins.builders(context).createBuilder({
-              nearAccount: input.nearAccount,
-              name: input.name,
-              bio: input.bio,
-              skills: input.skills,
-              location: input.location,
-              links: input.links,
-            }),
-          );
-          return { contributor: toProfile(created.data) };
-        }
+        const profile = {
+          nearAccount: input.nearAccount,
+          name: input.name,
+          bio: input.bio,
+          skills: input.skills,
+          location: input.location,
+          links: input.links,
+        };
+        const result = yield* Effect.tryPromise(() =>
+          plugins.builders(context).updateBuilderProfile(profile),
+        ).pipe(
+          Effect.orElse(() =>
+            Effect.promise(() => plugins.builders(context).createBuilder(profile)),
+          ),
+        );
+        return { contributor: toProfile(result.data) };
       }),
   };
 }

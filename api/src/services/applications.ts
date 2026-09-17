@@ -4,6 +4,7 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { applications } from "../db/schema";
+import type { AgencyScope } from "../lib/agency-scope";
 import type { ContributorsService } from "./contributors";
 import { type NotifyConfig, notifyNewApplication } from "./notify";
 import { defaultContactEmail } from "./settings-admin";
@@ -111,7 +112,7 @@ export function createApplicationsService(
         return { application: row };
       }),
 
-    convertToBuilder: (context: Record<string, unknown>, input: { id: string }) =>
+    convertToBuilder: (scope: AgencyScope, input: { id: string }) =>
       Effect.gen(function* () {
         if (!contributors) {
           return yield* Effect.fail(
@@ -148,7 +149,7 @@ export function createApplicationsService(
           );
         }
 
-        yield* contributors.create(context, {
+        yield* contributors.create(scope.pluginContext, {
           nearAccount: app.nearAccountId,
           name: app.name,
           bio: app.message ?? undefined,
@@ -159,8 +160,7 @@ export function createApplicationsService(
             .update(applications)
             .set({
               status: "converted",
-              reviewedBy:
-                (context as any).near?.primaryAccountId ?? (context as any).userId ?? null,
+              reviewedBy: scope.actorId === "unknown" ? null : scope.actorId,
               reviewedAt: new Date(),
             })
             .where(eq(applications.id, input.id))
