@@ -6,9 +6,10 @@ import { Badge, Button, Input } from "@/components";
 import { selectClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import {
-  adminAssignmentsListQueryKey,
+  adminAssignmentsForProjectQueryKey,
   adminAssignmentsListQueryOptions,
   adminContributorsListQueryOptions,
+  refreshAfter,
 } from "@/lib/queries";
 
 type AssignmentsSectionProps = {
@@ -20,7 +21,7 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const assignmentsQuery = useQuery({
-    queryKey: ["admin", "assignments", projectId],
+    queryKey: adminAssignmentsForProjectQueryKey(projectId),
     queryFn: () => apiClient.assignments.list({ projectId }),
   });
   const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
@@ -30,10 +31,7 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
   const [role, setRole] = useState("");
 
   const invalidate = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["admin", "assignments", projectId] }),
-      queryClient.invalidateQueries({ queryKey: adminAssignmentsListQueryKey }),
-    ]);
+    await refreshAfter(queryClient, { type: "assignments" });
   };
 
   const addMutation = useMutation({

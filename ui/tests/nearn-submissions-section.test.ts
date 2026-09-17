@@ -60,13 +60,9 @@ describe("NearnSubmissionsSection — add-contributor CTA", () => {
     expect(source).toMatch(/nearAccount:\s*s\.user\.publicKey!/);
   });
 
-  test("success path invalidates the contributors list query so the match badge appears", () => {
-    expect(source).toMatch(
-      /queryClient\.invalidateQueries\(\{\s*queryKey:\s*adminContributorsListQueryKey/,
-    );
-    expect(source).toMatch(
-      /import\s*\{[^}]*adminContributorsListQueryKey[^}]*\}\s*from\s*"@\/lib\/queries"/,
-    );
+  test("success path refreshes builders so the match badge appears", () => {
+    expect(source).toMatch(/refreshAfter\(queryClient,\s*\{\s*type:\s*"builders"\s*\}\)/);
+    expect(source).toMatch(/import\s*\{[^}]*refreshAfter[^}]*\}\s*from\s*"@\/lib\/queries"/);
   });
 
   test("CTA renders only when publicKey is unmatched (mirror of the match badge)", () => {

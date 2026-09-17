@@ -107,7 +107,7 @@ export const clients = pgTable(
   {
     id: text("id").primaryKey(),
     orgId: text("org_id").notNull(),
-    agencyDaoAccountId: text("agency_dao_account_id"),
+    agencyDaoAccountId: text("agency_dao_account_id").notNull(),
     name: text("name").notNull(),
     nearAccountId: text("near_account_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
@@ -117,7 +117,7 @@ export const clients = pgTable(
     orgIdx: index("clients_org_id").on(t.orgId),
     agencyNearIdx: uniqueIndex("clients_agency_near_unique")
       .on(t.agencyDaoAccountId, t.nearAccountId)
-      .where(sql`${t.nearAccountId} IS NOT NULL AND ${t.agencyDaoAccountId} IS NOT NULL`),
+      .where(sql`${t.nearAccountId} IS NOT NULL`),
   }),
 );
 

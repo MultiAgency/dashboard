@@ -3,16 +3,20 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { billings, budgets, clientProjects, clients } from "../db/schema";
+import type { AgencyScope } from "../lib/agency-scope";
 import type { PluginsClient } from "../lib/plugins-types.gen";
-import type { AgencyService } from "./agency";
+import type { ProjectDirectory } from "./project-directory";
 import { sumByToken } from "./report-tokens";
 import { enrichWithChainStatus } from "./sputnik";
 
-export function createReportsService(db: Database, agency: AgencyService, plugins: PluginsClient) {
+export function createReportsService(
+  db: Database,
+  directory: ProjectDirectory,
+  plugins: PluginsClient,
+) {
   return {
     generate: (
-      context: Record<string, unknown>,
-      orgAccountId: string,
+      scope: AgencyScope,
       input: {
         clientId?: string;
         projectId?: string;
@@ -22,6 +26,7 @@ export function createReportsService(db: Database, agency: AgencyService, plugin
       },
     ) =>
       Effect.gen(function* () {
+        const allProjects = yield* Effect.promise(() => directory.forAgency(scope).list());
         let projectIds: string[];
 
         const startAt = input.startDate ? new Date(`${input.startDate}T00:00:00.000Z`) : null;
@@ -40,7 +45,16 @@ export function createReportsService(db: Database, agency: AgencyService, plugin
 
         if (input.clientId) {
           const clientRows = yield* Effect.promise(() =>
-            db.select().from(clients).where(eq(clients.id, input.clientId!)).limit(1),
+            db
+              .select()
+              .from(clients)
+              .where(
+                and(
+                  eq(clients.id, input.clientId!),
+                  eq(clients.agencyDaoAccountId, scope.agencyDao),
+                ),
+              )
+              .limit(1),
           );
           if (!clientRows[0]) {
             return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Client not found" }));
@@ -51,12 +65,10 @@ export function createReportsService(db: Database, agency: AgencyService, plugin
               .from(clientProjects)
               .where(eq(clientProjects.clientId, input.clientId!)),
           );
-          projectIds = links.map((l) => l.projectId);
+          const agencyProjectIds = new Set(allProjects.map((p) => p.id));
+          projectIds = links.map((l) => l.projectId).filter((id) => agencyProjectIds.has(id));
         } else {
-          const projects = yield* Effect.promise(() =>
-            agency.fetchOrgProjects(orgAccountId, context),
-          );
-          projectIds = projects.map((p) => p.id);
+          projectIds = allProjects.map((p) => p.id);
         }
 
         if (input.projectId) {
@@ -72,9 +84,6 @@ export function createReportsService(db: Database, agency: AgencyService, plugin
           projectIds = [input.projectId];
         }
 
-        const allProjects = yield* Effect.promise(() =>
-          agency.fetchOrgProjects(orgAccountId, context),
-        );
         const projectById = new Map(allProjects.map((p) => [p.id, p]));
 
         const budgetRowsAll =
@@ -104,7 +113,11 @@ export function createReportsService(db: Database, agency: AgencyService, plugin
 
         const [clientRows, clientLinkRows] = yield* Effect.promise(() =>
           Promise.all([
-            db.select().from(clients).orderBy(desc(clients.name)),
+            db
+              .select()
+              .from(clients)
+              .where(eq(clients.agencyDaoAccountId, scope.agencyDao))
+              .orderBy(desc(clients.name)),
             projectIds.length > 0
               ? db
                   .select()
@@ -115,11 +128,13 @@ export function createReportsService(db: Database, agency: AgencyService, plugin
         );
 
         const billingRows = yield* Effect.promise(() =>
-          Promise.all(billingRowsRaw.map((b) => enrichWithChainStatus(db, b as any, orgAccountId))),
+          Promise.all(
+            billingRowsRaw.map((b) => enrichWithChainStatus(db, b as any, scope.agencyDao)),
+          ),
         );
 
         const buildersResult = yield* Effect.promise(() =>
-          plugins.builders(context).listBuilders({ limit: 100 }),
+          plugins.builders(scope.pluginContext).listBuilders({ limit: 100 }),
         );
         const builderByNear = new Map(
           buildersResult.data.map((b) => [b.nearAccount, b.name ?? b.nearAccount]),

@@ -15,7 +15,7 @@ import {
   splitContributorLinks,
 } from "@/lib/contributor-profile";
 import { isValidNearAccountId } from "@/lib/near-account";
-import { adminContributorsListQueryKey, adminContributorsListQueryOptions } from "@/lib/queries";
+import { adminContributorsListQueryOptions, refreshAfter } from "@/lib/queries";
 
 type Contributor = Awaited<ReturnType<ApiClient["contributors"]["list"]>>["data"][number];
 
@@ -144,7 +144,7 @@ function ContributorCreateForm({ onDone }: { onDone: () => void }) {
         links: buildContributorLinks(github, website),
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
+      await refreshAfter(queryClient, { type: "builders" });
       toast.success("Builder created");
       onDone();
     },
@@ -275,10 +275,7 @@ export function ContributorProfileForm({
         links: buildContributorLinks(github, website),
       }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: ["admin", "contributors", "detail", nearAccount],
-      });
-      await queryClient.invalidateQueries({ queryKey: adminContributorsListQueryKey });
+      await refreshAfter(queryClient, { type: "builders" });
       toast.success("Profile saved");
     },
     onError: (err: Error) => toast.error(err.message || "Failed to save profile"),

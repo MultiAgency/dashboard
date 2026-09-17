@@ -2,15 +2,12 @@ import { desc, eq } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
-import type { AgencyService } from "./agency";
+import type { AgencyScope } from "../lib/agency-scope";
+import type { ProjectDirectory } from "./project-directory";
 
-export function createMeService(db: Database, agency: AgencyService) {
+export function createMeService(db: Database, directory: ProjectDirectory) {
   return {
-    assignedProjects: (
-      context: Record<string, unknown>,
-      orgAccountId: string,
-      nearAccount: string,
-    ) =>
+    assignedProjects: (scope: AgencyScope, nearAccount: string) =>
       Effect.gen(function* () {
         const rows = yield* Effect.promise(() =>
           db
@@ -20,9 +17,7 @@ export function createMeService(db: Database, agency: AgencyService) {
             .orderBy(desc(projectContributors.createdAt)),
         );
 
-        const allProjects = yield* Effect.promise(() =>
-          agency.fetchOrgProjects(orgAccountId, context),
-        );
+        const allProjects = yield* Effect.promise(() => directory.forAgency(scope).list());
         const projectById = new Map(allProjects.map((p) => [p.id, p]));
 
         const data = rows

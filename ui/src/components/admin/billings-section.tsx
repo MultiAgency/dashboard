@@ -15,9 +15,11 @@ import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminAssignmentsListQueryOptions,
+  adminBillingsQueryKey,
   adminClientsListQueryOptions,
   adminContributorsListQueryOptions,
   adminProjectsListQueryOptions,
+  clientBillingsQueryKey,
   clientPortalProjectsListQueryOptions,
 } from "@/lib/queries";
 
@@ -69,14 +71,11 @@ export function BillingsAdminSection({
   });
 
   const billingsQuery = useInfiniteQuery({
-    queryKey: [
-      clientPortal ? "client" : "admin",
-      "billings",
-      "list",
-      projectId || null,
-      nearAccount || null,
-      clientId || null,
-    ],
+    queryKey: (clientPortal ? clientBillingsQueryKey : adminBillingsQueryKey)({
+      projectId: projectId || null,
+      nearAccount: nearAccount || null,
+      clientId: clientId || null,
+    }),
     queryFn: ({ pageParam }) =>
       clientPortal && agencyDaoAccountId
         ? apiClient.clientPortal.billings.list({

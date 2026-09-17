@@ -2,17 +2,53 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { clientProjects, clients } from "../db/schema";
+import { type Client, clientProjects, clients } from "../db/schema";
+import type { AgencyScope } from "../lib/agency-scope";
+import type { ProjectDirectory } from "./project-directory";
 
-export function createClientsService(db: Database) {
+const clientNotFound = () => new ORPCError("NOT_FOUND", { message: "Client not found" });
+
+export function createClientsService(db: Database, directory: ProjectDirectory) {
+  const requireClient = (scope: AgencyScope, id: string) =>
+    Effect.gen(function* () {
+      const rows = yield* Effect.promise(() =>
+        db
+          .select()
+          .from(clients)
+          .where(and(eq(clients.id, id), eq(clients.agencyDaoAccountId, scope.agencyDao)))
+          .limit(1),
+      );
+      const row = rows[0];
+      if (!row) return yield* Effect.fail(clientNotFound());
+      return row;
+    });
+
+  const requireAgencyProjects = (scope: AgencyScope, projectIds: string[] | undefined) =>
+    Effect.promise(async () => {
+      const projects = directory.forAgency(scope);
+      for (const projectId of new Set(projectIds ?? [])) await projects.require(projectId);
+    });
+
+  const projectIdsOf = (clientId: string) =>
+    Effect.promise(() =>
+      db
+        .select({ projectId: clientProjects.projectId })
+        .from(clientProjects)
+        .where(eq(clientProjects.clientId, clientId))
+        .then((rows) => rows.map((r) => r.projectId)),
+    );
+
   return {
-    list: () =>
+    list: (scope: AgencyScope) =>
       Effect.gen(function* () {
-        const rows = yield* Effect.promise(() =>
-          db.select().from(clients).orderBy(desc(clients.updatedAt)),
+        const rows: Client[] = yield* Effect.promise(() =>
+          db
+            .select()
+            .from(clients)
+            .where(eq(clients.agencyDaoAccountId, scope.agencyDao))
+            .orderBy(desc(clients.updatedAt)),
         );
-        if (rows.length === 0)
-          return { data: [] as Array<(typeof rows)[number] & { projectIds: string[] }> };
+        if (rows.length === 0) return { data: [] as Array<Client & { projectIds: string[] }> };
 
         const clientIds = rows.map((r) => r.id);
         const projectRows = yield* Effect.promise(() =>
@@ -33,23 +69,37 @@ export function createClientsService(db: Database) {
         };
       }),
 
-    get: (id: string) =>
+    get: (scope: AgencyScope, id: string) =>
       Effect.gen(function* () {
-        const rows = yield* Effect.promise(() =>
-          db.select().from(clients).where(eq(clients.id, id)).limit(1),
-        );
-        const row = rows[0];
-        if (!row) {
-          return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Client not found" }));
-        }
-        const projectRows = yield* Effect.promise(() =>
-          db.select().from(clientProjects).where(eq(clientProjects.clientId, id)),
-        );
-        return { client: row, projectIds: projectRows.map((p) => p.projectId) };
+        const row = yield* requireClient(scope, id);
+        return { client: row, projectIds: yield* projectIdsOf(id) };
       }),
 
-    listByNearAccount: (nearAccountId: string) =>
+    projectIdsFor: (scope: AgencyScope, clientId: string) =>
       Effect.gen(function* () {
+        yield* requireClient(scope, clientId);
+        return yield* projectIdsOf(clientId);
+      }),
+
+    membershipsFor: (
+      caller: {
+        near?: {
+          primaryAccountId?: string | null;
+          linkedAccounts?: Array<{ accountId: string }> | null;
+        } | null;
+      },
+      nearAccountId: string,
+    ) =>
+      Effect.gen(function* () {
+        const own = new Set([
+          ...(caller.near?.primaryAccountId ? [caller.near.primaryAccountId] : []),
+          ...(caller.near?.linkedAccounts ?? []).map((a) => a.accountId),
+        ]);
+        if (!own.has(nearAccountId)) {
+          return yield* Effect.fail(
+            new ORPCError("FORBIDDEN", { message: "You can only look up your own NEAR accounts" }),
+          );
+        }
         const rows = yield* Effect.promise(() =>
           db
             .select()
@@ -99,18 +149,19 @@ export function createClientsService(db: Database) {
       }),
 
     create: (
-      _context: Record<string, unknown>,
+      scope: AgencyScope,
       input: {
         orgId: string;
-        agencyDaoAccountId?: string;
         name: string;
         nearAccountId?: string;
         projectIds?: string[];
       },
     ) =>
       Effect.gen(function* () {
+        yield* requireAgencyProjects(scope, input.projectIds);
+
         const near = input.nearAccountId?.trim() || null;
-        if (near && input.agencyDaoAccountId) {
+        if (near) {
           const dup = yield* Effect.promise(() =>
             db
               .select({ id: clients.id })
@@ -118,7 +169,7 @@ export function createClientsService(db: Database) {
               .where(
                 and(
                   eq(clients.nearAccountId, near),
-                  eq(clients.agencyDaoAccountId, input.agencyDaoAccountId!),
+                  eq(clients.agencyDaoAccountId, scope.agencyDao),
                 ),
               )
               .limit(1),
@@ -141,9 +192,9 @@ export function createClientsService(db: Database) {
             .values({
               id,
               orgId: input.orgId,
-              agencyDaoAccountId: input.agencyDaoAccountId ?? null,
+              agencyDaoAccountId: scope.agencyDao,
               name: input.name.trim(),
-              nearAccountId: input.nearAccountId?.trim() || null,
+              nearAccountId: near,
               createdAt: now,
               updatedAt: now,
             })
@@ -158,7 +209,7 @@ export function createClientsService(db: Database) {
         if (input.projectIds?.length) {
           yield* Effect.promise(() =>
             db.insert(clientProjects).values(
-              input.projectIds!.map((projectId) => ({
+              [...new Set(input.projectIds)].map((projectId) => ({
                 clientId: id,
                 projectId,
                 createdAt: now,
@@ -167,30 +218,25 @@ export function createClientsService(db: Database) {
           );
         }
 
-        return { client: row, projectIds: input.projectIds ?? [] };
+        return { client: row, projectIds: yield* projectIdsOf(id) };
       }),
 
-    update: (input: {
-      id: string;
-      name?: string;
-      nearAccountId?: string | null;
-      agencyDaoAccountId?: string | null;
-      projectIds?: string[];
-    }) =>
+    update: (
+      scope: AgencyScope,
+      input: {
+        id: string;
+        name?: string;
+        nearAccountId?: string | null;
+        projectIds?: string[];
+      },
+    ) =>
       Effect.gen(function* () {
-        const existing = yield* Effect.promise(() =>
-          db.select().from(clients).where(eq(clients.id, input.id)).limit(1),
-        );
-        if (!existing[0]) {
-          return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Client not found" }));
-        }
+        yield* requireClient(scope, input.id);
+        yield* requireAgencyProjects(scope, input.projectIds);
 
-        const updates: Record<string, unknown> = { updatedAt: new Date() };
+        const updates: Partial<Client> = { updatedAt: new Date() };
         if (input.name !== undefined) updates.name = input.name.trim();
         if (input.nearAccountId !== undefined) updates.nearAccountId = input.nearAccountId;
-        if (input.agencyDaoAccountId !== undefined) {
-          updates.agencyDaoAccountId = input.agencyDaoAccountId;
-        }
 
         const [row] = yield* Effect.promise(() =>
           db.update(clients).set(updates).where(eq(clients.id, input.id)).returning(),
@@ -204,7 +250,7 @@ export function createClientsService(db: Database) {
             const now = new Date();
             yield* Effect.promise(() =>
               db.insert(clientProjects).values(
-                input.projectIds!.map((projectId) => ({
+                [...new Set(input.projectIds)].map((projectId) => ({
                   clientId: input.id,
                   projectId,
                   createdAt: now,
@@ -214,47 +260,14 @@ export function createClientsService(db: Database) {
           }
         }
 
-        const projectRows = yield* Effect.promise(() =>
-          db.select().from(clientProjects).where(eq(clientProjects.clientId, input.id)),
-        );
-
-        return { client: row!, projectIds: projectRows.map((p) => p.projectId) };
+        return { client: row!, projectIds: yield* projectIdsOf(input.id) };
       }),
 
-    delete: (id: string) =>
+    delete: (scope: AgencyScope, id: string) =>
       Effect.gen(function* () {
-        const existing = yield* Effect.promise(() =>
-          db.select().from(clients).where(eq(clients.id, id)).limit(1),
-        );
-        if (!existing[0]) {
-          return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Client not found" }));
-        }
+        yield* requireClient(scope, id);
         yield* Effect.promise(() => db.delete(clients).where(eq(clients.id, id)));
         return { deleted: true as const };
-      }),
-
-    getProjectIdsForClient: (clientId: string) =>
-      Effect.promise(() =>
-        db
-          .select({ projectId: clientProjects.projectId })
-          .from(clientProjects)
-          .where(eq(clientProjects.clientId, clientId))
-          .then((rows) => rows.map((r) => r.projectId)),
-      ),
-
-    getClientsForProjects: (projectIds: string[]) =>
-      Effect.promise(async () => {
-        if (projectIds.length === 0) return new Map<string, string>();
-        const rows = await db
-          .select({
-            projectId: clientProjects.projectId,
-            clientId: clientProjects.clientId,
-            clientName: clients.name,
-          })
-          .from(clientProjects)
-          .innerJoin(clients, eq(clientProjects.clientId, clients.id))
-          .where(inArray(clientProjects.projectId, projectIds));
-        return new Map(rows.map((r) => [r.projectId, r.clientName]));
       }),
   };
 }

@@ -193,31 +193,29 @@ export function displayToBaseUnits(decimalString: string, decimals: number): big
 
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
-import { getDaoAccountId } from "../lib/org";
-import { getDaoTokenIds, getFtMetadata, getStorageBalance, networkOf } from "./sputnik";
+import type { AgencyScope } from "../lib/agency-scope";
+import { getDaoTokenIds, getFtMetadata, getStorageBalance } from "./sputnik";
 
 export function createTokensService(_db: Database) {
   return {
-    list: (context: Record<string, unknown>) =>
+    list: (scope: AgencyScope) =>
       Effect.gen(function* () {
-        const orgAccountId = yield* getDaoAccountId(context);
-        const orgNetwork = networkOf(orgAccountId);
-        const ids = yield* Effect.promise(() => getDaoTokenIds(orgAccountId));
+        const ids = yield* Effect.promise(() => getDaoTokenIds(scope.agencyDao));
         const resolved = yield* Effect.promise(() =>
           Promise.all(
             ids.map(async (id) => {
               if (id === NATIVE_TOKEN_ID) {
-                const native = getTokenMetadata(id, orgNetwork);
-                return native ? { ...native, chainNetwork: orgNetwork } : null;
+                const native = getTokenMetadata(id, scope.network);
+                return native ? { ...native, chainNetwork: scope.network } : null;
               }
-              const known = getTokenMetadata(id, orgNetwork);
+              const known = getTokenMetadata(id, scope.network);
               if (known) return known;
-              const ft = await getFtMetadata(id, orgAccountId);
+              const ft = await getFtMetadata(id, scope.agencyDao);
               if (!ft) return null;
               return {
                 tokenId: id,
                 network: "near",
-                chainNetwork: orgNetwork,
+                chainNetwork: scope.network,
                 symbol: ft.symbol,
                 decimals: ft.decimals,
                 name: ft.name,
@@ -233,13 +231,14 @@ export function createTokensService(_db: Database) {
         };
       }),
 
-    getStorageStatus: (context: Record<string, unknown>, input: { tokenId: string }) =>
+    getStorageStatus: (scope: AgencyScope, input: { tokenId: string }) =>
       Effect.gen(function* () {
-        const orgAccountId = yield* getDaoAccountId(context);
         if (input.tokenId === NATIVE_TOKEN_ID) {
           return { tokenId: input.tokenId, status: null };
         }
-        const status = yield* Effect.promise(() => getStorageBalance(orgAccountId, input.tokenId));
+        const status = yield* Effect.promise(() =>
+          getStorageBalance(scope.agencyDao, input.tokenId),
+        );
         return { tokenId: input.tokenId, status };
       }),
   };

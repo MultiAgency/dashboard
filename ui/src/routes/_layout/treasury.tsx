@@ -41,11 +41,13 @@ import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { csvTimestamp, downloadCsv } from "@/lib/csv";
 import { formatTokenAmount, tokenSymbol } from "@/lib/format-amount";
-import { getNetwork } from "@/lib/network";
 import {
   adminContributorsListQueryOptions,
   adminProjectsListQueryOptions,
+  proposalsQueryKey,
   publicSettingsQueryOptions,
+  refreshAfter,
+  tokenStorageStatusQueryOptions,
   tokensListQueryOptions,
   treasuryPublicBalancesQueryOptions,
 } from "@/lib/queries";
@@ -160,7 +162,7 @@ function TreasuryPage() {
     : tokens.filter((t) => isNonZero(balanceByToken.get(t.tokenId) ?? "0"));
 
   const proposalsQuery = useInfiniteQuery({
-    queryKey: ["proposals", canAccessAdmin ? "list" : "list", getNetwork()] as const,
+    queryKey: proposalsQueryKey(),
     queryFn: ({ pageParam }) =>
       canAccessAdmin
         ? apiClient.proposals.list({ limit: 50, fromIndex: pageParam })
@@ -545,13 +547,7 @@ function TokenDetailDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const apiClient = useApiClient();
-  const storageQuery = useQuery({
-    queryKey: ["tokens", "storage-status", getNetwork(), token?.tokenId ?? ""] as const,
-    queryFn: () => apiClient.tokens.getStorageStatus({ tokenId: token?.tokenId ?? "" }),
-    enabled: !!token,
-    staleTime: 60_000,
-    retry: false,
-  });
+  const storageQuery = useQuery(tokenStorageStatusQueryOptions(apiClient, token?.tokenId ?? null));
   const tokenTransfers = token
     ? proposals.filter((p) => p.tokenId === token.tokenId).slice(0, 8)
     : [];
@@ -792,13 +788,6 @@ type OperatorContext = {
   projects: Array<{ id: string; slug: string; title: string }>;
   contributors: Array<{ id: string; name: string }>;
 };
-
-const BILLING_INVALIDATIONS = [
-  ["proposals", "list"],
-  ["admin", "billings", "list"],
-  ["admin", "projects", "budget"],
-  ["treasury", "rollups"],
-] as const;
 
 type ProposalsListProps = {
   proposals: Proposal[];
@@ -1303,10 +1292,7 @@ function ProposalBillingSection({
   const [nearAccount, setNearAccount] = useState("");
   const [note, setNote] = useState("");
 
-  const invalidate = () =>
-    Promise.all(
-      BILLING_INVALIDATIONS.map((key) => queryClient.invalidateQueries({ queryKey: [...key] })),
-    );
+  const invalidate = () => refreshAfter(queryClient, { type: "billings" });
 
   const recordMutation = useMutation({
     mutationFn: async () =>

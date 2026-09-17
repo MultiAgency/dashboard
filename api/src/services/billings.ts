@@ -4,34 +4,39 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { billings } from "../db/schema";
-import type { AgencyService } from "./agency";
+import type { AgencyScope } from "../lib/agency-scope";
+import type { ProjectDirectory } from "./project-directory";
 import { enrichWithChainStatus, getProposal } from "./sputnik";
 import { NATIVE_TOKEN_ID } from "./tokens";
 
-export function createBillingsService(db: Database, agency: AgencyService) {
+export function createBillingsService(db: Database, directory: ProjectDirectory) {
   return {
     list: (
+      scope: AgencyScope,
       input: {
         projectId?: string;
+        projectIds?: string[];
         nearAccount?: string;
         clientId?: string;
         cursor?: string;
         limit: number;
       },
-      orgAccountId: string,
-      context: Record<string, unknown>,
     ) =>
       Effect.gen(function* () {
+        const projects = directory.forAgency(scope);
+        let projectIds: string[];
         if (input.projectId) {
-          yield* Effect.promise(() =>
-            agency.requireProjectInOrg(input.projectId!, orgAccountId as string, context),
+          const project = yield* Effect.promise(() => projects.require(input.projectId!));
+          projectIds =
+            input.projectIds && !input.projectIds.includes(project.id) ? [] : [project.id];
+        } else if (input.projectIds) {
+          const inAgency = new Set(
+            (yield* Effect.promise(() => projects.list())).map((project) => project.id),
           );
+          projectIds = input.projectIds.filter((id) => inAgency.has(id));
+        } else {
+          projectIds = (yield* Effect.promise(() => projects.list())).map((project) => project.id);
         }
-        const projectIds = input.projectId
-          ? [input.projectId]
-          : (yield* Effect.promise(() => agency.fetchOrgProjects(orgAccountId, context))).map(
-              (p: { id: string }) => p.id,
-            );
 
         if (projectIds.length === 0) {
           return { data: [], nextCursor: null };
@@ -66,7 +71,7 @@ export function createBillingsService(db: Database, agency: AgencyService) {
         );
         const last = rows[rows.length - 1];
         const enriched = yield* Effect.promise(() =>
-          Promise.all(rows.map((b) => enrichWithChainStatus(db, b, orgAccountId))),
+          Promise.all(rows.map((b) => enrichWithChainStatus(db, b, scope.agencyDao))),
         );
         return {
           data: enriched,
@@ -76,6 +81,7 @@ export function createBillingsService(db: Database, agency: AgencyService) {
       }),
 
     create: (
+      scope: AgencyScope,
       input: {
         projectId: string;
         nearAccount?: string;
@@ -83,13 +89,9 @@ export function createBillingsService(db: Database, agency: AgencyService) {
         proposalId: string;
         note?: string;
       },
-      orgAccountId: string,
-      context: Record<string, unknown>,
     ) =>
       Effect.gen(function* () {
-        const orgProjects = yield* Effect.promise(() =>
-          agency.fetchOrgProjects(orgAccountId, context),
-        );
+        const orgProjects = yield* Effect.promise(() => directory.forAgency(scope).list());
         if (!orgProjects.some((p) => p.id === input.projectId)) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Project not found" }));
         }
@@ -120,7 +122,9 @@ export function createBillingsService(db: Database, agency: AgencyService) {
           );
         }
 
-        const proposal = yield* Effect.promise(() => getProposal(db, orgAccountId, proposalIdNum));
+        const proposal = yield* Effect.promise(() =>
+          getProposal(db, scope.agencyDao, proposalIdNum),
+        );
         if (!proposal) {
           return yield* Effect.fail(
             new ORPCError("NOT_FOUND", {
@@ -169,11 +173,13 @@ export function createBillingsService(db: Database, agency: AgencyService) {
             new ORPCError("INTERNAL_SERVER_ERROR", { message: "Insert failed" }),
           );
         }
-        const enhanced = yield* Effect.promise(() => enrichWithChainStatus(db, row, orgAccountId));
+        const enhanced = yield* Effect.promise(() =>
+          enrichWithChainStatus(db, row, scope.agencyDao),
+        );
         return { billing: enhanced };
       }),
 
-    delete: (input: { id: string }, orgAccountId: string, context: Record<string, unknown>) =>
+    delete: (scope: AgencyScope, input: { id: string }) =>
       Effect.gen(function* () {
         const existing = yield* Effect.promise(() =>
           db
@@ -186,9 +192,7 @@ export function createBillingsService(db: Database, agency: AgencyService) {
         if (!row) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Billing not found" }));
         }
-        yield* Effect.promise(() =>
-          agency.requireProjectInOrg(row.projectId, orgAccountId, context),
-        );
+        yield* Effect.promise(() => directory.forAgency(scope).require(row.projectId));
         yield* Effect.promise(() => db.delete(billings).where(eq(billings.id, input.id)));
         return { deleted: true as const };
       }),

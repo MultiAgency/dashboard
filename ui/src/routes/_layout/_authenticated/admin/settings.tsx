@@ -6,11 +6,7 @@ import { z } from "zod";
 import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { useApiClient } from "@/lib/api";
-import {
-  adminSettingsQueryKey,
-  adminSettingsQueryOptions,
-  publicSettingsQueryKey,
-} from "@/lib/queries";
+import { adminSettingsQueryOptions, refreshAfter } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
   head: () => ({
@@ -121,8 +117,7 @@ function SettingsForm({
       }),
     onSuccess: () => {
       toast.success("Settings updated");
-      queryClient.invalidateQueries({ queryKey: adminSettingsQueryKey });
-      queryClient.invalidateQueries({ queryKey: publicSettingsQueryKey });
+      void refreshAfter(queryClient, { type: "settings" });
     },
     onError: (err: Error) => toast.error(err.message || "Failed to update settings"),
   });

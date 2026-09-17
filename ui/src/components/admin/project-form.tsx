@@ -7,10 +7,10 @@ import { Field, selectClass, textareaClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import { nearnListingHref } from "@/lib/nearn";
 import {
-  adminProjectsListQueryKey,
+  adminNearnListingQueryOptions,
   adminProjectsListQueryOptions,
-  projectsListQueryKey,
   publicSettingsQueryOptions,
+  refreshAfter,
 } from "@/lib/queries";
 import { isValidSlug, slugify } from "@/lib/slugify";
 
@@ -72,13 +72,7 @@ export function ProjectForm({
   const parentOptions = (projectsQuery.data?.data ?? []).filter((p) =>
     kind === "scope" ? (p as { kind?: string }).kind !== "result" : true,
   );
-  const nearnListingQuery = useQuery({
-    queryKey: ["admin", "nearn", "listing", nearnSlug],
-    queryFn: () => apiClient.nearn.getListing({ slug: nearnSlug }),
-    enabled: nearnSlug.length > 1,
-    retry: false,
-    staleTime: 60_000,
-  });
+  const nearnListingQuery = useQuery(adminNearnListingQueryOptions(apiClient, nearnSlug));
 
   const resolvedNearnHref =
     publicNearnHref ||
@@ -125,11 +119,7 @@ export function ProjectForm({
       });
     },
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: adminProjectsListQueryKey }),
-        queryClient.invalidateQueries({ queryKey: projectsListQueryKey }),
-        router.invalidate(),
-      ]);
+      await Promise.all([refreshAfter(queryClient, { type: "projects" }), router.invalidate()]);
       toast.success(mode === "create" ? "Project created" : "Project updated");
       onDone?.();
     },

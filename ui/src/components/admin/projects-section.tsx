@@ -10,7 +10,12 @@ import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { formatNearnReward, nearnListingHref } from "@/lib/nearn";
-import { adminProjectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
+import {
+  adminNearnListingQueryOptions,
+  adminNearnSponsorBountiesQueryOptions,
+  adminProjectsListQueryOptions,
+  publicSettingsQueryOptions,
+} from "@/lib/queries";
 
 type AdminProject = Awaited<ReturnType<ApiClient["agency"]["projects"]["list"]>>["data"][number];
 
@@ -195,12 +200,7 @@ export function ProjectsAdminSection() {
 
 function NearnSnapshot({ slug, nearnSponsor }: { slug: string; nearnSponsor: string | null }) {
   const apiClient = useApiClient();
-  const listingQuery = useQuery({
-    queryKey: ["admin", "nearn", "listing", slug],
-    queryFn: () => apiClient.nearn.getListing({ slug }),
-    retry: false,
-    staleTime: 60_000,
-  });
+  const listingQuery = useQuery(adminNearnListingQueryOptions(apiClient, slug));
 
   if (listingQuery.isLoading) {
     return (
@@ -250,12 +250,7 @@ function NearnSponsorBountiesPanel({
   onCreateFrom: (b: { slug: string; title: string | null }) => void;
 }) {
   const apiClient = useApiClient();
-  const query = useQuery({
-    queryKey: ["admin", "nearn", "sponsor-bounties"],
-    queryFn: () => apiClient.nearn.listSponsorBounties(),
-    retry: false,
-    staleTime: 60_000,
-  });
+  const query = useQuery(adminNearnSponsorBountiesQueryOptions(apiClient));
 
   if (query.isLoading) {
     return (

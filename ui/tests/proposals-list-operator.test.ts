@@ -41,10 +41,7 @@ describe("proposals-list operator overlay — structural commitments", () => {
     expect(source).toMatch(/proposal\.mapping\.projectSlug/);
   });
 
-  test("billing mutations invalidate the full set of stale caches", () => {
-    expect(source).toMatch(/\["proposals",\s*"list"\]/);
-    expect(source).toMatch(/\["admin",\s*"billings",\s*"list"\]/);
-    expect(source).toMatch(/\["admin",\s*"projects",\s*"budget"\]/);
-    expect(source).toMatch(/\["treasury",\s*"rollups"\]/);
+  test("billing mutations announce a billings change", () => {
+    expect(source).toMatch(/refreshAfter\(queryClient,\s*\{\s*type:\s*"billings"\s*\}\)/);
   });
 });

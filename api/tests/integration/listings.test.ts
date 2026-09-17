@@ -10,7 +10,6 @@ import {
   detachNearnListing,
   refreshNearnListing,
   setListingsArchived,
-  updateInternalListing,
 } from "../../src/services/listings";
 import type { NearnListing } from "../../src/services/nearn";
 import { applyAllMigrations } from "./_pg";
@@ -275,7 +274,7 @@ describe("listings cache invalidation", () => {
   });
 });
 
-describe("internal listings CRUD", () => {
+describe("internal listing storage", () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
 
@@ -288,32 +287,6 @@ describe("internal listings CRUD", () => {
 
   afterEach(async () => {
     await pg.close();
-  });
-
-  test("createInternalListing inserts a row with source=internal and null externalId/syncedAt", async () => {
-    const row = await createInternalListing(
-      PROJECT_A,
-      {
-        title: "Build the agency portal",
-        type: "Project",
-        token: "NEAR",
-        rewardAmount: "500",
-        description: "Internal scope for the bootstrap sprint",
-        isPublished: true,
-      },
-      db as never,
-    );
-    expect(row.projectId).toBe(PROJECT_A);
-    expect(row.source).toBe("internal");
-    expect(row.externalId).toBeNull();
-    expect(row.syncedAt).toBeNull();
-    expect(row.title).toBe("Build the agency portal");
-    expect(row.type).toBe("Project");
-    expect(row.token).toBe("NEAR");
-    expect(row.rewardAmount).toBe("500");
-    expect(row.isPublished).toBe(true);
-    expect(row.isArchived).toBe(false);
-    expect(row.isWinnersAnnounced).toBe(false);
   });
 
   test("createInternalListing rejects a second internal row for the same project (unique constraint)", async () => {
@@ -349,45 +322,6 @@ describe("internal listings CRUD", () => {
     expect(rows.map((r) => r.source).sort()).toEqual(["internal", "nearn"]);
   });
 
-  test("updateInternalListing partial-updates and bumps updatedAt", async () => {
-    const created = await createInternalListing(
-      PROJECT_A,
-      { title: "Initial", type: "Bounty", token: "NEAR", rewardAmount: "100" },
-      db as never,
-    );
-    const originalUpdatedAt = created.updatedAt;
-    // Force a measurable updatedAt delta — pg's now() has sub-ms resolution but
-    // the patch path explicitly sets `new Date()`, so a 5ms wait is enough.
-    await new Promise((resolve) => setTimeout(resolve, 5));
-
-    const updated = await updateInternalListing(
-      PROJECT_A,
-      { isWinnersAnnounced: true, rewardAmount: "150" },
-      db as never,
-    );
-    expect(updated).not.toBeNull();
-    expect(updated?.title).toBe("Initial");
-    expect(updated?.isWinnersAnnounced).toBe(true);
-    expect(updated?.rewardAmount).toBe("150");
-    expect(updated?.updatedAt.getTime()).toBeGreaterThan(originalUpdatedAt.getTime());
-  });
-
-  test("updateInternalListing with no patch fields returns the existing row unchanged", async () => {
-    const created = await createInternalListing(
-      PROJECT_A,
-      { title: "Initial", type: "Bounty", token: "NEAR", rewardAmount: "100" },
-      db as never,
-    );
-    const result = await updateInternalListing(PROJECT_A, {}, db as never);
-    expect(result?.id).toBe(created.id);
-    expect(result?.updatedAt.getTime()).toBe(created.updatedAt.getTime());
-  });
-
-  test("updateInternalListing returns null when no internal row exists for the project", async () => {
-    const result = await updateInternalListing(PROJECT_A, { title: "Nope" }, db as never);
-    expect(result).toBeNull();
-  });
-
   test("deleteInternalListing removes only the internal-source row for that project", async () => {
     const slug = uniqueSlug();
     globalThis.fetch = vi.fn(() => Promise.resolve(nearnResponse(sample(slug)))) as never;
@@ -407,10 +341,5 @@ describe("internal listings CRUD", () => {
       .where(eq(listingsTable.projectId, PROJECT_A));
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.source).toBe("nearn");
-  });
-
-  test("deleteInternalListing returns false when no internal row exists", async () => {
-    const removed = await deleteInternalListing(PROJECT_A, db as never);
-    expect(removed).toBe(false);
   });
 });

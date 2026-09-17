@@ -1,8 +1,17 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
+import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type Listing, listings, type NewListing } from "../db/schema";
+import type { AgencyScope } from "../lib/agency-scope";
+import {
+  flagsToLifecycle,
+  type InternalListingLifecycle,
+  LIFECYCLE_TRANSITIONS,
+  lifecycleToFlags,
+} from "../lib/listing-lifecycle";
 import { getNearnListing, isNearnAvailable, type NearnListing, NearnNotFoundError } from "./nearn";
+import type { ProjectDirectory } from "./project-directory";
 
 const LISTING_STALENESS_MS = 5 * 60_000;
 
@@ -429,39 +438,163 @@ export async function getListingsForProjects(
   return new Map(fresh.map((r) => [r.projectId, r]));
 }
 
-export function createListingsService(db: Database) {
-  return {
-    getListingForProject: (
-      projectId: string,
-      source: "nearn" | "internal",
-      orgAccountId: string,
-      opts?: GetListingOpts,
-    ) => Effect.promise(() => getListingForProject(projectId, source, orgAccountId, db, opts)),
+const noInternalListing = () =>
+  new ORPCError("NOT_FOUND", { message: "No internal listing exists for this project" });
 
-    getListingsForProjects: (
+const withLifecycle = (listing: Listing) => ({ ...listing, lifecycle: flagsToLifecycle(listing) });
+
+type InternalListingInput = {
+  title: string;
+  type: InternalListingType;
+  token: string;
+  rewardAmount: string;
+  description?: string | null;
+  deadline?: Date | null;
+};
+
+export function createListingsService(db: Database, directory: ProjectDirectory) {
+  const requireProject = (scope: AgencyScope, projectId: string) =>
+    Effect.promise(() => directory.forAgency(scope).require(projectId));
+
+  const attachFailure = (scope: AgencyScope, err: unknown) =>
+    Effect.promise(async () => {
+      if (!(err instanceof NearnListingConflictError)) {
+        return new ORPCError("BAD_REQUEST", {
+          message: `NEARN listing attach failed: ${(err as Error).message}`,
+        });
+      }
+      const conflicting = await directory
+        .forAgency(scope)
+        .require(err.conflictingProjectId)
+        .catch(() => null);
+      const label = conflicting
+        ? `${conflicting.title} (@${conflicting.slug})`
+        : err.conflictingProjectId;
+      return new ORPCError("BAD_REQUEST", {
+        message: `NEARN listing "${err.slug}" is already attached to ${label}; detach there first.`,
+      });
+    });
+
+  const readInternal = (projectId: string) =>
+    Effect.promise(() =>
+      db
+        .select()
+        .from(listings)
+        .where(and(eq(listings.projectId, projectId), eq(listings.source, "internal")))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+    );
+
+  return {
+    nearnFor: (scope: AgencyScope, projectId: string, opts: GetListingOpts = {}) =>
+      Effect.promise(() => getListingForProject(projectId, "nearn", scope.agencyDao, db, opts)),
+
+    forProjects: (
+      scope: AgencyScope,
       projectIds: string[],
       source: "nearn" | "internal",
-      orgAccountId: string,
-      opts?: GetListingOpts,
-    ) => Effect.promise(() => getListingsForProjects(projectIds, source, orgAccountId, db, opts)),
+      opts: GetListingOpts = {},
+    ) =>
+      Effect.promise(() => getListingsForProjects(projectIds, source, scope.agencyDao, db, opts)),
 
-    attachNearnListing: (projectId: string, slug: string) =>
-      Effect.promise(() => attachNearnListing(projectId, slug, db)),
+    attachNearn: (scope: AgencyScope, projectId: string, slug: string) =>
+      Effect.gen(function* () {
+        if (!isNearnAvailable(scope.agencyDao)) {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message: "NEARN is mainnet-only; cannot attach a listing on testnet",
+            }),
+          );
+        }
+        return yield* Effect.tryPromise({
+          try: () => attachNearnListing(projectId, slug, db),
+          catch: (err) => err,
+        }).pipe(Effect.catchAll((err) => Effect.flatMap(attachFailure(scope, err), Effect.fail)));
+      }),
 
-    detachNearnListing: (projectId: string) =>
-      Effect.promise(() => detachNearnListing(projectId, db)),
+    detachNearn: (projectId: string) => Effect.promise(() => detachNearnListing(projectId, db)),
 
-    createInternalListing: (projectId: string, fields: InternalListingFields) =>
-      Effect.promise(() => createInternalListing(projectId, fields, db)),
+    followProjectStatus: (projectId: string, status: string | undefined) =>
+      Effect.promise(async () => {
+        if (status === "archived") await setListingsArchived(projectId, true, db);
+        else if (status === "active" || status === "paused") {
+          await setListingsArchived(projectId, false, db);
+        }
+      }),
 
-    updateInternalListing: (projectId: string, fields: Partial<InternalListingFields>) =>
-      Effect.promise(() => updateInternalListing(projectId, fields, db)),
+    getInternal: (scope: AgencyScope, projectId: string) =>
+      Effect.gen(function* () {
+        yield* requireProject(scope, projectId);
+        const listing = yield* readInternal(projectId);
+        return { listing: listing ? withLifecycle(listing) : null };
+      }),
 
-    deleteInternalListing: (projectId: string) =>
-      Effect.promise(() => deleteInternalListing(projectId, db)),
+    createInternal: (
+      scope: AgencyScope,
+      input: InternalListingInput & { projectId: string; lifecycle?: InternalListingLifecycle },
+    ) =>
+      Effect.gen(function* () {
+        yield* requireProject(scope, input.projectId);
+        const listing = yield* Effect.promise(() =>
+          createInternalListing(
+            input.projectId,
+            {
+              title: input.title,
+              type: input.type,
+              token: input.token,
+              rewardAmount: input.rewardAmount,
+              description: input.description ?? null,
+              deadline: input.deadline ?? null,
+              ...lifecycleToFlags(input.lifecycle ?? "draft"),
+            },
+            db,
+          ),
+        );
+        return { listing: withLifecycle(listing) };
+      }),
 
-    setListingsArchived: (projectId: string, isArchived: boolean) =>
-      Effect.promise(() => setListingsArchived(projectId, isArchived, db)),
+    updateInternal: (
+      scope: AgencyScope,
+      input: Partial<InternalListingInput> & {
+        projectId: string;
+        lifecycle?: InternalListingLifecycle;
+      },
+    ) =>
+      Effect.gen(function* () {
+        const { projectId, lifecycle, ...fields } = input;
+        yield* requireProject(scope, projectId);
+        const existing = yield* readInternal(projectId);
+        if (!existing) return yield* Effect.fail(noInternalListing());
+
+        if (lifecycle) {
+          const current = flagsToLifecycle(existing);
+          if (lifecycle !== current && !LIFECYCLE_TRANSITIONS[current].includes(lifecycle)) {
+            return yield* Effect.fail(
+              new ORPCError("BAD_REQUEST", {
+                message: `Cannot move listing from ${current} to ${lifecycle}`,
+              }),
+            );
+          }
+        }
+
+        const updated = yield* Effect.promise(() =>
+          updateInternalListing(
+            projectId,
+            { ...fields, ...(lifecycle ? lifecycleToFlags(lifecycle) : {}) },
+            db,
+          ),
+        );
+        if (!updated) return yield* Effect.fail(noInternalListing());
+        return { listing: withLifecycle(updated) };
+      }),
+
+    deleteInternal: (scope: AgencyScope, projectId: string) =>
+      Effect.gen(function* () {
+        yield* requireProject(scope, projectId);
+        const removed = yield* Effect.promise(() => deleteInternalListing(projectId, db));
+        if (!removed) return yield* Effect.fail(noInternalListing());
+        return { deleted: true as const };
+      }),
   };
 }
 
