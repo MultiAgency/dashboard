@@ -50,6 +50,7 @@ export function inMemoryProjects(projects: PluginProject[]) {
 
 export function agencyScope(agencyDao: string, overrides: Partial<AgencyScope> = {}): AgencyScope {
   return {
+    organizationId: null,
     agencyDao,
     network: agencyDao.endsWith(".testnet") ? "testnet" : "mainnet",
     role: "admin",

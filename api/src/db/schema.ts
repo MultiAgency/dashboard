@@ -244,3 +244,15 @@ export const settings = pgTable("settings", {
 
 export type Settings = typeof settings.$inferSelect;
 export type NewSettings = typeof settings.$inferInsert;
+
+export const organizationDaos = pgTable(
+  "organization_daos",
+  {
+    organizationId: text("organization_id").primaryKey(),
+    daoAccountId: text("dao_account_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    daoUnique: uniqueIndex("organization_daos_dao_unique").on(t.daoAccountId),
+  }),
+);

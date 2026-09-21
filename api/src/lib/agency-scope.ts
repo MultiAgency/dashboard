@@ -29,6 +29,7 @@ export type PluginContext = {
 };
 
 export type AgencyScope = {
+  organizationId: string | null;
   agencyDao: string;
   network: Network;
   role: AgencyRole | null;
@@ -42,6 +43,12 @@ const PRIVATE_ROLES: readonly string[] = ["owner", "admin", "contributor"];
 
 function networkOf(agencyDao: string): Network {
   return agencyDao.endsWith(".testnet") ? "testnet" : "mainnet";
+}
+
+export function organizationIdOf(context: PluginContext): string | null {
+  return (
+    context.organization?.activeOrganizationId ?? context.organization?.organization?.id ?? null
+  );
 }
 
 function actorOf(context: PluginContext): string {
@@ -67,7 +74,9 @@ export function agencyScopeFromRequest(
       data: { requiredRoles, currentRole: role },
     });
   }
+  const ownDao = parseOrgMetadata(context.organization?.organization?.metadata).daoAccountId;
   return {
+    organizationId: ownDao === agencyDao ? organizationIdOf(context) : null,
     agencyDao,
     network: networkOf(agencyDao),
     role,
@@ -86,7 +95,12 @@ type AgencyRoleMiddleware = DecoratedMiddleware<
   any
 >;
 
-export function createAgencyRoleMiddleware(builder: any) {
+type ScopeResolver = (
+  context: PluginContext,
+  requiredRoles?: readonly AgencyRole[],
+) => Promise<AgencyScope>;
+
+export function createAgencyRoleMiddleware(builder: any, resolveScope: ScopeResolver) {
   const requireAgencyRole = (roles: readonly AgencyRole[]) =>
     builder.middleware(async ({ context, next }: { context: AuthContext; next: any }) => {
       if (!context.user || !context.userId) {
@@ -95,7 +109,7 @@ export function createAgencyRoleMiddleware(builder: any) {
           data: { authType: "session", hint: "Sign in to continue" },
         });
       }
-      return next({ context: { scope: agencyScopeFromRequest(context, roles) } });
+      return next({ context: { scope: await resolveScope(context, roles) } });
     }) as AgencyRoleMiddleware;
 
   return {
@@ -106,6 +120,7 @@ export function createAgencyRoleMiddleware(builder: any) {
 
 export function agencyScopeForClient(context: PluginContext, agencyDao: string): AgencyScope {
   return {
+    organizationId: null,
     agencyDao,
     network: networkOf(agencyDao),
     role: null,
