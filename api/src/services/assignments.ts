@@ -3,12 +3,12 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { OrgScope } from "../lib/agency-scope";
 import type { ProjectDirectory } from "./project-directory";
 
 export function createAssignmentsService(db: Database, directory: ProjectDirectory) {
   return {
-    list: (scope: AgencyScope, projectId: string) =>
+    list: (scope: OrgScope, projectId: string) =>
       Effect.gen(function* () {
         yield* Effect.promise(() => directory.forAgency(scope).require(projectId));
         const rows = yield* Effect.promise(() =>
@@ -29,7 +29,7 @@ export function createAssignmentsService(db: Database, directory: ProjectDirecto
         };
       }),
 
-    listAll: (scope: AgencyScope) =>
+    listAll: (scope: OrgScope) =>
       Effect.gen(function* () {
         const [rows, projects] = yield* Effect.promise(() =>
           Promise.all([
@@ -58,7 +58,7 @@ export function createAssignmentsService(db: Database, directory: ProjectDirecto
       }),
 
     create: (
-      scope: AgencyScope,
+      scope: OrgScope,
       input: {
         projectId: string;
         nearAccount: string;
@@ -102,7 +102,7 @@ export function createAssignmentsService(db: Database, directory: ProjectDirecto
         };
       }),
 
-    delete: (scope: AgencyScope, input: { projectId: string; nearAccount: string }) =>
+    delete: (scope: OrgScope, input: { projectId: string; nearAccount: string }) =>
       Effect.gen(function* () {
         yield* Effect.promise(() => directory.forAgency(scope).require(input.projectId));
         yield* Effect.promise(() =>

@@ -1,5 +1,5 @@
 import { ORPCError } from "every-plugin/orpc";
-import type { AgencyScope, PluginContext } from "../lib/agency-scope";
+import type { OrgScope, PluginContext } from "../lib/agency-scope";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 
 type PluginProjectsClient = ReturnType<PluginsClient["projects"]>;
@@ -32,11 +32,11 @@ export type AgencyProjects = {
   requireBySlug(slug: string): Promise<Project>;
 };
 
-export function toProject(p: PluginProject, agencyDao: string): Project {
+export function toProject(p: PluginProject, fallbackOrganizationId: string): Project {
   return {
     id: p.id,
     ownerId: p.ownerId,
-    organizationId: p.organizationId ?? agencyDao,
+    organizationId: p.organizationId ?? fallbackOrganizationId,
     slug: p.slug,
     title: p.title,
     description: p.description,
@@ -54,25 +54,31 @@ const notFound = () => new ORPCError("NOT_FOUND", { message: "Project not found"
 export function createProjectDirectory(
   projectsFor: (pluginContext: PluginContext) => ProjectsClient,
 ) {
-  const byScope = new WeakMap<AgencyScope, AgencyProjects>();
+  const byScope = new WeakMap<OrgScope, AgencyProjects>();
 
-  function build(scope: AgencyScope): AgencyProjects {
+  function build(scope: OrgScope): AgencyProjects {
     const client = () => projectsFor(scope.pluginContext);
+    const owners = [
+      scope.organizationId,
+      ...(scope.agencyDao && scope.agencyDao !== scope.organizationId ? [scope.agencyDao] : []),
+    ];
+    const ownedHere = (organizationId: string | null) =>
+      organizationId !== null && owners.includes(organizationId);
     let listing: Promise<Project[]> | undefined;
 
-    async function fetchAll(): Promise<Project[]> {
+    async function fetchOwnedBy(organizationId: string): Promise<Project[]> {
       const out: Project[] = [];
       let cursor: string | undefined;
       do {
-        const page = await client().listProjects({
-          organizationId: scope.agencyDao,
-          limit: 100,
-          cursor,
-        });
-        out.push(...page.data.map((p) => toProject(p, scope.agencyDao)));
+        const page = await client().listProjects({ organizationId, limit: 100, cursor });
+        out.push(...page.data.map((p) => toProject(p, scope.organizationId)));
         cursor = page.meta.nextCursor ?? undefined;
       } while (cursor);
       return out;
+    }
+
+    async function fetchAll(): Promise<Project[]> {
+      return (await Promise.all(owners.map(fetchOwnedBy))).flat();
     }
 
     async function fromCacheOr(
@@ -90,8 +96,8 @@ export function createProjectDirectory(
       } catch {
         throw notFound();
       }
-      if (upstream.organizationId !== scope.agencyDao) throw notFound();
-      return toProject(upstream, scope.agencyDao);
+      if (!ownedHere(upstream.organizationId)) throw notFound();
+      return toProject(upstream, scope.organizationId);
     }
 
     return {
@@ -118,7 +124,7 @@ export function createProjectDirectory(
   }
 
   return {
-    forAgency: (scope: AgencyScope): AgencyProjects => {
+    forAgency: (scope: OrgScope): AgencyProjects => {
       let projects = byScope.get(scope);
       if (!projects) {
         projects = build(scope);

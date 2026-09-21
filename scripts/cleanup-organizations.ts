@@ -1,16 +1,19 @@
 /**
- * One-time cleanup before Organizations own their Agency DAO (issue #49).
+ * One-time cleanup as Organizations take over from DAO accounts (issues #49, #42).
  *
  * - Deletes Organizations that share an Agency DAO with an older Organization.
  * - Removes Client-Project links to Projects that no longer exist.
+ * - Moves Projects owned by a DAO account to the Organization holding that DAO.
+ * - Records each Organization's Agency DAO in the API's organization_daos registry.
  *
  * Dry run by default. Pass --apply to write. The oldest Organization keeps each
  * DAO unless one is named with --keep=<slug> (e.g. --keep=multiagency).
  *
  * Production order:
- *   1. bun scripts/cleanup-organizations.ts --keep=multiagency           (review the plan)
- *   2. bun scripts/cleanup-organizations.ts --keep=multiagency --apply
- *   3. deploy the API (0005_organization_daos enforces one Organization per DAO)
+ *   1. deploy the API (creates organization_daos; the API keeps reading
+ *      DAO-owned Projects until they are moved)
+ *   2. bun scripts/cleanup-organizations.ts --keep=multiagency           (review the plan)
+ *   3. bun scripts/cleanup-organizations.ts --keep=multiagency --apply
  */
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,7 +48,9 @@ function daoOf(metadata: string | null): string | null {
   }
 }
 
-async function duplicateDaoOrganizations(auth: pg.Pool): Promise<OrgRow[]> {
+async function organizationsByDao(
+  auth: pg.Pool,
+): Promise<{ owners: Map<string, OrgRow>; duplicates: OrgRow[] }> {
   const { rows } = await auth.query<OrgRow>(
     `SELECT id, name, slug, metadata, "createdAt" FROM "organization" ORDER BY "createdAt" ASC`,
   );
@@ -67,7 +72,28 @@ async function duplicateDaoOrganizations(auth: pg.Pool): Promise<OrgRow[]> {
       console.log(`  ${row.slug} (${row.id}) keeps ${dao}`);
     }
   }
-  return duplicates;
+  return { owners: owner, duplicates };
+}
+
+async function daoOwnedProjects(projects: pg.Pool, owners: Map<string, OrgRow>) {
+  const moves: Array<{ dao: string; organizationId: string; count: number }> = [];
+  for (const [dao, org] of owners) {
+    const { rows } = await projects.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM projects WHERE organization_id = $1",
+      [dao],
+    );
+    const count = rows[0]?.n ?? 0;
+    if (count > 0) console.log(`  ${count} Projects owned by ${dao} -> ${org.slug} (${org.id})`);
+    moves.push({ dao, organizationId: org.id, count });
+  }
+  return moves;
+}
+
+async function registryExists(api: pg.Pool): Promise<boolean> {
+  const { rows } = await api.query<{ exists: boolean }>(
+    "SELECT to_regclass('public.organization_daos') IS NOT NULL AS exists",
+  );
+  return rows[0]?.exists ?? false;
 }
 
 async function deleteOrganizations(auth: pg.Pool, ids: string[]): Promise<void> {
@@ -114,17 +140,25 @@ async function main() {
 
   try {
     console.log("Organizations by Agency DAO:");
-    const duplicates = await duplicateDaoOrganizations(auth);
+    const { owners, duplicates } = await organizationsByDao(auth);
 
     console.log("Client-Project links:");
     const dangling = await danglingProjectLinks(api, projects);
 
+    console.log("Project owners:");
+    const moves = await daoOwnedProjects(projects, owners);
+    const moved = moves.reduce((sum, m) => sum + m.count, 0);
+
+    const hasRegistry = await registryExists(api);
+    if (!hasRegistry) console.log("organization_daos does not exist yet: deploy the API first.");
+
     if (!apply) {
       console.log(
-        `\nDry run: ${duplicates.length} Organizations and ${dangling.length} links would be deleted. Re-run with --apply.`,
+        `\nDry run: ${duplicates.length} Organizations and ${dangling.length} links would be deleted, ${moved} Projects moved. Re-run with --apply.`,
       );
       return;
     }
+    if (!hasRegistry) throw new Error("Deploy the API before applying.");
 
     if (duplicates.length > 0)
       await deleteOrganizations(
@@ -137,7 +171,26 @@ async function main() {
         link.project_id,
       ]);
     }
-    console.log(`\nDeleted ${duplicates.length} Organizations and ${dangling.length} links.`);
+    for (const move of moves) {
+      await api.query(
+        "DELETE FROM organization_daos WHERE dao_account_id = $1 AND organization_id <> $2",
+        [move.dao, move.organizationId],
+      );
+      await api.query(
+        `INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ($1, $2)
+         ON CONFLICT (organization_id) DO UPDATE SET dao_account_id = EXCLUDED.dao_account_id`,
+        [move.organizationId, move.dao],
+      );
+      if (move.count > 0) {
+        await projects.query(
+          "UPDATE projects SET organization_id = $1 WHERE organization_id = $2",
+          [move.organizationId, move.dao],
+        );
+      }
+    }
+    console.log(
+      `\nDeleted ${duplicates.length} Organizations and ${dangling.length} links, moved ${moved} Projects.`,
+    );
   } finally {
     await Promise.all([auth.end(), api.end(), projects.end()]);
   }

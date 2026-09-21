@@ -10,7 +10,7 @@ import { createAgencyService } from "../../src/services/agency";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
 import { createProjectDirectory } from "../../src/services/project-directory";
-import { agencyScope, inMemoryProjects, project } from "../fakes/projects";
+import { agencyScope, inMemoryProjects, orgScope, project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
 const AGENCY = "alpha.sputnik-dao.near";
@@ -39,6 +39,21 @@ describe("agency projects", () => {
     const plugins = {
       projects: () => ({
         ...client,
+        createProject: async (input: {
+          slug: string;
+          title: string;
+          organizationId: string;
+          visibility: string;
+        }) => {
+          const created = {
+            ...project(`created-${input.slug}`, input.organizationId),
+            slug: input.slug,
+            title: input.title,
+            visibility: input.visibility as "private",
+          };
+          projects.push(created);
+          return created;
+        },
         updateProject: async ({ id }: { id: string }) => projects.find((p) => p.id === id)!,
       }),
       builders: () => ({ listBuilders: async () => ({ data: [] }) }),
@@ -94,5 +109,33 @@ describe("agency projects", () => {
       const outcome = await Effect.runPromise(Effect.either(agency.getProject(scope, slug)));
       expect(outcome._tag === "Left" && outcome.left).toMatchObject({ code: "NOT_FOUND" });
     }
+  });
+
+  test("an Organization without an Agency DAO creates and lists its own Projects", async () => {
+    const agency = agencyWith([project("theirs", "org-other")]);
+    const indie = orgScope("org-indie");
+
+    const { project: created } = await Effect.runPromise(
+      agency.createProject(indie, { slug: "first", title: "First" }),
+    );
+    const listed = await Effect.runPromise(agency.listProjects(indie));
+
+    expect(created).toMatchObject({ organizationId: "org-indie", slug: "first" });
+    expect(listed.data.map((p) => p.slug)).toEqual(["first"]);
+  });
+
+  test("Projects still owned by the Agency DAO stay visible to its Organization", async () => {
+    const agency = agencyWith([
+      project("legacy", AGENCY),
+      project("current", "org-alpha"),
+      project("foreign", "org-beta"),
+    ]);
+    const alpha = agencyScope(AGENCY, { organizationId: "org-alpha" });
+
+    const listed = await Effect.runPromise(agency.listProjects(alpha));
+    const opened = await Effect.runPromise(agency.getProject(alpha, "slug-legacy"));
+
+    expect(listed.data.map((p) => p.id).sort()).toEqual(["current", "legacy"]);
+    expect(opened.project.id).toBe("legacy");
   });
 });

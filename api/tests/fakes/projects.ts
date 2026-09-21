@@ -1,4 +1,4 @@
-import type { AgencyScope } from "../../src/lib/agency-scope";
+import type { AgencyScope, OrgScope } from "../../src/lib/agency-scope";
 import type { PluginProject, ProjectsClient } from "../../src/services/project-directory";
 
 export function project(id: string, organizationId: string): PluginProject {
@@ -50,9 +50,22 @@ export function inMemoryProjects(projects: PluginProject[]) {
 
 export function agencyScope(agencyDao: string, overrides: Partial<AgencyScope> = {}): AgencyScope {
   return {
-    organizationId: null,
+    organizationId: agencyDao,
     agencyDao,
     network: agencyDao.endsWith(".testnet") ? "testnet" : "mainnet",
+    role: "admin",
+    actorId: "admin.near",
+    canSeePrivate: true,
+    pluginContext: {},
+    ...overrides,
+  };
+}
+
+export function orgScope(organizationId: string, overrides: Partial<OrgScope> = {}): OrgScope {
+  return {
+    organizationId,
+    agencyDao: null,
+    network: "mainnet",
     role: "admin",
     actorId: "admin.near",
     canSeePrivate: true,

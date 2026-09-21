@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
-import { AGENCY_MANAGER_ROLES } from "../../src/lib/agency-scope";
+import { AGENCY_MANAGER_ROLES, AGENCY_MEMBER_ROLES } from "../../src/lib/agency-scope";
 import { createOrganizationAccess } from "../../src/lib/organization-access";
 import { inMemoryOrganizations, memberContext } from "../fakes/organizations";
 import { applyAllMigrations } from "./_pg";
@@ -78,5 +78,19 @@ describe("organization access", () => {
     expect(await a.daoOf("org-multiagency")).toBe(DAO);
     expect(await a.daoOf("org-indie")).toBeNull();
     expect(await a.daoOf("org-unknown")).toBeNull();
+  });
+
+  test("an Organization without an Agency DAO works on Projects but not on money", async () => {
+    const context = memberContext(indie, "ivy");
+
+    expect(await access().orgScope(context, AGENCY_MEMBER_ROLES)).toMatchObject({
+      organizationId: "org-indie",
+      agencyDao: null,
+      role: "owner",
+    });
+    await expect(access().scope(context, AGENCY_MEMBER_ROLES)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: expect.stringContaining("Connect a treasury"),
+    });
   });
 });

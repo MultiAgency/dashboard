@@ -2,12 +2,12 @@ import { desc, eq } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { OrgScope } from "../lib/agency-scope";
 import type { ProjectDirectory } from "./project-directory";
 
 export function createMeService(db: Database, directory: ProjectDirectory) {
   return {
-    assignedProjects: (scope: AgencyScope, nearAccount: string) =>
+    assignedProjects: (scope: OrgScope, nearAccount: string) =>
       Effect.gen(function* () {
         const rows = yield* Effect.promise(() =>
           db

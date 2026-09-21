@@ -6,6 +6,8 @@ import {
   type AgencyRole,
   type AgencyScope,
   agencyScopeFromRequest,
+  type OrgScope,
+  orgScopeFromRequest,
   type PluginContext,
 } from "./agency-scope";
 
@@ -52,15 +54,35 @@ export function createOrganizationAccess(db: Database, organizations: Organizati
     verified.set(organizationId, daoAccountId);
   }
 
+  async function organizationOwning(daoAccountId: string): Promise<string | null> {
+    const [row] = await db
+      .select({ organizationId: organizationDaos.organizationId })
+      .from(organizationDaos)
+      .where(eq(organizationDaos.daoAccountId, daoAccountId))
+      .limit(1);
+    return row?.organizationId ?? null;
+  }
+
+  async function settle<S extends OrgScope>(scope: S): Promise<S> {
+    if (!scope.agencyDao) return scope;
+    if (scope.organizationId !== scope.agencyDao) {
+      await claim(scope.organizationId, scope.agencyDao);
+      return scope;
+    }
+    const owner = await organizationOwning(scope.agencyDao);
+    return owner ? { ...scope, organizationId: owner } : scope;
+  }
+
   return {
     scope: async (
       context: PluginContext,
       requiredRoles?: readonly AgencyRole[],
-    ): Promise<AgencyScope> => {
-      const scope = agencyScopeFromRequest(context, requiredRoles);
-      if (scope.organizationId) await claim(scope.organizationId, scope.agencyDao);
-      return scope;
-    },
+    ): Promise<AgencyScope> => settle(agencyScopeFromRequest(context, requiredRoles)),
+
+    orgScope: async (
+      context: PluginContext,
+      requiredRoles?: readonly AgencyRole[],
+    ): Promise<OrgScope> => settle(orgScopeFromRequest(context, requiredRoles)),
 
     daoOf: async (organizationId: string): Promise<string | null> => {
       const [row] = await db

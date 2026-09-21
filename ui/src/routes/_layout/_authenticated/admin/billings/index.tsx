@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BillingsAdminSection } from "@/components/admin/billings-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
+import { TreasuryRequired } from "@/components/treasury-required";
 import { adminProjectsListQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/billings/")({
@@ -37,7 +38,9 @@ function AdminBillingsPage() {
           .
         </p>
       </header>
-      <BillingsAdminSection />
+      <TreasuryRequired>
+        <BillingsAdminSection />
+      </TreasuryRequired>
     </div>
   );
 }

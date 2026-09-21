@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BudgetsManager } from "@/components/admin/budgets-manager";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
+import { TreasuryRequired } from "@/components/treasury-required";
 import { adminProjectsListQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/budgets/")({
@@ -33,7 +34,9 @@ function AdminBudgetsPage() {
           .
         </p>
       </header>
-      <BudgetsManager />
+      <TreasuryRequired>
+        <BudgetsManager />
+      </TreasuryRequired>
     </div>
   );
 }

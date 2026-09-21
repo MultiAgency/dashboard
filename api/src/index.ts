@@ -148,7 +148,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
       nearn,
     } = services;
     const auth = createAuthMiddleware(builder);
-    const { member, manager } = createAgencyRoleMiddleware(builder, access.scope);
+    const { member, manager, orgMember, orgManager } = createAgencyRoleMiddleware(
+      builder,
+      access.scope,
+      access.orgScope,
+    );
 
     return {
       ping: builder.ping.handler(async () => ({
@@ -189,13 +193,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
       agency: {
         projects: {
           list: builder.agency.projects.list.handler(async ({ context }) =>
-            runEffect(agency.listProjects(await access.scope(context))),
+            runEffect(agency.listProjects(await access.orgScope(context))),
           ),
 
           get: builder.agency.projects.get
             .use(auth.requireOrganization)
             .handler(async ({ context, input }) =>
-              runEffect(agency.getProject(await access.scope(context), input.slug)),
+              runEffect(agency.getProject(await access.orgScope(context), input.slug)),
             ),
 
           getBudget: builder.agency.projects.getBudget
@@ -205,19 +209,19 @@ export default createPlugin.withPlugins<PluginsClient>()({
             ),
 
           create: builder.agency.projects.create
-            .use(member)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
               runEffect(agency.createProject(context.scope, input)),
             ),
 
           update: builder.agency.projects.update
-            .use(member)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
               runEffect(agency.updateProject(context.scope, input)),
             ),
 
           delete: builder.agency.projects.delete
-            .use(manager)
+            .use(orgManager)
             .handler(async ({ context, input }) =>
               runEffect(agency.deleteProject(context.scope, input)),
             ),
@@ -354,23 +358,23 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       assignments: {
         list: builder.assignments.list
-          .use(member)
+          .use(orgMember)
           .handler(async ({ context, input }) =>
             runEffect(assignments.list(context.scope, input.projectId)),
           ),
 
         listAll: builder.assignments.listAll
-          .use(member)
+          .use(orgMember)
           .handler(async ({ context }) => runEffect(assignments.listAll(context.scope))),
 
         create: builder.assignments.create
-          .use(member)
+          .use(orgMember)
           .handler(async ({ context, input }) =>
             runEffect(assignments.create(context.scope, input)),
           ),
 
         delete: builder.assignments.delete
-          .use(member)
+          .use(orgMember)
           .handler(async ({ context, input }) =>
             runEffect(assignments.delete(context.scope, input)),
           ),
@@ -468,26 +472,25 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       me: {
         roles: builder.me.roles.use(auth.requireAuth).handler(async ({ context }) => {
-          let role: string | null = null;
-          try {
-            role = (await access.scope(context)).role;
-          } catch {
-            role = null;
-          }
+          const scope = await access.orgScope(context).catch(() => null);
+          const role = scope?.role ?? null;
           return {
             orgRole: role === "admin" || role === "member" || role === "owner" ? role : null,
+            hasAgencyDao: role !== null && scope?.agencyDao != null,
           };
         }),
 
-        assignedProjects: builder.me.assignedProjects.use(member).handler(async ({ context }) => {
-          const nearAccount = context.near?.primaryAccountId as string | undefined;
-          if (!nearAccount) {
-            throw new ORPCError("FORBIDDEN", {
-              message: "Link a NEAR wallet to view assigned projects",
-            });
-          }
-          return runEffect(me.assignedProjects(context.scope, nearAccount));
-        }),
+        assignedProjects: builder.me.assignedProjects
+          .use(orgMember)
+          .handler(async ({ context }) => {
+            const nearAccount = context.near?.primaryAccountId as string | undefined;
+            if (!nearAccount) {
+              throw new ORPCError("FORBIDDEN", {
+                message: "Link a NEAR wallet to view assigned projects",
+              });
+            }
+            return runEffect(me.assignedProjects(context.scope, nearAccount));
+          }),
       },
 
       team: {

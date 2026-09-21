@@ -3,7 +3,12 @@ import { Effect, Either } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type Listing, projectContributors } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import {
+  type AgencyScope,
+  hasAgencyDao,
+  type OrgScope,
+  requireAgencyDao,
+} from "../lib/agency-scope";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 import type { ProjectLedgers } from "./ledger";
 import { type ListingsService, listingRowToNearnPayload } from "./listings";
@@ -31,19 +36,20 @@ export function createAgencyService(
   projectLedgers: ProjectLedgers,
 ) {
   return {
-    listProjects: (scope: AgencyScope) =>
+    listProjects: (scope: OrgScope) =>
       Effect.gen(function* () {
         const all = yield* Effect.promise(() => directory.forAgency(scope).list());
         const projects = scope.canSeePrivate ? all : all.filter(isPublicActive);
 
-        const linkByProjectId: Map<string, Listing> = isNearnAvailable(scope.agencyDao)
-          ? yield* listings.forProjects(
-              scope,
-              projects.map((p) => p.id),
-              "nearn",
-              { skipRefresh: !scope.canSeePrivate },
-            )
-          : new Map();
+        const linkByProjectId: Map<string, Listing> =
+          hasAgencyDao(scope) && isNearnAvailable(scope.agencyDao)
+            ? yield* listings.forProjects(
+                scope,
+                projects.map((p) => p.id),
+                "nearn",
+                { skipRefresh: !scope.canSeePrivate },
+              )
+            : new Map();
 
         const data = projects
           .map((p) => {
@@ -57,7 +63,7 @@ export function createAgencyService(
         return { data };
       }),
 
-    getProject: (scope: AgencyScope, slug: string) =>
+    getProject: (scope: OrgScope, slug: string) =>
       Effect.gen(function* () {
         const found = yield* Effect.either(
           Effect.tryPromise(() => directory.forAgency(scope).requireBySlug(slug)),
@@ -74,7 +80,9 @@ export function createAgencyService(
           };
         }
 
-        const link = yield* listings.nearnFor(scope, match.id, { skipRefresh: true });
+        const link = hasAgencyDao(scope)
+          ? yield* listings.nearnFor(scope, match.id, { skipRefresh: true })
+          : null;
         const [contributorRows, builders] = yield* Effect.promise(() =>
           Promise.all([
             db
@@ -110,7 +118,7 @@ export function createAgencyService(
       }),
 
     createProject: (
-      scope: AgencyScope,
+      scope: OrgScope,
       input: {
         slug: string;
         title: string;
@@ -153,7 +161,7 @@ export function createAgencyService(
               new ORPCError("BAD_REQUEST", { message: "Result must mention a parent scope" }),
             );
           }
-          const mention = `@${scope.agencyDao}/${parentSlug}`;
+          const mention = `@${parent.ownerId}/${parentSlug}`;
           content = input.description?.trim()
             ? `${mention}\n\n${input.description.trim()}`
             : mention;
@@ -169,7 +177,7 @@ export function createAgencyService(
             content,
             repository: input.repository,
             visibility: (input.visibility ?? "private") as ProjectVisibility,
-            organizationId: scope.agencyDao,
+            organizationId: scope.organizationId,
           }),
         );
 
@@ -184,16 +192,19 @@ export function createAgencyService(
             : created;
 
         const attached = input.nearnListingId
-          ? yield* listings.attachNearn(scope, created.id, input.nearnListingId)
+          ? yield* listings.attachNearn(requireAgencyDao(scope), created.id, input.nearnListingId)
           : null;
 
         return {
-          project: withListingId(toProject(final, scope.agencyDao), attached?.externalId ?? null),
+          project: withListingId(
+            toProject(final, scope.organizationId),
+            attached?.externalId ?? null,
+          ),
         };
       }),
 
     updateProject: (
-      scope: AgencyScope,
+      scope: OrgScope,
       input: {
         id: string;
         title?: string;
@@ -222,7 +233,7 @@ export function createAgencyService(
                   visibility: projectPatch.visibility as ProjectVisibility | undefined,
                 }),
               ),
-              scope.agencyDao,
+              scope.organizationId,
             )
           : existing;
 
@@ -230,9 +241,12 @@ export function createAgencyService(
         if (input.nearnListingId === null) {
           yield* listings.detachNearn(id);
         } else if (input.nearnListingId !== undefined) {
-          finalListingId = (yield* listings.attachNearn(scope, id, input.nearnListingId))
-            .externalId;
-        } else {
+          finalListingId = (yield* listings.attachNearn(
+            requireAgencyDao(scope),
+            id,
+            input.nearnListingId,
+          )).externalId;
+        } else if (hasAgencyDao(scope)) {
           const link = yield* listings.nearnFor(scope, id, { skipRefresh: true });
           finalListingId = link?.externalId ?? null;
         }
@@ -242,7 +256,7 @@ export function createAgencyService(
         return { project: withListingId(updated, finalListingId) };
       }),
 
-    deleteProject: (scope: AgencyScope, input: { id: string }) =>
+    deleteProject: (scope: OrgScope, input: { id: string }) =>
       Effect.gen(function* () {
         yield* Effect.promise(() => directory.forAgency(scope).require(input.id));
         yield* Effect.promise(() => deleteProjectCascade(db, input.id));
