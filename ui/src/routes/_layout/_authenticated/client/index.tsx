@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Badge, Card, CardContent } from "@/components";
 import { BillingsAdminSection } from "@/components/admin/billings-section";
 import { AdminError } from "@/components/admin-error";
+import { AgentLinksPanel } from "@/components/agent-links-panel";
 import { PrepaymentsPanel } from "@/components/prepayments-panel";
 import { TokenAmountCell } from "@/components/token-amounts";
 import { useApiClient } from "@/lib/api";
@@ -74,16 +75,13 @@ function ClientHome() {
         </Card>
       </div>
 
+      <AgentLinksPanel engagementId={engagementId} canManage={false} />
+
       <section className="space-y-3">
         <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
           recent billings
         </h2>
-        <BillingsAdminSection
-          readOnly
-          clientPortal
-          clientId={client.id}
-          engagementId={engagementId}
-        />
+        <BillingsAdminSection readOnly clientPortal engagementId={engagementId} />
       </section>
     </div>
   );

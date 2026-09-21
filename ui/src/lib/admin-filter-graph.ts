@@ -1,30 +1,22 @@
 type AssignmentLink = { projectId: string; nearAccount: string };
 
-type ClientLink = { id: string; projectIds: string[] };
-
 export type BillingFilterValues = {
   projectId: string;
   nearAccount: string;
-  clientId: string;
 };
 
 type BillingFilterGraphInput = {
   projectIds: string[];
   assignments: AssignmentLink[];
-  clients: ClientLink[];
-  /** Extra edges from billings (e.g. builder paid but not assigned). */
   billingLinks?: Array<{
     projectId: string;
     nearAccount: string | null;
-    clientId: string | null;
   }>;
 };
 
 type BillingFilterGraph = {
   projectToContributors: Map<string, Set<string>>;
   contributorToProjects: Map<string, Set<string>>;
-  projectToClients: Map<string, Set<string>>;
-  clientToProjects: Map<string, Set<string>>;
 };
 
 function addToMapSet<K, V>(map: Map<K, Set<V>>, key: K, value: V) {
@@ -49,19 +41,10 @@ function intersectSets(sets: Array<Set<string> | undefined>): Set<string> | null
 export function buildBillingFilterGraph(input: BillingFilterGraphInput): BillingFilterGraph {
   const projectToContributors = new Map<string, Set<string>>();
   const contributorToProjects = new Map<string, Set<string>>();
-  const projectToClients = new Map<string, Set<string>>();
-  const clientToProjects = new Map<string, Set<string>>();
 
   for (const { projectId, nearAccount } of input.assignments) {
     addToMapSet(projectToContributors, projectId, nearAccount);
     addToMapSet(contributorToProjects, nearAccount, projectId);
-  }
-
-  for (const client of input.clients) {
-    for (const projectId of client.projectIds) {
-      addToMapSet(projectToClients, projectId, client.id);
-      addToMapSet(clientToProjects, client.id, projectId);
-    }
   }
 
   for (const link of input.billingLinks ?? []) {
@@ -69,72 +52,39 @@ export function buildBillingFilterGraph(input: BillingFilterGraphInput): Billing
       addToMapSet(projectToContributors, link.projectId, link.nearAccount);
       addToMapSet(contributorToProjects, link.nearAccount, link.projectId);
     }
-    if (link.clientId) {
-      addToMapSet(projectToClients, link.projectId, link.clientId);
-      addToMapSet(clientToProjects, link.clientId, link.projectId);
-    }
   }
 
-  return {
-    projectToContributors,
-    contributorToProjects,
-    projectToClients,
-    clientToProjects,
-  };
+  return { projectToContributors, contributorToProjects };
 }
 
 export function resolveBillingFilterIds(
   graph: BillingFilterGraph,
   allProjectIds: string[],
   allContributorAccounts: string[],
-  allClientIds: string[],
   filters: BillingFilterValues,
   omit?: keyof BillingFilterValues,
 ) {
   const allProjects = new Set(allProjectIds);
   const allContributors = new Set(allContributorAccounts);
-  const allClients = new Set(allClientIds);
 
   const projectConstraints: Array<Set<string> | undefined> = [];
   const contributorConstraints: Array<Set<string> | undefined> = [];
-  const clientConstraints: Array<Set<string> | undefined> = [];
 
   if (filters.projectId && omit !== "projectId") {
     projectConstraints.push(new Set([filters.projectId]));
     contributorConstraints.push(graph.projectToContributors.get(filters.projectId));
-    clientConstraints.push(graph.projectToClients.get(filters.projectId));
   }
 
   if (filters.nearAccount && omit !== "nearAccount") {
     contributorConstraints.push(new Set([filters.nearAccount]));
     projectConstraints.push(graph.contributorToProjects.get(filters.nearAccount));
-    const clientIds = new Set<string>();
-    for (const projectId of graph.contributorToProjects.get(filters.nearAccount) ?? []) {
-      for (const clientId of graph.projectToClients.get(projectId) ?? []) {
-        clientIds.add(clientId);
-      }
-    }
-    if (clientIds.size > 0) clientConstraints.push(clientIds);
-  }
-
-  if (filters.clientId && omit !== "clientId") {
-    clientConstraints.push(new Set([filters.clientId]));
-    projectConstraints.push(graph.clientToProjects.get(filters.clientId));
-    const contributorAccounts = new Set<string>();
-    for (const projectId of graph.clientToProjects.get(filters.clientId) ?? []) {
-      for (const nearAccount of graph.projectToContributors.get(projectId) ?? []) {
-        contributorAccounts.add(nearAccount);
-      }
-    }
-    if (contributorAccounts.size > 0) contributorConstraints.push(contributorAccounts);
   }
 
   const allowedProjects = intersectSets([allProjects, ...projectConstraints]) ?? allProjects;
   const allowedContributors =
     intersectSets([allContributors, ...contributorConstraints]) ?? allContributors;
-  const allowedClients = intersectSets([allClients, ...clientConstraints]) ?? allClients;
 
-  return { allowedProjects, allowedContributors, allowedClients };
+  return { allowedProjects, allowedContributors };
 }
 
 /** Dropdown options: each list is narrowed by the other filters, not its own selection. */
@@ -142,7 +92,6 @@ export function resolveBillingFilterDropdownOptions(
   graph: BillingFilterGraph,
   allProjectIds: string[],
   allContributorAccounts: string[],
-  allClientIds: string[],
   filters: BillingFilterValues,
 ) {
   return {
@@ -150,7 +99,6 @@ export function resolveBillingFilterDropdownOptions(
       graph,
       allProjectIds,
       allContributorAccounts,
-      allClientIds,
       filters,
       "projectId",
     ).allowedProjects,
@@ -158,18 +106,9 @@ export function resolveBillingFilterDropdownOptions(
       graph,
       allProjectIds,
       allContributorAccounts,
-      allClientIds,
       filters,
       "nearAccount",
     ).allowedContributors,
-    clients: resolveBillingFilterIds(
-      graph,
-      allProjectIds,
-      allContributorAccounts,
-      allClientIds,
-      filters,
-      "clientId",
-    ).allowedClients,
   };
 }
 
@@ -180,7 +119,6 @@ export function reconcileBillingFilters(
   graph: BillingFilterGraph,
   allProjectIds: string[],
   allContributorAccounts: string[],
-  allClientIds: string[],
 ): BillingFilterValues {
   const next = { ...prev, ...patch };
 
@@ -189,7 +127,6 @@ export function reconcileBillingFilters(
       graph,
       allProjectIds,
       allContributorAccounts,
-      allClientIds,
       next,
       "projectId",
     );
@@ -200,22 +137,10 @@ export function reconcileBillingFilters(
       graph,
       allProjectIds,
       allContributorAccounts,
-      allClientIds,
       next,
       "nearAccount",
     );
     if (!allowedContributors.has(next.nearAccount)) next.nearAccount = "";
-  }
-  if (next.clientId) {
-    const { allowedClients } = resolveBillingFilterIds(
-      graph,
-      allProjectIds,
-      allContributorAccounts,
-      allClientIds,
-      next,
-      "clientId",
-    );
-    if (!allowedClients.has(next.clientId)) next.clientId = "";
   }
 
   return next;

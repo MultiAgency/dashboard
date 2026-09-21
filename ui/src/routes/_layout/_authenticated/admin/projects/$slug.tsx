@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { AlertTriangle, ArrowUpRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   Alert,
@@ -24,7 +24,6 @@ import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingHref } from "@/lib/nearn";
 import {
   adminBillingsQueryKey,
-  adminClientsListQueryOptions,
   adminContributorsListQueryOptions,
   adminInternalListingQueryOptions,
   adminNearnListingQueryOptions,
@@ -544,23 +543,11 @@ function BillingCreateForm({
   const [proposalId, setProposalId] = useState("");
   const [nearAccountOverride, setNearAccountOverride] = useState("");
   const [note, setNote] = useState("");
-  const [billingClientId, setBillingClientId] = useState("");
 
   const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
 
   const allContributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
-  const clientsQuery = useQuery(adminClientsListQueryOptions(apiClient));
-  const linkedClients = useMemo(
-    () => (clientsQuery.data?.data ?? []).filter((c) => (c.projectIds ?? []).includes(projectId)),
-    [clientsQuery.data?.data, projectId],
-  );
-
-  useEffect(() => {
-    if (linkedClients.length === 1 && !billingClientId) {
-      setBillingClientId(linkedClients[0]!.id);
-    }
-  }, [linkedClients, billingClientId]);
 
   const payableContributors = contributors.filter((c) => c.nearAccount);
   const [prefillNearAccount, setPrefillNearAccount] = useState<string>(
@@ -602,7 +589,6 @@ function BillingCreateForm({
         projectId,
         proposalId: proposalId.trim(),
         nearAccount: nearAccountOverride || undefined,
-        clientId: billingClientId || undefined,
         note: note.trim() || undefined,
       }),
     onSuccess: async () => {
@@ -670,24 +656,6 @@ function BillingCreateForm({
               proposal, then paste the resulting proposal id below.
             </p>
           </div>
-        )}
-        {linkedClients.length > 0 && (
-          <Field label="client (optional)" htmlFor="new-bill-client">
-            <select
-              id="new-bill-client"
-              value={billingClientId}
-              onChange={(e) => setBillingClientId(e.target.value)}
-              className={selectClass}
-              disabled={isPending}
-            >
-              <option value="">— none —</option>
-              {linkedClients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
         )}
         <Field label="proposal id" htmlFor="new-bill-proposal">
           <Input

@@ -3,9 +3,12 @@ import { drizzle } from "drizzle-orm/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
+import { engagements } from "../../src/db/schema";
 import { AGENCY_MANAGER_ROLES, AGENCY_MEMBER_ROLES } from "../../src/lib/agency-scope";
 import { createOrganizationAccess } from "../../src/lib/organization-access";
+import { createProjectDirectory } from "../../src/services/project-directory";
 import { inMemoryOrganizations, memberContext } from "../fakes/organizations";
+import { inMemoryProjects, orgScope } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
 const DAO = "multiagency.sputnik-dao.near";
@@ -30,17 +33,20 @@ describe("organization access", () => {
   });
 
   beforeEach(async () => {
-    await pg.query("TRUNCATE organization_daos");
+    await pg.query("TRUNCATE engagements, organization_daos CASCADE");
   });
 
   afterAll(async () => {
     await pg.close();
   });
 
+  const directory = createProjectDirectory(() => inMemoryProjects([]).client);
+
   const access = () =>
     createOrganizationAccess(
       db,
       inMemoryOrganizations([multiagency, impostor, indie]).organizations,
+      directory,
     );
 
   test("a member acts for the active Organization with its Agency DAO and role", async () => {
@@ -92,5 +98,33 @@ describe("organization access", () => {
       code: "FORBIDDEN",
       message: expect.stringContaining("Connect a treasury"),
     });
+  });
+
+  test("lists Engagements where the Organization is Agency or Client", async () => {
+    await db.insert(engagements).values([
+      {
+        id: "as-agency",
+        agencyOrganizationId: "org-multiagency",
+        clientOrganizationId: "org-indie",
+        status: "active",
+        kind: "client",
+        createdBy: "alice",
+      },
+      {
+        id: "as-client",
+        agencyOrganizationId: "org-indie",
+        clientOrganizationId: "org-multiagency",
+        status: "active",
+        kind: "subcontract",
+        createdBy: "ivy",
+      },
+    ]);
+
+    const rows = await access().engagements(orgScope("org-multiagency"));
+
+    expect(rows.map((row) => [row.id, row.role]).sort()).toEqual([
+      ["as-agency", "agency"],
+      ["as-client", "client"],
+    ]);
   });
 });

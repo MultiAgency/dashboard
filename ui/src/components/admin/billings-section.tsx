@@ -16,7 +16,6 @@ import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminAssignmentsListQueryOptions,
   adminBillingsQueryKey,
-  adminClientsListQueryOptions,
   adminContributorsListQueryOptions,
   adminProjectsListQueryOptions,
   clientBillingsQueryKey,
@@ -27,18 +26,13 @@ type Billing = Awaited<ReturnType<ApiClient["billings"]["list"]>>["data"][number
 
 type BillingsAdminSectionProps = {
   readOnly?: boolean;
-  clientId?: string;
-  /** Use client-portal API (no agency workspace required). */
   clientPortal?: boolean;
-  /** Engagement for client portal billings. */
   engagementId?: string;
-  /** Pre-filter to a single project (e.g. client project detail page). */
   fixedProjectId?: string;
 };
 
 export function BillingsAdminSection({
   readOnly = false,
-  clientId: fixedClientId,
   clientPortal = false,
   engagementId,
   fixedProjectId,
@@ -46,7 +40,6 @@ export function BillingsAdminSection({
   const apiClient = useApiClient();
   const [projectId, setProjectId] = useState(fixedProjectId ?? "");
   const [nearAccount, setNearAccount] = useState("");
-  const [clientId, setClientId] = useState(fixedClientId ?? "");
 
   const adminProjectsQuery = useQuery({
     ...adminProjectsListQueryOptions(apiClient),
@@ -61,10 +54,6 @@ export function BillingsAdminSection({
     ...adminContributorsListQueryOptions(apiClient),
     enabled: !clientPortal,
   });
-  const clientsQuery = useQuery({
-    ...adminClientsListQueryOptions(apiClient),
-    enabled: !clientPortal && !fixedClientId,
-  });
   const assignmentsQuery = useQuery({
     ...adminAssignmentsListQueryOptions(apiClient),
     enabled: !clientPortal,
@@ -74,7 +63,6 @@ export function BillingsAdminSection({
     queryKey: (clientPortal ? clientBillingsQueryKey : adminBillingsQueryKey)({
       projectId: projectId || null,
       nearAccount: nearAccount || null,
-      clientId: clientId || null,
     }),
     queryFn: ({ pageParam }) =>
       clientPortal && engagementId
@@ -86,7 +74,6 @@ export function BillingsAdminSection({
         : apiClient.billings.list({
             projectId: projectId || undefined,
             nearAccount: nearAccount || undefined,
-            clientId: clientId || undefined,
             cursor: pageParam,
           }),
     initialPageParam: undefined as string | undefined,
@@ -99,7 +86,6 @@ export function BillingsAdminSection({
     [billingsQuery.data],
   );
   const projects = projectsQuery.data?.data ?? [];
-  const clients = clientsQuery.data?.data ?? [];
   const allContributors = contributorsQuery.data?.data ?? [];
 
   const filterGraph = useMemo(
@@ -107,14 +93,12 @@ export function BillingsAdminSection({
       buildBillingFilterGraph({
         projectIds: projects.map((p) => p.id),
         assignments: assignmentsQuery.data?.data ?? [],
-        clients: clients.map((c) => ({ id: c.id, projectIds: c.projectIds ?? [] })),
         billingLinks: billings.map((b) => ({
           projectId: b.projectId,
           nearAccount: b.nearAccount,
-          clientId: b.clientId,
         })),
       }),
-    [projects, assignmentsQuery.data?.data, clients, billings],
+    [projects, assignmentsQuery.data?.data, billings],
   );
 
   const allProjectIds = useMemo(() => projects.map((p) => p.id), [projects]);
@@ -122,54 +106,20 @@ export function BillingsAdminSection({
     () => allContributors.map((c) => c.nearAccount),
     [allContributors],
   );
-  const allClientIds = useMemo(() => clients.map((c) => c.id), [clients]);
 
   const dropdownOptions = useMemo(
     () =>
-      resolveBillingFilterDropdownOptions(
-        filterGraph,
-        allProjectIds,
-        allContributorAccounts,
-        allClientIds,
-        { projectId, nearAccount, clientId },
-      ),
-    [
-      filterGraph,
-      allProjectIds,
-      allContributorAccounts,
-      allClientIds,
-      projectId,
-      nearAccount,
-      clientId,
-    ],
+      resolveBillingFilterDropdownOptions(filterGraph, allProjectIds, allContributorAccounts, {
+        projectId,
+        nearAccount,
+      }),
+    [filterGraph, allProjectIds, allContributorAccounts, projectId, nearAccount],
   );
 
   const filterProjects = useMemo(
     () => projects.filter((p) => dropdownOptions.projects.has(p.id)),
     [projects, dropdownOptions.projects],
   );
-  const filterClients = useMemo(
-    () => clients.filter((c) => dropdownOptions.clients.has(c.id)),
-    [clients, dropdownOptions.clients],
-  );
-  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
-
-  const applyFilters = (
-    patch: Partial<{ projectId: string; nearAccount: string; clientId: string }>,
-  ) => {
-    const next = reconcileBillingFilters(
-      { projectId, nearAccount, clientId },
-      patch,
-      filterGraph,
-      allProjectIds,
-      allContributorAccounts,
-      allClientIds,
-    );
-    setProjectId(next.projectId);
-    setNearAccount(next.nearAccount);
-    setClientId(next.clientId);
-  };
-
   const contributorOptions = useMemo(() => {
     const byNear = new Map(allContributors.map((c) => [c.nearAccount, c]));
     for (const b of billings) {
@@ -191,8 +141,19 @@ export function BillingsAdminSection({
   }, [allContributors, billings, dropdownOptions.contributors]);
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const contributorByNear = new Map(contributorOptions.map((c) => [c.nearAccount, c]));
-  const filtersActive =
-    projectId !== "" || nearAccount !== "" || (!fixedClientId && clientId !== "");
+  const filtersActive = projectId !== "" || nearAccount !== "";
+
+  const applyFilters = (patch: Partial<{ projectId: string; nearAccount: string }>) => {
+    const next = reconcileBillingFilters(
+      { projectId, nearAccount },
+      patch,
+      filterGraph,
+      allProjectIds,
+      allContributorAccounts,
+    );
+    setProjectId(next.projectId);
+    setNearAccount(next.nearAccount);
+  };
 
   if (billingsQuery.isError) {
     return <AdminError error={billingsQuery.error} />;
@@ -258,26 +219,6 @@ export function BillingsAdminSection({
       accessorFn: (row) => projectById.get(row.projectId)?.title ?? row.projectId,
       cell: projectCell,
     },
-    ...(clientPortal
-      ? []
-      : [
-          {
-            id: "client",
-            header: "Client",
-            accessorFn: (row: Billing) =>
-              row.clientId ? (clientById.get(row.clientId)?.name ?? row.clientId) : "",
-            cell: ({ row }: { row: { original: Billing } }) => {
-              const id = row.original.clientId;
-              if (!id) return <span className="text-sm text-muted-foreground">—</span>;
-              const client = clientById.get(id);
-              return client ? (
-                <span className="text-sm">{client.name}</span>
-              ) : (
-                <span className="font-mono text-xs">{id}</span>
-              );
-            },
-          } satisfies ColumnDef<Billing>,
-        ]),
     {
       id: "contributor",
       header: clientPortal ? "Builder" : "Contributor",
@@ -320,7 +261,7 @@ export function BillingsAdminSection({
     <div className="space-y-6">
       {!readOnly && !clientPortal && (
         <Card>
-          <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_1fr_auto]">
+          <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_auto]">
             <Field label="project" htmlFor="filter-project">
               <select
                 id="filter-project"
@@ -351,29 +292,12 @@ export function BillingsAdminSection({
                 ))}
               </select>
             </Field>
-            {!fixedClientId && !clientPortal && (
-              <Field label="client" htmlFor="filter-client">
-                <select
-                  id="filter-client"
-                  value={clientId}
-                  onChange={(e) => applyFilters({ clientId: e.target.value })}
-                  className={selectClass}
-                >
-                  <option value="">all clients</option>
-                  {filterClients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
             <div className="flex items-end">
               <Button
                 variant="outline"
                 size="sm"
                 disabled={!filtersActive}
-                onClick={() => applyFilters({ projectId: "", nearAccount: "", clientId: "" })}
+                onClick={() => applyFilters({ projectId: "", nearAccount: "" })}
               >
                 reset
               </Button>

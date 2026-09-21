@@ -14,7 +14,6 @@ import { useApiClient } from "@/lib/api";
 import { formatTokenAmount, parseDecimalToBase } from "@/lib/format-amount";
 import {
   adminBudgetsLogQueryKey,
-  adminClientsListQueryOptions,
   adminProjectBudgetQueryOptions,
   adminProjectBudgetsLogQueryKey,
   adminProjectsForTokenQueryKey,
@@ -224,16 +223,6 @@ function AgencyAuditLogPanel({
 
   const [filterProject, setFilterProject] = useState<string>("");
   const [filterToken, setFilterToken] = useState<string>("");
-  const [filterClient, setFilterClient] = useState<string>("");
-
-  const clientsQuery = useQuery(adminClientsListQueryOptions(apiClient));
-  const clients = clientsQuery.data?.data ?? [];
-  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
-
-  const clientProjectIds = useMemo(() => {
-    if (!filterClient) return null;
-    return new Set(clients.find((c) => c.id === filterClient)?.projectIds ?? []);
-  }, [filterClient, clients]);
 
   const projectBudgetQuery = useQuery({
     ...adminProjectBudgetQueryOptions(apiClient, filterProject),
@@ -273,12 +262,8 @@ function AgencyAuditLogPanel({
   );
 
   const filterProjects = useMemo(
-    () =>
-      projects.filter(
-        (p) =>
-          dropdownOptions.projects.has(p.id) && (!clientProjectIds || clientProjectIds.has(p.id)),
-      ),
-    [projects, dropdownOptions.projects, clientProjectIds],
+    () => projects.filter((p) => dropdownOptions.projects.has(p.id)),
+    [projects, dropdownOptions.projects],
   );
   const filterTokens = useMemo(
     () => tokens.filter((t) => dropdownOptions.tokens.has(t.tokenId)),
@@ -302,13 +287,11 @@ function AgencyAuditLogPanel({
     queryKey: adminBudgetsLogQueryKey({
       projectId: filterProject || null,
       tokenId: filterToken || null,
-      clientId: filterClient || null,
     }),
     queryFn: ({ pageParam }) =>
       apiClient.budgets.list({
         projectId: filterProject || undefined,
         tokenId: filterToken || undefined,
-        clientId: filterClient || undefined,
         cursor: pageParam,
       }),
     initialPageParam: undefined as string | undefined,
@@ -316,7 +299,7 @@ function AgencyAuditLogPanel({
   });
 
   const rows = logQuery.data?.pages.flatMap((p) => p.data) ?? [];
-  const filtersActive = filterProject !== "" || filterToken !== "" || filterClient !== "";
+  const filtersActive = filterProject !== "" || filterToken !== "";
 
   return (
     <section className="space-y-3">
@@ -328,28 +311,7 @@ function AgencyAuditLogPanel({
         linked rows.
       </p>
       <Card>
-        <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_1fr_auto]">
-          <Field label="client" htmlFor="audit-filter-client">
-            <select
-              id="audit-filter-client"
-              value={filterClient}
-              onChange={(e) => {
-                setFilterClient(e.target.value);
-                if (e.target.value && filterProject) {
-                  const allowed = clients.find((c) => c.id === e.target.value)?.projectIds ?? [];
-                  if (!allowed.includes(filterProject)) setFilterProject("");
-                }
-              }}
-              className={selectClass}
-            >
-              <option value="">all clients</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
+        <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_auto]">
           <Field label="project" htmlFor="audit-filter-project">
             <select
               id="audit-filter-project"
@@ -386,7 +348,6 @@ function AgencyAuditLogPanel({
               size="sm"
               disabled={!filtersActive}
               onClick={() => {
-                setFilterClient("");
                 applyAuditFilters({ projectId: "", tokenId: "" });
               }}
             >
@@ -419,12 +380,6 @@ function AgencyAuditLogPanel({
                     </div>
                     <div className="text-xs text-muted-foreground font-mono">
                       project: {project ? `${project.title} (@${project.slug})` : a.projectId}
-                      {a.clientId && (
-                        <>
-                          {" · client: "}
-                          {clientById.get(a.clientId)?.name ?? a.clientId}
-                        </>
-                      )}
                     </div>
                     {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
                     <div className="text-xs text-muted-foreground font-mono">

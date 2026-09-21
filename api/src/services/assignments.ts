@@ -4,13 +4,18 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
 import type { OrgScope } from "../lib/agency-scope";
+import type { EngagementsService } from "./engagements";
 import type { ProjectDirectory } from "./project-directory";
 
-export function createAssignmentsService(db: Database, directory: ProjectDirectory) {
+export function createAssignmentsService(
+  db: Database,
+  directory: ProjectDirectory,
+  engagements: EngagementsService,
+) {
   return {
     list: (scope: OrgScope, projectId: string) =>
       Effect.gen(function* () {
-        yield* Effect.promise(() => directory.forAgency(scope).require(projectId));
+        yield* engagements.workOn(scope, projectId);
         const rows = yield* Effect.promise(() =>
           db
             .select()
@@ -31,12 +36,14 @@ export function createAssignmentsService(db: Database, directory: ProjectDirecto
 
     listAll: (scope: OrgScope) =>
       Effect.gen(function* () {
-        const [rows, projects] = yield* Effect.promise(() =>
+        const [rows, owned] = yield* Effect.promise(() =>
           Promise.all([
             db.select().from(projectContributors).orderBy(desc(projectContributors.createdAt)),
             directory.forAgency(scope).list(),
           ]),
         );
+        const subcontracted = yield* engagements.subcontractedProjectDetails(scope);
+        const projects = [...owned, ...subcontracted];
         const projectById = new Map(projects.map((p) => [p.id, p]));
         return {
           data: rows.flatMap((r) => {
@@ -67,7 +74,7 @@ export function createAssignmentsService(db: Database, directory: ProjectDirecto
       },
     ) =>
       Effect.gen(function* () {
-        yield* Effect.promise(() => directory.forAgency(scope).require(input.projectId));
+        yield* engagements.workOn(scope, input.projectId);
         if (!input.nearAccount?.trim()) {
           return yield* Effect.fail(
             new ORPCError("BAD_REQUEST", { message: "nearAccount is required" }),
@@ -104,7 +111,7 @@ export function createAssignmentsService(db: Database, directory: ProjectDirecto
 
     delete: (scope: OrgScope, input: { projectId: string; nearAccount: string }) =>
       Effect.gen(function* () {
-        yield* Effect.promise(() => directory.forAgency(scope).require(input.projectId));
+        yield* engagements.workOn(scope, input.projectId);
         yield* Effect.promise(() =>
           db
             .delete(projectContributors)

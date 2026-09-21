@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { organizationDaos } from "../db/schema";
+import { type Engagement, engagementProjects, engagements, organizationDaos } from "../db/schema";
+import type { ProjectDirectory } from "../services/project-directory";
 import {
   type AgencyRole,
   type AgencyScope,
@@ -37,7 +38,68 @@ function isUniqueViolation(error: unknown): boolean {
   return false;
 }
 
-export function createOrganizationAccess(db: Database, organizations: Organizations) {
+export type ProjectRelation = "owned" | "client" | "subcontractor";
+
+export type PartyEngagement = {
+  id: string;
+  kind: "client" | "subcontract";
+  status: "proposed" | "active" | "declined" | "ended";
+  role: "agency" | "client";
+  agencyOrganizationId: string;
+  agencyName: string;
+  clientOrganizationId: string;
+  clientName: string;
+  createdAt: Date;
+  endedAt: Date | null;
+};
+
+export async function projectRelation(
+  db: Database,
+  directory: ProjectDirectory,
+  scope: OrgScope,
+  projectId: string,
+): Promise<ProjectRelation> {
+  try {
+    await directory.forAgency(scope).require(projectId);
+    return "owned";
+  } catch (ownerError) {
+    const [row] = await db
+      .select({ kind: engagements.kind })
+      .from(engagementProjects)
+      .innerJoin(engagements, eq(engagements.id, engagementProjects.engagementId))
+      .where(
+        and(
+          eq(engagementProjects.projectId, projectId),
+          eq(engagements.clientOrganizationId, scope.organizationId),
+          eq(engagements.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (!row) throw ownerError;
+    return row.kind === "subcontract" ? "subcontractor" : "client";
+  }
+}
+
+function partyEngagement(row: Engagement, organizationId: string): PartyEngagement {
+  return {
+    id: row.id,
+    kind: row.kind,
+    status: row.status,
+    role: row.agencyOrganizationId === organizationId ? "agency" : "client",
+    agencyOrganizationId: row.agencyOrganizationId,
+    agencyName: row.agencyName,
+    clientOrganizationId: row.clientOrganizationId,
+    clientName: row.clientName,
+    createdAt: row.createdAt,
+    endedAt: row.endedAt,
+  };
+}
+
+export function createOrganizationAccess(
+  db: Database,
+  organizations: Organizations,
+  directory: ProjectDirectory,
+) {
   const verified = new Map<string, string>();
 
   async function claim(organizationId: string, daoAccountId: string): Promise<void> {
@@ -100,6 +162,27 @@ export function createOrganizationAccess(db: Database, organizations: Organizati
         .limit(1);
       if (row) return row.daoAccountId;
       return organizations.daoOf(organizationId);
+    },
+
+    projectAccess: async (scope: OrgScope, projectId: string): Promise<ProjectRelation | null> => {
+      try {
+        return await projectRelation(db, directory, scope, projectId);
+      } catch {
+        return null;
+      }
+    },
+
+    engagements: async (scope: OrgScope): Promise<PartyEngagement[]> => {
+      const rows = await db
+        .select()
+        .from(engagements)
+        .where(
+          or(
+            eq(engagements.agencyOrganizationId, scope.organizationId),
+            eq(engagements.clientOrganizationId, scope.organizationId),
+          ),
+        );
+      return rows.map((row) => partyEngagement(row, scope.organizationId));
     },
   };
 }

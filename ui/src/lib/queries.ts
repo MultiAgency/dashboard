@@ -144,7 +144,6 @@ export const clientBillingsListQueryKey = ["client", "billings", "list"] as cons
 type BillingFilters = {
   projectId?: string | null;
   nearAccount?: string | null;
-  clientId?: string | null;
 };
 
 export function adminBillingsQueryKey(filters: BillingFilters) {
@@ -153,7 +152,6 @@ export function adminBillingsQueryKey(filters: BillingFilters) {
     getNetwork(),
     filters.projectId ?? null,
     filters.nearAccount ?? null,
-    filters.clientId ?? null,
   ] as const;
 }
 
@@ -163,7 +161,6 @@ export function clientBillingsQueryKey(filters: BillingFilters) {
     getNetwork(),
     filters.projectId ?? null,
     filters.nearAccount ?? null,
-    filters.clientId ?? null,
   ] as const;
 }
 
@@ -174,17 +171,8 @@ export function adminContributorBillingsQueryKey(nearAccount: string) {
 export function adminBudgetsLogQueryKey(filters: {
   projectId: string | null;
   tokenId: string | null;
-  clientId: string | null;
 }) {
-  return [
-    "admin",
-    "budgets",
-    "log",
-    getNetwork(),
-    filters.projectId,
-    filters.tokenId,
-    filters.clientId,
-  ] as const;
+  return ["admin", "budgets", "log", getNetwork(), filters.projectId, filters.tokenId] as const;
 }
 
 export function adminProjectBudgetsLogQueryKey(projectId: string) {
@@ -281,16 +269,6 @@ export function adminNearnSponsorBountiesQueryOptions(apiClient: ApiClient) {
   });
 }
 
-export const adminClientsListQueryKey = ["admin", "clients", "list"] as const;
-
-export function adminClientsListQueryOptions(apiClient: ApiClient) {
-  return queryOptions({
-    queryKey: [...adminClientsListQueryKey, getNetwork()] as const,
-    queryFn: () => apiClient.clients.list(),
-    retry: false,
-  });
-}
-
 export function adminContributorDetailQueryOptions(apiClient: ApiClient, nearAccount: string) {
   return queryOptions({
     queryKey: ["admin", "contributors", "detail", getNetwork(), nearAccount] as const,
@@ -330,6 +308,22 @@ export function changeOrdersQueryOptions(apiClient: ApiClient, engagementId: str
   return queryOptions({
     queryKey: [...changeOrdersQueryKey(engagementId), "list"] as const,
     queryFn: () => apiClient.changeOrders.list({ engagementId }),
+    retry: false,
+  });
+}
+
+export function ideasQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: ["engagements", "ideas", engagementId] as const,
+    queryFn: () => apiClient.ideas.list({ engagementId }),
+    retry: false,
+  });
+}
+
+export function agentLinksQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: ["engagements", "agent-links", engagementId] as const,
+    queryFn: () => apiClient.agentLinks.list({ engagementId }),
     retry: false,
   });
 }
@@ -418,7 +412,6 @@ export type DataChange =
   | { type: "assignments" }
   | { type: "applications" }
   | { type: "builders" }
-  | { type: "clients" }
   | { type: "settings" };
 
 function staleKeys(change: DataChange): QueryKey[] {
@@ -458,7 +451,6 @@ function staleKeys(change: DataChange): QueryKey[] {
         ["admin", "billings"],
         ["admin", "budgets"],
         ["admin", "assignments"],
-        ["admin", "clients"],
         proposalsListQueryKey,
         ["client"],
       ];
@@ -468,8 +460,6 @@ function staleKeys(change: DataChange): QueryKey[] {
       return [["admin", "applications"]];
     case "builders":
       return [["admin", "contributors"]];
-    case "clients":
-      return [["admin", "clients"]];
     case "settings":
       return [adminSettingsQueryKey, publicSettingsQueryKey];
   }
@@ -481,7 +471,7 @@ export async function refreshAfter(queryClient: QueryClient, ...changes: DataCha
   );
 }
 
-export async function invalidateWorkspaceQueries(
+export async function invalidateOrganizationQueries(
   queryClient: QueryClient,
   router: Pick<AnyRouter, "invalidate">,
 ) {

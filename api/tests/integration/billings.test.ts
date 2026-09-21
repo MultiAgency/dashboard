@@ -2,7 +2,15 @@ import type { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import type { Database } from "../../src/db";
 import { billings } from "../../src/db/schema";
+import { runEffect } from "../../src/lib/context";
+import { createBillingsService } from "../../src/services/billings";
+import { createEngagementsService } from "../../src/services/engagements";
+import { createProjectDirectory } from "../../src/services/project-directory";
+import { inMemoryOrganizationAccess } from "../fakes/organization-access";
+import { inMemoryOrganizations } from "../fakes/organizations";
+import { agencyScope, inMemoryProjects, project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
 const PROJECT_A = "00000000-0000-0000-0000-00000000000a";
@@ -65,6 +73,29 @@ describe("billings — adminDelete persistence", () => {
     const rows = await db.select().from(billings);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.proposalId).toBe("2");
+  });
+
+  test("an agency cannot bill another agency's project", async () => {
+    const directory = createProjectDirectory(
+      () => inMemoryProjects([project("alpha-project", "alpha.sputnik-dao.near")]).client,
+    );
+    const organizations = inMemoryOrganizations([]).organizations;
+    const access = inMemoryOrganizationAccess(organizations, directory);
+    const engagements = createEngagementsService(
+      db as unknown as Database,
+      directory,
+      organizations,
+      access,
+    );
+
+    await expect(
+      runEffect(
+        createBillingsService(db as unknown as Database, directory, engagements).create(
+          agencyScope("beta.sputnik-dao.near"),
+          { projectId: "alpha-project", proposalId: "1" },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   test("re-creating after delete works (proposalId UNIQUE released)", async () => {

@@ -60,7 +60,7 @@ describe("agency scope", () => {
     );
   });
 
-  it("owning a workspace without a DAO grants no role in the default agency", () => {
+  it("owning an Organization without an Agency DAO grants no role in the default agency", () => {
     setDefaultDaoAccountId(AGENCY);
     const personalOwner = {
       userId: "user-2",
@@ -77,9 +77,9 @@ describe("agency scope", () => {
     });
   });
 
-  it("requiring agency roles rejects owners of other workspaces", () => {
+  it("requiring agency roles rejects owners of other Organizations", () => {
     setDefaultDaoAccountId(AGENCY);
-    const clientWorkspaceOwner = {
+    const clientOrganizationOwner = {
       userId: "user-3",
       organization: {
         organization: { metadata: { type: "client" } },
@@ -87,7 +87,7 @@ describe("agency scope", () => {
       },
     };
 
-    expect(() => agencyScopeFromRequest(clientWorkspaceOwner, AGENCY_MANAGER_ROLES)).toThrow(
+    expect(() => agencyScopeFromRequest(clientOrganizationOwner, AGENCY_MANAGER_ROLES)).toThrow(
       expect.objectContaining({ code: "FORBIDDEN" }),
     );
     expect(() => agencyScopeFromRequest(memberContext("member"), AGENCY_MANAGER_ROLES)).toThrow(

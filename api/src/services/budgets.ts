@@ -5,7 +5,7 @@ import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { type Budget, budgets } from "../db/schema";
 import type { AgencyScope } from "../lib/agency-scope";
-import type { ClientsService } from "./clients";
+import type { OrganizationAccess } from "../lib/organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
 export class BudgetInsufficientError extends Error {
@@ -41,7 +41,6 @@ export type BudgetListItem = Pick<
   | "note"
   | "actorAccountId"
   | "relatedBudgetId"
-  | "clientId"
   | "daoAccountId"
   | "engagementId"
   | "createdAt"
@@ -50,7 +49,6 @@ export type BudgetListItem = Pick<
 export interface ListBudgetsInput {
   projectIds: string[] | null;
   tokenId?: string;
-  clientId?: string;
   cursor?: string;
   limit: number;
 }
@@ -76,7 +74,6 @@ export async function listBudgets(
       note: budgets.note,
       actorAccountId: budgets.actorAccountId,
       relatedBudgetId: budgets.relatedBudgetId,
-      clientId: budgets.clientId,
       daoAccountId: budgets.daoAccountId,
       engagementId: budgets.engagementId,
       createdAt: budgets.createdAt,
@@ -86,7 +83,6 @@ export async function listBudgets(
       and(
         input.projectIds !== null ? inArray(budgets.projectId, input.projectIds) : undefined,
         input.tokenId ? eq(budgets.tokenId, input.tokenId) : undefined,
-        input.clientId ? eq(budgets.clientId, input.clientId) : undefined,
         cursorWhere(budgets.createdAt, budgets.id, input.cursor),
       ),
     )
@@ -106,7 +102,6 @@ export interface CreateBudgetInput {
   amount: string;
   note: string | null;
   actorAccountId: string;
-  clientId?: string | null;
   daoAccountId?: string | null;
   engagementId?: string | null;
 }
@@ -122,7 +117,6 @@ export async function createBudget(db: Database, input: CreateBudgetInput): Prom
       amount: input.amount,
       note: input.note,
       actorAccountId: input.actorAccountId,
-      clientId: input.clientId ?? null,
       daoAccountId: input.daoAccountId ?? null,
       engagementId: input.engagementId ?? null,
     })
@@ -218,23 +212,18 @@ const toOrpcError = (err: unknown) =>
 export function createBudgetsService(
   db: Database,
   directory: ProjectDirectory,
-  clients: ClientsService,
+  access: OrganizationAccess,
 ) {
-  const inAgency = <A>(
-    scope: AgencyScope,
-    refs: { projectIds: string[]; clientId?: string },
-    run: () => Promise<A>,
-  ) =>
+  const requireOwned = (scope: AgencyScope, projectId: string) =>
+    Effect.promise(async () => {
+      const relation = await access.projectAccess(scope, projectId);
+      if (relation !== "owned") throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+    });
+
+  const inAgency = <A>(scope: AgencyScope, refs: { projectIds: string[] }, run: () => Promise<A>) =>
     Effect.gen(function* () {
-      if (refs.clientId) yield* clients.projectIdsFor(scope, refs.clientId);
-      return yield* Effect.tryPromise({
-        try: async () => {
-          const projects = directory.forAgency(scope);
-          for (const projectId of refs.projectIds) await projects.require(projectId);
-          return run();
-        },
-        catch: toOrpcError,
-      });
+      for (const projectId of refs.projectIds) yield* requireOwned(scope, projectId);
+      return yield* Effect.tryPromise({ try: run, catch: toOrpcError });
     });
 
   return {
@@ -243,25 +232,20 @@ export function createBudgetsService(
       input: {
         projectId?: string;
         tokenId?: string;
-        clientId?: string;
         cursor?: string;
         limit: number;
       },
     ) =>
       Effect.gen(function* () {
         const projects = directory.forAgency(scope);
-        let projectIds = input.projectId
-          ? [(yield* Effect.promise(() => projects.require(input.projectId!))).id]
+        if (input.projectId) yield* requireOwned(scope, input.projectId);
+        const projectIds = input.projectId
+          ? [input.projectId]
           : (yield* Effect.promise(() => projects.list())).map((p) => p.id);
-        if (input.clientId) {
-          const clientProjectIds = new Set(yield* clients.projectIdsFor(scope, input.clientId));
-          projectIds = projectIds.filter((id) => clientProjectIds.has(id));
-        }
         return yield* Effect.promise(() =>
           listBudgets(db, {
             projectIds,
             tokenId: input.tokenId,
-            clientId: input.clientId,
             cursor: input.cursor,
             limit: input.limit,
           }),
@@ -275,14 +259,12 @@ export function createBudgetsService(
         tokenId: string;
         amount: string;
         note?: string;
-        clientId?: string;
       },
     ) =>
-      inAgency(scope, { projectIds: [input.projectId], clientId: input.clientId }, async () => ({
+      inAgency(scope, { projectIds: [input.projectId] }, async () => ({
         budget: await createBudget(db, {
           ...input,
           note: input.note ?? null,
-          clientId: input.clientId ?? null,
           daoAccountId: scope.agencyDao,
           actorAccountId: scope.actorId,
         }),
@@ -295,14 +277,12 @@ export function createBudgetsService(
         tokenId: string;
         amount: string;
         note?: string;
-        clientId?: string;
       },
     ) =>
-      inAgency(scope, { projectIds: [input.projectId], clientId: input.clientId }, async () => ({
+      inAgency(scope, { projectIds: [input.projectId] }, async () => ({
         budget: await deallocateBudget(db, {
           ...input,
           note: input.note ?? null,
-          clientId: input.clientId ?? null,
           daoAccountId: scope.agencyDao,
           actorAccountId: scope.actorId,
         }),

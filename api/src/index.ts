@@ -13,16 +13,17 @@ import { setDefaultDaoAccountId } from "./lib/org";
 import { createOrganizationAccess } from "./lib/organization-access";
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
+import { createAgentLinksService } from "./services/agent-links";
 import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
 import { createBillingsService } from "./services/billings";
 import { createBudgetsService } from "./services/budgets";
 import { createChangeOrdersService } from "./services/change-orders";
 import { createClientPortalService } from "./services/client-portal";
-import { createClientsService } from "./services/clients";
 import { createContactFormService } from "./services/contact-form";
 import { createContributorsService } from "./services/contributors";
 import { createEngagementsService } from "./services/engagements";
+import { createIdeasService } from "./services/ideas";
 import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
@@ -75,8 +76,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
       };
 
       const organizations = createAuthOrganizations(plugins.auth);
-      const access = createOrganizationAccess(db, organizations);
       const directory = createProjectDirectory((pluginContext) => plugins.projects(pluginContext));
+      const access = createOrganizationAccess(db, organizations, directory);
       const listings = createListingsService(db, directory);
       const projectLedgers = createProjectLedgers(db, listings);
       const agency = createAgencyService(db, plugins, directory, listings, projectLedgers);
@@ -86,12 +87,31 @@ export default createPlugin.withPlugins<PluginsClient>()({
         webhookUrl: config.secrets.CONTACT_FORM_WEBHOOK_URL,
         webhookSecret: config.secrets.CONTACT_FORM_WEBHOOK_SECRET,
       });
-      const clients = createClientsService(db, directory);
-      const assignments = createAssignmentsService(db, directory);
-      const budgets = createBudgetsService(db, directory, clients);
-      const billings = createBillingsService(db, directory);
+      const engagements = createEngagementsService(db, directory, organizations, access);
+      const ideas = createIdeasService(db, engagements, {
+        create: (context, input) => plugins.projects(context).createProject(input),
+        get: async (context, id) => {
+          try {
+            const project = (await plugins.projects(context).getProject({ id })).data;
+            return {
+              id: project.id,
+              title: project.title,
+              slug: project.slug,
+              status: project.status,
+              kind: project.kind ?? "idea",
+              description: project.description,
+              organizationId: project.organizationId,
+            };
+          } catch {
+            return null;
+          }
+        },
+      });
+      const agentLinks = createAgentLinksService(db, engagements);
+      const assignments = createAssignmentsService(db, directory, engagements);
+      const budgets = createBudgetsService(db, directory, access);
+      const billings = createBillingsService(db, directory, engagements);
       const reports = createReportsService(db, directory, plugins);
-      const engagements = createEngagementsService(db, directory, organizations);
       const changeOrders = createChangeOrdersService(db, {
         engagements,
         directory,
@@ -128,7 +148,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
         agency,
         listings,
         contributors,
-        clients,
+        ideas,
+        agentLinks,
         assignments,
         budgets,
         billings,
@@ -156,7 +177,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
       agency,
       listings,
       contributors,
-      clients,
+      ideas,
+      agentLinks,
       assignments,
       budgets,
       billings,
@@ -286,33 +308,35 @@ export default createPlugin.withPlugins<PluginsClient>()({
         },
       },
 
-      clients: {
-        list: builder.clients.list
-          .use(manager)
-          .handler(async ({ context }) => runEffect(clients.list(context.scope))),
-
-        get: builder.clients.get
-          .use(member)
-          .handler(async ({ context, input }) => runEffect(clients.get(context.scope, input.id))),
-
-        lookupByNearAccount: builder.clients.lookupByNearAccount
-          .use(auth.requireAuth)
-          .handler(async ({ context, input }) => ({
-            memberships: await runEffect(clients.membershipsFor(context, input.nearAccountId)),
-          })),
-
-        create: builder.clients.create
-          .use(manager)
-          .handler(async ({ context, input }) => runEffect(clients.create(context.scope, input))),
-
-        update: builder.clients.update
-          .use(manager)
-          .handler(async ({ context, input }) => runEffect(clients.update(context.scope, input))),
-
-        delete: builder.clients.delete
-          .use(manager)
+      ideas: {
+        list: builder.ideas.list
+          .use(orgMember)
           .handler(async ({ context, input }) =>
-            runEffect(clients.delete(context.scope, input.id)),
+            runEffect(ideas.list(context.scope, input.engagementId)),
+          ),
+
+        submit: builder.ideas.submit
+          .use(orgMember)
+          .handler(async ({ context, input }) => runEffect(ideas.submit(context.scope, input))),
+      },
+
+      agentLinks: {
+        list: builder.agentLinks.list
+          .use(orgMember)
+          .handler(async ({ context, input }) =>
+            runEffect(agentLinks.list(context.scope, input.engagementId)),
+          ),
+
+        create: builder.agentLinks.create
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(agentLinks.create(context.scope, input)),
+          ),
+
+        remove: builder.agentLinks.remove
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(agentLinks.remove(context.scope, input.id)),
           ),
       },
 
@@ -361,6 +385,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(orgManager)
           .handler(async ({ context, input }) =>
             runEffect(engagements.unshare(context.scope, input)),
+          ),
+
+        subcontract: builder.engagements.subcontract
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(engagements.subcontract(context.scope, input)),
           ),
       },
 

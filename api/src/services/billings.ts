@@ -1,58 +1,100 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, or, type SQL } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { billings } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { AgencyScope, OrgScope } from "../lib/agency-scope";
+import type { EngagementsService } from "./engagements";
 import type { ProjectDirectory } from "./project-directory";
 import { enrichWithChainStatus, getProposal } from "./sputnik";
 import { NATIVE_TOKEN_ID } from "./tokens";
 
-export function createBillingsService(db: Database, directory: ProjectDirectory) {
+const selectBillingCols = {
+  id: billings.id,
+  projectId: billings.projectId,
+  nearAccount: billings.nearAccount,
+  daoAccountId: billings.daoAccountId,
+  tokenId: billings.tokenId,
+  amount: billings.amount,
+  proposalId: billings.proposalId,
+  note: billings.note,
+  createdAt: billings.createdAt,
+} as const;
+
+export function createBillingsService(
+  db: Database,
+  directory: ProjectDirectory,
+  engagements: EngagementsService,
+) {
+  const scopeOf = (scope: OrgScope) =>
+    Effect.gen(function* () {
+      const owned = (yield* Effect.promise(() => directory.forAgency(scope).list())).map(
+        (project) => project.id,
+      );
+      const subcontracted = (yield* engagements.subcontractedProjects(scope))
+        .map((row) => row.projectId)
+        .filter((id) => !owned.includes(id));
+      return { owned, subcontracted };
+    });
+
+  const visibleWhere = (
+    scope: OrgScope,
+    owned: string[],
+    subcontracted: string[],
+    requested?: string[],
+  ): SQL | undefined => {
+    const allow = requested ? new Set(requested) : null;
+    const ownedIds = allow ? owned.filter((id) => allow.has(id)) : owned;
+    const subcontractedIds = allow ? subcontracted.filter((id) => allow.has(id)) : subcontracted;
+    const parts: SQL[] = [];
+    if (ownedIds.length > 0) parts.push(inArray(billings.projectId, ownedIds));
+    if (subcontractedIds.length > 0 && scope.agencyDao) {
+      parts.push(
+        and(
+          inArray(billings.projectId, subcontractedIds),
+          eq(billings.daoAccountId, scope.agencyDao),
+        )!,
+      );
+    }
+    if (parts.length === 0) return undefined;
+    if (parts.length === 1) return parts[0];
+    return or(...parts);
+  };
+
   return {
     list: (
-      scope: AgencyScope,
+      scope: OrgScope,
       input: {
         projectId?: string;
         projectIds?: string[];
         nearAccount?: string;
-        clientId?: string;
         cursor?: string;
         limit: number;
       },
     ) =>
       Effect.gen(function* () {
-        const projects = directory.forAgency(scope);
-        let projectIds: string[];
+        const { owned, subcontracted } = yield* scopeOf(scope);
+        let where: SQL | undefined;
         if (input.projectId) {
-          const project = yield* Effect.promise(() => projects.require(input.projectId!));
-          projectIds =
-            input.projectIds && !input.projectIds.includes(project.id) ? [] : [project.id];
-        } else if (input.projectIds) {
-          const inAgency = new Set(
-            (yield* Effect.promise(() => projects.list())).map((project) => project.id),
-          );
-          projectIds = input.projectIds.filter((id) => inAgency.has(id));
+          if (input.projectIds && !input.projectIds.includes(input.projectId)) {
+            return { data: [], nextCursor: null };
+          }
+          const access = yield* engagements.workOn(scope, input.projectId);
+          if (access === "owned") {
+            where = eq(billings.projectId, input.projectId);
+          } else if (!scope.agencyDao) {
+            return { data: [], nextCursor: null };
+          } else {
+            where = and(
+              eq(billings.projectId, input.projectId),
+              eq(billings.daoAccountId, scope.agencyDao),
+            );
+          }
         } else {
-          projectIds = (yield* Effect.promise(() => projects.list())).map((project) => project.id);
+          where = visibleWhere(scope, owned, subcontracted, input.projectIds);
+          if (!where) return { data: [], nextCursor: null };
         }
-
-        if (projectIds.length === 0) {
-          return { data: [], nextCursor: null };
-        }
-
-        const selectBillingCols = {
-          id: billings.id,
-          projectId: billings.projectId,
-          nearAccount: billings.nearAccount,
-          clientId: billings.clientId,
-          tokenId: billings.tokenId,
-          amount: billings.amount,
-          proposalId: billings.proposalId,
-          note: billings.note,
-          createdAt: billings.createdAt,
-        } as const;
 
         const rows = yield* Effect.promise(() =>
           db
@@ -60,9 +102,8 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
             .from(billings)
             .where(
               and(
-                inArray(billings.projectId, projectIds),
+                where,
                 input.nearAccount ? eq(billings.nearAccount, input.nearAccount) : undefined,
-                input.clientId ? eq(billings.clientId, input.clientId) : undefined,
                 cursorWhere(billings.createdAt, billings.id, input.cursor),
               ),
             )
@@ -71,7 +112,9 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
         );
         const last = rows[rows.length - 1];
         const enriched = yield* Effect.promise(() =>
-          Promise.all(rows.map((b) => enrichWithChainStatus(db, b, scope.agencyDao))),
+          Promise.all(
+            rows.map((b) => enrichWithChainStatus(db, b, b.daoAccountId ?? scope.agencyDao ?? "")),
+          ),
         );
         return {
           data: enriched,
@@ -85,16 +128,12 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
       input: {
         projectId: string;
         nearAccount?: string;
-        clientId?: string;
         proposalId: string;
         note?: string;
       },
     ) =>
       Effect.gen(function* () {
-        const orgProjects = yield* Effect.promise(() => directory.forAgency(scope).list());
-        if (!orgProjects.some((p) => p.id === input.projectId)) {
-          return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Project not found" }));
-        }
+        yield* engagements.workOn(scope, input.projectId);
 
         const proposalIdNum = Number.parseInt(input.proposalId, 10);
         if (Number.isNaN(proposalIdNum)) {
@@ -107,11 +146,17 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
           db
             .select({ billingId: billings.id, projectId: billings.projectId })
             .from(billings)
-            .where(eq(billings.proposalId, input.proposalId))
+            .where(
+              and(
+                eq(billings.proposalId, input.proposalId),
+                eq(billings.daoAccountId, scope.agencyDao),
+              ),
+            )
             .limit(1),
         );
         if (existing.length > 0) {
           const e = existing[0]!;
+          const orgProjects = yield* Effect.promise(() => directory.forAgency(scope).list());
           const project = orgProjects.find((p) => p.id === e.projectId);
           return yield* Effect.fail(
             new ORPCError("BAD_REQUEST", {
@@ -158,7 +203,7 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
               id,
               projectId: input.projectId,
               nearAccount,
-              clientId: input.clientId ?? null,
+              daoAccountId: scope.agencyDao,
               tokenId: transferKind.tokenId === "" ? NATIVE_TOKEN_ID : transferKind.tokenId,
               amount: transferKind.amount,
               proposalId: input.proposalId,

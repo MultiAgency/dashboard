@@ -1,24 +1,3 @@
-/**
- * One-time cleanup as Organizations take over from DAO accounts (issues #49, #42).
- *
- * - Deletes Organizations that share an Agency DAO with an older Organization.
- * - Removes Client-Project links to Projects that no longer exist.
- * - Moves Projects owned by a DAO account to the Organization holding that DAO.
- * - Records each Organization's Agency DAO in the API's organization_daos registry.
- * - Points migrated Engagements at the Agency's Organization and fills in names (#43).
- * - Records the source Agency DAO on existing Budget entries (#44).
- * - Makes each Client's NEAR wallet user the owner of the Client Organization and
- *   removes the Agency's staff from it (#43).
- *
- * Dry run by default. Pass --apply to write. The oldest Organization keeps each
- * DAO unless one is named with --keep=<slug> (e.g. --keep=multiagency).
- *
- * Production order:
- *   1. deploy the API (creates organization_daos; the API keeps reading
- *      DAO-owned Projects until they are moved)
- *   2. bun scripts/cleanup-organizations.ts --keep=multiagency           (review the plan)
- *   3. bun scripts/cleanup-organizations.ts --keep=multiagency --apply
- */
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
@@ -120,14 +99,23 @@ async function deleteOrganizations(auth: pg.Pool, ids: string[]): Promise<void> 
   }
 }
 
+async function tableExists(pool: pg.Pool, name: string): Promise<boolean> {
+  const { rows } = await pool.query<{ exists: boolean }>(
+    "SELECT to_regclass($1) IS NOT NULL AS exists",
+    [`public.${name}`],
+  );
+  return rows[0]?.exists ?? false;
+}
+
 async function danglingProjectLinks(api: pg.Pool, projects: pg.Pool) {
+  if (!(await tableExists(api, "client_projects"))) return [];
   const { rows: links } = await api.query<{ client_id: string; project_id: string }>(
     "SELECT client_id, project_id FROM client_projects",
   );
   if (links.length === 0) return [];
   const { rows: existing } = await projects.query<{ id: string }>(
     "SELECT id FROM projects WHERE id = ANY($1)",
-    [links.map((l) => l.project_id)],
+    [[...new Set(links.map((l) => l.project_id))]],
   );
   const alive = new Set(existing.map((r) => r.id));
   const dangling = links.filter((l) => !alive.has(l.project_id));
@@ -150,6 +138,7 @@ async function clientHandovers(
   api: pg.Pool,
   owners: Map<string, OrgRow>,
 ): Promise<Handover[]> {
+  if (!(await tableExists(api, "clients"))) return [];
   const { rows: clients } = await api.query<{
     org_id: string;
     name: string;
@@ -255,11 +244,12 @@ async function main() {
         duplicates.map((o) => o.id),
       );
     for (const link of dangling) {
-      await api.query("DELETE FROM client_projects WHERE client_id = $1 AND project_id = $2", [
-        link.client_id,
-        link.project_id,
-      ]);
-      await api.query("DELETE FROM engagement_projects WHERE project_id = $1", [link.project_id]);
+      if (await tableExists(api, "client_projects")) {
+        await api.query("DELETE FROM client_projects WHERE client_id = $1 AND project_id = $2", [
+          link.client_id,
+          link.project_id,
+        ]);
+      }
     }
     for (const move of moves) {
       await api.query(

@@ -2,8 +2,8 @@ import type { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { applyMigrations } from "./_pg";
 
-const BEFORE = (file: string) => file < "0006";
-const ENGAGEMENTS = (file: string) => file.startsWith("0006");
+const BEFORE = (file: string) => file < "0005_clients_as_organizations";
+const CLIENTS_AS_ORGANIZATIONS = (file: string) => file.startsWith("0005_clients_as_organizations");
 
 describe("migrating Clients to Engagements", () => {
   let pg: PGlite;
@@ -13,6 +13,12 @@ describe("migrating Clients to Engagements", () => {
     pg = new PGlite("memory://");
     await applyMigrations(pg, BEFORE);
     await pg.exec(`
+      CREATE TABLE organization_daos (
+        organization_id text PRIMARY KEY,
+        dao_account_id text NOT NULL,
+        created_at timestamp DEFAULT now() NOT NULL
+      );
+      CREATE UNIQUE INDEX organization_daos_dao_unique ON organization_daos (dao_account_id);
       INSERT INTO organization_daos (organization_id, dao_account_id)
         VALUES ('org-multiagency', 'multiagency.sputnik-dao.near');
       INSERT INTO clients (id, org_id, agency_dao_account_id, name, near_account_id) VALUES
@@ -21,7 +27,7 @@ describe("migrating Clients to Engagements", () => {
       INSERT INTO client_projects (client_id, project_id) VALUES
         ('c-nf', 'proj-a'), ('c-nf', 'proj-b'), ('c-other', 'proj-c');
     `);
-    await applyMigrations(pg, ENGAGEMENTS);
+    await applyMigrations(pg, CLIENTS_AS_ORGANIZATIONS);
   });
 
   afterAll(async () => {
@@ -58,5 +64,9 @@ describe("migrating Clients to Engagements", () => {
         projects: ["proj-c"],
       },
     ]);
+    const clients = await pg.query<{ exists: boolean }>(
+      "SELECT to_regclass('public.clients') IS NOT NULL AS exists",
+    );
+    expect(clients.rows[0]?.exists).toBe(false);
   });
 });

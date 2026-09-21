@@ -105,43 +105,6 @@ export const listings = pgTable(
 export type Listing = typeof listings.$inferSelect;
 export type NewListing = typeof listings.$inferInsert;
 
-export const clients = pgTable(
-  "clients",
-  {
-    id: text("id").primaryKey(),
-    orgId: text("org_id").notNull(),
-    agencyDaoAccountId: text("agency_dao_account_id").notNull(),
-    name: text("name").notNull(),
-    nearAccountId: text("near_account_id"),
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
-    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
-  },
-  (t) => ({
-    orgIdx: index("clients_org_id").on(t.orgId),
-    agencyNearIdx: uniqueIndex("clients_agency_near_unique")
-      .on(t.agencyDaoAccountId, t.nearAccountId)
-      .where(sql`${t.nearAccountId} IS NOT NULL`),
-  }),
-);
-
-export type Client = typeof clients.$inferSelect;
-export type NewClient = typeof clients.$inferInsert;
-
-export const clientProjects = pgTable(
-  "client_projects",
-  {
-    clientId: text("client_id")
-      .notNull()
-      .references(() => clients.id, { onDelete: "cascade" }),
-    projectId: text("project_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.clientId, t.projectId] }),
-    projectIdx: index("client_projects_project_id").on(t.projectId),
-  }),
-);
-
 export const projectContributors = pgTable(
   "project_contributors",
   {
@@ -167,7 +130,6 @@ export const budgets = pgTable(
     note: text("note"),
     actorAccountId: text("actor_account_id").notNull(),
     relatedBudgetId: text("related_budget_id"),
-    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     daoAccountId: text("dao_account_id"),
     engagementId: text("engagement_id").references((): AnyPgColumn => engagements.id, {
       onDelete: "set null",
@@ -177,7 +139,6 @@ export const budgets = pgTable(
   (t) => ({
     cursor: index("budgets_cursor").on(t.createdAt, t.id),
     projectIdx: index("budgets_project_id").on(t.projectId),
-    clientIdx: index("budgets_client_id").on(t.clientId),
     engagementIdx: index("budgets_engagement_id").on(t.engagementId),
   }),
 );
@@ -191,7 +152,7 @@ export const billings = pgTable(
     id: text("id").primaryKey(),
     projectId: text("project_id").notNull(),
     nearAccount: text("near_account"),
-    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    daoAccountId: text("dao_account_id"),
     tokenId: text("token_id").notNull(),
     amount: text("amount").notNull(),
     proposalId: text("proposal_id").notNull(),
@@ -200,9 +161,9 @@ export const billings = pgTable(
   },
   (t) => ({
     cursor: index("billings_cursor").on(t.createdAt, t.id),
-    proposalUnique: uniqueIndex("billings_proposal_unique").on(t.proposalId),
+    proposalUnique: uniqueIndex("billings_proposal_unique").on(t.daoAccountId, t.proposalId),
     projectIdx: index("billings_project_id").on(t.projectId),
-    clientIdx: index("billings_client_id").on(t.clientId),
+    daoIdx: index("billings_dao_account_id").on(t.daoAccountId),
     nearAccountIdx: index("billings_near_account").on(t.nearAccount),
   }),
 );
@@ -284,7 +245,7 @@ export const engagements = pgTable(
   },
   (t) => ({
     activePair: uniqueIndex("engagements_active_pair")
-      .on(t.agencyOrganizationId, t.clientOrganizationId)
+      .on(t.agencyOrganizationId, t.clientOrganizationId, t.kind)
       .where(sql`${t.status} = 'active'`),
     agencyIdx: index("engagements_agency").on(t.agencyOrganizationId),
     clientIdx: index("engagements_client").on(t.clientOrganizationId),
@@ -418,5 +379,38 @@ export const allocationLineApplications = pgTable(
   },
   (t) => ({
     pk: primaryKey({ columns: [t.engagementId, t.periodStart, t.planId, t.lineIndex] }),
+  }),
+);
+
+export const engagementIdeas = pgTable(
+  "engagement_ideas",
+  {
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.engagementId, t.projectId] }),
+    projectIdx: index("engagement_ideas_project_id").on(t.projectId),
+  }),
+);
+
+export const agentLinks = pgTable(
+  "agent_links",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id, { onDelete: "cascade" }),
+    label: text("label").notNull(),
+    url: text("url").notNull(),
+    ordering: integer("ordering").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("agent_links_engagement_id").on(t.engagementId, t.ordering),
   }),
 );

@@ -7,7 +7,6 @@ import {
   adminAssignmentsListQueryKey,
   adminBillingsQueryKey,
   adminBudgetsLogQueryKey,
-  adminClientsListQueryKey,
   adminContributorBillingsQueryKey,
   adminContributorsListQueryKey,
   adminInternalListingQueryOptions,
@@ -46,12 +45,11 @@ describe("refreshAfter", () => {
       budgetA: adminProjectBudgetQueryOptions(api, "a").queryKey,
       budgetB: adminProjectBudgetQueryOptions(api, "b").queryKey,
       budgetC: adminProjectBudgetQueryOptions(api, "c").queryKey,
-      agencyLog: adminBudgetsLogQueryKey({ projectId: null, tokenId: "near", clientId: null }),
+      agencyLog: adminBudgetsLogQueryKey({ projectId: null, tokenId: "near" }),
       projectLogA: adminProjectBudgetsLogQueryKey("a"),
       projectsForToken: adminProjectsForTokenQueryKey("near"),
       clientBudget: clientPortalProjectBudgetQueryOptions(api, "dao.near", "a").queryKey,
       clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "dao.near").queryKey,
-      clients: adminClientsListQueryKey,
     });
 
     await refreshAfter(queryClient, { type: "budgetEntries", projectIds: ["a", "b"] });
@@ -113,7 +111,6 @@ describe("refreshAfter", () => {
       clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "dao.near").queryKey,
       budgetsLog: adminProjectBudgetsLogQueryKey("a"),
       assignments: adminAssignmentsForProjectQueryKey("a"),
-      clientDetail: ["admin", "clients", "detail", "mainnet", "c1"],
       proposals: proposalsListQueryKey,
       settings: adminSettingsQueryOptions(api).queryKey,
     });
@@ -127,7 +124,6 @@ describe("refreshAfter", () => {
       "budgetsLog",
       "clientBillings",
       "clientDashboard",
-      "clientDetail",
       "clientProjects",
       "detail",
       "proposals",

@@ -21,6 +21,22 @@ type Side = "agency" | "client";
 
 const DECIDED = { approve: "approved", reject: "rejected", withdraw: "withdrawn" } as const;
 
+const CHANGE_ORDER_PHASE: Record<
+  ChangeOrder["status"],
+  { variant: "default" | "outline"; open: boolean }
+> = {
+  proposed: { variant: "outline", open: true },
+  approved: { variant: "default", open: false },
+  rejected: { variant: "outline", open: false },
+  withdrawn: { variant: "outline", open: false },
+  failed: { variant: "outline", open: false },
+};
+
+function changeOrderLabel(order: ChangeOrder) {
+  if (order.status === "approved" && !order.appliedAt) return "approved · waiting";
+  return order.status;
+}
+
 const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground";
 const SELECT_CLS =
   "rounded-sm border border-input bg-background px-2 py-1.5 font-mono text-xs min-w-0";
@@ -139,7 +155,7 @@ function ChangeOrderRow({
   pending: boolean;
   onDecide: (action: "approve" | "reject" | "withdraw") => void;
 }) {
-  const open = order.status === "proposed";
+  const phase = CHANGE_ORDER_PHASE[order.status];
   const mine = order.proposedBy === side;
   return (
     <li className="space-y-2 px-3 py-2">
@@ -150,10 +166,8 @@ function ChangeOrderRow({
           {new Date(order.createdAt).toISOString().slice(0, 10)}
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={order.status === "approved" ? "default" : "outline"}>
-            {order.status === "approved" && !order.appliedAt ? "approved · waiting" : order.status}
-          </Badge>
-          {open && canManage && !mine && (
+          <Badge variant={phase.variant}>{changeOrderLabel(order)}</Badge>
+          {phase.open && canManage && !mine && (
             <>
               <Button size="sm" onClick={() => onDecide("approve")} disabled={pending}>
                 approve
@@ -168,7 +182,7 @@ function ChangeOrderRow({
               </Button>
             </>
           )}
-          {open && canManage && mine && (
+          {phase.open && canManage && mine && (
             <Button
               size="sm"
               variant="ghost"

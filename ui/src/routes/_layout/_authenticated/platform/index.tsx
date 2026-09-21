@@ -50,14 +50,15 @@ function PlatformOrgs() {
       accessorKey: "slug",
     },
     {
-      id: "type",
-      header: "Type",
+      id: "treasury",
+      header: "Treasury",
       cell: ({ row }) => {
         const rawMeta = row.original.metadata;
         const meta = typeof rawMeta === "string" ? JSON.parse(rawMeta) : (rawMeta ?? {});
-        const isAgency = (meta as Record<string, unknown>).type === "agency";
+        const dao = (meta as Record<string, unknown>).daoAccountId;
+        const hasDao = typeof dao === "string" && dao.length > 0;
         return (
-          <Badge variant={isAgency ? "default" : "outline"}>{isAgency ? "agency" : "client"}</Badge>
+          <Badge variant={hasDao ? "default" : "outline"}>{hasDao ? "treasury" : "none"}</Badge>
         );
       },
     },

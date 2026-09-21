@@ -42,13 +42,14 @@ describe("change orders and the allocation plan", () => {
   ]);
 
   function services() {
-    const engagements = createEngagementsService(db, directory, orgs.organizations);
+    const access = createOrganizationAccess(db, orgs.organizations, directory);
+    const engagements = createEngagementsService(db, directory, orgs.organizations, access);
     const listings = createListingsService(db, directory);
     const changeOrders = createChangeOrdersService(db, {
       engagements,
       directory,
       ledgers: createProjectLedgers(db, listings),
-      access: createOrganizationAccess(db, orgs.organizations),
+      access,
       notify: async (event) => {
         events.push(event);
       },

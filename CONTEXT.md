@@ -23,7 +23,7 @@ An Organization on the customer side of an Engagement. Being a Client is a role 
 _Avoid_: customer, client account, client wallet
 
 **Engagement**:
-The relationship in which an Agency does work for a Client, covering the Projects shared between them. Each party sees only what is shared through its own Engagement. It is active or ended; an ended Engagement keeps its history visible to the Client but takes no new work. There is at most one active Engagement per Agency and Client.
+The relationship in which an Agency does work for a Client, covering the Projects shared between them. Each party sees only what is shared through its own Engagement. It is active or ended; an ended Engagement keeps its history visible to the Client but takes no new work. There is at most one active Engagement of each kind per Agency and Client.
 _Avoid_: contract (clashes with smart contracts), work order (a contributor document), client relationship
 
 **Subcontractor**:

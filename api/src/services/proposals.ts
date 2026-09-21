@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { Effect, Either } from "every-plugin/effect";
 import type { z } from "every-plugin/zod";
 import type { proposalPublicItem } from "../contract";
@@ -103,31 +103,33 @@ export function createProposalsService(db: Database, directory: ProjectDirectory
                     billingId: billings.id,
                     proposalId: billings.proposalId,
                     projectId: billings.projectId,
+                    daoAccountId: billings.daoAccountId,
                   })
                   .from(billings)
-                  .where(inArray(billings.proposalId, proposalIdStrs)),
+                  .where(
+                    and(
+                      inArray(billings.proposalId, proposalIdStrs),
+                      eq(billings.daoAccountId, scope.agencyDao),
+                    ),
+                  ),
               )
             : [];
 
-        const orgProjectIds = new Set(orgProjects.map((p) => p.id));
-        const mappingByProposal = new Map(
-          localBillings.filter((b) => orgProjectIds.has(b.projectId)).map((b) => [b.proposalId, b]),
-        );
+        const mappingByProposal = new Map(localBillings.map((b) => [b.proposalId, b]));
 
         const data = transfers.map((p) => {
           const m = mappingByProposal.get(String(p.id));
-          const project = m ? orgProjects.find((p) => p.id === m.projectId) : undefined;
+          const project = m ? orgProjects.find((proj) => proj.id === m.projectId) : undefined;
           return {
             ...toProposalPublicItem(p),
-            mapping:
-              m && project
-                ? {
-                    billingId: m.billingId,
-                    projectId: m.projectId,
-                    projectSlug: project.slug,
-                    projectTitle: project.title,
-                  }
-                : null,
+            mapping: m
+              ? {
+                  billingId: m.billingId,
+                  projectId: m.projectId,
+                  projectSlug: project?.slug ?? m.projectId,
+                  projectTitle: project?.title ?? m.projectId,
+                }
+              : null,
           };
         });
 

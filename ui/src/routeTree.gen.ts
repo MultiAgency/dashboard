@@ -36,6 +36,7 @@ import { Route as LayoutAuthenticatedAdminSettingsRouteImport } from './routes/_
 import { Route as LayoutAuthenticatedAdminMembersRouteImport } from './routes/_layout/_authenticated/admin/members'
 import { Route as LayoutAuthenticatedAcceptInvitationIdRouteImport } from './routes/_layout/_authenticated/accept-invitation.$id'
 import { Route as LayoutAuthenticatedClientReportsIndexRouteImport } from './routes/_layout/_authenticated/client/reports/index'
+import { Route as LayoutAuthenticatedClientIdeasIndexRouteImport } from './routes/_layout/_authenticated/client/ideas/index'
 import { Route as LayoutAuthenticatedClientProjectsIndexRouteImport } from './routes/_layout/_authenticated/client/projects/index'
 import { Route as LayoutAuthenticatedAdminReportsIndexRouteImport } from './routes/_layout/_authenticated/admin/reports/index'
 import { Route as LayoutAuthenticatedAdminProjectsIndexRouteImport } from './routes/_layout/_authenticated/admin/projects/index'
@@ -196,6 +197,12 @@ const LayoutAuthenticatedClientReportsIndexRoute =
     path: '/reports/',
     getParentRoute: () => LayoutAuthenticatedClientRouteRoute,
   } as any)
+const LayoutAuthenticatedClientIdeasIndexRoute =
+  LayoutAuthenticatedClientIdeasIndexRouteImport.update({
+    id: '/ideas/',
+    path: '/ideas/',
+    getParentRoute: () => LayoutAuthenticatedClientRouteRoute,
+  } as any)
 const LayoutAuthenticatedClientProjectsIndexRoute =
   LayoutAuthenticatedClientProjectsIndexRouteImport.update({
     id: '/projects/',
@@ -298,6 +305,7 @@ export interface FileRoutesByFullPath {
   '/admin/engagements/': typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   '/admin/projects/': typeof LayoutAuthenticatedAdminProjectsIndexRoute
   '/admin/reports/': typeof LayoutAuthenticatedAdminReportsIndexRoute
+  '/client/ideas/': typeof LayoutAuthenticatedClientIdeasIndexRoute
   '/client/projects/': typeof LayoutAuthenticatedClientProjectsIndexRoute
   '/client/reports/': typeof LayoutAuthenticatedClientReportsIndexRoute
 }
@@ -332,6 +340,7 @@ export interface FileRoutesByTo {
   '/admin/engagements': typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   '/admin/projects': typeof LayoutAuthenticatedAdminProjectsIndexRoute
   '/admin/reports': typeof LayoutAuthenticatedAdminReportsIndexRoute
+  '/client/ideas': typeof LayoutAuthenticatedClientIdeasIndexRoute
   '/client/projects': typeof LayoutAuthenticatedClientProjectsIndexRoute
   '/client/reports': typeof LayoutAuthenticatedClientReportsIndexRoute
 }
@@ -373,6 +382,7 @@ export interface FileRoutesById {
   '/_layout/_authenticated/admin/engagements/': typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   '/_layout/_authenticated/admin/projects/': typeof LayoutAuthenticatedAdminProjectsIndexRoute
   '/_layout/_authenticated/admin/reports/': typeof LayoutAuthenticatedAdminReportsIndexRoute
+  '/_layout/_authenticated/client/ideas/': typeof LayoutAuthenticatedClientIdeasIndexRoute
   '/_layout/_authenticated/client/projects/': typeof LayoutAuthenticatedClientProjectsIndexRoute
   '/_layout/_authenticated/client/reports/': typeof LayoutAuthenticatedClientReportsIndexRoute
 }
@@ -413,6 +423,7 @@ export interface FileRouteTypes {
     | '/admin/engagements/'
     | '/admin/projects/'
     | '/admin/reports/'
+    | '/client/ideas/'
     | '/client/projects/'
     | '/client/reports/'
   fileRoutesByTo: FileRoutesByTo
@@ -447,6 +458,7 @@ export interface FileRouteTypes {
     | '/admin/engagements'
     | '/admin/projects'
     | '/admin/reports'
+    | '/client/ideas'
     | '/client/projects'
     | '/client/reports'
   id:
@@ -487,6 +499,7 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/admin/engagements/'
     | '/_layout/_authenticated/admin/projects/'
     | '/_layout/_authenticated/admin/reports/'
+    | '/_layout/_authenticated/client/ideas/'
     | '/_layout/_authenticated/client/projects/'
     | '/_layout/_authenticated/client/reports/'
   fileRoutesById: FileRoutesById
@@ -686,6 +699,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedClientReportsIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedClientRouteRoute
     }
+    '/_layout/_authenticated/client/ideas/': {
+      id: '/_layout/_authenticated/client/ideas/'
+      path: '/ideas'
+      fullPath: '/client/ideas/'
+      preLoaderRoute: typeof LayoutAuthenticatedClientIdeasIndexRouteImport
+      parentRoute: typeof LayoutAuthenticatedClientRouteRoute
+    }
     '/_layout/_authenticated/client/projects/': {
       id: '/_layout/_authenticated/client/projects/'
       path: '/projects'
@@ -818,6 +838,7 @@ interface LayoutAuthenticatedClientRouteRouteChildren {
   LayoutAuthenticatedClientProjectsSlugRoute: typeof LayoutAuthenticatedClientProjectsSlugRoute
   LayoutAuthenticatedClientProjectsIndexRoute: typeof LayoutAuthenticatedClientProjectsIndexRoute
   LayoutAuthenticatedClientReportsIndexRoute: typeof LayoutAuthenticatedClientReportsIndexRoute
+  LayoutAuthenticatedClientIdeasIndexRoute: typeof LayoutAuthenticatedClientIdeasIndexRoute
 }
 
 const LayoutAuthenticatedClientRouteRouteChildren: LayoutAuthenticatedClientRouteRouteChildren =
@@ -830,6 +851,8 @@ const LayoutAuthenticatedClientRouteRouteChildren: LayoutAuthenticatedClientRout
       LayoutAuthenticatedClientProjectsIndexRoute,
     LayoutAuthenticatedClientReportsIndexRoute:
       LayoutAuthenticatedClientReportsIndexRoute,
+    LayoutAuthenticatedClientIdeasIndexRoute:
+      LayoutAuthenticatedClientIdeasIndexRoute,
   }
 
 const LayoutAuthenticatedClientRouteRouteWithChildren =

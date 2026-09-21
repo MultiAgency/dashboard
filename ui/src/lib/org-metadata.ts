@@ -18,6 +18,6 @@ export function parseOrgMetadata(raw: unknown): OrgMetadata {
   return {};
 }
 
-export function isWorkspace(metadata: unknown): boolean {
+export function isOrganization(metadata: unknown): boolean {
   return !parseOrgMetadata(metadata).isPersonal;
 }

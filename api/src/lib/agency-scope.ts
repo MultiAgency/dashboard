@@ -92,7 +92,7 @@ function assertRole(role: AgencyRole | null, requiredRoles?: readonly AgencyRole
   }
 }
 
-export function ownsWorkspaceWithoutDao(context: PluginContext): boolean {
+export function ownsOrganizationWithoutDao(context: PluginContext): boolean {
   const metadata = parseOrgMetadata(context.organization?.organization?.metadata);
   return (
     organizationIdOf(context) !== null &&
@@ -106,7 +106,7 @@ export function orgScopeFromRequest(
   context: PluginContext & { reqHeaders?: Headers },
   requiredRoles?: readonly AgencyRole[],
 ): OrgScope {
-  if (!ownsWorkspaceWithoutDao(context)) return agencyScopeFromRequest(context, requiredRoles);
+  if (!ownsOrganizationWithoutDao(context)) return agencyScopeFromRequest(context, requiredRoles);
   const role = memberRole(context);
   assertRole(role, requiredRoles);
   return {
@@ -124,7 +124,7 @@ export function agencyScopeFromRequest(
   context: PluginContext,
   requiredRoles?: readonly AgencyRole[],
 ): AgencyScope {
-  if (requiredRoles && ownsWorkspaceWithoutDao(context)) throw noAgencyDao();
+  if (requiredRoles && ownsOrganizationWithoutDao(context)) throw noAgencyDao();
   const agencyDao = getDaoAccountIdOrThrow(context);
   const role = roleInAgency(context);
   assertRole(role, requiredRoles);

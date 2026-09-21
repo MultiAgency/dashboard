@@ -5,25 +5,34 @@ import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field } from "@/components/admin-form";
+import { AgentLinksPanel } from "@/components/agent-links-panel";
 import { ChangeOrdersPanel } from "@/components/change-orders-panel";
 import { PrepaymentsPanel } from "@/components/prepayments-panel";
 import { useMeRoles } from "@/hooks";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions, useAuthClient } from "@/lib/auth";
+import { parseDecimalToBase } from "@/lib/format-amount";
 import {
   adminProjectsListQueryOptions,
   engagementsListQueryKey,
   engagementsListQueryOptions,
+  tokensListQueryOptions,
 } from "@/lib/queries";
 
 type Engagement = Awaited<ReturnType<ApiClient["engagements"]["list"]>>["data"][number];
 
 const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground";
 
-function statusVariant(status: Engagement["status"]) {
-  return status === "active" ? "default" : "outline";
-}
+const ENGAGEMENT_PHASE: Record<
+  Engagement["status"],
+  { variant: "default" | "outline"; end: boolean; share: boolean; respond: boolean; open: boolean }
+> = {
+  proposed: { variant: "outline", end: false, share: false, respond: true, open: false },
+  active: { variant: "default", end: true, share: true, respond: false, open: true },
+  declined: { variant: "outline", end: false, share: false, respond: false, open: false },
+  ended: { variant: "outline", end: false, share: false, respond: false, open: true },
+};
 
 export function EngagementsAdminSection() {
   const apiClient = useApiClient();
@@ -48,6 +57,7 @@ export function EngagementsAdminSection() {
         <div className="grid gap-4 lg:grid-cols-2">
           <NewClientForm activeOrgId={activeOrgId} />
           <ProposeForm />
+          <SubcontractForm />
         </div>
         {asAgency.length === 0 ? (
           <p className="text-sm text-muted-foreground">No clients yet.</p>
@@ -189,13 +199,159 @@ function ProposeForm() {
   );
 }
 
+function monthBounds(date = new Date()) {
+  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0));
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+function SubcontractForm() {
+  const apiClient = useApiClient();
+  const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
+  const tokensQuery = useQuery(tokensListQueryOptions(apiClient));
+  const projects = projectsQuery.data?.data ?? [];
+  const tokens = tokensQuery.data?.tokens ?? [];
+  const month = monthBounds();
+  const [subcontractorOrganizationId, setSubcontractorOrganizationId] = useState("");
+  const [projectIds, setProjectIds] = useState<string[]>([]);
+  const [recordPrepayment, setRecordPrepayment] = useState(false);
+  const [tokenId, setTokenId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [periodStart, setPeriodStart] = useState(month.start);
+  const [periodEnd, setPeriodEnd] = useState(month.end);
+
+  const subcontract = useEngagementMutation(
+    () => {
+      const selected = tokens.find((token) => token.tokenId === (tokenId || tokens[0]?.tokenId));
+      return apiClient.engagements.subcontract({
+        subcontractorOrganizationId,
+        projectIds,
+        prepayment:
+          recordPrepayment && selected
+            ? {
+                tokenId: selected.tokenId,
+                amount: parseDecimalToBase(amount, selected.decimals),
+                periodStart,
+                periodEnd,
+              }
+            : undefined,
+      });
+    },
+    "Project shared with the subcontractor",
+    () => {
+      setSubcontractorOrganizationId("");
+      setProjectIds([]);
+      setAmount("");
+      setRecordPrepayment(false);
+    },
+  );
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (recordPrepayment && !amount.trim()) {
+      toast.error("Enter a prepayment amount, or leave it off.");
+      return;
+    }
+    subcontract.mutate(undefined);
+  };
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardContent>
+        <form onSubmit={submit} className="space-y-3">
+          <div className={LABEL_CLS}>subcontract</div>
+          <Field label="Subcontractor organization id">
+            <Input
+              value={subcontractorOrganizationId}
+              onChange={(e) => setSubcontractorOrganizationId(e.target.value)}
+              required
+            />
+          </Field>
+          {projects.length > 0 && (
+            <ul className="grid gap-1 sm:grid-cols-2">
+              {projects.map((project) => (
+                <li key={project.id}>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={projectIds.includes(project.id)}
+                      onChange={(e) =>
+                        setProjectIds((current) =>
+                          e.target.checked
+                            ? [...current, project.id]
+                            : current.filter((id) => id !== project.id),
+                        )
+                      }
+                    />
+                    <span className="truncate">{project.title}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={recordPrepayment}
+              onChange={(e) => setRecordPrepayment(e.target.checked)}
+            />
+            record a prepayment
+          </label>
+          {recordPrepayment && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Token">
+                <select
+                  className="rounded-sm border border-input bg-background px-2 py-1.5 font-mono text-xs"
+                  value={tokenId || tokens[0]?.tokenId || ""}
+                  onChange={(e) => setTokenId(e.target.value)}
+                >
+                  {tokens.map((token) => (
+                    <option key={token.tokenId} value={token.tokenId}>
+                      {token.symbol}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Amount">
+                <Input value={amount} onChange={(e) => setAmount(e.target.value)} required />
+              </Field>
+              <Field label="Period start">
+                <Input
+                  type="date"
+                  value={periodStart}
+                  onChange={(e) => setPeriodStart(e.target.value)}
+                  required
+                />
+              </Field>
+              <Field label="Period end">
+                <Input
+                  type="date"
+                  value={periodEnd}
+                  onChange={(e) => setPeriodEnd(e.target.value)}
+                  required
+                />
+              </Field>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            The subcontractor can assign contributors and bill from its own Agency DAO immediately.
+          </p>
+          <Button type="submit" size="sm" disabled={subcontract.isPending}>
+            {subcontract.isPending ? "sharing..." : "share project"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AgencyEngagementCard({ engagement }: { engagement: Engagement }) {
   const apiClient = useApiClient();
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
   const { hasAgencyDao } = useMeRoles();
   const shared = new Set(engagement.projectIds);
   const projects = projectsQuery.data?.data ?? [];
-  const canShare = engagement.status === "active";
+  const phase = ENGAGEMENT_PHASE[engagement.status];
 
   const toggle = useEngagementMutation(
     ({ projectId, share }: { projectId: string; share: boolean }) =>
@@ -222,8 +378,8 @@ function AgencyEngagementCard({ engagement }: { engagement: Engagement }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant={statusVariant(engagement.status)}>{engagement.status}</Badge>
-            {engagement.status === "active" && (
+            <Badge variant={phase.variant}>{engagement.status}</Badge>
+            {phase.end && (
               <Button
                 size="sm"
                 variant="outline"
@@ -235,19 +391,19 @@ function AgencyEngagementCard({ engagement }: { engagement: Engagement }) {
             )}
           </div>
         </div>
-        {(canShare || shared.size > 0) && (
+        {(phase.share || shared.size > 0) && (
           <div className="space-y-1">
             <div className={LABEL_CLS}>shared projects</div>
             <ul className="grid gap-1 sm:grid-cols-2">
               {projects
-                .filter((p) => canShare || shared.has(p.id))
+                .filter((p) => phase.share || shared.has(p.id))
                 .map((p) => (
                   <li key={p.id}>
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
                         checked={shared.has(p.id)}
-                        disabled={!canShare || toggle.isPending}
+                        disabled={!phase.share || toggle.isPending}
                         onChange={(e) =>
                           toggle.mutate({ projectId: p.id, share: e.target.checked })
                         }
@@ -259,13 +415,14 @@ function AgencyEngagementCard({ engagement }: { engagement: Engagement }) {
             </ul>
           </div>
         )}
-        {hasAgencyDao && engagement.status !== "proposed" && engagement.status !== "declined" && (
+        {hasAgencyDao && (phase.open || phase.end) && (
           <>
-            <PrepaymentsPanel engagementId={engagement.id} canManage={canShare} />
+            <AgentLinksPanel engagementId={engagement.id} canManage={phase.share} />
+            <PrepaymentsPanel engagementId={engagement.id} canManage={phase.share} />
             <ChangeOrdersPanel
               engagementId={engagement.id}
               side="agency"
-              canManage={canShare}
+              canManage={phase.share}
               projects={projects.filter((p) => shared.has(p.id))}
             />
           </>
@@ -299,8 +456,8 @@ function ClientEngagementCard({ engagement }: { engagement: Engagement }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={statusVariant(engagement.status)}>{engagement.status}</Badge>
-          {engagement.status === "proposed" && (
+          <Badge variant={ENGAGEMENT_PHASE[engagement.status].variant}>{engagement.status}</Badge>
+          {ENGAGEMENT_PHASE[engagement.status].respond && (
             <>
               <Button size="sm" onClick={() => accept.mutate(undefined)} disabled={pending}>
                 accept
@@ -315,7 +472,7 @@ function ClientEngagementCard({ engagement }: { engagement: Engagement }) {
               </Button>
             </>
           )}
-          {(engagement.status === "active" || engagement.status === "ended") && (
+          {ENGAGEMENT_PHASE[engagement.status].open && (
             <Button asChild size="sm" variant="outline">
               <Link to="/client" search={{ engagement: engagement.id }}>
                 open

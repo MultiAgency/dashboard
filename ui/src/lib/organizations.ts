@@ -1,9 +1,9 @@
 import type { AuthClient } from "@/lib/auth";
-import { isWorkspace } from "@/lib/org-metadata";
+import { isOrganization } from "@/lib/org-metadata";
 
-export async function listWorkspaces(authClient: AuthClient) {
+export async function listOrganizations(authClient: AuthClient) {
   const res = await authClient.organization.list();
-  return (res.data ?? []).filter((org) => isWorkspace(org.metadata));
+  return (res.data ?? []).filter((org) => isOrganization(org.metadata));
 }
 
 export async function activeOrganizationId(authClient: AuthClient): Promise<string | null> {
@@ -17,12 +17,12 @@ export async function activeOrganizationId(authClient: AuthClient): Promise<stri
   return session?.session?.activeOrganizationId ?? null;
 }
 
-export async function switchWorkspace(
+export async function switchOrganization(
   authClient: AuthClient,
   organizationId: string,
 ): Promise<boolean> {
-  const workspaces = await listWorkspaces(authClient);
-  if (!workspaces.some((o) => o.id === organizationId)) return false;
+  const organizations = await listOrganizations(authClient);
+  if (!organizations.some((o) => o.id === organizationId)) return false;
 
   const currentId = await activeOrganizationId(authClient);
   if (currentId === organizationId) return true;

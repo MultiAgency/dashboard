@@ -3,11 +3,13 @@ import { drizzle } from "drizzle-orm/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
-import { budgets, clients, projectContributors } from "../../src/db/schema";
+import { budgets, projectContributors } from "../../src/db/schema";
 import { createAssignmentsService } from "../../src/services/assignments";
 import { createBudgetsService } from "../../src/services/budgets";
-import { createClientsService } from "../../src/services/clients";
+import { createEngagementsService } from "../../src/services/engagements";
 import { createProjectDirectory } from "../../src/services/project-directory";
+import { inMemoryOrganizationAccess } from "../fakes/organization-access";
+import { inMemoryOrganizations } from "../fakes/organizations";
 import { agencyScope, inMemoryProjects, project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
@@ -27,6 +29,7 @@ describe("agency isolation", () => {
         project("beta-project", BETA),
       ]).client,
   );
+  const access = inMemoryOrganizationAccess(inMemoryOrganizations([]).organizations, directory);
 
   beforeAll(async () => {
     const { PGlite } = await import("@electric-sql/pglite");
@@ -36,9 +39,7 @@ describe("agency isolation", () => {
   });
 
   beforeEach(async () => {
-    await pg.query(
-      "TRUNCATE clients, client_projects, project_contributors, budgets, billings CASCADE",
-    );
+    await pg.query("TRUNCATE project_contributors, budgets, billings CASCADE");
   });
 
   afterAll(async () => {
@@ -48,80 +49,11 @@ describe("agency isolation", () => {
   const run = <A>(effect: import("every-plugin/effect").Effect.Effect<A, unknown>) =>
     import("every-plugin/effect").then(({ Effect }) => Effect.runPromise(effect as never) as A);
 
-  async function betaClient() {
-    const created = await run(
-      createClientsService(db, directory).create(beta, {
-        orgId: "beta-org",
-        name: "Beta Corp",
-        projectIds: ["beta-project"],
-      }),
-    );
-    return created.client.id;
-  }
-
-  describe("clients", () => {
-    test("a client cannot be stored without an agency", async () => {
-      await expect(
-        pg.query(`insert into clients (id, org_id, name) values ('orphan', 'org', 'Orphan')`),
-      ).rejects.toThrow(/agency_dao_account_id/);
-    });
-
-    test("an agency lists only its own clients", async () => {
-      const service = createClientsService(db, directory);
-      await betaClient();
-      await run(service.create(alpha, { orgId: "alpha-org", name: "Alpha Corp" }));
-
-      const listed = await run(service.list(alpha));
-
-      expect(listed.data.map((c) => c.name)).toEqual(["Alpha Corp"]);
-    });
-
-    test("another agency's client cannot be read, edited, deleted or used as a filter", async () => {
-      const service = createClientsService(db, directory);
-      const id = await betaClient();
-
-      await expect(run(service.get(alpha, id))).rejects.toThrow("Client not found");
-      await expect(run(service.update(alpha, { id, name: "Stolen" }))).rejects.toThrow(
-        "Client not found",
-      );
-      await expect(run(service.delete(alpha, id))).rejects.toThrow("Client not found");
-      await expect(run(service.projectIdsFor(alpha, id))).rejects.toThrow("Client not found");
-
-      const [row] = await db.select().from(clients);
-      expect(row).toMatchObject({ name: "Beta Corp", agencyDaoAccountId: BETA });
-    });
-
-    test("people can only look up client memberships for their own NEAR accounts", async () => {
-      const service = createClientsService(db, directory);
-      await run(
-        service.create(beta, { orgId: "beta-org", name: "Beta Corp", nearAccountId: "ceo.near" }),
-      );
-      const ceo = { near: { primaryAccountId: "ceo.near", linkedAccounts: [] } };
-      const stranger = {
-        near: { primaryAccountId: "stranger.near", linkedAccounts: [{ accountId: "alt.near" }] },
-      };
-
-      const own = await run(service.membershipsFor(ceo, "ceo.near"));
-      expect(own.map((m) => m.client.name)).toEqual(["Beta Corp"]);
-      await expect(run(service.membershipsFor(stranger, "ceo.near"))).rejects.toThrow(
-        "You can only look up your own NEAR accounts",
-      );
-      expect(await run(service.membershipsFor(stranger, "alt.near"))).toEqual([]);
-    });
-
-    test("a client can only be linked to the agency's own projects", async () => {
-      const service = createClientsService(db, directory);
-
-      await expect(
-        run(
-          service.create(alpha, {
-            orgId: "alpha-org",
-            name: "Greedy",
-            projectIds: ["beta-project"],
-          }),
-        ),
-      ).rejects.toThrow("Project not found");
-      expect(await db.select().from(clients)).toHaveLength(0);
+  describe("project access", () => {
+    test("an agency reaches only its own projects", async () => {
+      expect(await access.projectAccess(alpha, "alpha-project")).toBe("owned");
+      expect(await access.projectAccess(alpha, "beta-project")).toBeNull();
+      expect(await access.projectAccess(beta, "beta-project")).toBe("owned");
     });
   });
 
@@ -133,7 +65,21 @@ describe("agency isolation", () => {
 
       await expect(
         run(
-          createAssignmentsService(db, directory).delete(alpha, {
+          createAssignmentsService(
+            db,
+            directory,
+            createEngagementsService(
+              db,
+              directory,
+              {
+                daoOf: async () => null,
+                nameOf: async () => null,
+                create: async () => ({ id: "unused" }),
+                invite: async () => {},
+              },
+              access,
+            ),
+          ).delete(alpha, {
             projectId: "beta-project",
             nearAccount: "dev.near",
           }),
@@ -157,24 +103,15 @@ describe("agency isolation", () => {
     test("an agency's budget history excludes other agencies' projects", async () => {
       await allocate("alpha-project", "10");
       await allocate("beta-project", "99");
-      const service = createBudgetsService(db, directory, createClientsService(db, directory));
+      const service = createBudgetsService(db, directory, access);
 
       const listed = await run(service.list(alpha, { limit: 50 }));
 
       expect(listed.data.map((b) => b.projectId)).toEqual(["alpha-project"]);
     });
 
-    test("another agency's client cannot be used to filter budgets", async () => {
-      const clientId = await betaClient();
-      const service = createBudgetsService(db, directory, createClientsService(db, directory));
-
-      await expect(run(service.list(alpha, { clientId, limit: 50 }))).rejects.toThrow(
-        "Client not found",
-      );
-    });
-
     test("allocations are recorded against the acting member", async () => {
-      const service = createBudgetsService(db, directory, createClientsService(db, directory));
+      const service = createBudgetsService(db, directory, access);
 
       const { budget } = await run(
         service.create(agencyScope(ALPHA, { actorId: "treasurer.near" }), {
@@ -187,19 +124,7 @@ describe("agency isolation", () => {
       expect(budget).toMatchObject({
         actorAccountId: "treasurer.near",
         note: null,
-        clientId: null,
       });
-      const betaClientId = await betaClient();
-      await expect(
-        run(
-          service.create(alpha, {
-            projectId: "alpha-project",
-            tokenId: "near",
-            amount: "5",
-            clientId: betaClientId,
-          }),
-        ),
-      ).rejects.toThrow("Client not found");
       await expect(
         run(service.create(alpha, { projectId: "beta-project", tokenId: "near", amount: "5" })),
       ).rejects.toThrow("Project not found");

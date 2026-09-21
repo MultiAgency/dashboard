@@ -2,7 +2,6 @@ import { ORPCError } from "every-plugin/orpc";
 
 export type OrgMetadata = {
   daoAccountId?: string;
-  type?: "agency" | "client";
   isPersonal?: boolean;
 };
 
@@ -42,10 +41,9 @@ function extractDaoAccountId(context: {
   if (typeof daoAccountId === "string" && daoAccountId.length > 0) return daoAccountId;
   if (defaultDaoAccountId) return defaultDaoAccountId;
   throw new ORPCError("FORBIDDEN", {
-    message:
-      metadata.isPersonal || metadata.type === "client"
-        ? "This workspace has no DAO. Switch to an agency using the agency menu in the header."
-        : "No DAO account configured. A platform admin must create an agency workspace with a Sputnik DAO.",
+    message: metadata.isPersonal
+      ? "This Organization has no Agency DAO. Switch Organization using the menu in the header."
+      : "No Agency DAO configured. A platform admin must create an Organization with a Sputnik DAO.",
   });
 }
 

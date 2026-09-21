@@ -2,9 +2,9 @@ import { and, eq, inArray, or } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { type Engagement, engagementProjects, engagements } from "../db/schema";
-import type { OrgScope } from "../lib/agency-scope";
-import type { Organizations } from "../lib/organization-access";
+import { type Engagement, engagementProjects, engagements, prepayments } from "../db/schema";
+import { type OrgScope, sharedViewScope } from "../lib/agency-scope";
+import type { OrganizationAccess, Organizations } from "../lib/organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
 export type EngagementRole = "agency" | "client";
@@ -34,7 +34,7 @@ function isUniqueViolation(error: unknown): boolean {
 
 const alreadyActive = () =>
   new ORPCError("CONFLICT", {
-    message: "There is already an active Engagement between these Organizations.",
+    message: "There is already an active Engagement of this kind between these Organizations.",
   });
 
 function slugify(name: string): string {
@@ -50,6 +50,7 @@ export function createEngagementsService(
   db: Database,
   directory: ProjectDirectory,
   organizations: Organizations,
+  access: OrganizationAccess,
 ) {
   const projectIdsOf = async (ids: string[]) => {
     const byEngagement = new Map<string, string[]>();
@@ -152,20 +153,22 @@ export function createEngagementsService(
   return {
     list: (scope: OrgScope) =>
       Effect.gen(function* () {
-        const rows = yield* Effect.promise(() =>
-          db
-            .select()
-            .from(engagements)
-            .where(
-              or(
-                eq(engagements.agencyOrganizationId, scope.organizationId),
-                eq(engagements.clientOrganizationId, scope.organizationId),
-              ),
-            ),
-        );
+        const rows = yield* Effect.promise(() => access.engagements(scope));
         const projectIds = yield* Effect.promise(() => projectIdsOf(rows.map((r) => r.id)));
         const data = rows
-          .map((row) => view(row, scope.organizationId, projectIds.get(row.id) ?? []))
+          .map(
+            (row): EngagementView => ({
+              id: row.id,
+              kind: row.kind,
+              status: row.status,
+              role: row.role,
+              agency: { organizationId: row.agencyOrganizationId, name: row.agencyName },
+              client: { organizationId: row.clientOrganizationId, name: row.clientName },
+              projectIds: projectIds.get(row.id) ?? [],
+              createdAt: row.createdAt,
+              endedAt: row.endedAt,
+            }),
+          )
           .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         return { data };
       }),
@@ -306,7 +309,184 @@ export function createEngagementsService(
         return row;
       }),
 
+    forParty: (scope: OrgScope, id: string) =>
+      Effect.gen(function* () {
+        const [row] = yield* Effect.promise(() =>
+          db
+            .select()
+            .from(engagements)
+            .where(
+              and(
+                eq(engagements.id, id),
+                or(
+                  eq(engagements.agencyOrganizationId, scope.organizationId),
+                  eq(engagements.clientOrganizationId, scope.organizationId),
+                ),
+              ),
+            )
+            .limit(1),
+        );
+        if (!row || (row.status !== "active" && row.status !== "ended")) {
+          return yield* Effect.fail(notFound());
+        }
+        return yield* Effect.promise(() => viewOne(row, scope.organizationId));
+      }),
+
     asAgency: (scope: OrgScope, id: string) => findAs(scope, id, "agency"),
+
+    subcontract: (
+      scope: OrgScope,
+      input: {
+        subcontractorOrganizationId: string;
+        projectIds?: string[];
+        prepayment?: {
+          tokenId: string;
+          amount: string;
+          periodStart: string;
+          periodEnd: string;
+          transferReference?: string;
+        };
+      },
+    ) =>
+      Effect.gen(function* () {
+        const subcontractor = input.subcontractorOrganizationId.trim();
+        if (subcontractor === scope.organizationId) {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", { message: "An Organization cannot engage itself." }),
+          );
+        }
+        for (const projectId of new Set(input.projectIds ?? [])) {
+          yield* Effect.promise(() => directory.forAgency(scope).require(projectId));
+        }
+        const [existing] = yield* Effect.promise(() =>
+          db
+            .select()
+            .from(engagements)
+            .where(
+              and(
+                eq(engagements.agencyOrganizationId, scope.organizationId),
+                eq(engagements.clientOrganizationId, subcontractor),
+                eq(engagements.kind, "subcontract"),
+                eq(engagements.status, "active"),
+              ),
+            )
+            .limit(1),
+        );
+        const row =
+          existing ??
+          (yield* insert({
+            id: crypto.randomUUID(),
+            agencyOrganizationId: scope.organizationId,
+            agencyName: yield* nameOf(scope, scope.organizationId),
+            clientOrganizationId: subcontractor,
+            clientName:
+              (yield* Effect.promise(() =>
+                organizations.nameOf(scope.pluginContext, subcontractor),
+              )) ?? "",
+            kind: "subcontract",
+            status: "active",
+            createdBy: scope.actorId,
+          }));
+        const projectIds = [...new Set(input.projectIds ?? [])];
+        if (projectIds.length > 0) {
+          yield* Effect.promise(() =>
+            db
+              .insert(engagementProjects)
+              .values(projectIds.map((projectId) => ({ engagementId: row.id, projectId })))
+              .onConflictDoNothing(),
+          );
+        }
+        const prepayment = input.prepayment;
+        if (prepayment) {
+          if (!scope.agencyDao) {
+            return yield* Effect.fail(
+              new ORPCError("BAD_REQUEST", {
+                message: "An Agency DAO is required to record a Prepayment.",
+              }),
+            );
+          }
+          if (prepayment.periodStart > prepayment.periodEnd) {
+            return yield* Effect.fail(
+              new ORPCError("BAD_REQUEST", {
+                message: "periodStart must be on or before periodEnd",
+              }),
+            );
+          }
+          yield* Effect.promise(() =>
+            db.insert(prepayments).values({
+              id: crypto.randomUUID(),
+              engagementId: row.id,
+              tokenId: prepayment.tokenId,
+              amount: prepayment.amount,
+              periodStart: prepayment.periodStart,
+              periodEnd: prepayment.periodEnd,
+              transferReference: prepayment.transferReference?.trim() || null,
+              actorAccountId: scope.actorId,
+            }),
+          );
+        }
+        return yield* Effect.promise(() => viewOne(row, scope.organizationId));
+      }),
+
+    subcontractedProjects: (scope: OrgScope) =>
+      Effect.promise(async () => {
+        const rows = await db
+          .select({
+            engagementId: engagements.id,
+            agencyOrganizationId: engagements.agencyOrganizationId,
+            projectId: engagementProjects.projectId,
+          })
+          .from(engagementProjects)
+          .innerJoin(engagements, eq(engagements.id, engagementProjects.engagementId))
+          .where(
+            and(
+              eq(engagements.clientOrganizationId, scope.organizationId),
+              eq(engagements.kind, "subcontract"),
+              eq(engagements.status, "active"),
+            ),
+          );
+        return rows;
+      }),
+
+    workOn: (scope: OrgScope, projectId: string) =>
+      Effect.promise(async (): Promise<"owned" | "subcontracted"> => {
+        const relation = await access.projectAccess(scope, projectId);
+        if (relation === "owned") return "owned";
+        if (relation === "subcontractor") return "subcontracted";
+        throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+      }),
+
+    subcontractedProjectDetails: (scope: OrgScope) =>
+      Effect.promise(async () => {
+        const rows = await db
+          .select({
+            agencyOrganizationId: engagements.agencyOrganizationId,
+            projectId: engagementProjects.projectId,
+          })
+          .from(engagementProjects)
+          .innerJoin(engagements, eq(engagements.id, engagementProjects.engagementId))
+          .where(
+            and(
+              eq(engagements.clientOrganizationId, scope.organizationId),
+              eq(engagements.kind, "subcontract"),
+              eq(engagements.status, "active"),
+            ),
+          );
+        const byAgency = new Map<string, Set<string>>();
+        for (const row of rows) {
+          const ids = byAgency.get(row.agencyOrganizationId) ?? new Set<string>();
+          ids.add(row.projectId);
+          byAgency.set(row.agencyOrganizationId, ids);
+        }
+        const out = [];
+        for (const [agencyOrganizationId, ids] of byAgency) {
+          const dao = await organizations.daoOf(agencyOrganizationId);
+          const view = sharedViewScope(scope, agencyOrganizationId, dao);
+          const projects = await directory.forAgency(view).list();
+          out.push(...projects.filter((p) => ids.has(p.id)));
+        }
+        return out;
+      }),
 
     asClient: (scope: OrgScope, id: string) =>
       Effect.gen(function* () {

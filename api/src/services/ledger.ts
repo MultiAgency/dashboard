@@ -148,6 +148,7 @@ async function loadRows(
         tokenId: billings.tokenId,
         amount: billings.amount,
         proposalId: billings.proposalId,
+        daoAccountId: billings.daoAccountId,
       })
       .from(billings)
       .where(inArray(billings.projectId, projectIds)),
@@ -155,7 +156,7 @@ async function loadRows(
     Effect.runPromise(listings.forProjects(scope, projectIds, "internal")),
   ]);
   const bills = await Promise.all(
-    billingRows.map((b) => enrichWithChainStatus(db, b, scope.agencyDao)),
+    billingRows.map((b) => enrichWithChainStatus(db, b, b.daoAccountId ?? scope.agencyDao)),
   );
   return { budgetRows, bills, nearnListings, internalListings };
 }

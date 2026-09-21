@@ -7,11 +7,12 @@ import * as schema from "../../src/db/schema";
 import { budgets } from "../../src/db/schema";
 import type { AgencyScope } from "../../src/lib/agency-scope";
 import { runEffect } from "../../src/lib/context";
+import { createOrganizationAccess } from "../../src/lib/organization-access";
 import { createBudgetsService } from "../../src/services/budgets";
-import { createClientsService } from "../../src/services/clients";
 import { createEngagementsService } from "../../src/services/engagements";
 import { createPrepaymentsService } from "../../src/services/prepayments";
 import { createProjectDirectory } from "../../src/services/project-directory";
+import { inMemoryOrganizationAccess } from "../fakes/organization-access";
 import { inMemoryOrganizations } from "../fakes/organizations";
 import { agencyScope, inMemoryProjects, orgScope, project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
@@ -34,7 +35,13 @@ describe("prepayments", () => {
     { id: "org-alpha", name: "Alpha", daoAccountId: ALPHA_DAO },
     { id: "org-acme", name: "Acme" },
   ]);
-  const engagements = () => createEngagementsService(db, directory, orgs.organizations);
+  const engagements = () =>
+    createEngagementsService(
+      db,
+      directory,
+      orgs.organizations,
+      createOrganizationAccess(db, orgs.organizations, directory),
+    );
   const prepayments = () => createPrepaymentsService(db, engagements());
 
   beforeAll(async () => {
@@ -172,7 +179,11 @@ describe("prepayments", () => {
   });
 
   test("every Budget entry records the Agency DAO it is funded from", async () => {
-    const service = createBudgetsService(db, directory, createClientsService(db, directory));
+    const service = createBudgetsService(
+      db,
+      directory,
+      inMemoryOrganizationAccess(orgs.organizations, directory),
+    );
 
     const { budget } = await run(
       service.create(alpha, { projectId: "site", tokenId: USDC, amount: "10" }),

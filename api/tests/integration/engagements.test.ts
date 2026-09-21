@@ -73,12 +73,12 @@ describe("engagements", () => {
       projects: () => client,
       builders: () => ({ listBuilders: async () => ({ data: [] }) }),
     } as unknown as PluginsClient;
-    const access = createOrganizationAccess(db, orgs.organizations);
-    const engagements = createEngagementsService(db, directory, orgs.organizations);
+    const access = createOrganizationAccess(db, orgs.organizations, directory);
+    const engagements = createEngagementsService(db, directory, orgs.organizations, access);
     const portal = createClientPortalService(
       engagements,
       createAgencyService(db, plugins, directory, listings, ledgers),
-      createBillingsService(db, directory),
+      createBillingsService(db, directory, engagements),
       {} as never,
       directory,
       ledgers,

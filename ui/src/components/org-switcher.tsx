@@ -5,9 +5,9 @@ import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { sessionQueryOptions } from "@/lib/auth";
-import { isWorkspace } from "@/lib/org-metadata";
-import { invalidateWorkspaceQueries } from "@/lib/queries";
-import { switchWorkspace } from "@/lib/workspace";
+import { isOrganization } from "@/lib/org-metadata";
+import { switchOrganization } from "@/lib/organizations";
+import { invalidateOrganizationQueries } from "@/lib/queries";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -36,14 +36,14 @@ export function OrgSwitcher() {
   });
 
   const switchMutation = useMutation({
-    mutationFn: (orgId: string) => switchWorkspace(auth, orgId),
+    mutationFn: (orgId: string) => switchOrganization(auth, orgId),
     onSuccess: async (ok) => {
       if (!ok) {
         toast.error("Could not switch Organization — try signing out and back in.");
         return;
       }
       await queryClient.fetchQuery(sessionQueryOptions(auth));
-      await invalidateWorkspaceQueries(queryClient, router);
+      await invalidateOrganizationQueries(queryClient, router);
     },
     onError: (error: Error) => {
       toast.error(error.message || "Could not switch Organization — try signing out and back in.");
@@ -51,7 +51,7 @@ export function OrgSwitcher() {
   });
 
   const organizations = useMemo(
-    () => (orgsQuery.data ?? []).filter((org) => isWorkspace(org.metadata)),
+    () => (orgsQuery.data ?? []).filter((org) => isOrganization(org.metadata)),
     [orgsQuery.data],
   );
   const activeOrg = organizations.find((o) => o.id === activeOrgId);

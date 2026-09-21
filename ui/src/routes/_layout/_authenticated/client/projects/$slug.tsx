@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_layout/_authenticated/client/projects/$s
 
 function ClientProjectDetailPage() {
   const { slug } = Route.useParams();
-  const { client, engagementId } = clientPortalRoute.useRouteContext();
+  const { engagementId } = clientPortalRoute.useRouteContext();
   const apiClient = useApiClient();
   const search = { engagement: engagementId };
 
@@ -98,7 +98,6 @@ function ClientProjectDetailPage() {
         <BillingsAdminSection
           readOnly
           clientPortal
-          clientId={client.id}
           engagementId={engagementId}
           fixedProjectId={projectId}
         />

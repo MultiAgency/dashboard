@@ -58,9 +58,9 @@ export function createClientPortalService(
 
     getBudget: (scope: OrgScope, input: { engagementId: string; projectId: string }) =>
       Effect.gen(function* () {
-        const { view, projectIds } = yield* shared(scope, input.engagementId);
+        const { engagement, view, projectIds } = yield* shared(scope, input.engagementId);
         assertShared(projectIds, input.projectId);
-        if (!hasAgencyDao(view)) return { budgets: [] };
+        if (engagement.kind === "subcontract" || !hasAgencyDao(view)) return { budgets: [] };
         return yield* agency.getBudget(view, input.projectId);
       }),
 
@@ -85,8 +85,16 @@ export function createClientPortalService(
       input: { engagementId: string; note?: string; startDate?: string; endDate?: string },
     ) =>
       Effect.gen(function* () {
-        const { view, projectIds } = yield* shared(scope, input.engagementId);
-        if (!hasAgencyDao(view) || projectIds.length === 0) {
+        const engagement = yield* engagements.forParty(scope, input.engagementId);
+        const agencyDao =
+          engagement.role === "agency" && hasAgencyDao(scope)
+            ? scope.agencyDao
+            : yield* Effect.promise(() => access.daoOf(engagement.agency.organizationId));
+        const view =
+          engagement.role === "agency" && hasAgencyDao(scope)
+            ? scope
+            : sharedViewScope(scope, engagement.agency.organizationId, agencyDao);
+        if (!hasAgencyDao(view) || engagement.projectIds.length === 0) {
           return yield* Effect.fail(
             new ORPCError("NOT_FOUND", {
               message: "No projects are shared through this Engagement yet.",
@@ -94,10 +102,12 @@ export function createClientPortalService(
           );
         }
         return yield* reports.generate(view, {
-          projectIds,
+          projectIds: engagement.projectIds,
+          engagementId: engagement.id,
           note: input.note,
           startDate: input.startDate,
           endDate: input.endDate,
+          includeBudgets: engagement.role === "agency" || engagement.kind !== "subcontract",
         });
       }),
 
