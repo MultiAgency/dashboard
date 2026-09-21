@@ -17,6 +17,7 @@ import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
 import { createBillingsService } from "./services/billings";
 import { createBudgetsService } from "./services/budgets";
+import { createChangeOrdersService } from "./services/change-orders";
 import { createClientPortalService } from "./services/client-portal";
 import { createClientsService } from "./services/clients";
 import { createContactFormService } from "./services/contact-form";
@@ -26,6 +27,7 @@ import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
+import { notifyWebhook } from "./services/notify";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
@@ -90,7 +92,17 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const billings = createBillingsService(db, directory);
       const reports = createReportsService(db, directory, plugins);
       const engagements = createEngagementsService(db, directory, organizations);
-      const prepayments = createPrepaymentsService(db, engagements);
+      const changeOrders = createChangeOrdersService(db, {
+        engagements,
+        directory,
+        ledgers: projectLedgers,
+        access,
+        notify: (event) =>
+          notifyWebhook(notifyConfig.webhookUrl, `[${event.to}] ${event.message}`, {
+            event,
+          }),
+      });
+      const prepayments = createPrepaymentsService(db, engagements, changeOrders.applyPeriod);
       const clientPortal = createClientPortalService(
         engagements,
         agency,
@@ -123,6 +135,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         reports,
         engagements,
         prepayments,
+        changeOrders,
         clientPortal,
         me,
         proposals,
@@ -150,6 +163,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       reports,
       engagements,
       prepayments,
+      changeOrders,
       clientPortal,
       me,
       proposals,
@@ -373,6 +387,42 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(manager)
           .handler(async ({ context, input }) =>
             runEffect(prepayments.remove(context.scope, input.id)),
+          ),
+      },
+
+      changeOrders: {
+        list: builder.changeOrders.list
+          .use(orgMember)
+          .handler(async ({ context, input }) =>
+            runEffect(changeOrders.list(context.scope, input.engagementId)),
+          ),
+
+        plan: builder.changeOrders.plan.use(orgMember).handler(async ({ context, input }) => ({
+          plan: await runEffect(changeOrders.plan(context.scope, input.engagementId)),
+        })),
+
+        propose: builder.changeOrders.propose
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(changeOrders.propose(context.scope, input)),
+          ),
+
+        approve: builder.changeOrders.approve
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(changeOrders.approve(context.scope, input.id)),
+          ),
+
+        reject: builder.changeOrders.reject
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(changeOrders.reject(context.scope, input.id)),
+          ),
+
+        withdraw: builder.changeOrders.withdraw
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(changeOrders.withdraw(context.scope, input.id)),
           ),
       },
 

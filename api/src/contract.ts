@@ -236,6 +236,36 @@ const engagementId = z.object({ id: z.string().min(1) });
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
+const allocationLine = z.object({
+  projectId: z.string().min(1),
+  tokenId,
+  amount: z
+    .string()
+    .regex(/^-?\d+$/)
+    .max(80),
+});
+
+const changeOrder = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  proposedBy: z.enum(["agency", "client"]),
+  proposedByActor: z.string(),
+  status: z.enum(["proposed", "approved", "rejected", "withdrawn", "failed"]),
+  effective: z.enum(["next_period", "now"]),
+  note: z.string().nullable(),
+  moves: z.array(allocationLine),
+  plan: z.array(allocationLine).nullable(),
+  effectiveFrom: z.string().nullable(),
+  decidedByActor: z.string().nullable(),
+  decidedAt: z.date().nullable(),
+  appliedAt: z.date().nullable(),
+  failureReason: z.string().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+const changeOrderId = z.object({ id: z.string().min(1) });
+
 const prepayment = z.object({
   id: z.string(),
   engagementId: z.string(),
@@ -710,7 +740,7 @@ export const contract = oc.router({
           transferReference: z.string().max(500).optional(),
         }),
       )
-      .output(prepayment)
+      .output(prepayment.extend({ shortfall: z.array(allocationLine) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
     correct: oc
@@ -733,6 +763,62 @@ export const contract = oc.router({
       .input(z.object({ id: z.string().min(1) }))
       .output(z.object({ deleted: z.literal(true) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+  },
+
+  changeOrders: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/change-orders" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(changeOrder) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    plan: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/allocation-plan" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(
+        z.object({
+          plan: z
+            .object({
+              id: z.string(),
+              effectiveFrom: z.string(),
+              lines: z.array(allocationLine),
+            })
+            .nullable(),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    propose: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/change-orders" })
+      .input(
+        z.object({
+          engagementId: z.string().min(1),
+          moves: z.array(allocationLine).max(50).optional(),
+          plan: z.array(allocationLine).max(50).optional(),
+          effective: z.enum(["next_period", "now"]).optional(),
+          note: z.string().max(2000).optional(),
+        }),
+      )
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    approve: oc
+      .route({ method: "POST", path: "/change-orders/{id}/approve" })
+      .input(changeOrderId)
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    reject: oc
+      .route({ method: "POST", path: "/change-orders/{id}/reject" })
+      .input(changeOrderId)
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    withdraw: oc
+      .route({ method: "POST", path: "/change-orders/{id}/withdraw" })
+      .input(changeOrderId)
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
   clientPortal: {

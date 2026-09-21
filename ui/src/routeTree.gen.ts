@@ -31,6 +31,7 @@ import { Route as LayoutAuthenticatedPlatformIndexRouteImport } from './routes/_
 import { Route as LayoutAuthenticatedDashboardIndexRouteImport } from './routes/_layout/_authenticated/dashboard/index'
 import { Route as LayoutAuthenticatedClientIndexRouteImport } from './routes/_layout/_authenticated/client/index'
 import { Route as LayoutAuthenticatedAdminIndexRouteImport } from './routes/_layout/_authenticated/admin/index'
+import { Route as LayoutAuthenticatedClientPlanRouteImport } from './routes/_layout/_authenticated/client/plan'
 import { Route as LayoutAuthenticatedAdminSettingsRouteImport } from './routes/_layout/_authenticated/admin/settings'
 import { Route as LayoutAuthenticatedAdminMembersRouteImport } from './routes/_layout/_authenticated/admin/members'
 import { Route as LayoutAuthenticatedAcceptInvitationIdRouteImport } from './routes/_layout/_authenticated/accept-invitation.$id'
@@ -165,6 +166,12 @@ const LayoutAuthenticatedAdminIndexRoute =
     path: '/',
     getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
+const LayoutAuthenticatedClientPlanRoute =
+  LayoutAuthenticatedClientPlanRouteImport.update({
+    id: '/plan',
+    path: '/plan',
+    getParentRoute: () => LayoutAuthenticatedClientRouteRoute,
+  } as any)
 const LayoutAuthenticatedAdminSettingsRoute =
   LayoutAuthenticatedAdminSettingsRouteImport.update({
     id: '/settings',
@@ -276,6 +283,7 @@ export interface FileRoutesByFullPath {
   '/accept-invitation/$id': typeof LayoutAuthenticatedAcceptInvitationIdRoute
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
+  '/client/plan': typeof LayoutAuthenticatedClientPlanRoute
   '/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/dashboard/': typeof LayoutAuthenticatedDashboardIndexRoute
@@ -309,6 +317,7 @@ export interface FileRoutesByTo {
   '/accept-invitation/$id': typeof LayoutAuthenticatedAcceptInvitationIdRoute
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
+  '/client/plan': typeof LayoutAuthenticatedClientPlanRoute
   '/admin': typeof LayoutAuthenticatedAdminIndexRoute
   '/client': typeof LayoutAuthenticatedClientIndexRoute
   '/dashboard': typeof LayoutAuthenticatedDashboardIndexRoute
@@ -349,6 +358,7 @@ export interface FileRoutesById {
   '/_layout/_authenticated/accept-invitation/$id': typeof LayoutAuthenticatedAcceptInvitationIdRoute
   '/_layout/_authenticated/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/_layout/_authenticated/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
+  '/_layout/_authenticated/client/plan': typeof LayoutAuthenticatedClientPlanRoute
   '/_layout/_authenticated/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/_layout/_authenticated/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/_layout/_authenticated/dashboard/': typeof LayoutAuthenticatedDashboardIndexRoute
@@ -388,6 +398,7 @@ export interface FileRouteTypes {
     | '/accept-invitation/$id'
     | '/admin/members'
     | '/admin/settings'
+    | '/client/plan'
     | '/admin/'
     | '/client/'
     | '/dashboard/'
@@ -421,6 +432,7 @@ export interface FileRouteTypes {
     | '/accept-invitation/$id'
     | '/admin/members'
     | '/admin/settings'
+    | '/client/plan'
     | '/admin'
     | '/client'
     | '/dashboard'
@@ -460,6 +472,7 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/accept-invitation/$id'
     | '/_layout/_authenticated/admin/members'
     | '/_layout/_authenticated/admin/settings'
+    | '/_layout/_authenticated/client/plan'
     | '/_layout/_authenticated/admin/'
     | '/_layout/_authenticated/client/'
     | '/_layout/_authenticated/dashboard/'
@@ -638,6 +651,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedAdminIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
     }
+    '/_layout/_authenticated/client/plan': {
+      id: '/_layout/_authenticated/client/plan'
+      path: '/plan'
+      fullPath: '/client/plan'
+      preLoaderRoute: typeof LayoutAuthenticatedClientPlanRouteImport
+      parentRoute: typeof LayoutAuthenticatedClientRouteRoute
+    }
     '/_layout/_authenticated/admin/settings': {
       id: '/_layout/_authenticated/admin/settings'
       path: '/settings'
@@ -793,6 +813,7 @@ const LayoutAuthenticatedAdminRouteRouteWithChildren =
   )
 
 interface LayoutAuthenticatedClientRouteRouteChildren {
+  LayoutAuthenticatedClientPlanRoute: typeof LayoutAuthenticatedClientPlanRoute
   LayoutAuthenticatedClientIndexRoute: typeof LayoutAuthenticatedClientIndexRoute
   LayoutAuthenticatedClientProjectsSlugRoute: typeof LayoutAuthenticatedClientProjectsSlugRoute
   LayoutAuthenticatedClientProjectsIndexRoute: typeof LayoutAuthenticatedClientProjectsIndexRoute
@@ -801,6 +822,7 @@ interface LayoutAuthenticatedClientRouteRouteChildren {
 
 const LayoutAuthenticatedClientRouteRouteChildren: LayoutAuthenticatedClientRouteRouteChildren =
   {
+    LayoutAuthenticatedClientPlanRoute: LayoutAuthenticatedClientPlanRoute,
     LayoutAuthenticatedClientIndexRoute: LayoutAuthenticatedClientIndexRoute,
     LayoutAuthenticatedClientProjectsSlugRoute:
       LayoutAuthenticatedClientProjectsSlugRoute,

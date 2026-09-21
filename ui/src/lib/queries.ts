@@ -322,6 +322,26 @@ export function prepaymentsQueryOptions(apiClient: ApiClient, engagementId: stri
   });
 }
 
+export function changeOrdersQueryKey(engagementId: string) {
+  return ["engagements", "change-orders", engagementId] as const;
+}
+
+export function changeOrdersQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...changeOrdersQueryKey(engagementId), "list"] as const,
+    queryFn: () => apiClient.changeOrders.list({ engagementId }),
+    retry: false,
+  });
+}
+
+export function allocationPlanQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...changeOrdersQueryKey(engagementId), "plan"] as const,
+    queryFn: () => apiClient.changeOrders.plan({ engagementId }),
+    retry: false,
+  });
+}
+
 export const clientPortalDashboardQueryKey = ["client", "portal", "dashboard"] as const;
 
 export function clientPortalDashboardSummaryQueryOptions(

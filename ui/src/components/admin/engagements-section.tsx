@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field } from "@/components/admin-form";
+import { ChangeOrdersPanel } from "@/components/change-orders-panel";
 import { PrepaymentsPanel } from "@/components/prepayments-panel";
 import { useMeRoles } from "@/hooks";
 import type { ApiClient } from "@/lib/api";
@@ -259,7 +260,15 @@ function AgencyEngagementCard({ engagement }: { engagement: Engagement }) {
           </div>
         )}
         {hasAgencyDao && engagement.status !== "proposed" && engagement.status !== "declined" && (
-          <PrepaymentsPanel engagementId={engagement.id} canManage={canShare} />
+          <>
+            <PrepaymentsPanel engagementId={engagement.id} canManage={canShare} />
+            <ChangeOrdersPanel
+              engagementId={engagement.id}
+              side="agency"
+              canManage={canShare}
+              projects={projects.filter((p) => shared.has(p.id))}
+            />
+          </>
         )}
       </CardContent>
     </Card>

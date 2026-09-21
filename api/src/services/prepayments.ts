@@ -2,7 +2,7 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { budgets, type Prepayment, prepayments } from "../db/schema";
+import { type AllocationLine, budgets, type Prepayment, prepayments } from "../db/schema";
 import type { AgencyScope, OrgScope } from "../lib/agency-scope";
 import type { EngagementsService } from "./engagements";
 
@@ -37,7 +37,17 @@ export async function prepaidBalance(db: Database, engagementId: string): Promis
     .map(([tokenId, amount]) => ({ tokenId, amount: amount.toString() }));
 }
 
-export function createPrepaymentsService(db: Database, engagements: EngagementsService) {
+type ApplyPeriod = (
+  scope: AgencyScope,
+  engagementId: string,
+  periodStart: string,
+) => Promise<{ shortfall: AllocationLine[] }>;
+
+export function createPrepaymentsService(
+  db: Database,
+  engagements: EngagementsService,
+  applyPeriod?: ApplyPeriod,
+) {
   const requireOwn = (scope: AgencyScope, id: string) =>
     Effect.gen(function* () {
       const [row] = yield* Effect.promise(() =>
@@ -101,7 +111,11 @@ export function createPrepaymentsService(db: Database, engagements: EngagementsS
             })
             .returning(),
         );
-        return row as Prepayment;
+        const recorded = row as Prepayment;
+        const { shortfall } = applyPeriod
+          ? yield* Effect.promise(() => applyPeriod(scope, engagement.id, recorded.periodStart))
+          : { shortfall: [] as AllocationLine[] };
+        return { ...recorded, shortfall };
       }),
 
     correct: (

@@ -98,3 +98,17 @@ function renderEmailHtml(app: ApplicationNotification): string {
 </ul>
 <p>Review in the Applications section on <code>/team</code>.</p>`;
 }
+
+export async function notifyWebhook(
+  webhookUrl: string | undefined,
+  text: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  if (!webhookUrl) return;
+  const res = await fetchWithTimeout(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: text, text, ...payload }),
+  });
+  if (!res.ok) throw new Error(`webhook POST failed: ${res.status}`);
+}

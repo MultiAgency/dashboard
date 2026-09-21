@@ -5,6 +5,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -329,3 +330,93 @@ export const prepayments = pgTable(
 );
 
 export type Prepayment = typeof prepayments.$inferSelect;
+
+export type AllocationLine = { projectId: string; tokenId: string; amount: string };
+
+export const changeOrders = pgTable(
+  "change_orders",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id, { onDelete: "cascade" }),
+    proposedBy: text("proposed_by", { enum: ["agency", "client"] }).notNull(),
+    proposedByActor: text("proposed_by_actor").notNull(),
+    status: text("status", {
+      enum: ["proposed", "approved", "rejected", "withdrawn", "failed"],
+    }).notNull(),
+    effective: text("effective", { enum: ["next_period", "now"] }).notNull(),
+    note: text("note"),
+    moves: jsonb("moves").$type<AllocationLine[]>().notNull().default([]),
+    plan: jsonb("plan").$type<AllocationLine[] | null>(),
+    effectiveFrom: date("effective_from", { mode: "string" }),
+    decidedByActor: text("decided_by_actor"),
+    decidedAt: timestamp("decided_at", { withTimezone: false }),
+    appliedAt: timestamp("applied_at", { withTimezone: false }),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("change_orders_engagement_id").on(t.engagementId, t.createdAt),
+  }),
+);
+
+export type ChangeOrder = typeof changeOrders.$inferSelect;
+
+export const allocationPlans = pgTable(
+  "allocation_plans",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id, { onDelete: "cascade" }),
+    changeOrderId: text("change_order_id").references(() => changeOrders.id, {
+      onDelete: "set null",
+    }),
+    effectiveFrom: date("effective_from", { mode: "string" }).notNull(),
+    lines: jsonb("lines").$type<AllocationLine[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("allocation_plans_engagement_id").on(t.engagementId, t.effectiveFrom),
+  }),
+);
+
+export type AllocationPlan = typeof allocationPlans.$inferSelect;
+
+export const allocationPeriods = pgTable(
+  "allocation_periods",
+  {
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id, { onDelete: "cascade" }),
+    periodStart: date("period_start", { mode: "string" }).notNull(),
+    planId: text("plan_id")
+      .notNull()
+      .references(() => allocationPlans.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.engagementId, t.periodStart] }),
+  }),
+);
+
+export const allocationLineApplications = pgTable(
+  "allocation_line_applications",
+  {
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id, { onDelete: "cascade" }),
+    periodStart: date("period_start", { mode: "string" }).notNull(),
+    planId: text("plan_id")
+      .notNull()
+      .references(() => allocationPlans.id, { onDelete: "cascade" }),
+    lineIndex: integer("line_index").notNull(),
+    budgetId: text("budget_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.engagementId, t.periodStart, t.planId, t.lineIndex] }),
+  }),
+);

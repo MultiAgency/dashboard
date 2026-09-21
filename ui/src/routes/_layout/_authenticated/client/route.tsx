@@ -97,6 +97,9 @@ function ClientLayout() {
         <Link to="/client/projects" search={search} className={tabClass("/client/projects")}>
           projects
         </Link>
+        <Link to="/client/plan" search={search} className={tabClass("/client/plan")}>
+          plan
+        </Link>
         <Link to="/client/reports" search={search} className={tabClass("/client/reports")}>
           reports
         </Link>
