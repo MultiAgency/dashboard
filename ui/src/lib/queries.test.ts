@@ -7,7 +7,6 @@ import {
   adminAssignmentsListQueryKey,
   adminBillingsQueryKey,
   adminBudgetsLogQueryKey,
-  adminClientDetailQueryOptions,
   adminClientsListQueryKey,
   adminContributorBillingsQueryKey,
   adminContributorsListQueryKey,
@@ -114,7 +113,7 @@ describe("refreshAfter", () => {
       clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "dao.near").queryKey,
       budgetsLog: adminProjectBudgetsLogQueryKey("a"),
       assignments: adminAssignmentsForProjectQueryKey("a"),
-      clientDetail: adminClientDetailQueryOptions(api, "c1").queryKey,
+      clientDetail: ["admin", "clients", "detail", "mainnet", "c1"],
       proposals: proposalsListQueryKey,
       settings: adminSettingsQueryOptions(api).queryKey,
     });

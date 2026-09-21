@@ -11,8 +11,16 @@ import {
   type PluginContext,
 } from "./agency-scope";
 
+export type InviteRole = "owner" | "admin" | "member";
+
 export type Organizations = {
   daoOf(organizationId: string): Promise<string | null>;
+  nameOf(context: PluginContext, organizationId: string): Promise<string | null>;
+  create(context: PluginContext, input: { name: string; slug: string }): Promise<{ id: string }>;
+  invite(
+    context: PluginContext,
+    input: { organizationId: string; email: string; role: InviteRole },
+  ): Promise<void>;
 };
 
 const alreadyLinked = () =>

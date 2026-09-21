@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/_layout/_authenticated/client/forbidden")({
+export const Route = createFileRoute("/_layout/_authenticated/client-forbidden")({
   component: ClientForbiddenPage,
 });
 
@@ -10,10 +10,10 @@ function ClientForbiddenPage() {
       <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
         client portal · 403
       </p>
-      <h1 className="font-display text-3xl font-black uppercase tracking-tight">Not a client</h1>
+      <h1 className="font-display text-3xl font-black uppercase tracking-tight">No agencies yet</h1>
       <p className="text-sm text-muted-foreground">
-        This NEAR wallet is not linked to a client record. Ask your agency to add your NEAR account
-        under Admin → Clients, then sign in again.
+        Your active Organization has no Engagement with an agency. Switch Organization in the
+        header, or ask your agency to invite you.
       </p>
       <Link to="/" className="inline-block text-sm underline underline-offset-2">
         Back to home

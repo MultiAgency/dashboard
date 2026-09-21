@@ -291,14 +291,6 @@ export function adminClientsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
-export function adminClientDetailQueryOptions(apiClient: ApiClient, id: string) {
-  return queryOptions({
-    queryKey: ["admin", "clients", "detail", getNetwork(), id] as const,
-    queryFn: () => apiClient.clients.get({ id }),
-    retry: false,
-  });
-}
-
 export function adminContributorDetailQueryOptions(apiClient: ApiClient, nearAccount: string) {
   return queryOptions({
     queryKey: ["admin", "contributors", "detail", getNetwork(), nearAccount] as const,
@@ -307,10 +299,13 @@ export function adminContributorDetailQueryOptions(apiClient: ApiClient, nearAcc
   });
 }
 
-export function clientLookupQueryOptions(apiClient: ApiClient, nearAccountId: string) {
+export const engagementsListQueryKey = ["engagements", "list"] as const;
+
+export function engagementsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
-    queryKey: ["client", "lookup", nearAccountId] as const,
-    queryFn: () => apiClient.clients.lookupByNearAccount({ nearAccountId }),
+    queryKey: engagementsListQueryKey,
+    queryFn: () => apiClient.engagements.list(),
+    staleTime: 30_000,
     retry: false,
   });
 }
@@ -319,24 +314,21 @@ export const clientPortalDashboardQueryKey = ["client", "portal", "dashboard"] a
 
 export function clientPortalDashboardSummaryQueryOptions(
   apiClient: ApiClient,
-  agencyDaoAccountId: string,
+  engagementId: string,
 ) {
   return queryOptions({
-    queryKey: [...clientPortalDashboardQueryKey, getNetwork(), agencyDaoAccountId] as const,
-    queryFn: () => apiClient.clientPortal.dashboard.summary({ agencyDaoAccountId }),
+    queryKey: [...clientPortalDashboardQueryKey, getNetwork(), engagementId] as const,
+    queryFn: () => apiClient.clientPortal.dashboard.summary({ engagementId }),
     retry: false,
   });
 }
 
 export const clientPortalProjectsListQueryKey = ["client", "portal", "projects"] as const;
 
-export function clientPortalProjectsListQueryOptions(
-  apiClient: ApiClient,
-  agencyDaoAccountId: string,
-) {
+export function clientPortalProjectsListQueryOptions(apiClient: ApiClient, engagementId: string) {
   return queryOptions({
-    queryKey: [...clientPortalProjectsListQueryKey, getNetwork(), agencyDaoAccountId] as const,
-    queryFn: () => apiClient.clientPortal.projects.list({ agencyDaoAccountId }),
+    queryKey: [...clientPortalProjectsListQueryKey, getNetwork(), engagementId] as const,
+    queryFn: () => apiClient.clientPortal.projects.list({ engagementId }),
     retry: false,
   });
 }
@@ -350,17 +342,12 @@ export const clientPortalProjectDetailQueryKey = [
 
 export function clientPortalProjectDetailQueryOptions(
   apiClient: ApiClient,
-  agencyDaoAccountId: string,
+  engagementId: string,
   slug: string,
 ) {
   return queryOptions({
-    queryKey: [
-      ...clientPortalProjectDetailQueryKey,
-      getNetwork(),
-      agencyDaoAccountId,
-      slug,
-    ] as const,
-    queryFn: () => apiClient.clientPortal.projects.get({ slug, agencyDaoAccountId }),
+    queryKey: [...clientPortalProjectDetailQueryKey, getNetwork(), engagementId, slug] as const,
+    queryFn: () => apiClient.clientPortal.projects.get({ slug, engagementId }),
     retry: false,
   });
 }
@@ -374,17 +361,17 @@ export const clientPortalProjectBudgetQueryKey = [
 
 export function clientPortalProjectBudgetQueryOptions(
   apiClient: ApiClient,
-  agencyDaoAccountId: string,
+  engagementId: string,
   projectId: string,
 ) {
   return queryOptions({
     queryKey: [
       ...clientPortalProjectBudgetQueryKey,
       getNetwork(),
-      agencyDaoAccountId,
+      engagementId,
       projectId,
     ] as const,
-    queryFn: () => apiClient.clientPortal.projects.getBudget({ projectId, agencyDaoAccountId }),
+    queryFn: () => apiClient.clientPortal.projects.getBudget({ projectId, engagementId }),
     staleTime: 30_000,
     retry: false,
   });

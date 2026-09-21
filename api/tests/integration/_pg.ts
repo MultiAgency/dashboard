@@ -13,7 +13,14 @@ interface PgliteLike {
 }
 
 export async function applyAllMigrations(pg: PgliteLike): Promise<void> {
-  for (const file of MIGRATION_FILES) {
+  await applyMigrations(pg, () => true);
+}
+
+export async function applyMigrations(
+  pg: PgliteLike,
+  include: (file: string) => boolean,
+): Promise<void> {
+  for (const file of MIGRATION_FILES.filter(include)) {
     const sql = readFileSync(resolve(MIGRATIONS_DIR, file), "utf8");
     for (const stmt of sql.split("--> statement-breakpoint")) {
       const trimmed = stmt.trim();

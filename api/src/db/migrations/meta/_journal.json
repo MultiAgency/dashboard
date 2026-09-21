@@ -43,6 +43,13 @@
       "when": 1784323200000,
       "tag": "0005_organization_daos",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784409600000,
+      "tag": "0006_engagements",
+      "breakpoints": true
     }
   ]
 }

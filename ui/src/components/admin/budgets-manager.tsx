@@ -663,7 +663,7 @@ export function ProjectBudgetPanel({
   readOnly = false,
   showAgencyBudgetLink = false,
   clientPortal = false,
-  agencyDaoAccountId,
+  engagementId,
 }: {
   projectId: string;
   readOnly?: boolean;
@@ -671,7 +671,7 @@ export function ProjectBudgetPanel({
   showAgencyBudgetLink?: boolean;
   /** Use client-portal API (read-only client access). */
   clientPortal?: boolean;
-  agencyDaoAccountId?: string;
+  engagementId?: string;
 }) {
   const apiClient = useApiClient();
   const { allocate, deallocate } = useBudgetActions(projectId);
@@ -681,8 +681,8 @@ export function ProjectBudgetPanel({
     enabled: !clientPortal,
   });
   const clientBudgetQuery = useQuery({
-    ...clientPortalProjectBudgetQueryOptions(apiClient, agencyDaoAccountId ?? "", projectId),
-    enabled: clientPortal && !!agencyDaoAccountId,
+    ...clientPortalProjectBudgetQueryOptions(apiClient, engagementId ?? "", projectId),
+    enabled: clientPortal && !!engagementId,
   });
   const budgetQuery = clientPortal ? clientBudgetQuery : adminBudgetQuery;
   const budgetsQuery = useInfiniteQuery({

@@ -14,7 +14,7 @@ import {
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import { nearProfileQueryOptions } from "@/lib/near-profile";
-import { clientLookupQueryOptions, meRolesQueryOptions } from "@/lib/queries";
+import { engagementsListQueryOptions, meRolesQueryOptions } from "@/lib/queries";
 
 export function UserNav() {
   const queryClient = useQueryClient();
@@ -31,10 +31,13 @@ export function UserNav() {
   const nearAccountId = authClient.near.getAccountId();
   const { data: profile } = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
   const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
-  const { data: clientLookup } = useQuery({
-    ...clientLookupQueryOptions(apiClient, nearAccountId ?? ""),
-    enabled: !!user && !!nearAccountId,
+  const { data: engagements } = useQuery({
+    ...engagementsListQueryOptions(apiClient),
+    enabled: !!user && !!roles?.orgRole,
   });
+  const hasAgencies = (engagements?.data ?? []).some(
+    (e) => e.role === "client" && (e.status === "active" || e.status === "ended"),
+  );
   const orgRole = roles?.orgRole ?? null;
   const isSuperAdmin = session?.user?.role === "admin";
   const avatarUrl =
@@ -103,7 +106,7 @@ export function UserNav() {
               </Link>
             </DropdownMenuItem>
           )}
-          {clientLookup && clientLookup.memberships.length > 0 && (
+          {hasAgencies && (
             <DropdownMenuItem asChild>
               <Link to="/client" className="font-mono text-xs uppercase tracking-wide">
                 client portal

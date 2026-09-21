@@ -22,6 +22,7 @@ import { Route as LayoutAuthenticatedRouteImport } from './routes/_layout/_authe
 import { Route as LayoutDocsIndexRouteImport } from './routes/_layout/docs/index'
 import { Route as LayoutDocsSlugRouteImport } from './routes/_layout/docs/$slug'
 import { Route as LayoutAuthenticatedProfileRouteImport } from './routes/_layout/_authenticated/profile'
+import { Route as LayoutAuthenticatedClientForbiddenRouteImport } from './routes/_layout/_authenticated/client-forbidden'
 import { Route as LayoutAuthenticatedPlatformRouteRouteImport } from './routes/_layout/_authenticated/platform/route'
 import { Route as LayoutAuthenticatedDashboardRouteRouteImport } from './routes/_layout/_authenticated/dashboard/route'
 import { Route as LayoutAuthenticatedClientRouteRouteImport } from './routes/_layout/_authenticated/client/route'
@@ -30,7 +31,6 @@ import { Route as LayoutAuthenticatedPlatformIndexRouteImport } from './routes/_
 import { Route as LayoutAuthenticatedDashboardIndexRouteImport } from './routes/_layout/_authenticated/dashboard/index'
 import { Route as LayoutAuthenticatedClientIndexRouteImport } from './routes/_layout/_authenticated/client/index'
 import { Route as LayoutAuthenticatedAdminIndexRouteImport } from './routes/_layout/_authenticated/admin/index'
-import { Route as LayoutAuthenticatedClientForbiddenRouteImport } from './routes/_layout/_authenticated/client/forbidden'
 import { Route as LayoutAuthenticatedAdminSettingsRouteImport } from './routes/_layout/_authenticated/admin/settings'
 import { Route as LayoutAuthenticatedAdminMembersRouteImport } from './routes/_layout/_authenticated/admin/members'
 import { Route as LayoutAuthenticatedAcceptInvitationIdRouteImport } from './routes/_layout/_authenticated/accept-invitation.$id'
@@ -38,15 +38,14 @@ import { Route as LayoutAuthenticatedClientReportsIndexRouteImport } from './rou
 import { Route as LayoutAuthenticatedClientProjectsIndexRouteImport } from './routes/_layout/_authenticated/client/projects/index'
 import { Route as LayoutAuthenticatedAdminReportsIndexRouteImport } from './routes/_layout/_authenticated/admin/reports/index'
 import { Route as LayoutAuthenticatedAdminProjectsIndexRouteImport } from './routes/_layout/_authenticated/admin/projects/index'
+import { Route as LayoutAuthenticatedAdminEngagementsIndexRouteImport } from './routes/_layout/_authenticated/admin/engagements/index'
 import { Route as LayoutAuthenticatedAdminContributorsIndexRouteImport } from './routes/_layout/_authenticated/admin/contributors/index'
-import { Route as LayoutAuthenticatedAdminClientsIndexRouteImport } from './routes/_layout/_authenticated/admin/clients/index'
 import { Route as LayoutAuthenticatedAdminBudgetsIndexRouteImport } from './routes/_layout/_authenticated/admin/budgets/index'
 import { Route as LayoutAuthenticatedAdminBillingsIndexRouteImport } from './routes/_layout/_authenticated/admin/billings/index'
 import { Route as LayoutAuthenticatedAdminApplicationsIndexRouteImport } from './routes/_layout/_authenticated/admin/applications/index'
 import { Route as LayoutAuthenticatedClientProjectsSlugRouteImport } from './routes/_layout/_authenticated/client/projects/$slug'
 import { Route as LayoutAuthenticatedAdminProjectsSlugRouteImport } from './routes/_layout/_authenticated/admin/projects/$slug'
 import { Route as LayoutAuthenticatedAdminContributorsNearAccountRouteImport } from './routes/_layout/_authenticated/admin/contributors/$nearAccount'
-import { Route as LayoutAuthenticatedAdminClientsClientIdRouteImport } from './routes/_layout/_authenticated/admin/clients/$clientId'
 
 const LayoutRoute = LayoutRouteImport.update({
   id: '/_layout',
@@ -112,6 +111,12 @@ const LayoutAuthenticatedProfileRoute =
     path: '/profile',
     getParentRoute: () => LayoutAuthenticatedRoute,
   } as any)
+const LayoutAuthenticatedClientForbiddenRoute =
+  LayoutAuthenticatedClientForbiddenRouteImport.update({
+    id: '/client-forbidden',
+    path: '/client-forbidden',
+    getParentRoute: () => LayoutAuthenticatedRoute,
+  } as any)
 const LayoutAuthenticatedPlatformRouteRoute =
   LayoutAuthenticatedPlatformRouteRouteImport.update({
     id: '/platform',
@@ -160,12 +165,6 @@ const LayoutAuthenticatedAdminIndexRoute =
     path: '/',
     getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
-const LayoutAuthenticatedClientForbiddenRoute =
-  LayoutAuthenticatedClientForbiddenRouteImport.update({
-    id: '/forbidden',
-    path: '/forbidden',
-    getParentRoute: () => LayoutAuthenticatedClientRouteRoute,
-  } as any)
 const LayoutAuthenticatedAdminSettingsRoute =
   LayoutAuthenticatedAdminSettingsRouteImport.update({
     id: '/settings',
@@ -208,16 +207,16 @@ const LayoutAuthenticatedAdminProjectsIndexRoute =
     path: '/projects/',
     getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
+const LayoutAuthenticatedAdminEngagementsIndexRoute =
+  LayoutAuthenticatedAdminEngagementsIndexRouteImport.update({
+    id: '/engagements/',
+    path: '/engagements/',
+    getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
+  } as any)
 const LayoutAuthenticatedAdminContributorsIndexRoute =
   LayoutAuthenticatedAdminContributorsIndexRouteImport.update({
     id: '/contributors/',
     path: '/contributors/',
-    getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
-  } as any)
-const LayoutAuthenticatedAdminClientsIndexRoute =
-  LayoutAuthenticatedAdminClientsIndexRouteImport.update({
-    id: '/clients/',
-    path: '/clients/',
     getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
 const LayoutAuthenticatedAdminBudgetsIndexRoute =
@@ -256,12 +255,6 @@ const LayoutAuthenticatedAdminContributorsNearAccountRoute =
     path: '/contributors/$nearAccount',
     getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
-const LayoutAuthenticatedAdminClientsClientIdRoute =
-  LayoutAuthenticatedAdminClientsClientIdRouteImport.update({
-    id: '/clients/$clientId',
-    path: '/clients/$clientId',
-    getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
@@ -276,26 +269,25 @@ export interface FileRoutesByFullPath {
   '/client': typeof LayoutAuthenticatedClientRouteRouteWithChildren
   '/dashboard': typeof LayoutAuthenticatedDashboardRouteRouteWithChildren
   '/platform': typeof LayoutAuthenticatedPlatformRouteRouteWithChildren
+  '/client-forbidden': typeof LayoutAuthenticatedClientForbiddenRoute
   '/profile': typeof LayoutAuthenticatedProfileRoute
   '/docs/$slug': typeof LayoutDocsSlugRoute
   '/docs/': typeof LayoutDocsIndexRoute
   '/accept-invitation/$id': typeof LayoutAuthenticatedAcceptInvitationIdRoute
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
-  '/client/forbidden': typeof LayoutAuthenticatedClientForbiddenRoute
   '/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/dashboard/': typeof LayoutAuthenticatedDashboardIndexRoute
   '/platform/': typeof LayoutAuthenticatedPlatformIndexRoute
-  '/admin/clients/$clientId': typeof LayoutAuthenticatedAdminClientsClientIdRoute
   '/admin/contributors/$nearAccount': typeof LayoutAuthenticatedAdminContributorsNearAccountRoute
   '/admin/projects/$slug': typeof LayoutAuthenticatedAdminProjectsSlugRoute
   '/client/projects/$slug': typeof LayoutAuthenticatedClientProjectsSlugRoute
   '/admin/applications/': typeof LayoutAuthenticatedAdminApplicationsIndexRoute
   '/admin/billings/': typeof LayoutAuthenticatedAdminBillingsIndexRoute
   '/admin/budgets/': typeof LayoutAuthenticatedAdminBudgetsIndexRoute
-  '/admin/clients/': typeof LayoutAuthenticatedAdminClientsIndexRoute
   '/admin/contributors/': typeof LayoutAuthenticatedAdminContributorsIndexRoute
+  '/admin/engagements/': typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   '/admin/projects/': typeof LayoutAuthenticatedAdminProjectsIndexRoute
   '/admin/reports/': typeof LayoutAuthenticatedAdminReportsIndexRoute
   '/client/projects/': typeof LayoutAuthenticatedClientProjectsIndexRoute
@@ -310,26 +302,25 @@ export interface FileRoutesByTo {
   '/team': typeof LayoutTeamRoute
   '/treasury': typeof LayoutTreasuryRoute
   '/work': typeof LayoutWorkRoute
+  '/client-forbidden': typeof LayoutAuthenticatedClientForbiddenRoute
   '/profile': typeof LayoutAuthenticatedProfileRoute
   '/docs/$slug': typeof LayoutDocsSlugRoute
   '/docs': typeof LayoutDocsIndexRoute
   '/accept-invitation/$id': typeof LayoutAuthenticatedAcceptInvitationIdRoute
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
-  '/client/forbidden': typeof LayoutAuthenticatedClientForbiddenRoute
   '/admin': typeof LayoutAuthenticatedAdminIndexRoute
   '/client': typeof LayoutAuthenticatedClientIndexRoute
   '/dashboard': typeof LayoutAuthenticatedDashboardIndexRoute
   '/platform': typeof LayoutAuthenticatedPlatformIndexRoute
-  '/admin/clients/$clientId': typeof LayoutAuthenticatedAdminClientsClientIdRoute
   '/admin/contributors/$nearAccount': typeof LayoutAuthenticatedAdminContributorsNearAccountRoute
   '/admin/projects/$slug': typeof LayoutAuthenticatedAdminProjectsSlugRoute
   '/client/projects/$slug': typeof LayoutAuthenticatedClientProjectsSlugRoute
   '/admin/applications': typeof LayoutAuthenticatedAdminApplicationsIndexRoute
   '/admin/billings': typeof LayoutAuthenticatedAdminBillingsIndexRoute
   '/admin/budgets': typeof LayoutAuthenticatedAdminBudgetsIndexRoute
-  '/admin/clients': typeof LayoutAuthenticatedAdminClientsIndexRoute
   '/admin/contributors': typeof LayoutAuthenticatedAdminContributorsIndexRoute
+  '/admin/engagements': typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   '/admin/projects': typeof LayoutAuthenticatedAdminProjectsIndexRoute
   '/admin/reports': typeof LayoutAuthenticatedAdminReportsIndexRoute
   '/client/projects': typeof LayoutAuthenticatedClientProjectsIndexRoute
@@ -351,26 +342,25 @@ export interface FileRoutesById {
   '/_layout/_authenticated/client': typeof LayoutAuthenticatedClientRouteRouteWithChildren
   '/_layout/_authenticated/dashboard': typeof LayoutAuthenticatedDashboardRouteRouteWithChildren
   '/_layout/_authenticated/platform': typeof LayoutAuthenticatedPlatformRouteRouteWithChildren
+  '/_layout/_authenticated/client-forbidden': typeof LayoutAuthenticatedClientForbiddenRoute
   '/_layout/_authenticated/profile': typeof LayoutAuthenticatedProfileRoute
   '/_layout/docs/$slug': typeof LayoutDocsSlugRoute
   '/_layout/docs/': typeof LayoutDocsIndexRoute
   '/_layout/_authenticated/accept-invitation/$id': typeof LayoutAuthenticatedAcceptInvitationIdRoute
   '/_layout/_authenticated/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/_layout/_authenticated/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
-  '/_layout/_authenticated/client/forbidden': typeof LayoutAuthenticatedClientForbiddenRoute
   '/_layout/_authenticated/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/_layout/_authenticated/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/_layout/_authenticated/dashboard/': typeof LayoutAuthenticatedDashboardIndexRoute
   '/_layout/_authenticated/platform/': typeof LayoutAuthenticatedPlatformIndexRoute
-  '/_layout/_authenticated/admin/clients/$clientId': typeof LayoutAuthenticatedAdminClientsClientIdRoute
   '/_layout/_authenticated/admin/contributors/$nearAccount': typeof LayoutAuthenticatedAdminContributorsNearAccountRoute
   '/_layout/_authenticated/admin/projects/$slug': typeof LayoutAuthenticatedAdminProjectsSlugRoute
   '/_layout/_authenticated/client/projects/$slug': typeof LayoutAuthenticatedClientProjectsSlugRoute
   '/_layout/_authenticated/admin/applications/': typeof LayoutAuthenticatedAdminApplicationsIndexRoute
   '/_layout/_authenticated/admin/billings/': typeof LayoutAuthenticatedAdminBillingsIndexRoute
   '/_layout/_authenticated/admin/budgets/': typeof LayoutAuthenticatedAdminBudgetsIndexRoute
-  '/_layout/_authenticated/admin/clients/': typeof LayoutAuthenticatedAdminClientsIndexRoute
   '/_layout/_authenticated/admin/contributors/': typeof LayoutAuthenticatedAdminContributorsIndexRoute
+  '/_layout/_authenticated/admin/engagements/': typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   '/_layout/_authenticated/admin/projects/': typeof LayoutAuthenticatedAdminProjectsIndexRoute
   '/_layout/_authenticated/admin/reports/': typeof LayoutAuthenticatedAdminReportsIndexRoute
   '/_layout/_authenticated/client/projects/': typeof LayoutAuthenticatedClientProjectsIndexRoute
@@ -391,26 +381,25 @@ export interface FileRouteTypes {
     | '/client'
     | '/dashboard'
     | '/platform'
+    | '/client-forbidden'
     | '/profile'
     | '/docs/$slug'
     | '/docs/'
     | '/accept-invitation/$id'
     | '/admin/members'
     | '/admin/settings'
-    | '/client/forbidden'
     | '/admin/'
     | '/client/'
     | '/dashboard/'
     | '/platform/'
-    | '/admin/clients/$clientId'
     | '/admin/contributors/$nearAccount'
     | '/admin/projects/$slug'
     | '/client/projects/$slug'
     | '/admin/applications/'
     | '/admin/billings/'
     | '/admin/budgets/'
-    | '/admin/clients/'
     | '/admin/contributors/'
+    | '/admin/engagements/'
     | '/admin/projects/'
     | '/admin/reports/'
     | '/client/projects/'
@@ -425,26 +414,25 @@ export interface FileRouteTypes {
     | '/team'
     | '/treasury'
     | '/work'
+    | '/client-forbidden'
     | '/profile'
     | '/docs/$slug'
     | '/docs'
     | '/accept-invitation/$id'
     | '/admin/members'
     | '/admin/settings'
-    | '/client/forbidden'
     | '/admin'
     | '/client'
     | '/dashboard'
     | '/platform'
-    | '/admin/clients/$clientId'
     | '/admin/contributors/$nearAccount'
     | '/admin/projects/$slug'
     | '/client/projects/$slug'
     | '/admin/applications'
     | '/admin/billings'
     | '/admin/budgets'
-    | '/admin/clients'
     | '/admin/contributors'
+    | '/admin/engagements'
     | '/admin/projects'
     | '/admin/reports'
     | '/client/projects'
@@ -465,26 +453,25 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/client'
     | '/_layout/_authenticated/dashboard'
     | '/_layout/_authenticated/platform'
+    | '/_layout/_authenticated/client-forbidden'
     | '/_layout/_authenticated/profile'
     | '/_layout/docs/$slug'
     | '/_layout/docs/'
     | '/_layout/_authenticated/accept-invitation/$id'
     | '/_layout/_authenticated/admin/members'
     | '/_layout/_authenticated/admin/settings'
-    | '/_layout/_authenticated/client/forbidden'
     | '/_layout/_authenticated/admin/'
     | '/_layout/_authenticated/client/'
     | '/_layout/_authenticated/dashboard/'
     | '/_layout/_authenticated/platform/'
-    | '/_layout/_authenticated/admin/clients/$clientId'
     | '/_layout/_authenticated/admin/contributors/$nearAccount'
     | '/_layout/_authenticated/admin/projects/$slug'
     | '/_layout/_authenticated/client/projects/$slug'
     | '/_layout/_authenticated/admin/applications/'
     | '/_layout/_authenticated/admin/billings/'
     | '/_layout/_authenticated/admin/budgets/'
-    | '/_layout/_authenticated/admin/clients/'
     | '/_layout/_authenticated/admin/contributors/'
+    | '/_layout/_authenticated/admin/engagements/'
     | '/_layout/_authenticated/admin/projects/'
     | '/_layout/_authenticated/admin/reports/'
     | '/_layout/_authenticated/client/projects/'
@@ -588,6 +575,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedProfileRouteImport
       parentRoute: typeof LayoutAuthenticatedRoute
     }
+    '/_layout/_authenticated/client-forbidden': {
+      id: '/_layout/_authenticated/client-forbidden'
+      path: '/client-forbidden'
+      fullPath: '/client-forbidden'
+      preLoaderRoute: typeof LayoutAuthenticatedClientForbiddenRouteImport
+      parentRoute: typeof LayoutAuthenticatedRoute
+    }
     '/_layout/_authenticated/platform': {
       id: '/_layout/_authenticated/platform'
       path: '/platform'
@@ -644,13 +638,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedAdminIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
     }
-    '/_layout/_authenticated/client/forbidden': {
-      id: '/_layout/_authenticated/client/forbidden'
-      path: '/forbidden'
-      fullPath: '/client/forbidden'
-      preLoaderRoute: typeof LayoutAuthenticatedClientForbiddenRouteImport
-      parentRoute: typeof LayoutAuthenticatedClientRouteRoute
-    }
     '/_layout/_authenticated/admin/settings': {
       id: '/_layout/_authenticated/admin/settings'
       path: '/settings'
@@ -700,18 +687,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedAdminProjectsIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
     }
+    '/_layout/_authenticated/admin/engagements/': {
+      id: '/_layout/_authenticated/admin/engagements/'
+      path: '/engagements'
+      fullPath: '/admin/engagements/'
+      preLoaderRoute: typeof LayoutAuthenticatedAdminEngagementsIndexRouteImport
+      parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
+    }
     '/_layout/_authenticated/admin/contributors/': {
       id: '/_layout/_authenticated/admin/contributors/'
       path: '/contributors'
       fullPath: '/admin/contributors/'
       preLoaderRoute: typeof LayoutAuthenticatedAdminContributorsIndexRouteImport
-      parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
-    }
-    '/_layout/_authenticated/admin/clients/': {
-      id: '/_layout/_authenticated/admin/clients/'
-      path: '/clients'
-      fullPath: '/admin/clients/'
-      preLoaderRoute: typeof LayoutAuthenticatedAdminClientsIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
     }
     '/_layout/_authenticated/admin/budgets/': {
@@ -756,13 +743,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedAdminContributorsNearAccountRouteImport
       parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
     }
-    '/_layout/_authenticated/admin/clients/$clientId': {
-      id: '/_layout/_authenticated/admin/clients/$clientId'
-      path: '/clients/$clientId'
-      fullPath: '/admin/clients/$clientId'
-      preLoaderRoute: typeof LayoutAuthenticatedAdminClientsClientIdRouteImport
-      parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
-    }
   }
 }
 
@@ -770,14 +750,13 @@ interface LayoutAuthenticatedAdminRouteRouteChildren {
   LayoutAuthenticatedAdminMembersRoute: typeof LayoutAuthenticatedAdminMembersRoute
   LayoutAuthenticatedAdminSettingsRoute: typeof LayoutAuthenticatedAdminSettingsRoute
   LayoutAuthenticatedAdminIndexRoute: typeof LayoutAuthenticatedAdminIndexRoute
-  LayoutAuthenticatedAdminClientsClientIdRoute: typeof LayoutAuthenticatedAdminClientsClientIdRoute
   LayoutAuthenticatedAdminContributorsNearAccountRoute: typeof LayoutAuthenticatedAdminContributorsNearAccountRoute
   LayoutAuthenticatedAdminProjectsSlugRoute: typeof LayoutAuthenticatedAdminProjectsSlugRoute
   LayoutAuthenticatedAdminApplicationsIndexRoute: typeof LayoutAuthenticatedAdminApplicationsIndexRoute
   LayoutAuthenticatedAdminBillingsIndexRoute: typeof LayoutAuthenticatedAdminBillingsIndexRoute
   LayoutAuthenticatedAdminBudgetsIndexRoute: typeof LayoutAuthenticatedAdminBudgetsIndexRoute
-  LayoutAuthenticatedAdminClientsIndexRoute: typeof LayoutAuthenticatedAdminClientsIndexRoute
   LayoutAuthenticatedAdminContributorsIndexRoute: typeof LayoutAuthenticatedAdminContributorsIndexRoute
+  LayoutAuthenticatedAdminEngagementsIndexRoute: typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   LayoutAuthenticatedAdminProjectsIndexRoute: typeof LayoutAuthenticatedAdminProjectsIndexRoute
   LayoutAuthenticatedAdminReportsIndexRoute: typeof LayoutAuthenticatedAdminReportsIndexRoute
 }
@@ -788,8 +767,6 @@ const LayoutAuthenticatedAdminRouteRouteChildren: LayoutAuthenticatedAdminRouteR
     LayoutAuthenticatedAdminSettingsRoute:
       LayoutAuthenticatedAdminSettingsRoute,
     LayoutAuthenticatedAdminIndexRoute: LayoutAuthenticatedAdminIndexRoute,
-    LayoutAuthenticatedAdminClientsClientIdRoute:
-      LayoutAuthenticatedAdminClientsClientIdRoute,
     LayoutAuthenticatedAdminContributorsNearAccountRoute:
       LayoutAuthenticatedAdminContributorsNearAccountRoute,
     LayoutAuthenticatedAdminProjectsSlugRoute:
@@ -800,10 +777,10 @@ const LayoutAuthenticatedAdminRouteRouteChildren: LayoutAuthenticatedAdminRouteR
       LayoutAuthenticatedAdminBillingsIndexRoute,
     LayoutAuthenticatedAdminBudgetsIndexRoute:
       LayoutAuthenticatedAdminBudgetsIndexRoute,
-    LayoutAuthenticatedAdminClientsIndexRoute:
-      LayoutAuthenticatedAdminClientsIndexRoute,
     LayoutAuthenticatedAdminContributorsIndexRoute:
       LayoutAuthenticatedAdminContributorsIndexRoute,
+    LayoutAuthenticatedAdminEngagementsIndexRoute:
+      LayoutAuthenticatedAdminEngagementsIndexRoute,
     LayoutAuthenticatedAdminProjectsIndexRoute:
       LayoutAuthenticatedAdminProjectsIndexRoute,
     LayoutAuthenticatedAdminReportsIndexRoute:
@@ -816,7 +793,6 @@ const LayoutAuthenticatedAdminRouteRouteWithChildren =
   )
 
 interface LayoutAuthenticatedClientRouteRouteChildren {
-  LayoutAuthenticatedClientForbiddenRoute: typeof LayoutAuthenticatedClientForbiddenRoute
   LayoutAuthenticatedClientIndexRoute: typeof LayoutAuthenticatedClientIndexRoute
   LayoutAuthenticatedClientProjectsSlugRoute: typeof LayoutAuthenticatedClientProjectsSlugRoute
   LayoutAuthenticatedClientProjectsIndexRoute: typeof LayoutAuthenticatedClientProjectsIndexRoute
@@ -825,8 +801,6 @@ interface LayoutAuthenticatedClientRouteRouteChildren {
 
 const LayoutAuthenticatedClientRouteRouteChildren: LayoutAuthenticatedClientRouteRouteChildren =
   {
-    LayoutAuthenticatedClientForbiddenRoute:
-      LayoutAuthenticatedClientForbiddenRoute,
     LayoutAuthenticatedClientIndexRoute: LayoutAuthenticatedClientIndexRoute,
     LayoutAuthenticatedClientProjectsSlugRoute:
       LayoutAuthenticatedClientProjectsSlugRoute,
@@ -876,6 +850,7 @@ interface LayoutAuthenticatedRouteChildren {
   LayoutAuthenticatedClientRouteRoute: typeof LayoutAuthenticatedClientRouteRouteWithChildren
   LayoutAuthenticatedDashboardRouteRoute: typeof LayoutAuthenticatedDashboardRouteRouteWithChildren
   LayoutAuthenticatedPlatformRouteRoute: typeof LayoutAuthenticatedPlatformRouteRouteWithChildren
+  LayoutAuthenticatedClientForbiddenRoute: typeof LayoutAuthenticatedClientForbiddenRoute
   LayoutAuthenticatedProfileRoute: typeof LayoutAuthenticatedProfileRoute
   LayoutAuthenticatedAcceptInvitationIdRoute: typeof LayoutAuthenticatedAcceptInvitationIdRoute
 }
@@ -889,6 +864,8 @@ const LayoutAuthenticatedRouteChildren: LayoutAuthenticatedRouteChildren = {
     LayoutAuthenticatedDashboardRouteRouteWithChildren,
   LayoutAuthenticatedPlatformRouteRoute:
     LayoutAuthenticatedPlatformRouteRouteWithChildren,
+  LayoutAuthenticatedClientForbiddenRoute:
+    LayoutAuthenticatedClientForbiddenRoute,
   LayoutAuthenticatedProfileRoute: LayoutAuthenticatedProfileRoute,
   LayoutAuthenticatedAcceptInvitationIdRoute:
     LayoutAuthenticatedAcceptInvitationIdRoute,

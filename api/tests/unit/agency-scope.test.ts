@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   AGENCY_MANAGER_ROLES,
   AGENCY_MEMBER_ROLES,
-  agencyScopeForClient,
   agencyScopeFromRequest,
+  sharedViewScope,
 } from "../../src/lib/agency-scope";
 import { setDefaultDaoAccountId } from "../../src/lib/org";
 
@@ -99,26 +99,23 @@ describe("agency scope", () => {
     );
   });
 
-  it("a client scope reads the agency's projects without manager rights", () => {
-    const request = { near: { primaryAccountId: "client.near" } };
-    const scope = agencyScopeForClient(request, AGENCY);
+  it("a shared view reads the owning Agency's Projects without manager rights", () => {
+    const viewer = agencyScopeFromRequest(
+      memberContext("member", { near: { primaryAccountId: "client.near" } }),
+    );
+    const scope = sharedViewScope(viewer, "org-agency", AGENCY);
 
     expect(scope).toMatchObject({
+      organizationId: "org-agency",
       agencyDao: AGENCY,
       role: null,
       actorId: "client.near",
       canSeePrivate: true,
     });
     expect(scope.pluginContext.organization).toMatchObject({
-      activeOrganizationId: AGENCY,
-      organization: {
-        id: AGENCY,
-        metadata: { daoAccountId: AGENCY, type: "agency" },
-      },
+      activeOrganizationId: "org-agency",
+      organization: { id: "org-agency", metadata: { daoAccountId: AGENCY } },
       member: { role: "member" },
     });
-    expect(agencyScopeFromRequest(memberContext("admin")).pluginContext).toEqual(
-      memberContext("admin"),
-    );
   });
 });

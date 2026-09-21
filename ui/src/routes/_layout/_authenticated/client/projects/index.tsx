@@ -10,13 +10,11 @@ export const Route = createFileRoute("/_layout/_authenticated/client/projects/")
 });
 
 function ClientProjectsPage() {
-  const { agencyDaoAccountId } = Route.useRouteContext();
+  const { engagementId } = Route.useRouteContext();
   const apiClient = useApiClient();
-  const projectsQuery = useQuery(
-    clientPortalProjectsListQueryOptions(apiClient, agencyDaoAccountId),
-  );
+  const projectsQuery = useQuery(clientPortalProjectsListQueryOptions(apiClient, engagementId));
   const projects = projectsQuery.data?.data ?? [];
-  const search = { agency: agencyDaoAccountId };
+  const search = { engagement: engagementId };
 
   const columns: ColumnDef<(typeof projects)[number]>[] = [
     {

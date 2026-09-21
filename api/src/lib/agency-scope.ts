@@ -193,23 +193,27 @@ export function createAgencyRoleMiddleware(
   };
 }
 
-export function agencyScopeForClient(context: PluginContext, agencyDao: string): AgencyScope {
+export function sharedViewScope(
+  viewer: OrgScope,
+  agencyOrganizationId: string,
+  agencyDao: string | null,
+): OrgScope {
   return {
-    organizationId: agencyDao,
+    organizationId: agencyOrganizationId,
     agencyDao,
-    network: networkOf(agencyDao),
+    network: agencyDao ? networkOf(agencyDao) : viewer.network,
     role: null,
-    actorId: actorOf(context),
+    actorId: viewer.actorId,
     canSeePrivate: true,
     pluginContext: {
-      ...context,
+      ...viewer.pluginContext,
       organization: {
-        activeOrganizationId: agencyDao,
+        activeOrganizationId: agencyOrganizationId,
         organization: {
-          id: agencyDao,
-          name: agencyDao,
-          slug: agencyDao,
-          metadata: { daoAccountId: agencyDao, type: "agency" as const },
+          id: agencyOrganizationId,
+          name: agencyOrganizationId,
+          slug: agencyOrganizationId,
+          metadata: agencyDao ? { daoAccountId: agencyDao } : {},
         },
         member: { role: "member" as const },
       },

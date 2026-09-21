@@ -15,7 +15,7 @@ export const Route = createFileRoute("/_layout/_authenticated/client/reports/")(
 });
 
 function ClientReportsPage() {
-  const { agencyDaoAccountId } = Route.useRouteContext();
+  const { engagementId } = Route.useRouteContext();
   const apiClient = useApiClient();
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -27,7 +27,7 @@ function ClientReportsPage() {
   const generateMutation = useMutation({
     mutationFn: () =>
       apiClient.clientPortal.reports.generate({
-        agencyDaoAccountId,
+        engagementId,
         note: note.trim() || undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,

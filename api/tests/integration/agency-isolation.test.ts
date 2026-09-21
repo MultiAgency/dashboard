@@ -3,11 +3,9 @@ import { drizzle } from "drizzle-orm/pglite";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
-import { billings, budgets, clients, projectContributors } from "../../src/db/schema";
+import { budgets, clients, projectContributors } from "../../src/db/schema";
 import { createAssignmentsService } from "../../src/services/assignments";
-import { createBillingsService } from "../../src/services/billings";
 import { createBudgetsService } from "../../src/services/budgets";
-import { createClientPortalService } from "../../src/services/client-portal";
 import { createClientsService } from "../../src/services/clients";
 import { createProjectDirectory } from "../../src/services/project-directory";
 import { agencyScope, inMemoryProjects, project } from "../fakes/projects";
@@ -205,86 +203,6 @@ describe("agency isolation", () => {
       await expect(
         run(service.create(alpha, { projectId: "beta-project", tokenId: "near", amount: "5" })),
       ).rejects.toThrow("Project not found");
-    });
-  });
-
-  describe("client portal billings", () => {
-    test("a client listing billings without a project only sees linked projects", async () => {
-      const clientsService = createClientsService(db, directory);
-      const created = await run(
-        clientsService.create(alpha, {
-          orgId: "alpha-org",
-          name: "Alpha Corp",
-          nearAccountId: "client.near",
-          projectIds: ["alpha-project"],
-        }),
-      );
-      const clientId = created.client.id;
-      await db.insert(billings).values([
-        {
-          id: "linked-billing",
-          projectId: "alpha-project",
-          clientId,
-          tokenId: "near",
-          amount: "1",
-          proposalId: "linked",
-        },
-        {
-          id: "unlinked-billing",
-          projectId: "alpha-other",
-          clientId,
-          tokenId: "near",
-          amount: "99",
-          proposalId: "unlinked",
-        },
-      ]);
-      const portal = createClientPortalService(
-        clientsService,
-        {} as never,
-        createBillingsService(db, directory),
-        {} as never,
-        directory,
-        {} as never,
-      );
-
-      const listed = await run(
-        portal.listBillings(
-          { near: { primaryAccountId: "client.near" } },
-          { agencyDaoAccountId: ALPHA, limit: 50 },
-        ),
-      );
-
-      expect(listed.data.map((row) => row.projectId)).toEqual(["alpha-project"]);
-    });
-
-    test("a client with no linked projects sees none", async () => {
-      const clientsService = createClientsService(db, directory);
-      await run(
-        clientsService.create(alpha, {
-          orgId: "alpha-org",
-          name: "Empty Corp",
-          nearAccountId: "empty.near",
-        }),
-      );
-      const portal = createClientPortalService(
-        clientsService,
-        {} as never,
-        createBillingsService(db, directory),
-        {} as never,
-        directory,
-        {} as never,
-      );
-      const context = { near: { primaryAccountId: "empty.near" } };
-
-      expect((await run(portal.listProjects(context, { agencyDaoAccountId: ALPHA }))).data).toEqual(
-        [],
-      );
-      expect(
-        (await run(portal.listBillings(context, { agencyDaoAccountId: ALPHA, limit: 50 }))).data,
-      ).toEqual([]);
-      await expect(
-        run(portal.generateReport(context, { agencyDaoAccountId: ALPHA })),
-      ).rejects.toThrow("No projects linked");
     });
   });
 });

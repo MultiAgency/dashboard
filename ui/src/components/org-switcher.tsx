@@ -5,9 +5,9 @@ import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { sessionQueryOptions } from "@/lib/auth";
-import { isAgencyWorkspace } from "@/lib/org-metadata";
+import { isWorkspace } from "@/lib/org-metadata";
 import { invalidateWorkspaceQueries } from "@/lib/queries";
-import { switchAgencyWorkspace } from "@/lib/workspace";
+import { switchWorkspace } from "@/lib/workspace";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -36,22 +36,22 @@ export function OrgSwitcher() {
   });
 
   const switchMutation = useMutation({
-    mutationFn: (orgId: string) => switchAgencyWorkspace(auth, orgId),
+    mutationFn: (orgId: string) => switchWorkspace(auth, orgId),
     onSuccess: async (ok) => {
       if (!ok) {
-        toast.error("Could not switch agency — try signing out and back in.");
+        toast.error("Could not switch Organization — try signing out and back in.");
         return;
       }
       await queryClient.fetchQuery(sessionQueryOptions(auth));
       await invalidateWorkspaceQueries(queryClient, router);
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Could not switch agency — try signing out and back in.");
+      toast.error(error.message || "Could not switch Organization — try signing out and back in.");
     },
   });
 
   const organizations = useMemo(
-    () => (orgsQuery.data ?? []).filter((org) => isAgencyWorkspace(org.metadata)),
+    () => (orgsQuery.data ?? []).filter((org) => isWorkspace(org.metadata)),
     [orgsQuery.data],
   );
   const activeOrg = organizations.find((o) => o.id === activeOrgId);
@@ -73,11 +73,13 @@ export function OrgSwitcher() {
           className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground max-w-[180px]"
         >
           <Building2 className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate min-w-0">{activeOrg?.name ?? "agency"}</span>
+          <span className="truncate min-w-0">{activeOrg?.name ?? "organization"}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">agencies</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">
+          organizations
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {organizations.map((org) => (
           <DropdownMenuItem
@@ -91,7 +93,7 @@ export function OrgSwitcher() {
         ))}
         {organizations.length === 0 && (
           <DropdownMenuItem disabled className="text-muted-foreground">
-            no agencies
+            no organizations
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

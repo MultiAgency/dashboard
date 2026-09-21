@@ -5,6 +5,9 @@
  * - Removes Client-Project links to Projects that no longer exist.
  * - Moves Projects owned by a DAO account to the Organization holding that DAO.
  * - Records each Organization's Agency DAO in the API's organization_daos registry.
+ * - Points migrated Engagements at the Agency's Organization and fills in names (#43).
+ * - Makes each Client's NEAR wallet user the owner of the Client Organization and
+ *   removes the Agency's staff from it (#43).
  *
  * Dry run by default. Pass --apply to write. The oldest Organization keeps each
  * DAO unless one is named with --keep=<slug> (e.g. --keep=multiagency).
@@ -133,6 +136,88 @@ async function danglingProjectLinks(api: pg.Pool, projects: pg.Pool) {
   return dangling;
 }
 
+type Handover = {
+  clientOrganizationId: string;
+  clientName: string;
+  ownerUserId: string | null;
+  nearAccountId: string;
+  staffUserIds: string[];
+};
+
+async function clientHandovers(
+  auth: pg.Pool,
+  api: pg.Pool,
+  owners: Map<string, OrgRow>,
+): Promise<Handover[]> {
+  const { rows: clients } = await api.query<{
+    org_id: string;
+    name: string;
+    near_account_id: string;
+    agency_dao_account_id: string;
+  }>(
+    "SELECT org_id, name, near_account_id, agency_dao_account_id FROM clients WHERE near_account_id IS NOT NULL",
+  );
+  const handovers: Handover[] = [];
+  for (const client of clients) {
+    const { rows: users } = await auth.query<{ userId: string }>(
+      `SELECT "userId" FROM "account" WHERE split_part("accountId", ':', 1) = $1 LIMIT 1`,
+      [client.near_account_id],
+    );
+    const ownerUserId = users[0]?.userId ?? null;
+    const agency = owners.get(client.agency_dao_account_id);
+    const { rows: staff } = agency
+      ? await auth.query<{ userId: string }>(
+          `SELECT m."userId" FROM "member" m
+           JOIN "member" a ON a."userId" = m."userId" AND a."organizationId" = $2
+           WHERE m."organizationId" = $1 AND m."userId" <> COALESCE($3, '')`,
+          [client.org_id, agency.id, ownerUserId],
+        )
+      : { rows: [] };
+    console.log(
+      `  ${client.name} (${client.org_id}): owner ${client.near_account_id} -> ${ownerUserId ?? "no user yet"}, remove ${staff.length} Agency staff`,
+    );
+    handovers.push({
+      clientOrganizationId: client.org_id,
+      clientName: client.name,
+      ownerUserId,
+      nearAccountId: client.near_account_id,
+      staffUserIds: staff.map((s) => s.userId),
+    });
+  }
+  return handovers;
+}
+
+async function applyHandover(auth: pg.Pool, handover: Handover): Promise<void> {
+  if (!handover.ownerUserId) return;
+  const client = await auth.connect();
+  try {
+    await client.query("BEGIN");
+    const { rowCount } = await client.query(
+      `UPDATE "member" SET role = 'owner' WHERE "organizationId" = $1 AND "userId" = $2`,
+      [handover.clientOrganizationId, handover.ownerUserId],
+    );
+    if (!rowCount) {
+      await client.query(
+        `INSERT INTO "member" (id, "organizationId", "userId", role, "createdAt")
+         VALUES ($1, $2, $3, 'owner', now())`,
+        [crypto.randomUUID(), handover.clientOrganizationId, handover.ownerUserId],
+      );
+    }
+    if (handover.staffUserIds.length > 0) {
+      await client.query(
+        `DELETE FROM "member" WHERE "organizationId" = $1 AND "userId" = ANY($2)`,
+        [handover.clientOrganizationId, handover.staffUserIds],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function main() {
   const auth = new pg.Pool({ connectionString: requireEnv("AUTH_DATABASE_URL") });
   const api = new pg.Pool({ connectionString: requireEnv("API_DATABASE_URL") });
@@ -148,6 +233,9 @@ async function main() {
     console.log("Project owners:");
     const moves = await daoOwnedProjects(projects, owners);
     const moved = moves.reduce((sum, m) => sum + m.count, 0);
+
+    console.log("Client Organizations:");
+    const handovers = await clientHandovers(auth, api, owners);
 
     const hasRegistry = await registryExists(api);
     if (!hasRegistry) console.log("organization_daos does not exist yet: deploy the API first.");
@@ -170,6 +258,7 @@ async function main() {
         link.client_id,
         link.project_id,
       ]);
+      await api.query("DELETE FROM engagement_projects WHERE project_id = $1", [link.project_id]);
     }
     for (const move of moves) {
       await api.query(
@@ -187,7 +276,17 @@ async function main() {
           [move.organizationId, move.dao],
         );
       }
+      const agencyName = owners.get(move.dao)?.name ?? "";
+      await api.query(
+        `UPDATE engagements SET agency_organization_id = $1 WHERE agency_organization_id = $2`,
+        [move.organizationId, move.dao],
+      );
+      await api.query(
+        `UPDATE engagements SET agency_name = $2 WHERE agency_organization_id = $1 AND agency_name = ''`,
+        [move.organizationId, agencyName],
+      );
     }
+    for (const handover of handovers) await applyHandover(auth, handover);
     console.log(
       `\nDeleted ${duplicates.length} Organizations and ${dangling.length} links, moved ${moved} Projects.`,
     );

@@ -30,8 +30,8 @@ type BillingsAdminSectionProps = {
   clientId?: string;
   /** Use client-portal API (no agency workspace required). */
   clientPortal?: boolean;
-  /** Agency DAO scope for client portal billings. */
-  agencyDaoAccountId?: string;
+  /** Engagement for client portal billings. */
+  engagementId?: string;
   /** Pre-filter to a single project (e.g. client project detail page). */
   fixedProjectId?: string;
 };
@@ -40,7 +40,7 @@ export function BillingsAdminSection({
   readOnly = false,
   clientId: fixedClientId,
   clientPortal = false,
-  agencyDaoAccountId,
+  engagementId,
   fixedProjectId,
 }: BillingsAdminSectionProps) {
   const apiClient = useApiClient();
@@ -53,8 +53,8 @@ export function BillingsAdminSection({
     enabled: !clientPortal,
   });
   const clientProjectsQuery = useQuery({
-    ...clientPortalProjectsListQueryOptions(apiClient, agencyDaoAccountId ?? ""),
-    enabled: clientPortal && !!agencyDaoAccountId,
+    ...clientPortalProjectsListQueryOptions(apiClient, engagementId ?? ""),
+    enabled: clientPortal && !!engagementId,
   });
   const projectsQuery = clientPortal ? clientProjectsQuery : adminProjectsQuery;
   const contributorsQuery = useQuery({
@@ -77,9 +77,9 @@ export function BillingsAdminSection({
       clientId: clientId || null,
     }),
     queryFn: ({ pageParam }) =>
-      clientPortal && agencyDaoAccountId
+      clientPortal && engagementId
         ? apiClient.clientPortal.billings.list({
-            agencyDaoAccountId,
+            engagementId,
             projectId: projectId || undefined,
             cursor: pageParam,
           })
@@ -203,12 +203,12 @@ export function BillingsAdminSection({
     if (!project) {
       return <span className="font-mono text-xs">{row.original.projectId}</span>;
     }
-    if (clientPortal && agencyDaoAccountId) {
+    if (clientPortal && engagementId) {
       return (
         <Link
           to="/client/projects/$slug"
           params={{ slug: project.slug }}
-          search={{ agency: agencyDaoAccountId }}
+          search={{ engagement: engagementId }}
           className="underline hover:text-foreground text-sm"
         >
           {project.title}
@@ -271,13 +271,7 @@ export function BillingsAdminSection({
               if (!id) return <span className="text-sm text-muted-foreground">—</span>;
               const client = clientById.get(id);
               return client ? (
-                <Link
-                  to="/admin/clients/$clientId"
-                  params={{ clientId: id }}
-                  className="text-sm underline hover:text-foreground"
-                >
-                  {client.name}
-                </Link>
+                <span className="text-sm">{client.name}</span>
               ) : (
                 <span className="font-mono text-xs">{id}</span>
               );

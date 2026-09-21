@@ -1,142 +1,115 @@
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
-import { type AgencyScope, agencyScopeForClient, type PluginContext } from "../lib/agency-scope";
+import { hasAgencyDao, type OrgScope, sharedViewScope } from "../lib/agency-scope";
+import type { OrganizationAccess } from "../lib/organization-access";
 import type { AgencyService } from "./agency";
 import type { BillingsService } from "./billings";
-import type { ClientsService } from "./clients";
+import type { EngagementsService } from "./engagements";
 import type { ProjectLedgers } from "./ledger";
 import type { ProjectDirectory } from "./project-directory";
 import { sumByToken } from "./report-tokens";
 import type { ReportsService } from "./reports";
 
-async function resolveClientScope(
-  clientsService: ClientsService,
-  nearAccountId: string,
-  agencyDaoAccountId: string,
-) {
-  const lookup = await Effect.runPromise(
-    clientsService.getByNearAndAgency(nearAccountId, agencyDaoAccountId),
-  );
-  if (!lookup) {
-    throw new ORPCError("FORBIDDEN", {
-      message:
-        "No client portal for this wallet at this agency. Ask your agency to add your NEAR account under Clients.",
-    });
-  }
-  return lookup;
-}
+const projectNotFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
 
-function assertLinkedProject(projectIds: string[], projectId: string) {
-  if (!projectIds.includes(projectId)) {
-    throw new ORPCError("NOT_FOUND", { message: "Project not found" });
-  }
+function assertShared(projectIds: string[], projectId: string) {
+  if (!projectIds.includes(projectId)) throw projectNotFound();
 }
 
 export function createClientPortalService(
-  clientsService: ClientsService,
+  engagements: EngagementsService,
   agency: AgencyService,
   billings: BillingsService,
   reports: ReportsService,
   directory: ProjectDirectory,
   projectLedgers: ProjectLedgers,
+  access: Pick<OrganizationAccess, "daoOf">,
 ) {
-  const notFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
-
-  const clientScope = (context: PluginContext, agencyDaoAccountId: string) =>
+  const shared = (scope: OrgScope, engagementId: string) =>
     Effect.gen(function* () {
-      const nearAccountId = context.near?.primaryAccountId;
-      if (!nearAccountId) {
-        return yield* Effect.fail(
-          new ORPCError("FORBIDDEN", {
-            message: "Sign in with your NEAR wallet to use the client portal.",
-          }),
-        );
-      }
-      const client = yield* Effect.promise(() =>
-        resolveClientScope(clientsService, nearAccountId, agencyDaoAccountId),
-      );
-      const scope: AgencyScope | null =
-        client.projectIds.length === 0
-          ? null
-          : agencyScopeForClient(context, client.client.agencyDaoAccountId);
-      return { client: client.client, projectIds: client.projectIds, scope };
+      const engagement = yield* engagements.asClient(scope, engagementId);
+      const agencyOrganizationId = engagement.agency.organizationId;
+      const agencyDao = yield* Effect.promise(() => access.daoOf(agencyOrganizationId));
+      const view = sharedViewScope(scope, agencyOrganizationId, agencyDao);
+      return { engagement, view, projectIds: engagement.projectIds };
+    });
+
+  const sharedProjects = (view: OrgScope, projectIds: string[]) =>
+    Effect.promise(async () => {
+      const linked = new Set(projectIds);
+      return (await directory.forAgency(view).list()).filter((p) => linked.has(p.id));
     });
 
   return {
-    listProjects: (context: PluginContext, input: { agencyDaoAccountId: string }) =>
+    listProjects: (scope: OrgScope, input: { engagementId: string }) =>
       Effect.gen(function* () {
-        const { scope, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
-        if (!scope) return { data: [] };
-        const linked = new Set(projectIds);
-        const all = yield* Effect.promise(() => directory.forAgency(scope).list());
-        return {
-          data: all.filter((p) => linked.has(p.id)).map((p) => ({ ...p, nearnListingId: null })),
-        };
+        const { view, projectIds } = yield* shared(scope, input.engagementId);
+        const projects = yield* sharedProjects(view, projectIds);
+        return { data: projects.map((p) => ({ ...p, nearnListingId: null })) };
       }),
 
-    getProject: (context: PluginContext, input: { agencyDaoAccountId: string; slug: string }) =>
+    getProject: (scope: OrgScope, input: { engagementId: string; slug: string }) =>
       Effect.gen(function* () {
-        const { scope, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
-        if (!scope) return yield* Effect.fail(notFound());
-        const detail = yield* agency.getProject(scope, input.slug);
-        assertLinkedProject(projectIds, detail.project.id);
+        const { view, projectIds } = yield* shared(scope, input.engagementId);
+        const detail = yield* agency.getProject(view, input.slug);
+        assertShared(projectIds, detail.project.id);
         return detail;
       }),
 
-    getBudget: (context: PluginContext, input: { agencyDaoAccountId: string; projectId: string }) =>
+    getBudget: (scope: OrgScope, input: { engagementId: string; projectId: string }) =>
       Effect.gen(function* () {
-        const { scope, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
-        if (!scope) return yield* Effect.fail(notFound());
-        assertLinkedProject(projectIds, input.projectId);
-        return yield* agency.getBudget(scope, input.projectId);
+        const { view, projectIds } = yield* shared(scope, input.engagementId);
+        assertShared(projectIds, input.projectId);
+        if (!hasAgencyDao(view)) return { budgets: [] };
+        return yield* agency.getBudget(view, input.projectId);
       }),
 
     listBillings: (
-      context: PluginContext,
-      input: { agencyDaoAccountId: string; projectId?: string; cursor?: string; limit: number },
+      scope: OrgScope,
+      input: { engagementId: string; projectId?: string; cursor?: string; limit: number },
     ) =>
       Effect.gen(function* () {
-        const { scope, client, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
-        if (!scope) return { data: [], nextCursor: null };
-        if (input.projectId) assertLinkedProject(projectIds, input.projectId);
-        return yield* billings.list(scope, {
+        const { view, projectIds } = yield* shared(scope, input.engagementId);
+        if (input.projectId) assertShared(projectIds, input.projectId);
+        if (!hasAgencyDao(view) || projectIds.length === 0) return { data: [], nextCursor: null };
+        return yield* billings.list(view, {
           projectId: input.projectId,
           projectIds,
-          clientId: client.id,
           cursor: input.cursor,
           limit: input.limit,
         });
       }),
 
     generateReport: (
-      context: PluginContext,
-      input: { agencyDaoAccountId: string; note?: string; startDate?: string; endDate?: string },
+      scope: OrgScope,
+      input: { engagementId: string; note?: string; startDate?: string; endDate?: string },
     ) =>
       Effect.gen(function* () {
-        const { scope, client } = yield* clientScope(context, input.agencyDaoAccountId);
-        if (!scope) {
+        const { view, projectIds } = yield* shared(scope, input.engagementId);
+        if (!hasAgencyDao(view) || projectIds.length === 0) {
           return yield* Effect.fail(
-            new ORPCError("NOT_FOUND", { message: "No projects linked to this client account." }),
+            new ORPCError("NOT_FOUND", {
+              message: "No projects are shared through this Engagement yet.",
+            }),
           );
         }
-        return yield* reports.generate(scope, {
-          clientId: client.id,
+        return yield* reports.generate(view, {
+          projectIds,
           note: input.note,
           startDate: input.startDate,
           endDate: input.endDate,
         });
       }),
 
-    dashboardSummary: (context: PluginContext, input: { agencyDaoAccountId: string }) =>
+    dashboardSummary: (scope: OrgScope, input: { engagementId: string }) =>
       Effect.gen(function* () {
-        const { scope, projectIds: linked } = yield* clientScope(context, input.agencyDaoAccountId);
-        if (!scope || linked.length === 0) return { projectCount: 0, remainingByToken: [] };
-
-        const agencyProjectIds = new Set(
-          (yield* Effect.promise(() => directory.forAgency(scope).list())).map((p) => p.id),
-        );
-        const projectIds = linked.filter((id) => agencyProjectIds.has(id));
-        const ledger = yield* Effect.promise(() => projectLedgers.load(scope, projectIds));
+        const { view, projectIds: linked } = yield* shared(scope, input.engagementId);
+        const projects = yield* sharedProjects(view, linked);
+        if (!hasAgencyDao(view) || projects.length === 0) {
+          return { projectCount: projects.length, remainingByToken: [] };
+        }
+        const projectIds = projects.map((p) => p.id);
+        const ledger = yield* Effect.promise(() => projectLedgers.load(view, projectIds));
 
         const remainingRows: Array<{ tokenId: string; amount: string }> = [];
         for (const projectId of projectIds) {
@@ -147,10 +120,7 @@ export function createClientPortalService(
           }
         }
 
-        return {
-          projectCount: projectIds.length,
-          remainingByToken: sumByToken(remainingRows),
-        };
+        return { projectCount: projectIds.length, remainingByToken: sumByToken(remainingRows) };
       }),
   };
 }

@@ -13,6 +13,15 @@ export function inMemoryOrganizations(seed: FakeOrganization[] = []) {
 
   const organizations: Organizations = {
     daoOf: async (organizationId) => orgs.get(organizationId)?.daoAccountId ?? null,
+    nameOf: async (_context, organizationId) => orgs.get(organizationId)?.name ?? null,
+    create: async (_context, input) => {
+      const id = `org-${input.slug}`;
+      orgs.set(id, { id, name: input.name, members: {} });
+      return { id };
+    },
+    invite: async (_context, input) => {
+      invitations.push(input);
+    },
   };
 
   return { organizations, orgs, invitations };

@@ -12,7 +12,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "people",
     items: [
-      { to: "/admin/clients", label: "clients" },
+      { to: "/admin/engagements", label: "engagements" },
       { to: "/admin/contributors", label: "builders", match: "/admin/contributors" },
       { to: "/admin/members", label: "team" },
     ],

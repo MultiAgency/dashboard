@@ -10,11 +10,11 @@ const clientPortalRoute = getRouteApi("/_layout/_authenticated/client");
 
 export const Route = createFileRoute("/_layout/_authenticated/client/projects/$slug")({
   loader: async ({ context, params, location }) => {
-    const agencyDaoAccountId = new URLSearchParams(location.search).get("agency");
-    if (!agencyDaoAccountId) return null;
+    const engagementId = new URLSearchParams(location.search).get("engagement");
+    if (!engagementId) return null;
     const data = await context.queryClient
       .ensureQueryData(
-        clientPortalProjectDetailQueryOptions(context.apiClient, agencyDaoAccountId, params.slug),
+        clientPortalProjectDetailQueryOptions(context.apiClient, engagementId, params.slug),
       )
       .catch(() => null);
     if (!data) return null;
@@ -25,12 +25,12 @@ export const Route = createFileRoute("/_layout/_authenticated/client/projects/$s
 
 function ClientProjectDetailPage() {
   const { slug } = Route.useParams();
-  const { client, agencyDaoAccountId } = clientPortalRoute.useRouteContext();
+  const { client, engagementId } = clientPortalRoute.useRouteContext();
   const apiClient = useApiClient();
-  const search = { agency: agencyDaoAccountId };
+  const search = { engagement: engagementId };
 
   const projectQuery = useQuery(
-    clientPortalProjectDetailQueryOptions(apiClient, agencyDaoAccountId, slug),
+    clientPortalProjectDetailQueryOptions(apiClient, engagementId, slug),
   );
   const projectId = projectQuery.data?.project.id;
 
@@ -90,7 +90,7 @@ function ClientProjectDetailPage() {
           projectId={projectId}
           readOnly
           clientPortal
-          agencyDaoAccountId={agencyDaoAccountId}
+          engagementId={engagementId}
         />
       )}
 
@@ -99,7 +99,7 @@ function ClientProjectDetailPage() {
           readOnly
           clientPortal
           clientId={client.id}
-          agencyDaoAccountId={agencyDaoAccountId}
+          engagementId={engagementId}
           fixedProjectId={projectId}
         />
       )}

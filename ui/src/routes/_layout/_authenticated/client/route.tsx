@@ -1,60 +1,51 @@
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import type { ApiClient } from "@/lib/api";
-import { clientLookupQueryOptions } from "@/lib/queries";
+import { engagementsListQueryOptions } from "@/lib/queries";
 
 type ClientSearch = {
-  agency?: string;
+  engagement?: string;
 };
 
-type ClientMembership = Awaited<
-  ReturnType<ApiClient["clients"]["lookupByNearAccount"]>
->["memberships"][number];
+export type ClientEngagement = Awaited<
+  ReturnType<ApiClient["engagements"]["list"]>
+>["data"][number];
 
-function pickMembership(memberships: ClientMembership[], agency?: string) {
-  const withAgency = memberships.filter((m) => m.client.agencyDaoAccountId);
-  if (withAgency.length === 0) return null;
-
-  if (agency) {
-    const match = withAgency.find((m) => m.client.agencyDaoAccountId === agency);
-    if (match) return match;
-  }
-
-  return withAgency[0] ?? null;
+export function clientEngagements(engagements: ClientEngagement[]) {
+  return engagements.filter(
+    (e) => e.role === "client" && (e.status === "active" || e.status === "ended"),
+  );
 }
 
 export const Route = createFileRoute("/_layout/_authenticated/client")({
   validateSearch: (search: Record<string, unknown>): ClientSearch => ({
-    agency: typeof search.agency === "string" ? search.agency : undefined,
+    engagement: typeof search.engagement === "string" ? search.engagement : undefined,
   }),
   beforeLoad: async ({ context, search, location }) => {
-    const nearAccountId = context.authClient.near.getAccountId();
-    if (!nearAccountId) {
-      throw redirect({ to: "/client/forbidden" });
-    }
-    const lookup = await context.queryClient.ensureQueryData(
-      clientLookupQueryOptions(context.apiClient, nearAccountId),
-    );
-    const active = pickMembership(lookup.memberships, search.agency);
-    if (!active?.client.agencyDaoAccountId) {
-      throw redirect({ to: "/client/forbidden" });
+    const listed = await context.queryClient
+      .ensureQueryData(engagementsListQueryOptions(context.apiClient))
+      .catch(() => ({ data: [] as ClientEngagement[] }));
+    const engagements = clientEngagements(listed.data);
+    const active =
+      engagements.find((e) => e.id === search.engagement) ??
+      engagements.find((e) => e.status === "active") ??
+      engagements[0];
+    if (!active) {
+      throw redirect({ to: "/client-forbidden" });
     }
 
-    const agencyDaoAccountId = active.client.agencyDaoAccountId;
-
-    if (search.agency !== agencyDaoAccountId) {
+    if (search.engagement !== active.id) {
       throw redirect({
         to: location.pathname,
-        search: { agency: agencyDaoAccountId },
+        search: { engagement: active.id },
         replace: true,
       });
     }
 
     return {
-      client: active.client,
-      projectIds: active.projectIds,
-      nearAccountId,
-      agencyDaoAccountId,
-      memberships: lookup.memberships.filter((m) => m.client.agencyDaoAccountId),
+      client: { id: active.id, name: active.client.name },
+      engagement: active,
+      engagementId: active.id,
+      engagements,
     };
   },
   component: ClientLayout,
@@ -65,13 +56,9 @@ const TAB_BASE =
 const TAB_ACTIVE = "bg-foreground text-background";
 const TAB_INACTIVE = "text-muted-foreground hover:text-foreground";
 
-function shortAgency(id: string) {
-  return id.length > 28 ? `${id.slice(0, 12)}…${id.slice(-8)}` : id;
-}
-
 function ClientLayout() {
-  const { client, agencyDaoAccountId, memberships } = Route.useRouteContext();
-  const search = { agency: agencyDaoAccountId };
+  const { client, engagement, engagementId, engagements } = Route.useRouteContext();
+  const search = { engagement: engagementId };
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   const tabClass = (path: string) => {
@@ -93,14 +80,13 @@ function ClientLayout() {
             <h1 className="font-display text-2xl font-black uppercase tracking-tight">
               {client.name}
             </h1>
-            {memberships.length === 1 && (
-              <p className="font-mono text-[10px] text-muted-foreground">
-                {shortAgency(agencyDaoAccountId)}
-              </p>
-            )}
+            <p className="font-mono text-[10px] text-muted-foreground">
+              with {engagement.agency.name || engagement.agency.organizationId}
+              {engagement.status === "ended" && " · ended"}
+            </p>
           </div>
-          {memberships.length > 1 && (
-            <AgencySwitcher memberships={memberships} agencyDaoAccountId={agencyDaoAccountId} />
+          {engagements.length > 1 && (
+            <EngagementSwitcher engagements={engagements} engagementId={engagementId} />
           )}
         </div>
       </header>
@@ -120,15 +106,12 @@ function ClientLayout() {
   );
 }
 
-function AgencySwitcher({
-  memberships,
-  agencyDaoAccountId,
+function EngagementSwitcher({
+  engagements,
+  engagementId,
 }: {
-  memberships: Array<{
-    client: { id: string; name: string; agencyDaoAccountId: string | null };
-    projectIds: string[];
-  }>;
-  agencyDaoAccountId: string;
+  engagements: ClientEngagement[];
+  engagementId: string;
 }) {
   const navigate = Route.useNavigate();
 
@@ -138,20 +121,18 @@ function AgencySwitcher({
         agency
       </span>
       <select
-        value={agencyDaoAccountId}
+        value={engagementId}
         onChange={(e) => {
-          void navigate({ to: "/client", search: { agency: e.target.value } });
+          void navigate({ to: "/client", search: { engagement: e.target.value } });
         }}
         className="rounded-sm border border-input bg-background px-2 py-1.5 font-mono text-xs max-w-[min(100vw-2rem,20rem)]"
       >
-        {memberships.map((m) => {
-          const id = m.client.agencyDaoAccountId!;
-          return (
-            <option key={m.client.id} value={id}>
-              {m.client.name} · {shortAgency(id)}
-            </option>
-          );
-        })}
+        {engagements.map((e) => (
+          <option key={e.id} value={e.id}>
+            {e.agency.name || e.agency.organizationId}
+            {e.status === "ended" ? " (ended)" : ""}
+          </option>
+        ))}
       </select>
     </label>
   );

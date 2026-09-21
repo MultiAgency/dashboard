@@ -16,14 +16,10 @@ export const Route = createFileRoute("/_layout/_authenticated/client/")({
 });
 
 function ClientHome() {
-  const { client, agencyDaoAccountId } = Route.useRouteContext();
+  const { client, engagementId } = Route.useRouteContext();
   const apiClient = useApiClient();
-  const projectsQuery = useQuery(
-    clientPortalProjectsListQueryOptions(apiClient, agencyDaoAccountId),
-  );
-  const summaryQuery = useQuery(
-    clientPortalDashboardSummaryQueryOptions(apiClient, agencyDaoAccountId),
-  );
+  const projectsQuery = useQuery(clientPortalProjectsListQueryOptions(apiClient, engagementId));
+  const summaryQuery = useQuery(clientPortalDashboardSummaryQueryOptions(apiClient, engagementId));
   const clientProjects = projectsQuery.data?.data ?? [];
   const remaining = summaryQuery.data?.remainingByToken ?? [];
 
@@ -80,7 +76,7 @@ function ClientHome() {
           readOnly
           clientPortal
           clientId={client.id}
-          agencyDaoAccountId={agencyDaoAccountId}
+          engagementId={engagementId}
         />
       </section>
     </div>

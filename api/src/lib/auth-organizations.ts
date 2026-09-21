@@ -11,5 +11,23 @@ export function createAuthOrganizations(auth: PluginsClient["auth"]): Organizati
         return null;
       }
     },
+
+    nameOf: async (context, organizationId) => {
+      try {
+        const org = await auth(context).getFullOrganization({ organizationId, membersLimit: 1 });
+        return org?.name ?? null;
+      } catch {
+        return null;
+      }
+    },
+
+    create: async (context, input) => {
+      const org = await auth(context).createOrganization(input);
+      return { id: org.id };
+    },
+
+    invite: async (context, input) => {
+      await auth(context).inviteMember(input);
+    },
   };
 }

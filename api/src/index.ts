@@ -21,6 +21,7 @@ import { createClientPortalService } from "./services/client-portal";
 import { createClientsService } from "./services/clients";
 import { createContactFormService } from "./services/contact-form";
 import { createContributorsService } from "./services/contributors";
+import { createEngagementsService } from "./services/engagements";
 import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
@@ -70,7 +71,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
         fromEmail: config.secrets.NOTIFY_FROM_EMAIL,
       };
 
-      const access = createOrganizationAccess(db, createAuthOrganizations(plugins.auth));
+      const organizations = createAuthOrganizations(plugins.auth);
+      const access = createOrganizationAccess(db, organizations);
       const directory = createProjectDirectory((pluginContext) => plugins.projects(pluginContext));
       const listings = createListingsService(db, directory);
       const projectLedgers = createProjectLedgers(db, listings);
@@ -86,13 +88,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const budgets = createBudgetsService(db, directory, clients);
       const billings = createBillingsService(db, directory);
       const reports = createReportsService(db, directory, plugins);
+      const engagements = createEngagementsService(db, directory, organizations);
       const clientPortal = createClientPortalService(
-        clients,
+        engagements,
         agency,
         billings,
         reports,
         directory,
         projectLedgers,
+        access,
       );
       const me = createMeService(db, directory);
       const proposals = createProposalsService(db, directory);
@@ -115,6 +119,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         budgets,
         billings,
         reports,
+        engagements,
         clientPortal,
         me,
         proposals,
@@ -140,6 +145,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       budgets,
       billings,
       reports,
+      engagements,
       clientPortal,
       me,
       proposals,
@@ -292,48 +298,96 @@ export default createPlugin.withPlugins<PluginsClient>()({
           ),
       },
 
+      engagements: {
+        list: builder.engagements.list
+          .use(orgMember)
+          .handler(async ({ context }) => runEffect(engagements.list(context.scope))),
+
+        createClient: builder.engagements.createClient
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(engagements.createClient(context.scope, input)),
+          ),
+
+        propose: builder.engagements.propose
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(engagements.propose(context.scope, input)),
+          ),
+
+        accept: builder.engagements.accept
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(engagements.accept(context.scope, input.id)),
+          ),
+
+        decline: builder.engagements.decline
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(engagements.decline(context.scope, input.id)),
+          ),
+
+        end: builder.engagements.end
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(engagements.end(context.scope, input.id)),
+          ),
+
+        share: builder.engagements.share
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(engagements.share(context.scope, input)),
+          ),
+
+        unshare: builder.engagements.unshare
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            runEffect(engagements.unshare(context.scope, input)),
+          ),
+      },
+
       clientPortal: {
         dashboard: {
           summary: builder.clientPortal.dashboard.summary
-            .use(auth.requireAuth)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
-              runEffect(clientPortal.dashboardSummary(context, input)),
+              runEffect(clientPortal.dashboardSummary(context.scope, input)),
             ),
         },
 
         projects: {
           list: builder.clientPortal.projects.list
-            .use(auth.requireAuth)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
-              runEffect(clientPortal.listProjects(context, input)),
+              runEffect(clientPortal.listProjects(context.scope, input)),
             ),
 
           get: builder.clientPortal.projects.get
-            .use(auth.requireAuth)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
-              runEffect(clientPortal.getProject(context, input)),
+              runEffect(clientPortal.getProject(context.scope, input)),
             ),
 
           getBudget: builder.clientPortal.projects.getBudget
-            .use(auth.requireAuth)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
-              runEffect(clientPortal.getBudget(context, input)),
+              runEffect(clientPortal.getBudget(context.scope, input)),
             ),
         },
 
         billings: {
           list: builder.clientPortal.billings.list
-            .use(auth.requireAuth)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
-              runEffect(clientPortal.listBillings(context, input)),
+              runEffect(clientPortal.listBillings(context.scope, input)),
             ),
         },
 
         reports: {
           generate: builder.clientPortal.reports.generate
-            .use(auth.requireAuth)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
-              runEffect(clientPortal.generateReport(context, input)),
+              runEffect(clientPortal.generateReport(context.scope, input)),
             ),
         },
       },

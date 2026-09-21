@@ -256,3 +256,46 @@ export const organizationDaos = pgTable(
     daoUnique: uniqueIndex("organization_daos_dao_unique").on(t.daoAccountId),
   }),
 );
+
+export const engagements = pgTable(
+  "engagements",
+  {
+    id: text("id").primaryKey(),
+    agencyOrganizationId: text("agency_organization_id").notNull(),
+    agencyName: text("agency_name").notNull().default(""),
+    clientOrganizationId: text("client_organization_id").notNull(),
+    clientName: text("client_name").notNull().default(""),
+    kind: text("kind", { enum: ["client", "subcontract"] })
+      .notNull()
+      .default("client"),
+    status: text("status", { enum: ["proposed", "active", "declined", "ended"] }).notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+    endedAt: timestamp("ended_at", { withTimezone: false }),
+  },
+  (t) => ({
+    activePair: uniqueIndex("engagements_active_pair")
+      .on(t.agencyOrganizationId, t.clientOrganizationId)
+      .where(sql`${t.status} = 'active'`),
+    agencyIdx: index("engagements_agency").on(t.agencyOrganizationId),
+    clientIdx: index("engagements_client").on(t.clientOrganizationId),
+  }),
+);
+
+export type Engagement = typeof engagements.$inferSelect;
+
+export const engagementProjects = pgTable(
+  "engagement_projects",
+  {
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.engagementId, t.projectId] }),
+    projectIdx: index("engagement_projects_project_id").on(t.projectId),
+  }),
+);

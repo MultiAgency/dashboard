@@ -19,6 +19,7 @@ export function createReportsService(
       scope: AgencyScope,
       input: {
         clientId?: string;
+        projectIds?: string[];
         projectId?: string;
         note?: string;
         startDate?: string;
@@ -67,6 +68,9 @@ export function createReportsService(
           );
           const agencyProjectIds = new Set(allProjects.map((p) => p.id));
           projectIds = links.map((l) => l.projectId).filter((id) => agencyProjectIds.has(id));
+        } else if (input.projectIds) {
+          const shared = new Set(input.projectIds);
+          projectIds = allProjects.map((p) => p.id).filter((id) => shared.has(id));
         } else {
           projectIds = allProjects.map((p) => p.id);
         }

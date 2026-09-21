@@ -1,9 +1,9 @@
 import type { AuthClient } from "@/lib/auth";
-import { isAgencyWorkspace } from "@/lib/org-metadata";
+import { isWorkspace } from "@/lib/org-metadata";
 
-export async function listAgencyOrganizations(authClient: AuthClient) {
+export async function listWorkspaces(authClient: AuthClient) {
   const res = await authClient.organization.list();
-  return (res.data ?? []).filter((org) => isAgencyWorkspace(org.metadata));
+  return (res.data ?? []).filter((org) => isWorkspace(org.metadata));
 }
 
 export async function activeOrganizationId(authClient: AuthClient): Promise<string | null> {
@@ -12,25 +12,17 @@ export async function activeOrganizationId(authClient: AuthClient): Promise<stri
   });
   if (error) throw new Error(error.message ?? "Failed to validate session");
   if (!session?.session || !session.user) {
-    throw new Error("Your session has expired. Sign in again to switch agencies.");
+    throw new Error("Your session has expired. Sign in again to switch Organizations.");
   }
   return session?.session?.activeOrganizationId ?? null;
 }
 
-/** Pick an agency org id to restore after client-org side effects. Never returns a client org id. */
-export async function resolveAgencyOrgId(authClient: AuthClient): Promise<string | null> {
-  const agencies = await listAgencyOrganizations(authClient);
-  if (agencies.length === 0) return null;
-  const currentId = await activeOrganizationId(authClient);
-  return agencies.find((o) => o.id === currentId)?.id ?? agencies[0]!.id;
-}
-
-export async function switchAgencyWorkspace(
+export async function switchWorkspace(
   authClient: AuthClient,
   organizationId: string,
 ): Promise<boolean> {
-  const agencies = await listAgencyOrganizations(authClient);
-  if (!agencies.some((o) => o.id === organizationId)) return false;
+  const workspaces = await listWorkspaces(authClient);
+  if (!workspaces.some((o) => o.id === organizationId)) return false;
 
   const currentId = await activeOrganizationId(authClient);
   if (currentId === organizationId) return true;
@@ -39,20 +31,4 @@ export async function switchAgencyWorkspace(
   if (result.error) return false;
 
   return (await activeOrganizationId(authClient)) === organizationId;
-}
-
-/** Client org creation switches the active workspace — restore an agency for admin/API routes. Browser only. */
-export async function ensureAgencyWorkspaceActive(authClient: AuthClient): Promise<string | null> {
-  if (typeof window === "undefined") return null;
-
-  const agencies = await listAgencyOrganizations(authClient);
-  if (agencies.length === 0) return null;
-
-  const currentId = await activeOrganizationId(authClient);
-  const current = agencies.find((o) => o.id === currentId);
-  if (current) return current.id;
-
-  const targetId = agencies[0]!.id;
-  const ok = await switchAgencyWorkspace(authClient, targetId);
-  return ok ? targetId : null;
 }

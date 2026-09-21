@@ -153,10 +153,7 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
       const org = await authClient.organization.create({
         name: name.trim(),
         slug: finalSlug,
-        metadata: {
-          type: "agency",
-          daoAccountId: daoAccountId.trim(),
-        },
+        metadata: daoAccountId.trim() ? { daoAccountId: daoAccountId.trim() } : {},
       });
       if (org.error) throw new Error(org.error.message || "Failed to create workspace");
       if (!org.data?.id) throw new Error("Failed to create workspace");
@@ -189,7 +186,7 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
   });
 
   const isPending = createMutation.isPending;
-  const canSubmit = !!name.trim() && !!adminEmail.trim() && !!daoAccountId.trim();
+  const canSubmit = !!name.trim() && !!adminEmail.trim();
 
   return (
     <Card key={formKey}>
