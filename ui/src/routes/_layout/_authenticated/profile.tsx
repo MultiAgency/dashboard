@@ -33,6 +33,32 @@ function ProfilePage() {
 
   const profileQuery = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
 
+  const linkedAccountsQuery = useQuery({
+    queryKey: ["near", "linked-accounts"],
+    queryFn: async () => {
+      const { data, error } = await authClient.near.listAccounts();
+      if (error) throw new Error(error.message || "Failed to load NEAR accounts");
+      return data?.accounts ?? [];
+    },
+    enabled: !!session?.user,
+  });
+  const linkedAccount = linkedAccountsQuery.data?.[0]?.accountId ?? nearAccountId;
+
+  const linkMutation = useMutation({
+    mutationFn: () =>
+      new Promise<void>((resolve, reject) => {
+        void authClient.near.link({ onSuccess: resolve, onError: reject });
+      }),
+    onSuccess: async () => {
+      toast.success("NEAR wallet linked");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["near", "linked-accounts"] }),
+        queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
+      ]);
+    },
+    onError: (err: Error) => toast.error(err.message || "Failed to link NEAR wallet"),
+  });
+
   const profile = profileQuery.data;
   const displayName =
     profile?.name?.trim() ||
@@ -113,8 +139,20 @@ function ProfilePage() {
               </div>
             </Field>
             <Field label="near account">
-              <div className="border-2 border-border bg-muted/10 p-3 font-mono text-xs break-all">
-                {nearAccountId || "not linked"}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 border-2 border-border bg-muted/10 p-3 font-mono text-xs break-all">
+                  {linkedAccount || "not linked"}
+                </div>
+                {!linkedAccount && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => linkMutation.mutate()}
+                    disabled={linkMutation.isPending}
+                  >
+                    {linkMutation.isPending ? "linking..." : "link wallet"}
+                  </Button>
+                )}
               </div>
             </Field>
             <Field label="user id">

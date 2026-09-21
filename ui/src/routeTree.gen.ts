@@ -15,6 +15,7 @@ import { Route as LayoutWorkRouteImport } from './routes/_layout/work'
 import { Route as LayoutTreasuryRouteImport } from './routes/_layout/treasury'
 import { Route as LayoutTeamRouteImport } from './routes/_layout/team'
 import { Route as LayoutRegisterRouteImport } from './routes/_layout/register'
+import { Route as LayoutLoginRouteImport } from './routes/_layout/login'
 import { Route as LayoutContactRouteImport } from './routes/_layout/contact'
 import { Route as LayoutApplyRouteImport } from './routes/_layout/apply'
 import { Route as LayoutAuthenticatedRouteImport } from './routes/_layout/_authenticated'
@@ -32,6 +33,7 @@ import { Route as LayoutAuthenticatedAdminIndexRouteImport } from './routes/_lay
 import { Route as LayoutAuthenticatedClientForbiddenRouteImport } from './routes/_layout/_authenticated/client/forbidden'
 import { Route as LayoutAuthenticatedAdminSettingsRouteImport } from './routes/_layout/_authenticated/admin/settings'
 import { Route as LayoutAuthenticatedAdminMembersRouteImport } from './routes/_layout/_authenticated/admin/members'
+import { Route as LayoutAuthenticatedAcceptInvitationIdRouteImport } from './routes/_layout/_authenticated/accept-invitation.$id'
 import { Route as LayoutAuthenticatedClientReportsIndexRouteImport } from './routes/_layout/_authenticated/client/reports/index'
 import { Route as LayoutAuthenticatedClientProjectsIndexRouteImport } from './routes/_layout/_authenticated/client/projects/index'
 import { Route as LayoutAuthenticatedAdminReportsIndexRouteImport } from './routes/_layout/_authenticated/admin/reports/index'
@@ -73,6 +75,11 @@ const LayoutTeamRoute = LayoutTeamRouteImport.update({
 const LayoutRegisterRoute = LayoutRegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutLoginRoute = LayoutLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutContactRoute = LayoutContactRouteImport.update({
@@ -171,6 +178,12 @@ const LayoutAuthenticatedAdminMembersRoute =
     path: '/members',
     getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
+const LayoutAuthenticatedAcceptInvitationIdRoute =
+  LayoutAuthenticatedAcceptInvitationIdRouteImport.update({
+    id: '/accept-invitation/$id',
+    path: '/accept-invitation/$id',
+    getParentRoute: () => LayoutAuthenticatedRoute,
+  } as any)
 const LayoutAuthenticatedClientReportsIndexRoute =
   LayoutAuthenticatedClientReportsIndexRouteImport.update({
     id: '/reports/',
@@ -254,6 +267,7 @@ export interface FileRoutesByFullPath {
   '/': typeof LayoutIndexRoute
   '/apply': typeof LayoutApplyRoute
   '/contact': typeof LayoutContactRoute
+  '/login': typeof LayoutLoginRoute
   '/register': typeof LayoutRegisterRoute
   '/team': typeof LayoutTeamRoute
   '/treasury': typeof LayoutTreasuryRoute
@@ -265,6 +279,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof LayoutAuthenticatedProfileRoute
   '/docs/$slug': typeof LayoutDocsSlugRoute
   '/docs/': typeof LayoutDocsIndexRoute
+  '/accept-invitation/$id': typeof LayoutAuthenticatedAcceptInvitationIdRoute
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/client/forbidden': typeof LayoutAuthenticatedClientForbiddenRoute
@@ -290,6 +305,7 @@ export interface FileRoutesByTo {
   '/': typeof LayoutIndexRoute
   '/apply': typeof LayoutApplyRoute
   '/contact': typeof LayoutContactRoute
+  '/login': typeof LayoutLoginRoute
   '/register': typeof LayoutRegisterRoute
   '/team': typeof LayoutTeamRoute
   '/treasury': typeof LayoutTreasuryRoute
@@ -297,6 +313,7 @@ export interface FileRoutesByTo {
   '/profile': typeof LayoutAuthenticatedProfileRoute
   '/docs/$slug': typeof LayoutDocsSlugRoute
   '/docs': typeof LayoutDocsIndexRoute
+  '/accept-invitation/$id': typeof LayoutAuthenticatedAcceptInvitationIdRoute
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/client/forbidden': typeof LayoutAuthenticatedClientForbiddenRoute
@@ -324,6 +341,7 @@ export interface FileRoutesById {
   '/_layout/_authenticated': typeof LayoutAuthenticatedRouteWithChildren
   '/_layout/apply': typeof LayoutApplyRoute
   '/_layout/contact': typeof LayoutContactRoute
+  '/_layout/login': typeof LayoutLoginRoute
   '/_layout/register': typeof LayoutRegisterRoute
   '/_layout/team': typeof LayoutTeamRoute
   '/_layout/treasury': typeof LayoutTreasuryRoute
@@ -336,6 +354,7 @@ export interface FileRoutesById {
   '/_layout/_authenticated/profile': typeof LayoutAuthenticatedProfileRoute
   '/_layout/docs/$slug': typeof LayoutDocsSlugRoute
   '/_layout/docs/': typeof LayoutDocsIndexRoute
+  '/_layout/_authenticated/accept-invitation/$id': typeof LayoutAuthenticatedAcceptInvitationIdRoute
   '/_layout/_authenticated/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/_layout/_authenticated/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/_layout/_authenticated/client/forbidden': typeof LayoutAuthenticatedClientForbiddenRoute
@@ -363,6 +382,7 @@ export interface FileRouteTypes {
     | '/'
     | '/apply'
     | '/contact'
+    | '/login'
     | '/register'
     | '/team'
     | '/treasury'
@@ -374,6 +394,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/docs/$slug'
     | '/docs/'
+    | '/accept-invitation/$id'
     | '/admin/members'
     | '/admin/settings'
     | '/client/forbidden'
@@ -399,6 +420,7 @@ export interface FileRouteTypes {
     | '/'
     | '/apply'
     | '/contact'
+    | '/login'
     | '/register'
     | '/team'
     | '/treasury'
@@ -406,6 +428,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/docs/$slug'
     | '/docs'
+    | '/accept-invitation/$id'
     | '/admin/members'
     | '/admin/settings'
     | '/client/forbidden'
@@ -432,6 +455,7 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated'
     | '/_layout/apply'
     | '/_layout/contact'
+    | '/_layout/login'
     | '/_layout/register'
     | '/_layout/team'
     | '/_layout/treasury'
@@ -444,6 +468,7 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/profile'
     | '/_layout/docs/$slug'
     | '/_layout/docs/'
+    | '/_layout/_authenticated/accept-invitation/$id'
     | '/_layout/_authenticated/admin/members'
     | '/_layout/_authenticated/admin/settings'
     | '/_layout/_authenticated/client/forbidden'
@@ -512,6 +537,13 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof LayoutRegisterRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/login': {
+      id: '/_layout/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LayoutLoginRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/contact': {
@@ -632,6 +664,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/members'
       preLoaderRoute: typeof LayoutAuthenticatedAdminMembersRouteImport
       parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
+    }
+    '/_layout/_authenticated/accept-invitation/$id': {
+      id: '/_layout/_authenticated/accept-invitation/$id'
+      path: '/accept-invitation/$id'
+      fullPath: '/accept-invitation/$id'
+      preLoaderRoute: typeof LayoutAuthenticatedAcceptInvitationIdRouteImport
+      parentRoute: typeof LayoutAuthenticatedRoute
     }
     '/_layout/_authenticated/client/reports/': {
       id: '/_layout/_authenticated/client/reports/'
@@ -838,6 +877,7 @@ interface LayoutAuthenticatedRouteChildren {
   LayoutAuthenticatedDashboardRouteRoute: typeof LayoutAuthenticatedDashboardRouteRouteWithChildren
   LayoutAuthenticatedPlatformRouteRoute: typeof LayoutAuthenticatedPlatformRouteRouteWithChildren
   LayoutAuthenticatedProfileRoute: typeof LayoutAuthenticatedProfileRoute
+  LayoutAuthenticatedAcceptInvitationIdRoute: typeof LayoutAuthenticatedAcceptInvitationIdRoute
 }
 
 const LayoutAuthenticatedRouteChildren: LayoutAuthenticatedRouteChildren = {
@@ -850,6 +890,8 @@ const LayoutAuthenticatedRouteChildren: LayoutAuthenticatedRouteChildren = {
   LayoutAuthenticatedPlatformRouteRoute:
     LayoutAuthenticatedPlatformRouteRouteWithChildren,
   LayoutAuthenticatedProfileRoute: LayoutAuthenticatedProfileRoute,
+  LayoutAuthenticatedAcceptInvitationIdRoute:
+    LayoutAuthenticatedAcceptInvitationIdRoute,
 }
 
 const LayoutAuthenticatedRouteWithChildren =
@@ -859,6 +901,7 @@ interface LayoutRouteChildren {
   LayoutAuthenticatedRoute: typeof LayoutAuthenticatedRouteWithChildren
   LayoutApplyRoute: typeof LayoutApplyRoute
   LayoutContactRoute: typeof LayoutContactRoute
+  LayoutLoginRoute: typeof LayoutLoginRoute
   LayoutRegisterRoute: typeof LayoutRegisterRoute
   LayoutTeamRoute: typeof LayoutTeamRoute
   LayoutTreasuryRoute: typeof LayoutTreasuryRoute
@@ -872,6 +915,7 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutAuthenticatedRoute: LayoutAuthenticatedRouteWithChildren,
   LayoutApplyRoute: LayoutApplyRoute,
   LayoutContactRoute: LayoutContactRoute,
+  LayoutLoginRoute: LayoutLoginRoute,
   LayoutRegisterRoute: LayoutRegisterRoute,
   LayoutTeamRoute: LayoutTeamRoute,
   LayoutTreasuryRoute: LayoutTreasuryRoute,

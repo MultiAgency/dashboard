@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -13,25 +12,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useApiClient } from "@/lib/api";
-import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { sessionQueryOptions } from "@/lib/auth";
 import { nearProfileQueryOptions } from "@/lib/near-profile";
-import { getNetwork, setNetwork } from "@/lib/network";
-import { clientLookupQueryOptions, meRolesQueryKey, meRolesQueryOptions } from "@/lib/queries";
-
-type Network = "mainnet" | "testnet";
-
-class NetworkMismatchError extends Error {
-  readonly account: string;
-  readonly walletNetwork: Network;
-  readonly dashboardNetwork: Network;
-  constructor(account: string, walletNetwork: Network, dashboardNetwork: Network) {
-    super(`Wallet ${account} is on ${walletNetwork}, dashboard is on ${dashboardNetwork}`);
-    this.name = "NetworkMismatchError";
-    this.account = account;
-    this.walletNetwork = walletNetwork;
-    this.dashboardNetwork = dashboardNetwork;
-  }
-}
+import { clientLookupQueryOptions, meRolesQueryOptions } from "@/lib/queries";
 
 export function UserNav() {
   const queryClient = useQueryClient();
@@ -58,63 +41,6 @@ export function UserNav() {
     profile?.image?.url ??
     (profile?.image?.ipfs_cid ? `https://ipfs.io/ipfs/${profile.image.ipfs_cid}` : null);
 
-  const connectMutation = useMutation({
-    mutationFn: () =>
-      new Promise<void>((resolve, reject) => {
-        authClient.signIn.near({
-          onSuccess: () => {
-            const state = authClient.near.getState();
-            if (!state?.accountId) {
-              reject(
-                new Error(
-                  "Sign-in completed but the NEAR wallet did not report the linked account. Try again — if the issue persists, reconnect your wallet extension.",
-                ),
-              );
-              return;
-            }
-            const dashboardNetwork = getNetwork();
-            const walletNetwork = state.networkId as Network;
-            if (walletNetwork !== dashboardNetwork) {
-              void authClient.signOut().catch(() => {});
-              reject(new NetworkMismatchError(state.accountId, walletNetwork, dashboardNetwork));
-              return;
-            }
-            resolve();
-          },
-          onError: (error) => {
-            reject(error);
-          },
-        });
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey }),
-        queryClient.invalidateQueries({ queryKey: meRolesQueryKey }),
-      ]);
-      navigate({ to: "/treasury" });
-    },
-    onError: (error: Error) => {
-      if (error instanceof NetworkMismatchError) {
-        queryClient.setQueryData(sessionQueryKey, null);
-        void queryClient.invalidateQueries({ queryKey: meRolesQueryKey });
-        toast.error(
-          `wallet ${error.account} is on ${error.walletNetwork} — dashboard is on ${error.dashboardNetwork}`,
-          {
-            action: {
-              label: `switch to ${error.walletNetwork}`,
-              onClick: () => {
-                void setNetwork(error.walletNetwork);
-              },
-            },
-            duration: 15_000,
-          },
-        );
-        return;
-      }
-      toast.error(error.message || "Failed to connect NEAR wallet");
-    },
-  });
-
   const signOutMutation = useMutation({
     mutationFn: async () => {
       const { error } = await authClient.signOut();
@@ -131,7 +57,11 @@ export function UserNav() {
   });
 
   if (!user) {
-    return <ConnectButton connect={connectMutation} />;
+    return (
+      <Button asChild variant="outline" className="px-3 py-1.5 text-xs font-medium rounded-md">
+        <Link to="/login">sign in</Link>
+      </Button>
+    );
   }
 
   const identifier = user.name || user.email || user.id;
@@ -202,19 +132,5 @@ export function UserNav() {
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-  );
-}
-
-function ConnectButton({ connect }: { connect: { mutate: () => void; isPending: boolean } }) {
-  const label = connect.isPending ? "connecting..." : "connect";
-  return (
-    <Button
-      variant="outline"
-      className="px-3 py-1.5 text-xs font-medium rounded-md"
-      onClick={() => connect.mutate()}
-      disabled={connect.isPending}
-    >
-      {label}
-    </Button>
   );
 }
