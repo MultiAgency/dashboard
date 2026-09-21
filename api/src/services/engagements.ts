@@ -285,6 +285,29 @@ export function createEngagementsService(
         return yield* Effect.promise(() => viewOne(row, scope.organizationId));
       }),
 
+    asParty: (scope: OrgScope, id: string) =>
+      Effect.gen(function* () {
+        const [row] = yield* Effect.promise(() =>
+          db
+            .select()
+            .from(engagements)
+            .where(
+              and(
+                eq(engagements.id, id),
+                or(
+                  eq(engagements.agencyOrganizationId, scope.organizationId),
+                  eq(engagements.clientOrganizationId, scope.organizationId),
+                ),
+              ),
+            )
+            .limit(1),
+        );
+        if (!row) return yield* Effect.fail(notFound());
+        return row;
+      }),
+
+    asAgency: (scope: OrgScope, id: string) => findAs(scope, id, "agency"),
+
     asClient: (scope: OrgScope, id: string) =>
       Effect.gen(function* () {
         const row = yield* findAs(scope, id, "client");

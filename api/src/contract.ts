@@ -233,6 +233,21 @@ const engagement = z.object({
 });
 
 const engagementId = z.object({ id: z.string().min(1) });
+
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const prepayment = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  tokenId: z.string(),
+  amount: z.string(),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  transferReference: z.string().nullable(),
+  actorAccountId: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
 const engagementProject = z.object({
   engagementId: z.string().min(1),
   projectId: z.string().min(1),
@@ -260,6 +275,8 @@ const budget = z.object({
   actorAccountId: z.string(),
   relatedBudgetId: z.string().nullable(),
   clientId: z.string().nullable(),
+  daoAccountId: z.string().nullable(),
+  engagementId: z.string().nullable(),
   createdAt: z.date(),
 });
 
@@ -671,6 +688,50 @@ export const contract = oc.router({
       .route({ method: "DELETE", path: "/engagements/{engagementId}/projects/{projectId}" })
       .input(engagementProject)
       .output(engagement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+  },
+
+  prepayments: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/prepayments" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(prepayment), balance: z.array(tokenAmount) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    record: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/prepayments" })
+      .input(
+        z.object({
+          engagementId: z.string().min(1),
+          tokenId,
+          amount: baseAmount,
+          periodStart: isoDate,
+          periodEnd: isoDate,
+          transferReference: z.string().max(500).optional(),
+        }),
+      )
+      .output(prepayment)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    correct: oc
+      .route({ method: "PATCH", path: "/prepayments/{id}" })
+      .input(
+        z.object({
+          id: z.string().min(1),
+          tokenId: tokenId.optional(),
+          amount: baseAmount.optional(),
+          periodStart: isoDate.optional(),
+          periodEnd: isoDate.optional(),
+          transferReference: z.string().max(500).nullable().optional(),
+        }),
+      )
+      .output(prepayment)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    remove: oc
+      .route({ method: "DELETE", path: "/prepayments/{id}" })
+      .input(z.object({ id: z.string().min(1) }))
+      .output(z.object({ deleted: z.literal(true) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
   },
 

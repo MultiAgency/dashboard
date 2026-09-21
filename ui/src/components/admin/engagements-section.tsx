@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field } from "@/components/admin-form";
+import { PrepaymentsPanel } from "@/components/prepayments-panel";
+import { useMeRoles } from "@/hooks";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions, useAuthClient } from "@/lib/auth";
@@ -189,6 +191,7 @@ function ProposeForm() {
 function AgencyEngagementCard({ engagement }: { engagement: Engagement }) {
   const apiClient = useApiClient();
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
+  const { hasAgencyDao } = useMeRoles();
   const shared = new Set(engagement.projectIds);
   const projects = projectsQuery.data?.data ?? [];
   const canShare = engagement.status === "active";
@@ -254,6 +257,9 @@ function AgencyEngagementCard({ engagement }: { engagement: Engagement }) {
                 ))}
             </ul>
           </div>
+        )}
+        {hasAgencyDao && engagement.status !== "proposed" && engagement.status !== "declined" && (
+          <PrepaymentsPanel engagementId={engagement.id} canManage={canShare} />
         )}
       </CardContent>
     </Card>

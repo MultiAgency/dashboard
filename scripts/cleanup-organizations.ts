@@ -6,6 +6,7 @@
  * - Moves Projects owned by a DAO account to the Organization holding that DAO.
  * - Records each Organization's Agency DAO in the API's organization_daos registry.
  * - Points migrated Engagements at the Agency's Organization and fills in names (#43).
+ * - Records the source Agency DAO on existing Budget entries (#44).
  * - Makes each Client's NEAR wallet user the owner of the Client Organization and
  *   removes the Agency's staff from it (#43).
  *
@@ -274,6 +275,16 @@ async function main() {
         await projects.query(
           "UPDATE projects SET organization_id = $1 WHERE organization_id = $2",
           [move.organizationId, move.dao],
+        );
+      }
+      const { rows: owned } = await projects.query<{ id: string }>(
+        "SELECT id FROM projects WHERE organization_id = ANY($1)",
+        [[move.organizationId, move.dao]],
+      );
+      if (owned.length > 0) {
+        await api.query(
+          "UPDATE budgets SET dao_account_id = $1 WHERE dao_account_id IS NULL AND project_id = ANY($2)",
+          [move.dao, owned.map((p) => p.id)],
         );
       }
       const agencyName = owners.get(move.dao)?.name ?? "";

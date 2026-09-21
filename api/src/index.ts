@@ -26,6 +26,7 @@ import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
+import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
 import { createReportsService } from "./services/reports";
@@ -89,6 +90,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const billings = createBillingsService(db, directory);
       const reports = createReportsService(db, directory, plugins);
       const engagements = createEngagementsService(db, directory, organizations);
+      const prepayments = createPrepaymentsService(db, engagements);
       const clientPortal = createClientPortalService(
         engagements,
         agency,
@@ -120,6 +122,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         billings,
         reports,
         engagements,
+        prepayments,
         clientPortal,
         me,
         proposals,
@@ -146,6 +149,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       billings,
       reports,
       engagements,
+      prepayments,
       clientPortal,
       me,
       proposals,
@@ -343,6 +347,32 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(orgManager)
           .handler(async ({ context, input }) =>
             runEffect(engagements.unshare(context.scope, input)),
+          ),
+      },
+
+      prepayments: {
+        list: builder.prepayments.list
+          .use(orgMember)
+          .handler(async ({ context, input }) =>
+            runEffect(prepayments.list(context.scope, input.engagementId)),
+          ),
+
+        record: builder.prepayments.record
+          .use(manager)
+          .handler(async ({ context, input }) =>
+            runEffect(prepayments.record(context.scope, input)),
+          ),
+
+        correct: builder.prepayments.correct
+          .use(manager)
+          .handler(async ({ context, input }) =>
+            runEffect(prepayments.correct(context.scope, input)),
+          ),
+
+        remove: builder.prepayments.remove
+          .use(manager)
+          .handler(async ({ context, input }) =>
+            runEffect(prepayments.remove(context.scope, input.id)),
           ),
       },
 

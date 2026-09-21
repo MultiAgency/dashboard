@@ -310,6 +310,18 @@ export function engagementsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export function prepaymentsQueryKey(engagementId: string) {
+  return ["engagements", "prepayments", engagementId] as const;
+}
+
+export function prepaymentsQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: prepaymentsQueryKey(engagementId),
+    queryFn: () => apiClient.prepayments.list({ engagementId }),
+    retry: false,
+  });
+}
+
 export const clientPortalDashboardQueryKey = ["client", "portal", "dashboard"] as const;
 
 export function clientPortalDashboardSummaryQueryOptions(

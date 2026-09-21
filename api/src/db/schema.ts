@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
+  date,
   index,
   integer,
   pgTable,
@@ -165,12 +167,17 @@ export const budgets = pgTable(
     actorAccountId: text("actor_account_id").notNull(),
     relatedBudgetId: text("related_budget_id"),
     clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    daoAccountId: text("dao_account_id"),
+    engagementId: text("engagement_id").references((): AnyPgColumn => engagements.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     cursor: index("budgets_cursor").on(t.createdAt, t.id),
     projectIdx: index("budgets_project_id").on(t.projectId),
     clientIdx: index("budgets_client_id").on(t.clientId),
+    engagementIdx: index("budgets_engagement_id").on(t.engagementId),
   }),
 );
 
@@ -299,3 +306,26 @@ export const engagementProjects = pgTable(
     projectIdx: index("engagement_projects_project_id").on(t.projectId),
   }),
 );
+
+export const prepayments = pgTable(
+  "prepayments",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id, { onDelete: "cascade" }),
+    tokenId: text("token_id").notNull(),
+    amount: text("amount").notNull(),
+    periodStart: date("period_start", { mode: "string" }).notNull(),
+    periodEnd: date("period_end", { mode: "string" }).notNull(),
+    transferReference: text("transfer_reference"),
+    actorAccountId: text("actor_account_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("prepayments_engagement_id").on(t.engagementId),
+  }),
+);
+
+export type Prepayment = typeof prepayments.$inferSelect;

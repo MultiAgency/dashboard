@@ -42,6 +42,8 @@ export type BudgetListItem = Pick<
   | "actorAccountId"
   | "relatedBudgetId"
   | "clientId"
+  | "daoAccountId"
+  | "engagementId"
   | "createdAt"
 >;
 
@@ -75,6 +77,8 @@ export async function listBudgets(
       actorAccountId: budgets.actorAccountId,
       relatedBudgetId: budgets.relatedBudgetId,
       clientId: budgets.clientId,
+      daoAccountId: budgets.daoAccountId,
+      engagementId: budgets.engagementId,
       createdAt: budgets.createdAt,
     })
     .from(budgets)
@@ -103,6 +107,8 @@ export interface CreateBudgetInput {
   note: string | null;
   actorAccountId: string;
   clientId?: string | null;
+  daoAccountId?: string | null;
+  engagementId?: string | null;
 }
 
 export async function createBudget(db: Database, input: CreateBudgetInput): Promise<Budget> {
@@ -117,6 +123,8 @@ export async function createBudget(db: Database, input: CreateBudgetInput): Prom
       note: input.note,
       actorAccountId: input.actorAccountId,
       clientId: input.clientId ?? null,
+      daoAccountId: input.daoAccountId ?? null,
+      engagementId: input.engagementId ?? null,
     })
     .returning();
   if (!row) throw new Error("budgets insert returned no row");
@@ -141,6 +149,7 @@ export interface TransferBudgetInput {
   amount: string;
   note: string | null;
   actorAccountId: string;
+  daoAccountId?: string | null;
 }
 
 export async function transferBudget(
@@ -172,6 +181,7 @@ export async function transferBudget(
           amount: (-transferAmount).toString(),
           note: input.note,
           actorAccountId: input.actorAccountId,
+          daoAccountId: input.daoAccountId ?? null,
           relatedBudgetId: toId,
           createdAt: now,
         },
@@ -182,6 +192,7 @@ export async function transferBudget(
           amount: transferAmount.toString(),
           note: input.note,
           actorAccountId: input.actorAccountId,
+          daoAccountId: input.daoAccountId ?? null,
           relatedBudgetId: fromId,
           createdAt: now,
         },
@@ -272,6 +283,7 @@ export function createBudgetsService(
           ...input,
           note: input.note ?? null,
           clientId: input.clientId ?? null,
+          daoAccountId: scope.agencyDao,
           actorAccountId: scope.actorId,
         }),
       })),
@@ -291,6 +303,7 @@ export function createBudgetsService(
           ...input,
           note: input.note ?? null,
           clientId: input.clientId ?? null,
+          daoAccountId: scope.agencyDao,
           actorAccountId: scope.actorId,
         }),
       })),
@@ -306,7 +319,12 @@ export function createBudgetsService(
       },
     ) =>
       inAgency(scope, { projectIds: [input.fromProjectId, input.toProjectId] }, () =>
-        transferBudget(db, { ...input, note: input.note ?? null, actorAccountId: scope.actorId }),
+        transferBudget(db, {
+          ...input,
+          note: input.note ?? null,
+          daoAccountId: scope.agencyDao,
+          actorAccountId: scope.actorId,
+        }),
       ),
   };
 }

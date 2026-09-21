@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Badge, Card, CardContent } from "@/components";
 import { BillingsAdminSection } from "@/components/admin/billings-section";
 import { AdminError } from "@/components/admin-error";
+import { PrepaymentsPanel } from "@/components/prepayments-panel";
 import { TokenAmountCell } from "@/components/token-amounts";
 import { useApiClient } from "@/lib/api";
 import {
@@ -29,6 +30,11 @@ function ClientHome() {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardContent className="p-4">
+          <PrepaymentsPanel engagementId={engagementId} canManage={false} />
+        </CardContent>
+      </Card>
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4">
