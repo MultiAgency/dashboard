@@ -40,7 +40,7 @@ describe("client ideas, reports, and agent links", () => {
 
   beforeEach(async () => {
     await pg.query(
-      "TRUNCATE engagements, engagement_projects, engagement_ideas, agent_links, budgets, billings, organization_daos CASCADE",
+      "TRUNCATE engagements, engagement_projects, engagement_ideas, agent_links, budgets, billings, proposals, organization_daos CASCADE",
     );
   });
 
@@ -173,6 +173,128 @@ describe("client ideas, reports, and agent links", () => {
     expect(fromAgency.overview.projectCount).toBe(1);
     expect(fromAgency.notes).toBe("Internal copy");
     expect(fromAgency.clientBreakdown).toHaveLength(1);
+  });
+
+  test("reports filter by date and sum the shared Project without another Client's work", async () => {
+    const { portal, reports } = services();
+    const acmeEngagement = await sharedEngagement(acme, "site");
+    await sharedEngagement(other, "internal");
+
+    await db.insert(schema.budgets).values([
+      {
+        id: "site-january",
+        projectId: "site",
+        tokenId: "near",
+        amount: "100",
+        actorAccountId: "alpha.near",
+        daoAccountId: ALPHA_DAO,
+        engagementId: acmeEngagement.id,
+        createdAt: new Date("2026-01-10T12:00:00Z"),
+      },
+      {
+        id: "site-february",
+        projectId: "site",
+        tokenId: "near",
+        amount: "200",
+        actorAccountId: "alpha.near",
+        daoAccountId: ALPHA_DAO,
+        engagementId: acmeEngagement.id,
+        createdAt: new Date("2026-02-10T12:00:00Z"),
+      },
+      {
+        id: "internal-february",
+        projectId: "internal",
+        tokenId: "near",
+        amount: "900",
+        actorAccountId: "alpha.near",
+        daoAccountId: ALPHA_DAO,
+        createdAt: new Date("2026-02-10T12:00:00Z"),
+      },
+    ]);
+    await db.insert(schema.proposals).values([
+      {
+        daoAccountId: ALPHA_DAO,
+        proposalId: 1,
+        proposer: "alice.near",
+        description: "January payment",
+        status: "Approved",
+        kindType: "Transfer",
+        submissionTime: "0",
+      },
+      {
+        daoAccountId: ALPHA_DAO,
+        proposalId: 2,
+        proposer: "alice.near",
+        description: "February payment",
+        status: "Approved",
+        kindType: "Transfer",
+        submissionTime: "0",
+      },
+      {
+        daoAccountId: ALPHA_DAO,
+        proposalId: 3,
+        proposer: "bob.near",
+        description: "Internal payment",
+        status: "Approved",
+        kindType: "Transfer",
+        submissionTime: "0",
+      },
+    ]);
+    await db.insert(schema.billings).values([
+      {
+        id: "billing-january",
+        projectId: "site",
+        nearAccount: "alice.near",
+        daoAccountId: ALPHA_DAO,
+        tokenId: "near",
+        amount: "10",
+        proposalId: "1",
+        createdAt: new Date("2026-01-10T12:00:00Z"),
+      },
+      {
+        id: "billing-february",
+        projectId: "site",
+        nearAccount: "alice.near",
+        daoAccountId: ALPHA_DAO,
+        tokenId: "near",
+        amount: "20",
+        proposalId: "2",
+        createdAt: new Date("2026-02-10T12:00:00Z"),
+      },
+      {
+        id: "billing-internal",
+        projectId: "internal",
+        nearAccount: "bob.near",
+        daoAccountId: ALPHA_DAO,
+        tokenId: "near",
+        amount: "90",
+        proposalId: "3",
+        createdAt: new Date("2026-02-10T12:00:00Z"),
+      },
+    ]);
+
+    const filtered = await run(
+      portal.generateReport(acme, {
+        engagementId: acmeEngagement.id,
+        startDate: "2026-02-01",
+        endDate: "2026-02-28",
+      }),
+    );
+    expect(filtered.overview.projectCount).toBe(1);
+    expect(filtered.overview.period).toBe("2026-02-01 – 2026-02-28");
+    expect(filtered.overview.budgetByToken).toEqual([{ tokenId: "near", amount: "200" }]);
+    expect(filtered.overview.billedByToken).toEqual([{ tokenId: "near", amount: "20" }]);
+    expect(filtered.contributorStats.map((row) => row.nearAccount)).toEqual(["alice.near"]);
+    expect(filtered.clientBreakdown.map((row) => row.clientName)).toEqual(["Acme Corp"]);
+
+    const agencyWide = await run(reports.generate(alpha, {}));
+    expect(agencyWide.overview.projectCount).toBe(2);
+    expect(agencyWide.overview.billedByToken).toEqual([{ tokenId: "near", amount: "120" }]);
+    expect(agencyWide.clientBreakdown).toHaveLength(2);
+
+    await expect(
+      run(reports.generate(alpha, { startDate: "2026-03-01", endDate: "2026-02-01" })),
+    ).rejects.toThrow("startDate must be on or before endDate");
   });
 
   test("the Agency manages agent links and either party can list them", async () => {
