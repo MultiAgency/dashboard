@@ -13,9 +13,9 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-116-ui-dashboard-multiagency-7e8999289-ze.zephyrcloud.app",
-      "integrity": "sha384-mA5iuNMcGPE+k2LlIgZiy4UsgogLNGKH87NbL40nXqRXIW4LZU6ZiW3gokt1Zl4u",
-      "ssr": "https://multiagentic-125-ui-dashboard-multiagency-7eb1f08f0-ze.zephyrcloud.app",
+      "production": "https://multiagentic-136-ui-dashboard-multiagency-fc19a7b16-ze.zephyrcloud.app",
+      "integrity": "sha384-2ZVfwPHxF8u9/CpKWZzxlpKqrVpFSnp+GUwFRi/7+Y5VI70qMbHsqr2uQX06rSOD",
+      "ssr": "https://multiagentic-140-ui-dashboard-multiagency-f8b898c47-ze.zephyrcloud.app",
       "ssrIntegrity": "sha384-BT7ZhVpTzae4RQsfsxFGhnpRuNWWFmQJi/u5FW/GvMHFLDgz2LQ99YZ1QMxGnm9j"
     },
     "api": {
@@ -33,7 +33,8 @@
         "NOTIFY_FROM_EMAIL",
         "FASTNEAR_API_KEY"
       ],
-      "production": "https://multiagentic-124-api-dashboard-multiagency-7029b7a36-ze.zephyrcloud.app"
+      "production": "https://multiagentic-139-api-dashboard-multiagency-78ed460bb-ze.zephyrcloud.app",
+      "integrity": "sha384-e+IHCozrK+ZjtIjhak1cVZSjn33ZU6jZEBZbjxt2UpiyWzXN4Egm07VGN9HVWne6"
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
@@ -56,7 +57,7 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-123-everything-dev-projects-plugin-d-ad410d750-ze.zephyrcloud.app",
+      "production": "https://multiagentic-138-everything-dev-projects-plugin-d-b7807a00f-ze.zephyrcloud.app",
       "integrity": "sha384-omKVmRzKps7u5Z1mqgv7nwmG58WotAQngRFrYr8sEHKT0tB8w+iIbm6kwvu1SGyz"
     },
     "builders": {
@@ -64,7 +65,7 @@
       "secrets": [
         "BUILDERS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-122-everything-dev-builders-plugin-d-3a5e50372-ze.zephyrcloud.app",
+      "production": "https://multiagentic-137-everything-dev-builders-plugin-d-67403b35c-ze.zephyrcloud.app",
       "integrity": "sha384-SxdK807mpmECvN0qkkDaV6yArqmy/6i14CKxmTg8fRDDyw0hWuEeut0ljzTITTK5"
     }
   }
