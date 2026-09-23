@@ -695,17 +695,6 @@ export const contract = oc.router({
       .output(z.object({ data: z.array(engagement) }))
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-    createClient: oc
-      .route({ method: "POST", path: "/engagements/clients" })
-      .input(
-        z.object({
-          name: z.string().trim().min(1).max(200),
-          adminEmail: z.string().trim().email(),
-        }),
-      )
-      .output(engagement)
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, CONFLICT }),
-
     propose: oc
       .route({ method: "POST", path: "/engagements" })
       .input(z.object({ clientOrganizationId: z.string().trim().min(1) }))

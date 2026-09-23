@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
@@ -12,11 +12,13 @@ import { useMeRoles } from "@/hooks";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions, useAuthClient } from "@/lib/auth";
+import { createClientEngagement } from "@/lib/create-client-engagement";
 import { parseDecimalToBase } from "@/lib/format-amount";
 import {
   adminProjectsListQueryOptions,
   engagementsListQueryKey,
   engagementsListQueryOptions,
+  invalidateOrganizationQueries,
   tokensListQueryOptions,
 } from "@/lib/queries";
 
@@ -117,18 +119,32 @@ function useEngagementMutation<TInput>(
 function NewClientForm({ activeOrgId }: { activeOrgId: string | null }) {
   const apiClient = useApiClient();
   const authClient = useAuthClient();
+  const queryClient = useQueryClient();
+  const router = useRouter();
   const [name, setName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
 
-  const create = useEngagementMutation(
-    () => apiClient.engagements.createClient({ name, adminEmail }),
-    "Client created and invited",
-    async () => {
-      if (activeOrgId) await authClient.organization.setActive({ organizationId: activeOrgId });
+  const create = useMutation({
+    mutationFn: () => {
+      if (!activeOrgId) throw new Error("Select an Agency Organization first.");
+      return createClientEngagement(authClient, apiClient, {
+        name,
+        adminEmail,
+        agencyOrganizationId: activeOrgId,
+      });
+    },
+    onSuccess: ({ restored }) => {
       setName("");
       setAdminEmail("");
+      if (restored) toast.success("Client created and invited");
+      else toast.warning("Client created, but could not switch back to your Agency Organization.");
     },
-  );
+    onError: (error: Error) => toast.error(error.message),
+    onSettled: async () => {
+      await invalidateOrganizationQueries(queryClient, router);
+      await queryClient.invalidateQueries({ queryKey: engagementsListQueryKey });
+    },
+  });
 
   const submit = (event: FormEvent) => {
     event.preventDefault();

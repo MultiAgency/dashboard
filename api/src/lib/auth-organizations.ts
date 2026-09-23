@@ -20,14 +20,5 @@ export function createAuthOrganizations(auth: PluginsClient["auth"]): Organizati
         return null;
       }
     },
-
-    create: async (context, input) => {
-      const org = await auth(context).createOrganization(input);
-      return { id: org.id };
-    },
-
-    invite: async (context, input) => {
-      await auth(context).inviteMember(input);
-    },
   };
 }

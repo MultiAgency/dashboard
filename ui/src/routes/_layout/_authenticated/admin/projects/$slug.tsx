@@ -19,6 +19,7 @@ import { ProjectBudgetPanel } from "@/components/admin/project-budget-panel";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass, textareaClass } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingHref } from "@/lib/nearn";
@@ -93,6 +94,7 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/projects/$sl
 function AdminProjectDetail() {
   const { slug } = Route.useParams();
   const apiClient = useApiClient();
+  const { canAccessAdmin, hasAgencyDao } = useMeRoles();
 
   const projectQuery = useQuery(adminProjectDetailQueryOptions(apiClient, slug));
   const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
@@ -147,14 +149,26 @@ function AdminProjectDetail() {
       )}
 
       <section className="space-y-3">
-        <AssignmentsSection projectId={projectId!} />
+        <AssignmentsSection projectId={projectId!} readOnly={!hasAgencyDao} />
       </section>
 
-      {projectId && <ProjectBudgetPanel projectId={projectId} showAgencyBudgetLink />}
+      {projectId && (canAccessAdmin || hasAgencyDao) && (
+        <ProjectBudgetPanel
+          projectId={projectId}
+          showAgencyBudgetLink={canAccessAdmin}
+          readOnly={!canAccessAdmin}
+        />
+      )}
 
-      {projectId && <BillingsSection projectId={projectId} contributors={contributors} />}
+      {projectId && (canAccessAdmin || hasAgencyDao) && (
+        <BillingsSection
+          projectId={projectId}
+          contributors={contributors}
+          readOnly={!canAccessAdmin}
+        />
+      )}
 
-      {projectId && (
+      {projectId && (canAccessAdmin || hasAgencyDao) && (
         <InternalListingSection projectId={projectId} hasNearnListing={!!project.nearnListingId} />
       )}
 
@@ -169,18 +183,22 @@ function AdminProjectDetail() {
         </section>
       )}
 
-      {project.nearnListingId && <NearnSubmissionsSection slug={project.nearnListingId} />}
+      {project.nearnListingId && (
+        <NearnSubmissionsSection slug={project.nearnListingId} canManage={canAccessAdmin} />
+      )}
 
-      <DeleteProjectSection
-        projectId={project.id}
-        projectTitle={project.title}
-        projectSlug={project.slug}
-      />
+      {canAccessAdmin && (
+        <DeleteProjectSection
+          projectId={project.id}
+          projectTitle={project.title}
+          projectSlug={project.slug}
+        />
+      )}
     </div>
   );
 }
 
-function NearnSubmissionsSection({ slug }: { slug: string }) {
+function NearnSubmissionsSection({ slug, canManage }: { slug: string; canManage: boolean }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const query = useQuery(adminNearnSubmissionsQueryOptions(apiClient, slug));
@@ -251,7 +269,7 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
                   <Badge variant="secondary">
                     ✓ {contributorByNearAccount.get(s.user.publicKey)!.name}
                   </Badge>
-                ) : (
+                ) : canManage ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -272,7 +290,7 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
                       ? "adding…"
                       : "+ add builder"}
                   </Button>
-                ))}
+                ) : null)}
               {s.isWinner && (
                 <Badge variant="default">
                   winner{s.winnerPosition ? ` #${s.winnerPosition}` : ""}
@@ -379,9 +397,11 @@ type ProjectContributor = {
 function BillingsSection({
   projectId,
   contributors,
+  readOnly = false,
 }: {
   projectId: string;
   contributors: ProjectContributor[];
+  readOnly?: boolean;
 }) {
   const apiClient = useApiClient();
   const [creating, setCreating] = useState(false);
@@ -401,13 +421,15 @@ function BillingsSection({
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Billings</h2>
-        <Button
-          onClick={() => setCreating((v) => !v)}
-          variant={creating ? "outline" : "default"}
-          size="sm"
-        >
-          {creating ? "cancel" : "+ billing"}
-        </Button>
+        {!readOnly && (
+          <Button
+            onClick={() => setCreating((v) => !v)}
+            variant={creating ? "outline" : "default"}
+            size="sm"
+          >
+            {creating ? "cancel" : "+ billing"}
+          </Button>
+        )}
       </div>
 
       {creating && (

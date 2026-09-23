@@ -1,30 +1,22 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AdminSidebar } from "@/components/admin-sidebar";
-import { sessionQueryOptions } from "@/lib/auth";
+import { meRolesQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin")({
-  beforeLoad: async ({ context }) => {
-    const session = await context.queryClient.ensureQueryData(
-      sessionQueryOptions(context.authClient, context.session),
-    );
-
-    const isSuperAdmin = session?.user?.role === "admin";
-
-    let orgRole: string | null = null;
-    if (session?.session?.activeOrganizationId) {
-      const orgList = await context.authClient.organization.list();
-      const activeOrg = (orgList.data ?? []).find(
-        (o) => o.id === session.session!.activeOrganizationId,
-      );
-      orgRole = (activeOrg as { role?: string } | undefined)?.role ?? null;
-    }
-    const isOrgAdmin = orgRole === "admin" || orgRole === "owner";
-
-    if (!isSuperAdmin && !isOrgAdmin) {
-      throw redirect({ to: "/", hash: "unauthorized" });
+  beforeLoad: async ({ context, location }) => {
+    const roles = await context.queryClient.ensureQueryData(meRolesQueryOptions(context.apiClient));
+    const isOrgAdmin = roles.orgRole === "admin" || roles.orgRole === "owner";
+    const isProjectRoute =
+      location.pathname === "/admin/projects" || location.pathname.startsWith("/admin/projects/");
+    const isProjectMember = roles.orgRole === "member" && isProjectRoute;
+    if (!isOrgAdmin && !isProjectMember) {
+      throw redirect({
+        to: "/",
+        hash: roles.orgRole ? "unauthorized" : "organization-required",
+      });
     }
 
-    return { session, isSuperAdmin, isOrgAdmin };
+    return { roles };
   },
   component: AdminLayout,
 });

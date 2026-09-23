@@ -345,12 +345,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(orgMember)
           .handler(async ({ context }) => runEffect(engagements.list(context.scope))),
 
-        createClient: builder.engagements.createClient
-          .use(orgManager)
-          .handler(async ({ context, input }) =>
-            runEffect(engagements.createClient(context.scope, input)),
-          ),
-
         propose: builder.engagements.propose
           .use(orgManager)
           .handler(async ({ context, input }) =>

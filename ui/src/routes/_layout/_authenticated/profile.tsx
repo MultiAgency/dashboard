@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Avatar, AvatarFallback, AvatarImage, Button, Card, CardContent } from "@/components";
 import { Field } from "@/components/admin-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { userInvitationsQueryOptions } from "@/lib/invitations";
 import { type NearProfile, nearProfileQueryOptions } from "@/lib/near-profile";
 
 export const Route = createFileRoute("/_layout/_authenticated/profile")({
@@ -29,6 +30,11 @@ function ProfilePage() {
   const navigate = useNavigate();
   const { data: session } = useQuery(sessionQueryOptions(authClient));
   const user = session?.user;
+  const invitationsQuery = useQuery({
+    ...userInvitationsQueryOptions(authClient),
+    enabled: !!user,
+    refetchOnMount: "always",
+  });
   const nearAccountId = authClient.near.getAccountId();
 
   const profileQuery = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
@@ -121,6 +127,51 @@ function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      <section id="invitations" className="space-y-3 scroll-mt-6">
+        <div className="space-y-1">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            your · workspaces
+          </div>
+          <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-[0.95]">
+            Invitations
+          </h2>
+        </div>
+        {invitationsQuery.isLoading && (
+          <p className="text-sm text-muted-foreground">Loading invitations...</p>
+        )}
+        {invitationsQuery.isError && (
+          <p className="text-sm text-muted-foreground">
+            Invitations could not be loaded. Verify your email or ask the Organization admin to
+            share the invitation link from their Team page.
+          </p>
+        )}
+        {invitationsQuery.isSuccess && invitationsQuery.data.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No pending invitations for {user.email}. If one was sent, ask the Organization admin for
+            its invitation link.
+          </p>
+        )}
+        {invitationsQuery.data?.map((invitation) => (
+          <Card key={invitation.id}>
+            <CardContent className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="font-medium">
+                  {invitation.organizationName ?? invitation.organizationId}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Join as {invitation.role ?? "member"}
+                </p>
+              </div>
+              <Button asChild size="sm">
+                <Link to="/accept-invitation/$id" params={{ id: invitation.id }}>
+                  review invitation
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
 
       <section className="space-y-3">
         <div className="space-y-1">

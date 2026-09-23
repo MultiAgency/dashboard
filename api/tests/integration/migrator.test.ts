@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createDatabaseDriver, type DatabaseDriver } from "../../src/db";
-import { migrate } from "../../src/db/migrate";
+import { detectDrift, migrate } from "../../src/db/migrate";
 
 const probeTable: Migration = {
   idx: 0,
@@ -82,5 +82,24 @@ describe("migrate — runtime migrator", () => {
     );
     const schemas = (rawSchemas as unknown as { rows: { schema_name: string }[] }).rows;
     expect(schemas).toHaveLength(1);
+  });
+
+  test("drift check excludes tables dropped by a later migration", async () => {
+    const replacement: Migration = {
+      idx: 1,
+      when: 1,
+      tag: "0001_replace_probe",
+      hash: "probe-hash-replace",
+      sql: [
+        'CREATE TABLE "replacement" (id text PRIMARY KEY NOT NULL)',
+        'DROP TABLE IF EXISTS "probe"',
+      ],
+    };
+
+    await Effect.runPromise(migrate(driver.db, [probeTable, replacement]));
+    const drift = await Effect.runPromise(detectDrift(driver.db, [probeTable, replacement]));
+
+    expect(drift.status).toBe("healthy");
+    expect(drift.expectedTables).toEqual(["replacement"]);
   });
 });

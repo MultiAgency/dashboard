@@ -36,8 +36,8 @@ import { Route as LayoutAuthenticatedAdminSettingsRouteImport } from './routes/_
 import { Route as LayoutAuthenticatedAdminMembersRouteImport } from './routes/_layout/_authenticated/admin/members'
 import { Route as LayoutAuthenticatedAcceptInvitationIdRouteImport } from './routes/_layout/_authenticated/accept-invitation.$id'
 import { Route as LayoutAuthenticatedClientReportsIndexRouteImport } from './routes/_layout/_authenticated/client/reports/index'
-import { Route as LayoutAuthenticatedClientIdeasIndexRouteImport } from './routes/_layout/_authenticated/client/ideas/index'
 import { Route as LayoutAuthenticatedClientProjectsIndexRouteImport } from './routes/_layout/_authenticated/client/projects/index'
+import { Route as LayoutAuthenticatedClientIdeasIndexRouteImport } from './routes/_layout/_authenticated/client/ideas/index'
 import { Route as LayoutAuthenticatedAdminReportsIndexRouteImport } from './routes/_layout/_authenticated/admin/reports/index'
 import { Route as LayoutAuthenticatedAdminProjectsIndexRouteImport } from './routes/_layout/_authenticated/admin/projects/index'
 import { Route as LayoutAuthenticatedAdminEngagementsIndexRouteImport } from './routes/_layout/_authenticated/admin/engagements/index'
@@ -197,16 +197,16 @@ const LayoutAuthenticatedClientReportsIndexRoute =
     path: '/reports/',
     getParentRoute: () => LayoutAuthenticatedClientRouteRoute,
   } as any)
-const LayoutAuthenticatedClientIdeasIndexRoute =
-  LayoutAuthenticatedClientIdeasIndexRouteImport.update({
-    id: '/ideas/',
-    path: '/ideas/',
-    getParentRoute: () => LayoutAuthenticatedClientRouteRoute,
-  } as any)
 const LayoutAuthenticatedClientProjectsIndexRoute =
   LayoutAuthenticatedClientProjectsIndexRouteImport.update({
     id: '/projects/',
     path: '/projects/',
+    getParentRoute: () => LayoutAuthenticatedClientRouteRoute,
+  } as any)
+const LayoutAuthenticatedClientIdeasIndexRoute =
+  LayoutAuthenticatedClientIdeasIndexRouteImport.update({
+    id: '/ideas/',
+    path: '/ideas/',
     getParentRoute: () => LayoutAuthenticatedClientRouteRoute,
   } as any)
 const LayoutAuthenticatedAdminReportsIndexRoute =
@@ -699,18 +699,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedClientReportsIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedClientRouteRoute
     }
-    '/_layout/_authenticated/client/ideas/': {
-      id: '/_layout/_authenticated/client/ideas/'
-      path: '/ideas'
-      fullPath: '/client/ideas/'
-      preLoaderRoute: typeof LayoutAuthenticatedClientIdeasIndexRouteImport
-      parentRoute: typeof LayoutAuthenticatedClientRouteRoute
-    }
     '/_layout/_authenticated/client/projects/': {
       id: '/_layout/_authenticated/client/projects/'
       path: '/projects'
       fullPath: '/client/projects/'
       preLoaderRoute: typeof LayoutAuthenticatedClientProjectsIndexRouteImport
+      parentRoute: typeof LayoutAuthenticatedClientRouteRoute
+    }
+    '/_layout/_authenticated/client/ideas/': {
+      id: '/_layout/_authenticated/client/ideas/'
+      path: '/ideas'
+      fullPath: '/client/ideas/'
+      preLoaderRoute: typeof LayoutAuthenticatedClientIdeasIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedClientRouteRoute
     }
     '/_layout/_authenticated/admin/reports/': {
@@ -836,9 +836,9 @@ interface LayoutAuthenticatedClientRouteRouteChildren {
   LayoutAuthenticatedClientPlanRoute: typeof LayoutAuthenticatedClientPlanRoute
   LayoutAuthenticatedClientIndexRoute: typeof LayoutAuthenticatedClientIndexRoute
   LayoutAuthenticatedClientProjectsSlugRoute: typeof LayoutAuthenticatedClientProjectsSlugRoute
+  LayoutAuthenticatedClientIdeasIndexRoute: typeof LayoutAuthenticatedClientIdeasIndexRoute
   LayoutAuthenticatedClientProjectsIndexRoute: typeof LayoutAuthenticatedClientProjectsIndexRoute
   LayoutAuthenticatedClientReportsIndexRoute: typeof LayoutAuthenticatedClientReportsIndexRoute
-  LayoutAuthenticatedClientIdeasIndexRoute: typeof LayoutAuthenticatedClientIdeasIndexRoute
 }
 
 const LayoutAuthenticatedClientRouteRouteChildren: LayoutAuthenticatedClientRouteRouteChildren =
@@ -847,12 +847,12 @@ const LayoutAuthenticatedClientRouteRouteChildren: LayoutAuthenticatedClientRout
     LayoutAuthenticatedClientIndexRoute: LayoutAuthenticatedClientIndexRoute,
     LayoutAuthenticatedClientProjectsSlugRoute:
       LayoutAuthenticatedClientProjectsSlugRoute,
+    LayoutAuthenticatedClientIdeasIndexRoute:
+      LayoutAuthenticatedClientIdeasIndexRoute,
     LayoutAuthenticatedClientProjectsIndexRoute:
       LayoutAuthenticatedClientProjectsIndexRoute,
     LayoutAuthenticatedClientReportsIndexRoute:
       LayoutAuthenticatedClientReportsIndexRoute,
-    LayoutAuthenticatedClientIdeasIndexRoute:
-      LayoutAuthenticatedClientIdeasIndexRoute,
   }
 
 const LayoutAuthenticatedClientRouteRouteWithChildren =

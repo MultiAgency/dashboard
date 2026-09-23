@@ -37,15 +37,6 @@ const alreadyActive = () =>
     message: "There is already an active Engagement of this kind between these Organizations.",
   });
 
-function slugify(name: string): string {
-  const base = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return `${base || "client"}-${crypto.randomUUID().slice(0, 6)}`;
-}
-
 export function createEngagementsService(
   db: Database,
   directory: ProjectDirectory,
@@ -171,31 +162,6 @@ export function createEngagementsService(
           )
           .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         return { data };
-      }),
-
-    createClient: (scope: OrgScope, input: { name: string; adminEmail: string }) =>
-      Effect.gen(function* () {
-        const name = input.name.trim();
-        const created = yield* Effect.promise(() =>
-          organizations.create(scope.pluginContext, { name, slug: slugify(name) }),
-        );
-        yield* Effect.promise(() =>
-          organizations.invite(scope.pluginContext, {
-            organizationId: created.id,
-            email: input.adminEmail.trim().toLowerCase(),
-            role: "owner",
-          }),
-        );
-        const row = yield* insert({
-          id: crypto.randomUUID(),
-          agencyOrganizationId: scope.organizationId,
-          agencyName: yield* nameOf(scope, scope.organizationId),
-          clientOrganizationId: created.id,
-          clientName: name,
-          status: "active",
-          createdBy: scope.actorId,
-        });
-        return yield* Effect.promise(() => viewOne(row, scope.organizationId));
       }),
 
     propose: (scope: OrgScope, input: { clientOrganizationId: string }) =>

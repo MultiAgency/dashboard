@@ -94,24 +94,6 @@ describe("engagements", () => {
   }
 
   describe("lifecycle", () => {
-    test("an Agency onboards a new Client and invites its first admin in one step", async () => {
-      const { engagements } = services();
-
-      const created = await run(
-        engagements.createClient(alpha, { name: "Globex", adminEmail: "ceo@globex.test" }),
-      );
-
-      expect(created).toMatchObject({
-        status: "active",
-        role: "agency",
-        agency: { organizationId: "org-alpha" },
-        client: { name: "Globex" },
-      });
-      expect(orgs.invitations).toEqual([
-        { organizationId: created.client.organizationId, email: "ceo@globex.test", role: "owner" },
-      ]);
-    });
-
     test("an existing Organization accepts a proposed Engagement", async () => {
       const { engagements } = services();
 

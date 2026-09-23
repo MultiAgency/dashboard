@@ -25,6 +25,22 @@ export interface LoadedMigrations {
   source: "virtual" | "disk";
 }
 
+function extractCurrentTables(migrations: Migration[]): string[] {
+  const tables = new Set<string>();
+  for (const migration of [...migrations].sort((a, b) => a.idx - b.idx)) {
+    for (const statement of migration.sql) {
+      for (const table of extractExpectedTables([{ ...migration, sql: [statement] }])) {
+        tables.add(table);
+      }
+      const dropped = statement.match(
+        /^\s*DROP TABLE\s+(?:IF EXISTS\s+)?(?:"?public"?\.)?"?([A-Za-z_][A-Za-z0-9_]*)"?/i,
+      );
+      if (dropped?.[1]) tables.delete(dropped[1]);
+    }
+  }
+  return [...tables];
+}
+
 export interface DriftReport {
   status: "healthy" | "empty" | "untracked-existing-schema" | "drift-safe-repair" | "drift-manual";
   expectedTables: string[];
@@ -305,7 +321,7 @@ export function detectDrift(
 ): Effect.Effect<DriftReport, DatabaseError> {
   return Effect.gen(function* () {
     const journal = storage ?? getMigrationStorage();
-    const expectedTables = extractExpectedTables(migrations);
+    const expectedTables = extractCurrentTables(migrations);
     const ref = journalRef(journal);
 
     const appliedHashes = yield* readAppliedHashes(db, ref);

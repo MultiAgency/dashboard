@@ -131,31 +131,6 @@ CREATE TABLE IF NOT EXISTS "agent_links" (
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "agent_links_engagement_id" ON "agent_links" ("engagement_id", "ordering");
 --> statement-breakpoint
-DO $$
-BEGIN
-  IF to_regclass('public.organization') IS NOT NULL THEN
-    DELETE FROM organization
-    WHERE id IN (
-      SELECT id FROM (
-        SELECT
-          id,
-          ROW_NUMBER() OVER (
-            PARTITION BY metadata->>'daoAccountId'
-            ORDER BY "createdAt" ASC, id ASC
-          ) AS rn
-        FROM organization
-        WHERE COALESCE(metadata->>'daoAccountId', '') <> ''
-      ) ranked
-      WHERE rn > 1
-    );
-  END IF;
-
-  IF to_regclass('public.projects') IS NOT NULL AND to_regclass('public.client_projects') IS NOT NULL THEN
-    DELETE FROM client_projects cp
-    WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = cp.project_id);
-  END IF;
-END $$;
---> statement-breakpoint
 INSERT INTO "engagements" (
     "id", "agency_organization_id", "client_organization_id", "client_name",
     "kind", "status", "created_by", "created_at", "updated_at"

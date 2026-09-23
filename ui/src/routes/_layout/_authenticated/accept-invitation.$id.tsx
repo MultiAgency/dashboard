@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Button, Card, CardContent } from "@/components";
 import { sessionQueryKey } from "@/lib/auth";
+import { userInvitationsQueryKey } from "@/lib/invitations";
 import { meRolesQueryKey } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/accept-invitation/$id")({
@@ -33,6 +34,7 @@ function AcceptInvitation() {
   const refresh = () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: ["organizations"] }),
+      queryClient.invalidateQueries({ queryKey: userInvitationsQueryKey }),
       queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
       queryClient.invalidateQueries({ queryKey: meRolesQueryKey }),
     ]);
@@ -60,6 +62,7 @@ function AcceptInvitation() {
     },
     onSuccess: async () => {
       toast.success("Invitation declined");
+      await refresh();
       navigate({ to: "/", replace: true });
     },
     onError: (error: Error) => toast.error(error.message),

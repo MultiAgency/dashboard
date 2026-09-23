@@ -1,4 +1,5 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
+import { useMeRoles } from "@/hooks/use-me-roles";
 
 type NavItem = { to: string; label: string; match?: string };
 
@@ -39,12 +40,13 @@ const GROUP_LABEL =
 
 export function AdminSidebar() {
   const matchRoute = useMatchRoute();
+  const { canAccessAdmin } = useMeRoles();
 
   const isActive = (item: NavItem) => !!matchRoute({ to: item.match ?? item.to, fuzzy: true });
 
   return (
     <nav className="flex flex-row gap-4 overflow-x-auto border-b border-border pb-px lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r lg:pr-4 lg:pb-0 lg:w-44 lg:shrink-0">
-      {NAV_GROUPS.map((group) => (
+      {NAV_GROUPS.filter((group) => canAccessAdmin || group.title === "work").map((group) => (
         <div key={group.title} className="flex flex-row gap-1 lg:flex-col lg:gap-0 shrink-0">
           <div className={GROUP_LABEL}>{group.title}</div>
           {group.items.map((item) => (

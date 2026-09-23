@@ -74,8 +74,6 @@ describe("agency isolation", () => {
               {
                 daoOf: async () => null,
                 nameOf: async () => null,
-                create: async () => ({ id: "unused" }),
-                invite: async () => {},
               },
               access,
             ),

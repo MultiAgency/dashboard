@@ -3,6 +3,7 @@ import { Menu } from "lucide-react";
 import type * as React from "react";
 import type { ReactNode } from "react";
 import { AuthHashToasts } from "@/components/auth-hash-toasts";
+import { InvitationNotice } from "@/components/invitation-notice";
 import { NetworkToggle } from "@/components/network-toggle";
 import { OrgSwitcher } from "@/components/org-switcher";
 import {
@@ -192,6 +193,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           </div>
         </header>
+        {isAuthenticated && <InvitationNotice />}
 
         <main id="main" className="w-full flex-1">
           <div

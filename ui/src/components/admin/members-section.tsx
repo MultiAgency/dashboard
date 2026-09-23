@@ -215,8 +215,10 @@ function PendingInvitationsTable({
   orgId?: string;
 }) {
   const cancelMutation = useMutation({
-    mutationFn: (invitationId: string) =>
-      authClient.organization.cancelInvitation({ invitationId }),
+    mutationFn: async (invitationId: string) => {
+      const { error } = await authClient.organization.cancelInvitation({ invitationId });
+      if (error) throw new Error(error.message || "Failed to cancel invitation");
+    },
     onSuccess: () => {
       toast.success("Invitation canceled");
       onChanged();
@@ -225,19 +227,34 @@ function PendingInvitationsTable({
   });
 
   const resendMutation = useMutation({
-    mutationFn: (invitation: Invitation) =>
-      authClient.organization.inviteMember({
+    mutationFn: async (invitation: Invitation) => {
+      const { error } = await authClient.organization.inviteMember({
         email: invitation.email,
         role: (invitation.role ?? "member") as "admin" | "member" | "owner",
         organizationId: orgId,
         resend: true,
-      }),
+      });
+      if (error) throw new Error(error.message || "Failed to resend invitation");
+    },
     onSuccess: (_data, invitation) => {
       toast.success(`Invitation resent to ${invitation.email}`);
       onChanged();
     },
     onError: (e: Error) => toast.error(e.message || "Failed to resend invitation"),
   });
+
+  const copyLink = async (invitation: Invitation) => {
+    try {
+      const url = new URL(
+        `/accept-invitation/${encodeURIComponent(invitation.id)}`,
+        window.location.origin,
+      );
+      await navigator.clipboard.writeText(url.toString());
+      toast.success("Invitation link copied");
+    } catch {
+      toast.error("Could not copy invitation link");
+    }
+  };
 
   const columns: ColumnDef<Invitation>[] = [
     {
@@ -289,6 +306,14 @@ function PendingInvitationsTable({
         const canAct = invitationStatus(invitation) === "pending";
         return (
           <div className="flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void copyLink(invitation)}
+              disabled={!canAct}
+            >
+              copy link
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -452,10 +477,16 @@ function AddMemberForm({
   const [role, setRole] = useState<"admin" | "member" | "owner">("member");
 
   const addMutation = useMutation({
-    mutationFn: () =>
-      authClient.organization.inviteMember({ email: email.trim(), role, organizationId: orgId }),
+    mutationFn: async () => {
+      const { error } = await authClient.organization.inviteMember({
+        email: email.trim(),
+        role,
+        organizationId: orgId,
+      });
+      if (error) throw new Error(error.message || "Failed to invite member");
+    },
     onSuccess: () => {
-      toast.success(`Invited ${email}`);
+      toast.success(`Invitation created for ${email}. Copy its link below if needed.`);
       setEmail("");
       onAdded();
     },
