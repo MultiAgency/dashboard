@@ -133,11 +133,10 @@ function NewClientForm({ activeOrgId }: { activeOrgId: string | null }) {
         agencyOrganizationId: activeOrgId,
       });
     },
-    onSuccess: ({ restored }) => {
+    onSuccess: () => {
       setName("");
       setAdminEmail("");
-      if (restored) toast.success("Client created and invited");
-      else toast.warning("Client created, but could not switch back to your Agency Organization.");
+      toast.success("Client created and invited. Their admin can accept the Engagement.");
     },
     onError: (error: Error) => toast.error(error.message),
     onSettled: async () => {
@@ -167,6 +166,10 @@ function NewClientForm({ activeOrgId }: { activeOrgId: string | null }) {
               required
             />
           </Field>
+          <p className="text-xs text-muted-foreground">
+            Their invitation appears on their Profile page. Once they join, they can accept the
+            Engagement here from their own Organization.
+          </p>
           <Button type="submit" size="sm" disabled={create.isPending}>
             {create.isPending ? "creating..." : "create and invite"}
           </Button>
@@ -223,8 +226,9 @@ function monthBounds(date = new Date()) {
 
 function SubcontractForm() {
   const apiClient = useApiClient();
+  const { hasAgencyDao } = useMeRoles();
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
-  const tokensQuery = useQuery(tokensListQueryOptions(apiClient));
+  const tokensQuery = useQuery({ ...tokensListQueryOptions(apiClient), enabled: hasAgencyDao });
   const projects = projectsQuery.data?.data ?? [];
   const tokens = tokensQuery.data?.tokens ?? [];
   const month = monthBounds();
@@ -305,15 +309,17 @@ function SubcontractForm() {
               ))}
             </ul>
           )}
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={recordPrepayment}
-              onChange={(e) => setRecordPrepayment(e.target.checked)}
-            />
-            record a prepayment
-          </label>
-          {recordPrepayment && (
+          {hasAgencyDao && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={recordPrepayment}
+                onChange={(e) => setRecordPrepayment(e.target.checked)}
+              />
+              record a prepayment
+            </label>
+          )}
+          {hasAgencyDao && recordPrepayment && (
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Token">
                 <select
@@ -350,7 +356,8 @@ function SubcontractForm() {
             </div>
           )}
           <p className="text-xs text-muted-foreground">
-            The subcontractor can assign contributors and bill from its own Agency DAO immediately.
+            The subcontractor can assign builders now and record billings after connecting its own
+            treasury.
           </p>
           <Button type="submit" size="sm" disabled={subcontract.isPending}>
             {subcontract.isPending ? "sharing..." : "share project"}
@@ -407,6 +414,12 @@ function AgencyEngagementCard({ engagement }: { engagement: Engagement }) {
             )}
           </div>
         </div>
+        {engagement.status === "proposed" && (
+          <p className="text-sm text-muted-foreground">
+            Waiting for the Client to accept from its Engagements page. Projects can be shared after
+            acceptance.
+          </p>
+        )}
         {(phase.share || shared.size > 0) && (
           <div className="space-y-1">
             <div className={LABEL_CLS}>shared projects</div>
@@ -431,16 +444,28 @@ function AgencyEngagementCard({ engagement }: { engagement: Engagement }) {
             </ul>
           </div>
         )}
-        {hasAgencyDao && (phase.open || phase.end) && (
+        {(phase.open || phase.end) && (
           <>
             <AgentLinksPanel engagementId={engagement.id} canManage={phase.share} />
-            <PrepaymentsPanel engagementId={engagement.id} canManage={phase.share} />
-            <ChangeOrdersPanel
-              engagementId={engagement.id}
-              side="agency"
-              canManage={phase.share}
-              projects={projects.filter((p) => shared.has(p.id))}
-            />
+            {hasAgencyDao && (
+              <>
+                <PrepaymentsPanel engagementId={engagement.id} canManage={phase.share} />
+                <ChangeOrdersPanel
+                  engagementId={engagement.id}
+                  side="agency"
+                  canManage={phase.share}
+                  projects={projects.filter((p) => shared.has(p.id))}
+                />
+              </>
+            )}
+            {!hasAgencyDao && phase.share && (
+              <p className="text-xs text-muted-foreground">
+                <Link to="/admin/settings" className="underline underline-offset-2">
+                  Connect a treasury
+                </Link>{" "}
+                to record prepayments and manage change orders.
+              </p>
+            )}
           </>
         )}
       </CardContent>

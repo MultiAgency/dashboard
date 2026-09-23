@@ -19,17 +19,7 @@ function normalizeOptionalText(value?: string | null): string | null {
   return trimmed ? trimmed : null;
 }
 
-function assertProjectShape(input: {
-  kind: ProjectKind;
-  repository: string | null;
-  content: string | null;
-}) {
-  if (input.kind === "project" && !input.repository) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: "Projects require a repository URL",
-    });
-  }
-
+function assertProjectShape(input: { kind: ProjectKind; content: string | null }) {
   if (
     (input.kind === "idea" || input.kind === "scope" || input.kind === "result") &&
     !input.content
@@ -534,7 +524,6 @@ export const ProjectServiceLive = Layer.effect(
 
           assertProjectShape({
             kind: input.kind,
-            repository,
             content,
           });
 
@@ -633,7 +622,6 @@ export const ProjectServiceLive = Layer.effect(
 
           assertProjectShape({
             kind: nextKind,
-            repository: nextRepository,
             content: nextContent,
           });
 

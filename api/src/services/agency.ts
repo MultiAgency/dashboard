@@ -132,6 +132,13 @@ export function createAgencyService(
       },
     ) =>
       Effect.gen(function* () {
+        if (input.nearnListingId && !scope.agencyDao) {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message: "Connect a treasury before linking a NEARN listing.",
+            }),
+          );
+        }
         let content: string | undefined;
         if (input.kind === "idea") {
           content = input.description?.trim() || `# ${input.title.trim()}`;

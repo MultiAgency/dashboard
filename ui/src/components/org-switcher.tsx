@@ -16,7 +16,7 @@ import {
 } from "@/components";
 import { sessionQueryOptions } from "@/lib/auth";
 import { isOrganization } from "@/lib/org-metadata";
-import { switchOrganization } from "@/lib/organizations";
+import { listOrganizations, switchOrganization } from "@/lib/organizations";
 import { invalidateOrganizationQueries } from "@/lib/queries";
 import {
   DropdownMenu,
@@ -34,7 +34,7 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export function OrgSwitcher() {
+export function OrgSwitcher({ onboarding = false }: { onboarding?: boolean }) {
   const auth = useAuthClient();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -49,10 +49,7 @@ export function OrgSwitcher() {
 
   const orgsQuery = useQuery({
     queryKey: ["organizations", "list"] as const,
-    queryFn: async () => {
-      const res = await auth.organization.list();
-      return res.data ?? [];
-    },
+    queryFn: () => listOrganizations(auth),
   });
 
   const switchMutation = useMutation({
@@ -120,48 +117,60 @@ export function OrgSwitcher() {
 
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={activeOrg?.name ?? "Create or switch Organization"}
-            className="flex items-center gap-2 text-xs text-muted-foreground max-w-[180px]"
-          >
-            <Building2 className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate min-w-0">
-              {activeOrg?.name ??
-                (organizations.length === 0 ? "create Organization" : "Organization")}
-            </span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel className="text-xs text-muted-foreground">
-            organizations
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {organizations.map((org) => (
-            <DropdownMenuItem
-              key={org.id}
-              className="flex items-center justify-between cursor-pointer"
-              onClick={() => switchMutation.mutate(org.id)}
+      {onboarding ? (
+        <Button type="button" onClick={() => setCreateOpen(true)}>
+          <Plus className="h-4 w-4" />
+          create Organization
+        </Button>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={activeOrg?.name ?? "Create or switch Organization"}
+              className="flex items-center gap-2 text-xs text-muted-foreground max-w-[180px]"
             >
-              <span className="truncate min-w-0 flex-1">{org.name}</span>
-              {org.id === activeOrgId && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
+              <Building2 className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate min-w-0">
+                {activeOrg?.name ??
+                  (organizations.length === 0 ? "create Organization" : "Organization")}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              organizations
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {organizations.map((org) => (
+              <DropdownMenuItem
+                key={org.id}
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => switchMutation.mutate(org.id)}
+              >
+                <span className="truncate min-w-0 flex-1">{org.name}</span>
+                {org.id === activeOrgId && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
+              </DropdownMenuItem>
+            ))}
+            {organizations.length === 0 && !orgsQuery.isError && (
+              <DropdownMenuItem disabled className="text-muted-foreground">
+                no Organizations yet
+              </DropdownMenuItem>
+            )}
+            {orgsQuery.isError && (
+              <DropdownMenuItem onSelect={() => void orgsQuery.refetch()}>
+                could not load · retry
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setCreateOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              create Organization
             </DropdownMenuItem>
-          ))}
-          {organizations.length === 0 && (
-            <DropdownMenuItem disabled className="text-muted-foreground">
-              no Organizations yet
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setCreateOpen(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            create Organization
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       <Dialog
         open={createOpen}

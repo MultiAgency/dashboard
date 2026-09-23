@@ -68,7 +68,7 @@ describe("refreshAfter", () => {
   it("billings refresh billing lists, project budgets and proposal mappings", async () => {
     const { queryClient, stale } = cacheWith({
       projectBillings: adminBillingsQueryKey({ projectId: "a" }),
-      clientBillings: clientBillingsQueryKey({ projectId: "a" }),
+      clientBillings: clientBillingsQueryKey({ projectId: "a" }, "engagement-a"),
       contributorBillings: adminContributorBillingsQueryKey("dev.near"),
       budget: adminProjectBudgetQueryOptions(api, "a").queryKey,
       proposals: proposalsListQueryKey,
@@ -106,7 +106,7 @@ describe("refreshAfter", () => {
       publicProjects: projectsListQueryOptions(api).queryKey,
       detail: adminProjectDetailQueryOptions(api, "site").queryKey,
       billings: adminBillingsQueryKey({ projectId: "a" }),
-      clientBillings: clientBillingsQueryKey({ projectId: "a" }),
+      clientBillings: clientBillingsQueryKey({ projectId: "a" }, "engagement-a"),
       clientProjects: [...clientPortalProjectsListQueryKey, "mainnet", "dao.near"],
       clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "dao.near").queryKey,
       budgetsLog: adminProjectBudgetsLogQueryKey("a"),

@@ -6,8 +6,7 @@ const HASH_MESSAGES: Record<string, string> = {
   unauthorized: "Your account does not have access to this area.",
   "organization-required":
     "Select or create an Agency Organization from the header to open the Agency dashboard.",
-  "not-a-client":
-    "No client portal for this wallet. Ask your agency to add your NEAR account under Admin → Clients.",
+  "not-a-client": "This Organization has no Client Engagement. Ask an Agency admin to propose one.",
 };
 
 export function AuthHashToasts() {

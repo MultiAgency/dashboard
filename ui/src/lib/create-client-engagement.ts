@@ -25,22 +25,27 @@ export async function createClientEngagement(
   apiClient: ApiClient,
   input: Input,
 ) {
-  let stage: "starting" | "created" | "invited" | "proposed" | "accepted" = "starting";
-  let engagement: Awaited<ReturnType<ApiClient["engagements"]["accept"]>> | null = null;
-  let failure: unknown;
-  let restored = true;
+  let stage: "starting" | "created" | "invited" = "starting";
+  let clientOrganizationId: string | null = null;
 
   try {
+    const { data: session, error: sessionError } = await authClient.getSession();
+    if (sessionError || !session?.user?.id) {
+      throw new Error(sessionError?.message || "Sign in again to create a Client Organization");
+    }
+    if (session.session.activeOrganizationId !== input.agencyOrganizationId) {
+      throw new Error("Select the Agency Organization again before creating a Client");
+    }
     const created = await authClient.organization.create({
       name: input.name.trim(),
       slug: slugify(input.name),
-      metadata: {},
+      metadata: { handoverOwnerUserId: session.user.id },
       keepCurrentActiveOrganization: true,
     });
     if (created.error) throw new Error(created.error.message || "Could not create Organization");
     if (!created.data?.id) throw new Error("Could not create Organization");
     stage = "created";
-    const clientOrganizationId = created.data.id;
+    clientOrganizationId = created.data.id;
 
     const invited = await authClient.organization.inviteMember({
       organizationId: clientOrganizationId,
@@ -50,48 +55,19 @@ export async function createClientEngagement(
     if (invited.error) throw new Error(invited.error.message || "Could not invite first admin");
     stage = "invited";
 
-    const proposed = await apiClient.engagements.propose({ clientOrganizationId });
-    stage = "proposed";
-
-    const activated = await authClient.organization.setActive({
-      organizationId: clientOrganizationId,
-    });
-    if (activated.error)
-      throw new Error(activated.error.message || "Could not activate Client Organization");
-
-    engagement = await apiClient.engagements.accept({ id: proposed.id });
-    stage = "accepted";
+    return await apiClient.engagements.propose({ clientOrganizationId });
   } catch (error) {
-    failure = error;
-  } finally {
-    if (stage !== "starting") {
-      try {
-        const result = await authClient.organization.setActive({
-          organizationId: input.agencyOrganizationId,
-        });
-        restored = !result.error;
-      } catch {
-        restored = false;
-      }
-    }
-  }
-
-  if (failure) {
-    const detail = errorMessage(failure);
+    const detail = errorMessage(error);
     if (stage === "created") {
-      throw new Error(`Client Organization was created, but its invitation failed: ${detail}`);
+      throw new Error(
+        `Client Organization ${clientOrganizationId} was created, but its invitation failed: ${detail}`,
+      );
     }
     if (stage === "invited") {
       throw new Error(
-        `Client Organization and invitation were created, but Engagement setup failed: ${detail}`,
+        `Client Organization ${clientOrganizationId} and invitation were created, but Engagement setup failed: ${detail}. Propose an Engagement using this Organization ID.`,
       );
-    }
-    if (stage === "proposed") {
-      throw new Error(`Client Engagement was proposed but still needs acceptance: ${detail}`);
     }
     throw new Error(detail);
   }
-
-  if (!engagement) throw new Error("Client Engagement setup did not finish");
-  return { engagement, restored };
 }

@@ -60,10 +60,15 @@ export function BillingsAdminSection({
   });
 
   const billingsQuery = useInfiniteQuery({
-    queryKey: (clientPortal ? clientBillingsQueryKey : adminBillingsQueryKey)({
-      projectId: projectId || null,
-      nearAccount: nearAccount || null,
-    }),
+    queryKey: clientPortal
+      ? clientBillingsQueryKey(
+          { projectId: projectId || null, nearAccount: nearAccount || null },
+          engagementId ?? "",
+        )
+      : adminBillingsQueryKey({
+          projectId: projectId || null,
+          nearAccount: nearAccount || null,
+        }),
     queryFn: ({ pageParam }) =>
       clientPortal && engagementId
         ? apiClient.clientPortal.billings.list({

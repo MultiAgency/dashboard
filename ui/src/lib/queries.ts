@@ -155,10 +155,11 @@ export function adminBillingsQueryKey(filters: BillingFilters) {
   ] as const;
 }
 
-export function clientBillingsQueryKey(filters: BillingFilters) {
+export function clientBillingsQueryKey(filters: BillingFilters, engagementId: string) {
   return [
     ...clientBillingsListQueryKey,
     getNetwork(),
+    engagementId,
     filters.projectId ?? null,
     filters.nearAccount ?? null,
   ] as const;

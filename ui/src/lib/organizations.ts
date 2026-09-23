@@ -3,6 +3,7 @@ import { isOrganization } from "@/lib/org-metadata";
 
 export async function listOrganizations(authClient: AuthClient) {
   const res = await authClient.organization.list();
+  if (res.error) throw new Error(res.error.message || "Could not load Organizations");
   return (res.data ?? []).filter((org) => isOrganization(org.metadata));
 }
 

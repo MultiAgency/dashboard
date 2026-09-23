@@ -6,6 +6,7 @@ import { Badge, Button, Card, CardContent, DataTable, Empty, EmptyTitle } from "
 import { AssignmentsSection } from "@/components/admin/assignments-section";
 import { type Project, ProjectForm } from "@/components/admin/project-form";
 import { AdminError } from "@/components/admin-error";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
@@ -21,6 +22,7 @@ type AdminProject = Awaited<ReturnType<ApiClient["agency"]["projects"]["list"]>>
 
 export function ProjectsAdminSection() {
   const apiClient = useApiClient();
+  const { hasAgencyDao } = useMeRoles();
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
   const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const nearnSponsor = settingsQuery.data?.nearnAccountId ?? null;
@@ -68,16 +70,20 @@ export function ProjectsAdminSection() {
       accessorKey: "visibility",
       cell: ({ row }) => <Badge variant="outline">{row.original.visibility}</Badge>,
     },
-    {
-      id: "nearn",
-      header: "NEARN",
-      accessorFn: (row) => row.nearnListing?.slug ?? "",
-      cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
-          {row.original.nearnListing?.slug ?? "—"}
-        </span>
-      ),
-    },
+    ...(hasAgencyDao
+      ? [
+          {
+            id: "nearn",
+            header: "NEARN",
+            accessorFn: (row) => row.nearnListing?.slug ?? "",
+            cell: ({ row }) => (
+              <span className="font-mono text-xs text-muted-foreground">
+                {row.original.nearnListing?.slug ?? "—"}
+              </span>
+            ),
+          } satisfies ColumnDef<AdminProject>,
+        ]
+      : []),
     {
       id: "actions",
       header: "",
@@ -177,23 +183,25 @@ export function ProjectsAdminSection() {
         </Card>
       )}
 
-      <NearnSponsorBountiesPanel
-        linkedSlugs={
-          new Set(
-            (projectsQuery.data?.data ?? [])
-              .map((p) => p.nearnListing?.slug)
-              .filter((s): s is string => !!s),
-          )
-        }
-        onCreateFrom={(b) => {
-          setPrefill({
-            nearnListingId: b.slug,
-            title: b.title ?? "",
-            slug: b.slug,
-          });
-          setCreating(true);
-        }}
-      />
+      {hasAgencyDao && (
+        <NearnSponsorBountiesPanel
+          linkedSlugs={
+            new Set(
+              (projectsQuery.data?.data ?? [])
+                .map((p) => p.nearnListing?.slug)
+                .filter((s): s is string => !!s),
+            )
+          }
+          onCreateFrom={(b) => {
+            setPrefill({
+              nearnListingId: b.slug,
+              title: b.title ?? "",
+              slug: b.slug,
+            });
+            setCreating(true);
+          }}
+        />
+      )}
     </div>
   );
 }

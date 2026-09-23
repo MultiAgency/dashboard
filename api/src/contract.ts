@@ -56,6 +56,16 @@ export const baseAmount = z
 
 const tokenId = z.string().min(1).max(80);
 
+const organizationJoinRequest = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  userId: z.string(),
+  displayName: z.string(),
+  status: z.enum(["pending", "approved", "declined"]),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
 const paginationInput = z.object({
   limit: z.number().int().min(1).max(200).default(50),
   cursor: z.string().optional(),
@@ -216,6 +226,7 @@ const engagement = z.object({
   status: z.enum(["proposed", "active", "declined", "ended"]),
   role: z.enum(["agency", "client"]),
   agency: engagementParty,
+  agencyHasTreasury: z.boolean(),
   client: engagementParty,
   projectIds: z.array(z.string()),
   createdAt: z.date(),
@@ -470,13 +481,6 @@ export const contract = oc.router({
               visibility: visibility.default("private"),
             })
             .superRefine((value, ctx) => {
-              if (value.kind === "project" && !value.repository) {
-                ctx.addIssue({
-                  code: "custom",
-                  message: "Projects require a repository URL",
-                  path: ["repository"],
-                });
-              }
               if (
                 (value.kind === "scope" || value.kind === "result") &&
                 !value.parentSlug?.trim()
@@ -687,6 +691,35 @@ export const contract = oc.router({
       .input(z.object({ id: z.string().min(1) }))
       .output(z.object({ deleted: z.literal(true) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  organizationTreasury: {
+    connect: oc
+      .route({ method: "POST", path: "/organization/treasury" })
+      .input(z.object({ daoAccountId: nearAccountId }))
+      .output(z.object({ daoAccountId: z.string() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, CONFLICT }),
+  },
+
+  organizationJoinRequests: {
+    mine: oc
+      .route({ method: "GET", path: "/organization-join-requests/mine" })
+      .output(z.object({ data: z.array(organizationJoinRequest) }))
+      .errors({ UNAUTHORIZED }),
+    request: oc
+      .route({ method: "POST", path: "/organization-join-requests" })
+      .input(z.object({ organizationId: z.string().trim().min(1).max(200) }))
+      .output(organizationJoinRequest)
+      .errors({ UNAUTHORIZED, BAD_REQUEST }),
+    list: oc
+      .route({ method: "GET", path: "/organization-join-requests" })
+      .output(z.object({ data: z.array(organizationJoinRequest) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+    review: oc
+      .route({ method: "POST", path: "/organization-join-requests/{id}/review" })
+      .input(z.object({ id: z.string().min(1), decision: z.enum(["approve", "decline"]) }))
+      .output(organizationJoinRequest)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
   },
 
   engagements: {

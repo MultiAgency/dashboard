@@ -1,6 +1,7 @@
 export type OrgMetadata = {
   daoAccountId?: string;
   isPersonal?: boolean;
+  handoverOwnerUserId?: string;
 };
 
 export function parseOrgMetadata(raw: unknown): OrgMetadata {

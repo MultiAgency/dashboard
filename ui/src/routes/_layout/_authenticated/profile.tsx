@@ -1,13 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
+import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
-import { useAuthClient } from "@/app";
-import { Avatar, AvatarFallback, AvatarImage, Button, Card, CardContent } from "@/components";
+import { useApiClient, useAuthClient } from "@/app";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  Button,
+  Card,
+  CardContent,
+  Input,
+} from "@/components";
 import { Field } from "@/components/admin-form";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
 import { userInvitationsQueryOptions } from "@/lib/invitations";
 import { type NearProfile, nearProfileQueryOptions } from "@/lib/near-profile";
+import { switchOrganization } from "@/lib/organizations";
+import { invalidateOrganizationQueries } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/profile")({
   head: () => ({
@@ -26,8 +37,11 @@ function resolveAvatarUrl(profile: NearProfile | null | undefined): string | nul
 
 function ProfilePage() {
   const authClient = useAuthClient();
+  const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const router = useRouter();
+  const [joinOrganizationId, setJoinOrganizationId] = useState("");
   const { data: session } = useQuery(sessionQueryOptions(authClient));
   const user = session?.user;
   const invitationsQuery = useQuery({
@@ -35,6 +49,38 @@ function ProfilePage() {
     enabled: !!user,
     refetchOnMount: "always",
   });
+  const joinRequestsQuery = useQuery({
+    queryKey: ["organization-join-requests", "mine"],
+    queryFn: () => apiClient.organizationJoinRequests.mine(),
+    enabled: !!user,
+    refetchOnWindowFocus: "always",
+    refetchInterval: 30_000,
+  });
+  const openOrganization = useMutation({
+    mutationFn: async (organizationId: string) => {
+      const switched = await switchOrganization(authClient, organizationId);
+      if (!switched) throw new Error("Could not open Organization. Try signing in again.");
+    },
+    onSuccess: async () => {
+      await invalidateOrganizationQueries(queryClient, router);
+      navigate({ to: "/admin/projects" });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const joinRequest = useMutation({
+    mutationFn: () =>
+      apiClient.organizationJoinRequests.request({ organizationId: joinOrganizationId.trim() }),
+    onSuccess: async () => {
+      setJoinOrganizationId("");
+      toast.success("Join request sent to the Organization admins");
+      await queryClient.invalidateQueries({ queryKey: ["organization-join-requests", "mine"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const submitJoinRequest = (event: FormEvent) => {
+    event.preventDefault();
+    if (joinOrganizationId.trim()) joinRequest.mutate();
+  };
   const nearAccountId = authClient.near.getAccountId();
 
   const profileQuery = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
@@ -127,6 +173,58 @@ function ProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      <section id="organizations" className="space-y-3 scroll-mt-6">
+        <div className="space-y-1">
+          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            your · workspaces
+          </div>
+          <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-[0.95]">
+            Join an Organization
+          </h2>
+        </div>
+        <Card>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Ask an Organization admin for its ID, then request access. An admin can approve you
+              from their Team page. You can use your NEAR account; an email invitation is not
+              needed.
+            </p>
+            <form onSubmit={submitJoinRequest} className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                aria-label="Organization ID"
+                placeholder="Organization ID"
+                value={joinOrganizationId}
+                onChange={(event) => setJoinOrganizationId(event.target.value)}
+                required
+              />
+              <Button type="submit" disabled={joinRequest.isPending || !joinOrganizationId.trim()}>
+                {joinRequest.isPending ? "requesting..." : "request to join"}
+              </Button>
+            </form>
+            {joinRequestsQuery.isError && (
+              <p className="text-sm text-destructive">Could not load your join requests.</p>
+            )}
+            {joinRequestsQuery.data?.data.map((request) => (
+              <div key={request.id} className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground break-all">
+                  {request.organizationId} · {request.status}
+                </p>
+                {request.status === "approved" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={openOrganization.isPending}
+                    onClick={() => openOrganization.mutate(request.organizationId)}
+                  >
+                    open Organization
+                  </Button>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </section>
 
       <section id="invitations" className="space-y-3 scroll-mt-6">
         <div className="space-y-1">

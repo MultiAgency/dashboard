@@ -29,6 +29,8 @@ import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
 import { notifyWebhook } from "./services/notify";
+import { createOrganizationJoinRequestsService } from "./services/organization-join-requests";
+import { createOrganizationTreasuryService } from "./services/organization-treasury";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
@@ -88,6 +90,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
         webhookSecret: config.secrets.CONTACT_FORM_WEBHOOK_SECRET,
       });
       const engagements = createEngagementsService(db, directory, organizations, access);
+      const organizationJoinRequests = createOrganizationJoinRequestsService(db, plugins.auth);
+      const organizationTreasury = createOrganizationTreasuryService(db, plugins.auth);
       const ideas = createIdeasService(db, engagements, {
         create: (context, input) => plugins.projects(context).createProject(input),
         get: async (context, id) => {
@@ -155,6 +159,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
         billings,
         reports,
         engagements,
+        organizationJoinRequests,
+        organizationTreasury,
         prepayments,
         changeOrders,
         clientPortal,
@@ -184,6 +190,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
       billings,
       reports,
       engagements,
+      organizationJoinRequests,
+      organizationTreasury,
       prepayments,
       changeOrders,
       clientPortal,
@@ -275,25 +283,25 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
         listings: {
           get: builder.agency.listings.get
-            .use(member)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
               runEffect(listings.getInternal(context.scope, input.projectId)),
             ),
 
           create: builder.agency.listings.create
-            .use(member)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
               runEffect(listings.createInternal(context.scope, input)),
             ),
 
           update: builder.agency.listings.update
-            .use(member)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
               runEffect(listings.updateInternal(context.scope, input)),
             ),
 
           delete: builder.agency.listings.delete
-            .use(member)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
               runEffect(listings.deleteInternal(context.scope, input.projectId)),
             ),
@@ -301,7 +309,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
         reports: {
           generate: builder.agency.reports.generate
-            .use(member)
+            .use(orgMember)
             .handler(async ({ context, input }) =>
               runEffect(reports.generate(context.scope, input)),
             ),
@@ -337,6 +345,52 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(orgManager)
           .handler(async ({ context, input }) =>
             runEffect(agentLinks.remove(context.scope, input.id)),
+          ),
+      },
+
+      organizationTreasury: {
+        connect: builder.organizationTreasury.connect
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            organizationTreasury.connect(
+              context.scope,
+              input.daoAccountId,
+              context.near?.primaryAccountId ?? null,
+              context.reqHeaders,
+            ),
+          ),
+      },
+
+      organizationJoinRequests: {
+        mine: builder.organizationJoinRequests.mine
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => ({
+            data: await organizationJoinRequests.mine(context.userId),
+          })),
+        request: builder.organizationJoinRequests.request
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) =>
+            organizationJoinRequests.request(
+              input.organizationId,
+              context.userId,
+              context.user.name || context.user.email || context.userId,
+              context.reqHeaders,
+            ),
+          ),
+        list: builder.organizationJoinRequests.list
+          .use(orgManager)
+          .handler(async ({ context }) => ({
+            data: await organizationJoinRequests.forOrganization(context.scope.organizationId),
+          })),
+        review: builder.organizationJoinRequests.review
+          .use(orgManager)
+          .handler(async ({ context, input }) =>
+            organizationJoinRequests.review(
+              context.scope.organizationId,
+              input.id,
+              input.decision,
+              context.reqHeaders,
+            ),
           ),
       },
 
@@ -497,19 +551,19 @@ export default createPlugin.withPlugins<PluginsClient>()({
       },
 
       contributors: {
-        list: builder.contributors.list.use(member).handler(async ({ context }) => {
+        list: builder.contributors.list.use(orgMember).handler(async ({ context }) => {
           return runEffect(contributors.list(context.scope.pluginContext));
         }),
 
-        get: builder.contributors.get.use(member).handler(async ({ context, input }) => {
+        get: builder.contributors.get.use(orgMember).handler(async ({ context, input }) => {
           return runEffect(contributors.get(context.scope.pluginContext, input.nearAccount));
         }),
 
-        create: builder.contributors.create.use(manager).handler(async ({ context, input }) => {
+        create: builder.contributors.create.use(orgManager).handler(async ({ context, input }) => {
           return runEffect(contributors.create(context.scope.pluginContext, input));
         }),
 
-        update: builder.contributors.update.use(manager).handler(async ({ context, input }) => {
+        update: builder.contributors.update.use(orgManager).handler(async ({ context, input }) => {
           return runEffect(contributors.update(context.scope.pluginContext, input));
         }),
       },

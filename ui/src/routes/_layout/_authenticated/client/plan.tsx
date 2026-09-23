@@ -18,7 +18,8 @@ function ClientPlanPage() {
   const { canAccessAdmin } = useMeRoles();
   const projectsQuery = useQuery(clientPortalProjectsListQueryOptions(apiClient, engagementId));
   const projects = (projectsQuery.data?.data ?? []).map((p) => ({ id: p.id, title: p.title }));
-  const canManage = canAccessAdmin && engagement.status === "active";
+  const canManage =
+    canAccessAdmin && engagement.status === "active" && engagement.agencyHasTreasury;
 
   return (
     <div className="space-y-6">
@@ -34,6 +35,11 @@ function ClientPlanPage() {
             agency. Propose a change order to change the plan or move money; your agency approves it
             before it takes effect.
           </p>
+          {!engagement.agencyHasTreasury && (
+            <p className="text-sm text-muted-foreground">
+              The Agency must connect a treasury before you can propose a change order.
+            </p>
+          )}
           <ChangeOrdersPanel
             engagementId={engagementId}
             side="client"

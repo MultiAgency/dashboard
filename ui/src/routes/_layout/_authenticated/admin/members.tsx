@@ -19,8 +19,8 @@ function AdminMembersPage() {
           Team
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Agency staff who run this dashboard — invited by email with owner, admin, or member roles.
-          Not the same as builders (project workers) or clients (paying customers).
+          People in this Organization, invited by email or approved through a join request. Owners
+          and admins manage the team; members can view their shared work.
         </p>
       </header>
       <MembersAdminSection />

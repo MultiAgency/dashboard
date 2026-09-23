@@ -3,10 +3,12 @@ import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useApiClient } from "@/app";
 import { Badge, Button, Card, CardContent, DataTable, Spinner } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Input } from "@/components/ui/input";
 import { type AuthClient, useAuthClient } from "@/lib/auth";
+import { completeClientHandover, pendingClientHandover } from "@/lib/client-handover";
 
 type Member = {
   id: string;
@@ -70,6 +72,7 @@ function invitationStatus(invitation: Invitation): "pending" | "expired" | strin
 
 export function MembersAdminSection() {
   const authClient = useAuthClient();
+  const apiClient = useApiClient();
   const queryClient = useQueryClient();
 
   const sessionQuery = useQuery({
@@ -86,11 +89,33 @@ export function MembersAdminSection() {
     queryKey: ["members", activeOrgId],
     queryFn: async () => {
       if (!activeOrgId) return [];
-      const { data, error } = await authClient.organization.listMembers({ query: { limit: 100 } });
+      const { data, error } = await authClient.organization.listMembers({
+        query: { organizationId: activeOrgId, limit: 100 },
+      });
       if (error) throw new Error(error.message ?? "Failed to load members");
       return unwrapMembers(data);
     },
     enabled: !!activeOrgId,
+  });
+  const currentMember = membersQuery.data?.find(
+    (member) => member.userId === sessionQuery.data?.user?.id,
+  );
+  const handoverQuery = useQuery({
+    queryKey: ["client-handover", activeOrgId],
+    queryFn: () => pendingClientHandover(authClient, activeOrgId!, sessionQuery.data!.user.id),
+    enabled: !!activeOrgId && !!sessionQuery.data?.user?.id && currentMember?.role === "owner",
+  });
+  const handoverMutation = useMutation({
+    mutationFn: () => completeClientHandover(authClient, activeOrgId!, sessionQuery.data!.user.id),
+    onSuccess: async (completed) => {
+      if (completed) toast.success("Client handover complete");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["client-handover", activeOrgId] }),
+        queryClient.invalidateQueries({ queryKey: ["members", activeOrgId] }),
+        queryClient.invalidateQueries({ queryKey: ["organizations"] }),
+      ]);
+    },
+    onError: (error: Error) => toast.error(error.message),
   });
 
   const invitationsQuery = useQuery({
@@ -104,6 +129,24 @@ export function MembersAdminSection() {
       return unwrapInvitations(data);
     },
     enabled: !!activeOrgId,
+  });
+  const joinRequestsQuery = useQuery({
+    queryKey: ["organization-join-requests", activeOrgId],
+    queryFn: () => apiClient.organizationJoinRequests.list(),
+    enabled: !!activeOrgId,
+    refetchInterval: 30_000,
+  });
+  const reviewJoinRequest = useMutation({
+    mutationFn: ({ id, decision }: { id: string; decision: "approve" | "decline" }) =>
+      apiClient.organizationJoinRequests.review({ id, decision }),
+    onSuccess: async (_data, variables) => {
+      toast.success(variables.decision === "approve" ? "Member added" : "Request declined");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["organization-join-requests", activeOrgId] }),
+        queryClient.invalidateQueries({ queryKey: ["members", activeOrgId] }),
+      ]);
+    },
+    onError: (error: Error) => toast.error(error.message),
   });
 
   if (sessionQuery.isLoading) {
@@ -135,12 +178,29 @@ export function MembersAdminSection() {
 
   return (
     <div className="space-y-8">
+      {handoverQuery.data && (
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="font-medium">Complete Client handover</p>
+              <p className="text-sm text-muted-foreground">
+                Remove the agency creator from this Client Organization now that its first admin has
+                joined.
+              </p>
+            </div>
+            <Button onClick={() => handoverMutation.mutate()} disabled={handoverMutation.isPending}>
+              {handoverMutation.isPending ? "completing..." : "complete handover"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+      {handoverQuery.isError && <AdminError error={handoverQuery.error} />}
       <section className="space-y-3">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
           invite team member
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Email invitations join this agency workspace. Admins can manage projects, clients, and
+          Email invitations join this Organization. Admins can manage projects, clients, and
           settings. This does not create a builder profile — add builders separately under{" "}
           <Link
             to="/admin/contributors"
@@ -155,6 +215,74 @@ export function MembersAdminSection() {
           authClient={authClient}
           orgId={activeOrgId ?? undefined}
         />
+      </section>
+
+      <section className="space-y-3">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          requests to join ({joinRequestsQuery.data?.data.length ?? 0})
+        </div>
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          Share your Organization ID with a teammate who has an account. They can request access
+          from their Profile page without an email invitation.
+        </p>
+        {activeOrgId && (
+          <div className="flex flex-wrap items-center gap-3 border border-border bg-muted/10 p-3">
+            <span className="min-w-0 flex-1 font-mono text-xs break-all">{activeOrgId}</span>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/join-organization/$id" params={{ id: activeOrgId }}>
+                view join page
+              </Link>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const url = new URL(
+                    `/join-organization/${encodeURIComponent(activeOrgId)}`,
+                    window.location.origin,
+                  );
+                  await navigator.clipboard.writeText(url.toString());
+                  toast.success("Join link copied");
+                } catch {
+                  toast.error("Could not copy the join link");
+                }
+              }}
+            >
+              copy join link
+            </Button>
+          </div>
+        )}
+        {joinRequestsQuery.isError && <AdminError error={joinRequestsQuery.error} />}
+        {joinRequestsQuery.data?.data.map((request) => (
+          <Card key={request.id}>
+            <CardContent className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-medium">{request.displayName}</p>
+                <p className="font-mono text-xs text-muted-foreground break-all">
+                  {request.userId}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => reviewJoinRequest.mutate({ id: request.id, decision: "approve" })}
+                  disabled={reviewJoinRequest.isPending}
+                >
+                  approve
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => reviewJoinRequest.mutate({ id: request.id, decision: "decline" })}
+                  disabled={reviewJoinRequest.isPending}
+                >
+                  decline
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </section>
 
       <section className="space-y-3">
@@ -366,8 +494,20 @@ function MembersTable({
   }, [members]);
 
   const updateMutation = useMutation({
-    mutationFn: ({ memberId, role }: { memberId: string; role: "admin" | "member" | "owner" }) =>
-      authClient.organization.updateMemberRole({ memberId, organizationId: orgId, role }),
+    mutationFn: async ({
+      memberId,
+      role,
+    }: {
+      memberId: string;
+      role: "admin" | "member" | "owner";
+    }) => {
+      const { error } = await authClient.organization.updateMemberRole({
+        memberId,
+        organizationId: orgId,
+        role,
+      });
+      if (error) throw new Error(error.message || "Failed to update role");
+    },
     onSuccess: () => {
       toast.success("Role updated");
       onChanged();
@@ -376,8 +516,13 @@ function MembersTable({
   });
 
   const removeMutation = useMutation({
-    mutationFn: (memberId: string) =>
-      authClient.organization.removeMember({ memberIdOrEmail: memberId, organizationId: orgId }),
+    mutationFn: async (memberId: string) => {
+      const { error } = await authClient.organization.removeMember({
+        memberIdOrEmail: memberId,
+        organizationId: orgId,
+      });
+      if (error) throw new Error(error.message || "Failed to remove member");
+    },
     onSuccess: () => {
       toast.success("Member removed");
       onChanged();

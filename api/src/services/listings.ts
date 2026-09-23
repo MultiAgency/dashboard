@@ -3,7 +3,7 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type Listing, listings, type NewListing } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { AgencyScope, OrgScope } from "../lib/agency-scope";
 import {
   flagsToLifecycle,
   type InternalListingLifecycle,
@@ -453,7 +453,7 @@ type InternalListingInput = {
 };
 
 export function createListingsService(db: Database, directory: ProjectDirectory) {
-  const requireProject = (scope: AgencyScope, projectId: string) =>
+  const requireProject = (scope: OrgScope, projectId: string) =>
     Effect.promise(() => directory.forAgency(scope).require(projectId));
 
   const attachFailure = (scope: AgencyScope, err: unknown) =>
@@ -522,7 +522,7 @@ export function createListingsService(db: Database, directory: ProjectDirectory)
         }
       }),
 
-    getInternal: (scope: AgencyScope, projectId: string) =>
+    getInternal: (scope: OrgScope, projectId: string) =>
       Effect.gen(function* () {
         yield* requireProject(scope, projectId);
         const listing = yield* readInternal(projectId);
@@ -530,7 +530,7 @@ export function createListingsService(db: Database, directory: ProjectDirectory)
       }),
 
     createInternal: (
-      scope: AgencyScope,
+      scope: OrgScope,
       input: InternalListingInput & { projectId: string; lifecycle?: InternalListingLifecycle },
     ) =>
       Effect.gen(function* () {
@@ -554,7 +554,7 @@ export function createListingsService(db: Database, directory: ProjectDirectory)
       }),
 
     updateInternal: (
-      scope: AgencyScope,
+      scope: OrgScope,
       input: Partial<InternalListingInput> & {
         projectId: string;
         lifecycle?: InternalListingLifecycle;
@@ -588,7 +588,7 @@ export function createListingsService(db: Database, directory: ProjectDirectory)
         return { listing: withLifecycle(updated) };
       }),
 
-    deleteInternal: (scope: AgencyScope, projectId: string) =>
+    deleteInternal: (scope: OrgScope, projectId: string) =>
       Effect.gen(function* () {
         yield* requireProject(scope, projectId);
         const removed = yield* Effect.promise(() => deleteInternalListing(projectId, db));

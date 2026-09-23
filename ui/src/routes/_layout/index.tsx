@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import trezuLogo from "@/assets/brand/trezu.svg";
 import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
 import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
+import { OrgSwitcher } from "@/components/org-switcher";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { projectsListQueryOptions } from "@/lib/queries";
 import { getRepoUrl } from "@/lib/repo";
@@ -199,6 +201,7 @@ type LandingProject = {
 
 function Landing() {
   const apiClient = useApiClient();
+  const { isAuthenticated, isLoaded, orgRole } = useMeRoles();
   const loaderData = RootRoute.useLoaderData();
   const assetsUrl = loaderData?.runtimeConfig?.assetsUrl ?? "";
 
@@ -212,6 +215,27 @@ function Landing() {
 
   return (
     <div className="space-y-16 pb-12 animate-fade-in">
+      {isAuthenticated && isLoaded && !orgRole && (
+        <Card>
+          <CardContent className="space-y-3">
+            <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold">
+              Set up your workspace
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Create an Organization to run Projects, or request access to an existing one. If you
+              already have an invitation, open it from your Profile.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <OrgSwitcher onboarding />
+              <Button asChild variant="outline">
+                <Link to="/profile" hash="organizations">
+                  join an Organization
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <section className="relative min-h-[70vh] flex flex-col justify-center -mt-6 sm:-mt-10 py-12 sm:py-16 overflow-hidden -mx-4 sm:-mx-6 px-4 sm:px-6">
         <ReactionDiffusionField />
         <div className="relative flex flex-col items-start space-y-6 text-left">

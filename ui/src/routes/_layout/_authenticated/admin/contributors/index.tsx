@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components";
 import { ApplicationsAdminSection } from "@/components/admin/applications-section";
 import { ContributorsAdminSection } from "@/components/admin/contributors-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { adminContributorsListQueryOptions } from "@/lib/queries";
 
 const contributorsSearchSchema = z.object({
@@ -25,7 +26,8 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/contributors
 function AdminContributorsPage() {
   const { tab } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const activeTab = tab === "incoming" ? "incoming" : "directory";
+  const { hasAgencyDao } = useMeRoles();
+  const activeTab = tab === "incoming" && hasAgencyDao ? "incoming" : "directory";
 
   return (
     <div className="space-y-6">
@@ -52,14 +54,16 @@ function AdminContributorsPage() {
       >
         <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.18em]">
           <TabsTrigger value="directory">active</TabsTrigger>
-          <TabsTrigger value="incoming">applications</TabsTrigger>
+          {hasAgencyDao && <TabsTrigger value="incoming">applications</TabsTrigger>}
         </TabsList>
         <TabsContent value="directory" className="mt-6">
           <ContributorsAdminSection />
         </TabsContent>
-        <TabsContent value="incoming" className="mt-6">
-          <ApplicationsAdminSection />
-        </TabsContent>
+        {hasAgencyDao && (
+          <TabsContent value="incoming" className="mt-6">
+            <ApplicationsAdminSection />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

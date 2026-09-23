@@ -15,6 +15,7 @@ export type EngagementView = {
   status: Engagement["status"];
   role: EngagementRole;
   agency: { organizationId: string; name: string };
+  agencyHasTreasury: boolean;
   client: { organizationId: string; name: string };
   projectIds: string[];
   createdAt: Date;
@@ -58,12 +59,18 @@ export function createEngagementsService(
     return byEngagement;
   };
 
-  const view = (row: Engagement, organizationId: string, projectIds: string[]): EngagementView => ({
+  const view = (
+    row: Engagement,
+    organizationId: string,
+    projectIds: string[],
+    agencyHasTreasury: boolean,
+  ): EngagementView => ({
     id: row.id,
     kind: row.kind,
     status: row.status,
     role: row.agencyOrganizationId === organizationId ? "agency" : "client",
     agency: { organizationId: row.agencyOrganizationId, name: row.agencyName },
+    agencyHasTreasury,
     client: { organizationId: row.clientOrganizationId, name: row.clientName },
     projectIds,
     createdAt: row.createdAt,
@@ -71,7 +78,12 @@ export function createEngagementsService(
   });
 
   const viewOne = async (row: Engagement, organizationId: string) =>
-    view(row, organizationId, (await projectIdsOf([row.id])).get(row.id) ?? []);
+    view(
+      row,
+      organizationId,
+      (await projectIdsOf([row.id])).get(row.id) ?? [],
+      (await access.daoOf(row.agencyOrganizationId)) !== null,
+    );
 
   const findAs = (scope: OrgScope, id: string, side: EngagementRole) =>
     Effect.gen(function* () {
@@ -146,21 +158,25 @@ export function createEngagementsService(
       Effect.gen(function* () {
         const rows = yield* Effect.promise(() => access.engagements(scope));
         const projectIds = yield* Effect.promise(() => projectIdsOf(rows.map((r) => r.id)));
-        const data = rows
-          .map(
-            (row): EngagementView => ({
-              id: row.id,
-              kind: row.kind,
-              status: row.status,
-              role: row.role,
-              agency: { organizationId: row.agencyOrganizationId, name: row.agencyName },
-              client: { organizationId: row.clientOrganizationId, name: row.clientName },
-              projectIds: projectIds.get(row.id) ?? [],
-              createdAt: row.createdAt,
-              endedAt: row.endedAt,
-            }),
-          )
-          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        const data = yield* Effect.promise(() =>
+          Promise.all(
+            rows.map(
+              async (row): Promise<EngagementView> => ({
+                id: row.id,
+                kind: row.kind,
+                status: row.status,
+                role: row.role,
+                agency: { organizationId: row.agencyOrganizationId, name: row.agencyName },
+                agencyHasTreasury: (await access.daoOf(row.agencyOrganizationId)) !== null,
+                client: { organizationId: row.clientOrganizationId, name: row.clientName },
+                projectIds: projectIds.get(row.id) ?? [],
+                createdAt: row.createdAt,
+                endedAt: row.endedAt,
+              }),
+            ),
+          ),
+        );
+        data.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
         return { data };
       }),
 
@@ -321,6 +337,21 @@ export function createEngagementsService(
             new ORPCError("BAD_REQUEST", { message: "An Organization cannot engage itself." }),
           );
         }
+        const prepayment = input.prepayment;
+        if (prepayment && !scope.agencyDao) {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message: "Connect a treasury before recording a Prepayment.",
+            }),
+          );
+        }
+        if (prepayment && prepayment.periodStart > prepayment.periodEnd) {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message: "periodStart must be on or before periodEnd",
+            }),
+          );
+        }
         for (const projectId of new Set(input.projectIds ?? [])) {
           yield* Effect.promise(() => directory.forAgency(scope).require(projectId));
         }
@@ -362,22 +393,7 @@ export function createEngagementsService(
               .onConflictDoNothing(),
           );
         }
-        const prepayment = input.prepayment;
         if (prepayment) {
-          if (!scope.agencyDao) {
-            return yield* Effect.fail(
-              new ORPCError("BAD_REQUEST", {
-                message: "An Agency DAO is required to record a Prepayment.",
-              }),
-            );
-          }
-          if (prepayment.periodStart > prepayment.periodEnd) {
-            return yield* Effect.fail(
-              new ORPCError("BAD_REQUEST", {
-                message: "periodStart must be on or before periodEnd",
-              }),
-            );
-          }
           yield* Effect.promise(() =>
             db.insert(prepayments).values({
               id: crypto.randomUUID(),

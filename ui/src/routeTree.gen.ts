@@ -31,6 +31,7 @@ import { Route as LayoutAuthenticatedPlatformIndexRouteImport } from './routes/_
 import { Route as LayoutAuthenticatedDashboardIndexRouteImport } from './routes/_layout/_authenticated/dashboard/index'
 import { Route as LayoutAuthenticatedClientIndexRouteImport } from './routes/_layout/_authenticated/client/index'
 import { Route as LayoutAuthenticatedAdminIndexRouteImport } from './routes/_layout/_authenticated/admin/index'
+import { Route as LayoutAuthenticatedJoinOrganizationIdRouteImport } from './routes/_layout/_authenticated/join-organization.$id'
 import { Route as LayoutAuthenticatedClientPlanRouteImport } from './routes/_layout/_authenticated/client/plan'
 import { Route as LayoutAuthenticatedAdminSettingsRouteImport } from './routes/_layout/_authenticated/admin/settings'
 import { Route as LayoutAuthenticatedAdminMembersRouteImport } from './routes/_layout/_authenticated/admin/members'
@@ -167,6 +168,12 @@ const LayoutAuthenticatedAdminIndexRoute =
     path: '/',
     getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
+const LayoutAuthenticatedJoinOrganizationIdRoute =
+  LayoutAuthenticatedJoinOrganizationIdRouteImport.update({
+    id: '/join-organization/$id',
+    path: '/join-organization/$id',
+    getParentRoute: () => LayoutAuthenticatedRoute,
+  } as any)
 const LayoutAuthenticatedClientPlanRoute =
   LayoutAuthenticatedClientPlanRouteImport.update({
     id: '/plan',
@@ -291,6 +298,7 @@ export interface FileRoutesByFullPath {
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/client/plan': typeof LayoutAuthenticatedClientPlanRoute
+  '/join-organization/$id': typeof LayoutAuthenticatedJoinOrganizationIdRoute
   '/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/dashboard/': typeof LayoutAuthenticatedDashboardIndexRoute
@@ -326,6 +334,7 @@ export interface FileRoutesByTo {
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/client/plan': typeof LayoutAuthenticatedClientPlanRoute
+  '/join-organization/$id': typeof LayoutAuthenticatedJoinOrganizationIdRoute
   '/admin': typeof LayoutAuthenticatedAdminIndexRoute
   '/client': typeof LayoutAuthenticatedClientIndexRoute
   '/dashboard': typeof LayoutAuthenticatedDashboardIndexRoute
@@ -368,6 +377,7 @@ export interface FileRoutesById {
   '/_layout/_authenticated/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/_layout/_authenticated/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/_layout/_authenticated/client/plan': typeof LayoutAuthenticatedClientPlanRoute
+  '/_layout/_authenticated/join-organization/$id': typeof LayoutAuthenticatedJoinOrganizationIdRoute
   '/_layout/_authenticated/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/_layout/_authenticated/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/_layout/_authenticated/dashboard/': typeof LayoutAuthenticatedDashboardIndexRoute
@@ -409,6 +419,7 @@ export interface FileRouteTypes {
     | '/admin/members'
     | '/admin/settings'
     | '/client/plan'
+    | '/join-organization/$id'
     | '/admin/'
     | '/client/'
     | '/dashboard/'
@@ -444,6 +455,7 @@ export interface FileRouteTypes {
     | '/admin/members'
     | '/admin/settings'
     | '/client/plan'
+    | '/join-organization/$id'
     | '/admin'
     | '/client'
     | '/dashboard'
@@ -485,6 +497,7 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/admin/members'
     | '/_layout/_authenticated/admin/settings'
     | '/_layout/_authenticated/client/plan'
+    | '/_layout/_authenticated/join-organization/$id'
     | '/_layout/_authenticated/admin/'
     | '/_layout/_authenticated/client/'
     | '/_layout/_authenticated/dashboard/'
@@ -663,6 +676,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof LayoutAuthenticatedAdminIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
+    }
+    '/_layout/_authenticated/join-organization/$id': {
+      id: '/_layout/_authenticated/join-organization/$id'
+      path: '/join-organization/$id'
+      fullPath: '/join-organization/$id'
+      preLoaderRoute: typeof LayoutAuthenticatedJoinOrganizationIdRouteImport
+      parentRoute: typeof LayoutAuthenticatedRoute
     }
     '/_layout/_authenticated/client/plan': {
       id: '/_layout/_authenticated/client/plan'
@@ -898,6 +918,7 @@ interface LayoutAuthenticatedRouteChildren {
   LayoutAuthenticatedClientForbiddenRoute: typeof LayoutAuthenticatedClientForbiddenRoute
   LayoutAuthenticatedProfileRoute: typeof LayoutAuthenticatedProfileRoute
   LayoutAuthenticatedAcceptInvitationIdRoute: typeof LayoutAuthenticatedAcceptInvitationIdRoute
+  LayoutAuthenticatedJoinOrganizationIdRoute: typeof LayoutAuthenticatedJoinOrganizationIdRoute
 }
 
 const LayoutAuthenticatedRouteChildren: LayoutAuthenticatedRouteChildren = {
@@ -914,6 +935,8 @@ const LayoutAuthenticatedRouteChildren: LayoutAuthenticatedRouteChildren = {
   LayoutAuthenticatedProfileRoute: LayoutAuthenticatedProfileRoute,
   LayoutAuthenticatedAcceptInvitationIdRoute:
     LayoutAuthenticatedAcceptInvitationIdRoute,
+  LayoutAuthenticatedJoinOrganizationIdRoute:
+    LayoutAuthenticatedJoinOrganizationIdRoute,
 }
 
 const LayoutAuthenticatedRouteWithChildren =

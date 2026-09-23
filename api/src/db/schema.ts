@@ -226,6 +226,31 @@ export const organizationDaos = pgTable(
   }),
 );
 
+export const organizationJoinRequests = pgTable(
+  "organization_join_requests",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    userId: text("user_id").notNull(),
+    displayName: text("display_name").notNull(),
+    status: text("status", { enum: ["pending", "approved", "declined"] })
+      .notNull()
+      .default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    uniqueApplicant: uniqueIndex("organization_join_requests_applicant").on(
+      t.organizationId,
+      t.userId,
+    ),
+    organizationStatus: index("organization_join_requests_organization_status").on(
+      t.organizationId,
+      t.status,
+    ),
+  }),
+);
+
 export const engagements = pgTable(
   "engagements",
   {

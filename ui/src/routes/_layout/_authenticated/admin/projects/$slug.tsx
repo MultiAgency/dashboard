@@ -29,7 +29,6 @@ import {
   adminInternalListingQueryOptions,
   adminNearnListingQueryOptions,
   adminNearnSubmissionsQueryOptions,
-  adminProjectBudgetQueryOptions,
   adminProjectDetailQueryOptions,
   adminTokensQueryOptions,
   publicSettingsQueryOptions,
@@ -72,9 +71,6 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/projects/$sl
     if (!projectData) return;
     const projectId = projectData.project.id;
     await Promise.allSettled([
-      context.queryClient.ensureQueryData(
-        adminProjectBudgetQueryOptions(context.apiClient, projectId),
-      ),
       context.queryClient.ensureQueryData(
         adminInternalListingQueryOptions(context.apiClient, projectId),
       ),
@@ -149,10 +145,10 @@ function AdminProjectDetail() {
       )}
 
       <section className="space-y-3">
-        <AssignmentsSection projectId={projectId!} readOnly={!hasAgencyDao} />
+        <AssignmentsSection projectId={projectId!} readOnly={!canAccessAdmin} />
       </section>
 
-      {projectId && (canAccessAdmin || hasAgencyDao) && (
+      {projectId && hasAgencyDao && (
         <ProjectBudgetPanel
           projectId={projectId}
           showAgencyBudgetLink={canAccessAdmin}
@@ -160,12 +156,26 @@ function AdminProjectDetail() {
         />
       )}
 
-      {projectId && (canAccessAdmin || hasAgencyDao) && (
+      {projectId && hasAgencyDao && (
         <BillingsSection
           projectId={projectId}
           contributors={contributors}
           readOnly={!canAccessAdmin}
         />
+      )}
+
+      {projectId && canAccessAdmin && !hasAgencyDao && (
+        <Card>
+          <CardContent className="space-y-2">
+            <h2 className="font-semibold">Budgets and billings</h2>
+            <p className="text-sm text-muted-foreground">
+              Connect a treasury when you are ready to budget this Project or record payments.
+            </p>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/admin/settings">connect treasury</Link>
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       {projectId && (canAccessAdmin || hasAgencyDao) && (
@@ -449,7 +459,7 @@ function BillingsSection({
         <>
           <div className="space-y-2">
             {billings.map((b) => (
-              <BillingRow key={b.id} billing={b} orgAccountId={orgAccountId} />
+              <BillingRow key={b.id} billing={b} orgAccountId={orgAccountId} readOnly={readOnly} />
             ))}
           </div>
           {billingsQuery.hasNextPage && (
@@ -475,6 +485,7 @@ function BillingsSection({
 function BillingRow({
   billing,
   orgAccountId,
+  readOnly,
 }: {
   billing: {
     id: string;
@@ -486,6 +497,7 @@ function BillingRow({
     createdAt: Date;
   };
   orgAccountId: string | null;
+  readOnly: boolean;
 }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
@@ -516,15 +528,17 @@ function BillingRow({
               proposal #{billing.proposalId} ↗
             </a>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto text-xs"
-            onClick={() => setConfirmOpen(true)}
-            disabled={deleteMutation.isPending}
-          >
-            {deleteMutation.isPending ? "deleting..." : "delete"}
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto text-xs"
+              onClick={() => setConfirmOpen(true)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "deleting..." : "delete"}
+            </Button>
+          )}
         </div>
         <div className="font-mono text-sm break-all">
           {formatTokenAmount(billing.amount, billing.tokenId)}

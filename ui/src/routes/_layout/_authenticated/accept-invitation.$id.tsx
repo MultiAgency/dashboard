@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Button, Card, CardContent } from "@/components";
 import { sessionQueryKey } from "@/lib/auth";
+import { completeClientHandover } from "@/lib/client-handover";
 import { userInvitationsQueryKey } from "@/lib/invitations";
 import { meRolesQueryKey } from "@/lib/queries";
 
@@ -44,13 +45,39 @@ function AcceptInvitation() {
       const { error } = await authClient.organization.acceptInvitation({ invitationId: id });
       if (error) throw new Error(error.message || "Failed to accept invitation");
       if (invitation?.organizationId) {
-        await authClient.organization.setActive({ organizationId: invitation.organizationId });
+        const activated = await authClient.organization.setActive({
+          organizationId: invitation.organizationId,
+        });
+        if (activated.error) return { activated: false, handoverPending: false };
+        if (invitation.role === "owner") {
+          try {
+            const { data: session } = await authClient.getSession();
+            if (!session?.user?.id) throw new Error("Could not load your session");
+            await completeClientHandover(authClient, invitation.organizationId, session.user.id);
+          } catch {
+            return { activated: true, handoverPending: true };
+          }
+        }
+        return { activated: true, handoverPending: false };
       }
+      return { activated: false, handoverPending: false };
     },
-    onSuccess: async () => {
-      toast.success("Invitation accepted");
+    onSuccess: async ({ activated, handoverPending }) => {
+      if (handoverPending) {
+        toast.warning("Invitation accepted. Complete Client handover on the Team page.");
+      } else if (activated) toast.success("Invitation accepted");
+      else toast.warning("Invitation accepted. Select the Organization from the menu to open it.");
       await refresh();
-      navigate({ to: "/", replace: true });
+      navigate({
+        to: activated
+          ? handoverPending
+            ? "/admin/members"
+            : invitation?.role === "owner"
+              ? "/admin/engagements"
+              : "/admin/projects"
+          : "/",
+        replace: true,
+      });
     },
     onError: (error: Error) => toast.error(error.message),
   });

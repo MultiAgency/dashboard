@@ -96,6 +96,7 @@ function ClientProjectDetailPage() {
 
       {projectId && (
         <BillingsAdminSection
+          key={`${engagementId}:${projectId}`}
           readOnly
           clientPortal
           engagementId={engagementId}

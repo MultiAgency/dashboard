@@ -71,7 +71,7 @@ export function createClientPortalService(
       Effect.gen(function* () {
         const { view, projectIds } = yield* shared(scope, input.engagementId);
         if (input.projectId) assertShared(projectIds, input.projectId);
-        if (!hasAgencyDao(view) || projectIds.length === 0) return { data: [], nextCursor: null };
+        if (projectIds.length === 0) return { data: [], nextCursor: null };
         return yield* billings.list(view, {
           projectId: input.projectId,
           projectIds,
@@ -94,7 +94,7 @@ export function createClientPortalService(
           engagement.role === "agency" && hasAgencyDao(scope)
             ? scope
             : sharedViewScope(scope, engagement.agency.organizationId, agencyDao);
-        if (!hasAgencyDao(view) || engagement.projectIds.length === 0) {
+        if (engagement.projectIds.length === 0) {
           return yield* Effect.fail(
             new ORPCError("NOT_FOUND", {
               message: "No projects are shared through this Engagement yet.",

@@ -81,7 +81,12 @@ function ClientHome() {
         <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
           recent billings
         </h2>
-        <BillingsAdminSection readOnly clientPortal engagementId={engagementId} />
+        <BillingsAdminSection
+          key={engagementId}
+          readOnly
+          clientPortal
+          engagementId={engagementId}
+        />
       </section>
     </div>
   );

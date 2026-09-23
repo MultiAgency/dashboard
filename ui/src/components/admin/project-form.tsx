@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button, Card, CardContent, Input } from "@/components";
 import { Field, selectClass, textareaClass } from "@/components/admin-form";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { nearnListingHref } from "@/lib/nearn";
 import {
@@ -54,6 +55,7 @@ export function ProjectForm({
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const router = useRouter();
+  const { hasAgencyDao } = useMeRoles();
 
   const [title, setTitle] = useState(defaultValues?.title ?? "");
   const [slug, setSlug] = useState(defaultValues?.slug ?? "");
@@ -66,7 +68,7 @@ export function ProjectForm({
   const [kind, setKind] = useState<ProjectKind>("project");
   const [parentSlug, setParentSlug] = useState("");
 
-  const nearnSlug = nearnListingId.trim();
+  const nearnSlug = hasAgencyDao ? nearnListingId.trim() : "";
   const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
   const parentOptions = (projectsQuery.data?.data ?? []).filter((p) =>
@@ -89,7 +91,7 @@ export function ProjectForm({
   };
 
   const repositoryTrimmed = repository.trim();
-  const repositoryOk = isHttpUrl(repositoryTrimmed);
+  const repositoryOk = !repositoryTrimmed || isHttpUrl(repositoryTrimmed);
   const slugTrimmed = slug.trim();
 
   const mutation = useMutation({
@@ -99,8 +101,8 @@ export function ProjectForm({
           slug: slugTrimmed,
           title: title.trim(),
           description: description.trim() || undefined,
-          repository: kind === "project" ? repositoryTrimmed : undefined,
-          nearnListingId: nearnSlug || undefined,
+          repository: repositoryTrimmed || undefined,
+          nearnListingId: hasAgencyDao ? nearnSlug || undefined : undefined,
           kind,
           parentSlug: kind === "scope" || kind === "result" ? parentSlug.trim() : undefined,
           status,
@@ -112,8 +114,8 @@ export function ProjectForm({
         id: defaultValues.id,
         title: title.trim(),
         description: description.trim() || null,
-        repository: repositoryTrimmed,
-        nearnListingId: nearnSlug || null,
+        repository: repositoryTrimmed || undefined,
+        nearnListingId: hasAgencyDao ? nearnSlug || null : undefined,
         status,
         visibility: vis,
       });
@@ -129,11 +131,10 @@ export function ProjectForm({
 
   const isPending = mutation.isPending;
   const slugOk = mode === "edit" || isValidSlug(slugTrimmed);
-  const repositoryRequired = kind === "project";
   const canSubmit =
     title.trim().length > 0 &&
     slugOk &&
-    (!repositoryRequired || (repositoryTrimmed.length > 0 && repositoryOk)) &&
+    repositoryOk &&
     (kind === "project" || kind === "idea" || parentSlug.trim().length > 0) &&
     !isPending;
 
@@ -141,10 +142,6 @@ export function ProjectForm({
     if (!canSubmit) return;
     if (mode === "create" && !isValidSlug(slugTrimmed)) {
       toast.error("Enter a valid project slug before creating");
-      return;
-    }
-    if (repositoryRequired && !repositoryOk) {
-      toast.error("Repository must be an http:// or https:// URL");
       return;
     }
     mutation.mutate();
@@ -261,11 +258,7 @@ export function ProjectForm({
         <Field
           label="repository url"
           htmlFor={`project-repo-${mode}`}
-          helper={
-            repositoryRequired
-              ? "Required. Must start with http:// or https://."
-              : "Optional for idea/scope/result."
-          }
+          helper="Optional. Must start with http:// or https:// if provided."
         >
           <Input
             id={`project-repo-${mode}`}
@@ -273,25 +266,26 @@ export function ProjectForm({
             onChange={(e) => setRepository(e.target.value)}
             placeholder="https://github.com/org/repo"
             disabled={isPending}
-            required={repositoryRequired}
           />
-          {repositoryRequired && repositoryTrimmed && !repositoryOk && (
+          {repositoryTrimmed && !repositoryOk && (
             <p className="text-xs text-destructive">Enter a full http(s) URL</p>
           )}
         </Field>
-        <Field
-          label="nearn listing slug (optional)"
-          htmlFor={`project-nearn-${mode}`}
-          helper={nearnHelper}
-        >
-          <Input
-            id={`project-nearn-${mode}`}
-            value={nearnListingId}
-            onChange={(e) => setNearnListingId(e.target.value)}
-            placeholder="e.g. june2026"
-            disabled={isPending}
-          />
-        </Field>
+        {hasAgencyDao && (
+          <Field
+            label="nearn listing slug (optional)"
+            htmlFor={`project-nearn-${mode}`}
+            helper={nearnHelper}
+          >
+            <Input
+              id={`project-nearn-${mode}`}
+              value={nearnListingId}
+              onChange={(e) => setNearnListingId(e.target.value)}
+              placeholder="e.g. june2026"
+              disabled={isPending}
+            />
+          </Field>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="status" htmlFor={`project-status-${mode}`}>
             <select

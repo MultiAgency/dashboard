@@ -13,7 +13,8 @@ function ClientForbiddenPage() {
       <h1 className="font-display text-3xl font-black uppercase tracking-tight">No agencies yet</h1>
       <p className="text-sm text-muted-foreground">
         Your active Organization has no Engagement with an agency. Switch Organization in the
-        header, or ask your agency to invite you.
+        header, or ask an agency to propose an Engagement to your Organization ID. Your admin can
+        find the ID on the Team page.
       </p>
       <Link to="/" className="inline-block text-sm underline underline-offset-2">
         Back to home

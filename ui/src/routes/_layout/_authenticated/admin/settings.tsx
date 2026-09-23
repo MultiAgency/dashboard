@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { AdminError } from "@/components/admin-error";
+import { TreasuryRequired } from "@/components/treasury-required";
 import { useApiClient } from "@/lib/api";
 import { adminSettingsQueryOptions, refreshAfter } from "@/lib/queries";
 
@@ -20,8 +21,6 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
       throw redirect({ to: "/admin/members" });
     }
   },
-  loader: ({ context }) =>
-    context.queryClient.ensureQueryData(adminSettingsQueryOptions(context.apiClient)),
   component: AdminSettingsPage,
 });
 
@@ -36,7 +35,9 @@ function AdminSettingsPage() {
           Settings
         </h1>
       </header>
-      <AdminSettings />
+      <TreasuryRequired>
+        <AdminSettings />
+      </TreasuryRequired>
     </div>
   );
 }
@@ -173,8 +174,7 @@ function SettingsForm({
                 {data.orgAccountId ?? "—"}
               </div>
               <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                set when the agency workspace was created on platform — used for treasury and
-                proposals.
+                the connected Agency DAO used for treasury and proposals.
               </p>
             </div>
             <form.Field name="nearnAccountId">

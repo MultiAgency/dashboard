@@ -3,7 +3,7 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { billings, budgets, engagementProjects, engagements } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { OrgScope } from "../lib/agency-scope";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 import type { ProjectDirectory } from "./project-directory";
 import { sumByToken } from "./report-tokens";
@@ -16,7 +16,7 @@ export function createReportsService(
 ) {
   return {
     generate: (
-      scope: AgencyScope,
+      scope: OrgScope,
       input: {
         engagementId?: string;
         projectIds?: string[];
@@ -139,9 +139,12 @@ export function createReportsService(
 
         const billingRows = yield* Effect.promise(() =>
           Promise.all(
-            billingRowsRaw.map((b) =>
-              enrichWithChainStatus(db, b, b.daoAccountId ?? scope.agencyDao),
-            ),
+            billingRowsRaw.map((b) => {
+              const dao = b.daoAccountId ?? scope.agencyDao;
+              return dao
+                ? enrichWithChainStatus(db, b, dao)
+                : Promise.resolve({ ...b, status: "InProgress" as const });
+            }),
           ),
         );
 

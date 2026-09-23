@@ -6,23 +6,20 @@ import pg from "pg";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 config({ path: resolve(__dirname, "../.env") });
 
-const apply = process.argv.includes("--apply");
-const keep = new Set(
-  process.argv.filter((a) => a.startsWith("--keep=")).map((a) => a.slice("--keep=".length)),
-);
-
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} must be set`);
   return value;
 }
 
-type OrgRow = { id: string; name: string; slug: string; metadata: string | null; createdAt: Date };
+type OrgRow = { id: string; name: string; slug: string; metadata: unknown; createdAt: Date };
 
-function daoOf(metadata: string | null): string | null {
+function daoOf(metadata: unknown): string | null {
   if (!metadata) return null;
   try {
-    const parsed = JSON.parse(metadata) as { daoAccountId?: unknown };
+    const parsed = (typeof metadata === "string" ? JSON.parse(metadata) : metadata) as {
+      daoAccountId?: unknown;
+    };
     return typeof parsed.daoAccountId === "string" && parsed.daoAccountId
       ? parsed.daoAccountId
       : null;
@@ -33,6 +30,7 @@ function daoOf(metadata: string | null): string | null {
 
 async function organizationsByDao(
   auth: pg.Pool,
+  keep: Set<string>,
 ): Promise<{ owners: Map<string, OrgRow>; duplicates: OrgRow[] }> {
   const { rows } = await auth.query<OrgRow>(
     `SELECT id, name, slug, metadata, "createdAt" FROM "organization" ORDER BY "createdAt" ASC`,
@@ -208,75 +206,92 @@ async function applyHandover(auth: pg.Pool, handover: Handover): Promise<void> {
   }
 }
 
-async function main() {
-  const auth = new pg.Pool({ connectionString: requireEnv("AUTH_DATABASE_URL") });
-  const api = new pg.Pool({ connectionString: requireEnv("API_DATABASE_URL") });
-  const projects = new pg.Pool({ connectionString: requireEnv("PROJECTS_DATABASE_URL") });
+export async function runOrganizationCleanup({
+  auth,
+  api,
+  projects,
+  apply,
+  keep = new Set<string>(),
+}: {
+  auth: pg.Pool;
+  api: pg.Pool;
+  projects: pg.Pool;
+  apply: boolean;
+  keep?: Set<string>;
+}) {
+  console.log("Organizations by Agency DAO:");
+  const { owners, duplicates } = await organizationsByDao(auth, keep);
 
-  try {
-    console.log("Organizations by Agency DAO:");
-    const { owners, duplicates } = await organizationsByDao(auth);
+  console.log("Client-Project links:");
+  const dangling = await danglingProjectLinks(api, projects);
 
-    console.log("Client-Project links:");
-    const dangling = await danglingProjectLinks(api, projects);
+  console.log("Project owners:");
+  const moves = await daoOwnedProjects(projects, owners);
+  const moved = moves.reduce((sum, m) => sum + m.count, 0);
 
-    console.log("Project owners:");
-    const moves = await daoOwnedProjects(projects, owners);
-    const moved = moves.reduce((sum, m) => sum + m.count, 0);
+  console.log("Client Organizations:");
+  const handovers = await clientHandovers(auth, api, owners);
 
-    console.log("Client Organizations:");
-    const handovers = await clientHandovers(auth, api, owners);
+  const hasRegistry = await registryExists(api);
+  if (!hasRegistry)
+    console.log("organization_daos does not exist yet: it will be created on apply.");
 
-    const hasRegistry = await registryExists(api);
-    if (!hasRegistry) console.log("organization_daos does not exist yet: deploy the API first.");
+  if (!apply) {
+    console.log(
+      `\nDry run: ${duplicates.length} Organizations and ${dangling.length} links would be deleted, ${moved} Projects moved. Re-run with --apply.`,
+    );
+    return;
+  }
+  await api.query(`CREATE TABLE IF NOT EXISTS organization_daos (
+      organization_id text PRIMARY KEY,
+      dao_account_id text NOT NULL,
+      created_at timestamp DEFAULT now() NOT NULL
+    )`);
+  await api.query(
+    "CREATE UNIQUE INDEX IF NOT EXISTS organization_daos_dao_unique ON organization_daos (dao_account_id)",
+  );
 
-    if (!apply) {
-      console.log(
-        `\nDry run: ${duplicates.length} Organizations and ${dangling.length} links would be deleted, ${moved} Projects moved. Re-run with --apply.`,
-      );
-      return;
+  if (duplicates.length > 0)
+    await deleteOrganizations(
+      auth,
+      duplicates.map((o) => o.id),
+    );
+  for (const link of dangling) {
+    if (await tableExists(api, "client_projects")) {
+      await api.query("DELETE FROM client_projects WHERE client_id = $1 AND project_id = $2", [
+        link.client_id,
+        link.project_id,
+      ]);
     }
-    if (!hasRegistry) throw new Error("Deploy the API before applying.");
-
-    if (duplicates.length > 0)
-      await deleteOrganizations(
-        auth,
-        duplicates.map((o) => o.id),
-      );
-    for (const link of dangling) {
-      if (await tableExists(api, "client_projects")) {
-        await api.query("DELETE FROM client_projects WHERE client_id = $1 AND project_id = $2", [
-          link.client_id,
-          link.project_id,
-        ]);
-      }
-    }
-    for (const move of moves) {
-      await api.query(
-        "DELETE FROM organization_daos WHERE dao_account_id = $1 AND organization_id <> $2",
-        [move.dao, move.organizationId],
-      );
-      await api.query(
-        `INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ($1, $2)
+  }
+  for (const move of moves) {
+    await api.query(
+      "DELETE FROM organization_daos WHERE dao_account_id = $1 AND organization_id <> $2",
+      [move.dao, move.organizationId],
+    );
+    await api.query(
+      `INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ($1, $2)
          ON CONFLICT (organization_id) DO UPDATE SET dao_account_id = EXCLUDED.dao_account_id`,
-        [move.organizationId, move.dao],
+      [move.organizationId, move.dao],
+    );
+    if (move.count > 0) {
+      await projects.query("UPDATE projects SET organization_id = $1 WHERE organization_id = $2", [
+        move.organizationId,
+        move.dao,
+      ]);
+    }
+    const { rows: owned } = await projects.query<{ id: string }>(
+      "SELECT id FROM projects WHERE organization_id = ANY($1)",
+      [[move.organizationId, move.dao]],
+    );
+    if (owned.length > 0 && (await tableExists(api, "budgets"))) {
+      await api.query("ALTER TABLE budgets ADD COLUMN IF NOT EXISTS dao_account_id text");
+      await api.query(
+        "UPDATE budgets SET dao_account_id = $1 WHERE dao_account_id IS NULL AND project_id = ANY($2)",
+        [move.dao, owned.map((p) => p.id)],
       );
-      if (move.count > 0) {
-        await projects.query(
-          "UPDATE projects SET organization_id = $1 WHERE organization_id = $2",
-          [move.organizationId, move.dao],
-        );
-      }
-      const { rows: owned } = await projects.query<{ id: string }>(
-        "SELECT id FROM projects WHERE organization_id = ANY($1)",
-        [[move.organizationId, move.dao]],
-      );
-      if (owned.length > 0) {
-        await api.query(
-          "UPDATE budgets SET dao_account_id = $1 WHERE dao_account_id IS NULL AND project_id = ANY($2)",
-          [move.dao, owned.map((p) => p.id)],
-        );
-      }
+    }
+    if (await tableExists(api, "engagements")) {
       const agencyName = owners.get(move.dao)?.name ?? "";
       await api.query(
         `UPDATE engagements SET agency_organization_id = $1 WHERE agency_organization_id = $2`,
@@ -287,16 +302,25 @@ async function main() {
         [move.organizationId, agencyName],
       );
     }
-    for (const handover of handovers) await applyHandover(auth, handover);
-    console.log(
-      `\nDeleted ${duplicates.length} Organizations and ${dangling.length} links, moved ${moved} Projects.`,
-    );
-  } finally {
-    await Promise.all([auth.end(), api.end(), projects.end()]);
   }
+  for (const handover of handovers) await applyHandover(auth, handover);
+  console.log(
+    `\nDeleted ${duplicates.length} Organizations and ${dangling.length} links, moved ${moved} Projects.`,
+  );
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const auth = new pg.Pool({ connectionString: requireEnv("AUTH_DATABASE_URL") });
+  const api = new pg.Pool({ connectionString: requireEnv("API_DATABASE_URL") });
+  const projects = new pg.Pool({ connectionString: requireEnv("PROJECTS_DATABASE_URL") });
+  const apply = process.argv.includes("--apply");
+  const keep = new Set(
+    process.argv.filter((a) => a.startsWith("--keep=")).map((a) => a.slice("--keep=".length)),
+  );
+  runOrganizationCleanup({ auth, api, projects, apply, keep })
+    .catch((error) => {
+      console.error(error);
+      process.exitCode = 1;
+    })
+    .finally(() => Promise.all([auth.end(), api.end(), projects.end()]));
+}
