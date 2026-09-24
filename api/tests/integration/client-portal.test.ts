@@ -15,12 +15,21 @@ import { createAgencyService } from "../../src/services/agency";
 import { createBillingsService } from "../../src/services/billings";
 import { createClientPortalService } from "../../src/services/client-portal";
 import { createClientsService } from "../../src/services/clients";
+import { createProjectLedgers } from "../../src/services/ledger";
+import { createListingsService } from "../../src/services/listings";
+import {
+  createProjectDirectory,
+  type ProjectDirectory,
+  type ProjectsClient,
+} from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
 import { applyAllMigrations } from "./_pg";
 
 const AGENCY_A = "agency-a.sputnik-dao.near";
 const AGENCY_B = "agency-b.sputnik-dao.near";
 const NEAR_ACCOUNT = "client.near";
+const CLIENT_CONTEXT = { near: { primaryAccountId: NEAR_ACCOUNT } };
+const unusedDirectory = {} as ProjectDirectory;
 
 describe("client-portal — resolveClientScope (via clients.getByNearAndAgency)", () => {
   let pg: PGlite;
@@ -32,7 +41,7 @@ describe("client-portal — resolveClientScope (via clients.getByNearAndAgency)"
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg);
-    clientsService = createClientsService(db as never);
+    clientsService = createClientsService(db as never, unusedDirectory);
   });
 
   afterEach(async () => {
@@ -138,6 +147,13 @@ function createFakePlugins(
           }
           return { data: project };
         },
+        getProjectBySlug: async ({ slug }: { slug: string }) => {
+          const project = projects.find((p) => p.slug === slug);
+          if (!project) {
+            throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+          }
+          return { data: project };
+        },
       }) as never,
     builders: () =>
       ({
@@ -150,14 +166,12 @@ function createFakePlugins(
 describe("client-portal — dashboardSummary / listProjects / getProject", () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
-  let clientsService: ReturnType<typeof createClientsService>;
 
   beforeEach(async () => {
     const { PGlite } = await import("@electric-sql/pglite");
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg);
-    clientsService = createClientsService(db as never);
   });
 
   afterEach(async () => {
@@ -165,10 +179,20 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
   });
 
   function buildPortal(plugins: PluginsClient) {
-    const agency = createAgencyService(db as never, plugins);
-    const billingsService = createBillingsService(db as never, agency);
-    const reports = createReportsService(db as never, agency, plugins);
-    return createClientPortalService(clientsService, agency, billingsService, reports);
+    const directory = createProjectDirectory(() => plugins.projects() as ProjectsClient);
+    const listings = createListingsService(db as never, directory);
+    const projectLedgers = createProjectLedgers(db as never, listings);
+    const agency = createAgencyService(db as never, plugins, directory, listings, projectLedgers);
+    const billingsService = createBillingsService(db as never, directory);
+    const reports = createReportsService(db as never, directory, plugins);
+    return createClientPortalService(
+      createClientsService(db as never, directory),
+      agency,
+      billingsService,
+      reports,
+      directory,
+      projectLedgers,
+    );
   }
 
   async function insertClient(id: string) {
@@ -202,7 +226,9 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const plugins = createFakePlugins([makeProject({ id: "project-1", slug: "project-one" })]);
     const portal = buildPortal(plugins);
 
-    const summary = await Effect.runPromise(portal.dashboardSummary(NEAR_ACCOUNT, AGENCY_C, {}));
+    const summary = await Effect.runPromise(
+      portal.dashboardSummary(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C }),
+    );
 
     expect(summary.projectCount).toBe(1);
     expect(summary.remainingByToken).toEqual([{ tokenId: "near", amount: "1000" }]);
@@ -218,7 +244,9 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     ]);
     const portal = buildPortal(plugins);
 
-    const result = await Effect.runPromise(portal.listProjects(NEAR_ACCOUNT, AGENCY_C, {}));
+    const result = await Effect.runPromise(
+      portal.listProjects(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C }),
+    );
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]?.id).toBe("project-a");
@@ -241,7 +269,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     const result = await Effect.runPromise(
-      portal.getProject(NEAR_ACCOUNT, AGENCY_C, "project-a-slug", {}),
+      portal.getProject(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C, slug: "project-a-slug" }),
     );
 
     expect(result.project.slug).toBe("project-a-slug");
@@ -261,7 +289,9 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     await expect(
-      Effect.runPromise(portal.getProject(NEAR_ACCOUNT, AGENCY_C, "project-c-slug", {})),
+      Effect.runPromise(
+        portal.getProject(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C, slug: "project-c-slug" }),
+      ),
     ).rejects.toThrow(/Project not found/);
   });
 
@@ -293,7 +323,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     const result = await Effect.runPromise(
-      portal.getBudget(NEAR_ACCOUNT, AGENCY_C, "project-a", {}),
+      portal.getBudget(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C, projectId: "project-a" }),
     );
 
     expect(result.budgets).toEqual([
@@ -353,14 +383,18 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     const page1 = await Effect.runPromise(
-      portal.listBillings(NEAR_ACCOUNT, AGENCY_C, { limit: 2 }, {}),
+      portal.listBillings(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C, limit: 2 }),
     );
     expect(page1.data).toHaveLength(2);
     expect(page1.data.every((b) => b.clientId === "client-9")).toBe(true);
     expect(page1.nextCursor).not.toBeNull();
 
     const page2 = await Effect.runPromise(
-      portal.listBillings(NEAR_ACCOUNT, AGENCY_C, { limit: 2, cursor: page1.nextCursor! }, {}),
+      portal.listBillings(CLIENT_CONTEXT, {
+        agencyDaoAccountId: AGENCY_C,
+        limit: 2,
+        cursor: page1.nextCursor!,
+      }),
     );
     expect(page2.data).toHaveLength(1);
     expect(page2.data[0]?.id).toBe("billing-9-0");
