@@ -14,6 +14,7 @@ import {
   engagementProjects,
 } from "../db/schema";
 import { BudgetInsufficientError, EngagementBudgetError, writeEngagementEntries } from "./budgets";
+import type { BillingStatuses } from "./ledger";
 
 export type ShortfallLine = { projectId: string; tokenId: string; amount: string; reason: string };
 
@@ -125,6 +126,18 @@ export async function itemsOf(db: Database, changeOrderId: string): Promise<Chan
     .orderBy(asc(changeOrderItems.position));
 }
 
+export async function pendingItems(
+  db: Database,
+  engagementId: string,
+): Promise<ChangeOrderItemRow[]> {
+  const rows = await db
+    .select({ item: changeOrderItems })
+    .from(changeOrderItems)
+    .innerJoin(changeOrders, eq(changeOrders.id, changeOrderItems.changeOrderId))
+    .where(and(eq(changeOrders.engagementId, engagementId), eq(changeOrders.status, "approved")));
+  return rows.map((r) => r.item);
+}
+
 async function sharedProjectIds(db: Database, engagementId: string): Promise<Set<string>> {
   const rows = await db
     .select({ projectId: engagementProjects.projectId })
@@ -206,7 +219,12 @@ export async function applyChangeOrder(
   tx: Database,
   engagement: EngagementRow,
   changeOrder: ChangeOrderRow,
-  input: { actorAccountId: string; effectivePeriod: string; now: Date },
+  input: {
+    actorAccountId: string;
+    effectivePeriod: string;
+    now: Date;
+    statuses: BillingStatuses;
+  },
 ): Promise<ChangeOrderOutcome> {
   const items = await itemsOf(tx, changeOrder.id);
   try {
@@ -221,6 +239,7 @@ export async function applyChangeOrder(
       await writeEngagementEntries(savepoint as Database, {
         engagementId: engagement.id,
         actorAccountId: input.actorAccountId,
+        statuses: input.statuses,
         entries: items.flatMap((item) =>
           item.kind === "one_off_move" && item.projectId
             ? [
@@ -266,7 +285,13 @@ export async function applyChangeOrder(
 export async function applyPlanForPeriod(
   tx: Database,
   engagement: EngagementRow,
-  input: { period: string; prepaymentId: string; actorAccountId: string; now: Date },
+  input: {
+    period: string;
+    prepaymentId: string;
+    actorAccountId: string;
+    now: Date;
+    statuses: BillingStatuses;
+  },
 ): Promise<PlanApplication | null> {
   const [claimed] = await tx
     .insert(allocationPlanApplications)
@@ -298,6 +323,7 @@ export async function applyPlanForPeriod(
         actorAccountId: input.actorAccountId,
         effectivePeriod: changeOrder.effectivePeriod ?? input.period,
         now: input.now,
+        statuses: input.statuses,
       }),
     );
   }
@@ -308,6 +334,7 @@ export async function applyPlanForPeriod(
       await writeEngagementEntries(tx, {
         engagementId: engagement.id,
         actorAccountId: input.actorAccountId,
+        statuses: input.statuses,
         entries: [
           {
             projectId: line.projectId,

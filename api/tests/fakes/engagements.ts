@@ -6,7 +6,7 @@ import { createBillingsService } from "../../src/services/billings";
 import { createClientPortalService } from "../../src/services/client-portal";
 import { createChangeOrdersService } from "../../src/services/change-orders";
 import { createEngagementsService } from "../../src/services/engagements";
-import { createProjectLedgers } from "../../src/services/ledger";
+import { type ChainStatusFetcher, createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
 import { createNotifications } from "../../src/services/notifications";
 import type { EmailMessage } from "../../src/services/notify";
@@ -81,7 +81,7 @@ export const STUDIO_SEED: Seed = {
 export async function engagementWorld(
   db: Database,
   seed: Seed = STUDIO_SEED,
-  options: { now?: () => Date } = {},
+  options: { now?: () => Date; chainStatus?: ChainStatusFetcher } = {},
 ) {
   await seedAgencyDaos(db, seed.organizations);
   const organizations = inMemoryOrganizations({
@@ -105,6 +105,7 @@ export async function engagementWorld(
     db,
     organizations: organizations.directory,
     notifications,
+    chainStatus: options.chainStatus,
     now: options.now,
   });
   const ended: string[] = [];
@@ -126,6 +127,7 @@ export async function engagementWorld(
     organizations: organizations.directory,
     notifications,
     onPlanApplied: changeOrders.notifyPlanApplied,
+    chainStatus: options.chainStatus,
     now: options.now,
   });
 

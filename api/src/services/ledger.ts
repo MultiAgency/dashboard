@@ -4,7 +4,7 @@ import type { Database } from "../db";
 import { billings, budgets, type Listing } from "../db/schema";
 import { getListingsForProjects, type ListingsService } from "./listings";
 import type { TreasuryScope } from "./organization-access";
-import { type DaoProposalStatus, enrichWithChainStatus } from "./sputnik";
+import { type DaoProposalStatus, enrichWithChainStatus, persistedProposalStatus } from "./sputnik";
 import { displayToBaseUnits, getTokenMetadataBySymbol } from "./tokens";
 
 export type ProjectRollup = {
@@ -160,9 +160,42 @@ async function loadRows(
   return { budgetRows, bills, nearnListings, internalListings };
 }
 
+export type BillingStatuses = ReadonlyMap<string, DaoProposalStatus>;
+
+export type ChainStatusFetcher = (
+  db: Database,
+  daoAccountId: string,
+  proposalId: string,
+) => Promise<DaoProposalStatus>;
+
+export const fetchChainStatus: ChainStatusFetcher = async (db, daoAccountId, proposalId) =>
+  (await enrichWithChainStatus(db, { proposalId }, daoAccountId)).status;
+
+export async function prefetchBillingStatuses(
+  db: Database,
+  input: { daoAccountId: string; projectIds: string[] },
+  fetchStatus: ChainStatusFetcher = fetchChainStatus,
+): Promise<BillingStatuses> {
+  const statuses = new Map<string, DaoProposalStatus>();
+  if (input.projectIds.length === 0) return statuses;
+  const rows = await db
+    .select({ proposalId: billings.proposalId })
+    .from(billings)
+    .where(inArray(billings.projectId, [...new Set(input.projectIds)]));
+  for (const { proposalId } of rows) {
+    statuses.set(proposalId, await fetchStatus(db, input.daoAccountId, proposalId));
+  }
+  return statuses;
+}
+
 export async function projectSpend(
   db: Database,
-  input: { projectId: string; tokenId: string; payingDaoAccountId: string },
+  input: {
+    projectId: string;
+    tokenId: string;
+    payingDaoAccountId: string;
+    statuses: BillingStatuses;
+  },
 ): Promise<bigint> {
   const network = input.payingDaoAccountId.endsWith(".testnet") ? "testnet" : "mainnet";
   const billingRows = await db
@@ -171,7 +204,11 @@ export async function projectSpend(
     .where(and(eq(billings.projectId, input.projectId), eq(billings.tokenId, input.tokenId)));
   const bills: BillingForRollup[] = [];
   for (const row of billingRows) {
-    bills.push(await enrichWithChainStatus(db, row, input.payingDaoAccountId));
+    const persisted = await persistedProposalStatus(db, input.payingDaoAccountId, row.proposalId);
+    bills.push({
+      amount: row.amount,
+      status: persisted ?? input.statuses.get(row.proposalId) ?? "InProgress",
+    });
   }
   const skipRefresh = { skipRefresh: true };
   const nearn = await getListingsForProjects([input.projectId], "nearn", network, db, skipRefresh);
