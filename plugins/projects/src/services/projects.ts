@@ -3,7 +3,7 @@ import { Context, Effect, Layer } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { DatabaseTag } from "../db/layer";
 import { projectApps, projectMentions, projects } from "../db/schema";
-import { type Caller, canManage, canPublish, canView, isMemberOf } from "../lib/caller";
+import { type Caller, canDelete, canManage, canPublish, canView, isMemberOf } from "../lib/caller";
 
 function toIsoString(value: Date | string | null | undefined): string {
   if (!value) return "";
@@ -590,12 +590,17 @@ export const ProjectServiceLive = Layer.effect(
 
       deleteProject: (id, caller) =>
         Effect.gen(function* () {
-          yield* requireManageable(
+          const project = yield* requireManageable(
             db,
             id,
             caller,
             "You do not have permission to delete this project",
           );
+          if (!canDelete(caller, project)) {
+            return yield* Effect.fail(
+              forbidden("Delete Projects through the Agency so its archive-only rule applies"),
+            );
+          }
 
           yield* Effect.promise(() => db.delete(projects).where(eq(projects.id, id)));
 

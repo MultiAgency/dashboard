@@ -62,6 +62,7 @@ const nextSlug = () => `project-${++slugCounter}`;
 describe("projects plugin permissions", () => {
   let runtime: ReturnType<typeof createPluginRuntime>;
   let clientFor: (caller: Caller) => any;
+  let trustedClientFor: (caller: Caller) => any;
   let anonymousClient: () => any;
 
   beforeAll(async () => {
@@ -71,6 +72,7 @@ describe("projects plugin permissions", () => {
       secrets: { PROJECTS_DATABASE_URL: ":memory:" },
     });
     clientFor = (caller) => plugin.createClient(contextOf(caller));
+    trustedClientFor = (caller) => plugin.createClient({ ...contextOf(caller), trusted: true });
     anonymousClient = () => plugin.createClient({});
   });
 
@@ -153,6 +155,11 @@ describe("projects plugin permissions", () => {
       { ownerId: "x.near" },
     ],
     ["lets platform admins delete any Project", remove(platformAdmin), { deleted: true }],
+    [
+      "lets the API delete for a manager after its own checks",
+      (t) => trustedClientFor(acmeOwner).deleteProject({ id: t.id }),
+      { deleted: true },
+    ],
   ])("%s", async (_, action, expected) => {
     const target = await createAs(acmeOtherMember);
 
@@ -166,6 +173,7 @@ describe("projects plugin permissions", () => {
     ["let a plain member publish on create", create(acmeMember, publish)],
     ["let another Organization's admin edit", update(rivalAdmin, { title: "Taken" })],
     ["let another Organization's admin delete", remove(rivalAdmin)],
+    ["let an owner delete without going through the API", remove(acmeOwner)],
     ["let a member edit another member's Project", update(acmeMember, { title: "Theirs" })],
     ["let a member delete another member's Project", remove(acmeMember)],
     ["give a personal Organization's owner rights over its Projects", remove(personalOwnerOfAcme)],

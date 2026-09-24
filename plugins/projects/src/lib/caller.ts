@@ -1,11 +1,13 @@
 export type Caller = {
   userIds: string[];
   platformAdmin: boolean;
+  trusted: boolean;
   agency: { organizationId: string; role: string } | null;
 };
 
 export type CallerContext = {
   userId?: string | null;
+  trusted?: boolean;
   user?: { role?: string | null } | null;
   near?: { primaryAccountId?: string | null } | null;
   organization?: {
@@ -48,6 +50,7 @@ export function callerOf(context: CallerContext): Caller {
   return {
     userIds: [...new Set(ids)],
     platformAdmin: Boolean(context.userId) && context.user?.role === "admin",
+    trusted: context.trusted === true,
     agency: agencyOf(context),
   };
 }
@@ -81,6 +84,10 @@ export function canManage(caller: Caller, project: OwnedRecord): boolean {
     isProjectOwner(caller, project) ||
     isManagerOf(caller, project.organizationId)
   );
+}
+
+export function canDelete(caller: Caller, project: OwnedRecord): boolean {
+  return caller.platformAdmin || (caller.trusted && canManage(caller, project));
 }
 
 export function canPublish(caller: Caller, organizationId: string | null): boolean {
