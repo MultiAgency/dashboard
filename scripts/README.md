@@ -93,11 +93,11 @@ It reads the `user`, `organization` and `member` tables and detects whether `mem
 
 `bun run db:migrate:engagements` turned the legacy `clients` rows into Engagements (#43). It is idempotent: a second run changes nothing, and `--dry-run` reports what it would do.
 
-**Retired in #48.** Its source tables (`clients`, `client_projects`, `budgets.client_id`) are dropped by the #48 migration, so the script and its service are removed. Run it from a #43 to #47 build, before deploying #48.
+**Retired in #48.** Its source tables (`clients`, `client_projects`, `budgets.client_id`) are dropped by the #48 migration, so the script and its service are removed. Run it from the #47 build, before deploying #48.
 
 In `api_db` it:
 
-1. Creates an active Engagement for each `clients` row between the Agency's Organization (found through `organization_daos` by the row's Agency DAO) and the Client's existing Organization (`clients.org_id`). The Engagement remembers the row in `legacy_client_id`, so a rerun finds it again. Rows whose Agency DAO has no Organization are reported as `UNMAPPED_AGENCY_DAO` and left alone.
+1. Creates an active Engagement for each `clients` row between the Agency's Organization (found through `organization_daos` by the row's Agency DAO) and the Client's existing Organization (`clients.org_id`). The Engagement remembers the row in `legacy_client_id`, so a rerun finds it again. It skips, and leaves alone, rows whose Agency DAO has no Organization (`UNMAPPED_AGENCY_DAO`), rows whose Agency and Client are the same Organization (`SELF_ENGAGEMENT`), and rows whose pair already has an active Engagement (`ACTIVE_ENGAGEMENT_EXISTS`).
 2. Copies the row's `client_projects` into `engagement_projects`.
 3. Points each Budget entry attributed to the row (`budgets.client_id`) at the Engagement (`budgets.engagement_id`).
 4. Fills `project_contributors.organization_id` from `projects_db`, so Contributors see their assigned Projects under "My work".
@@ -119,25 +119,47 @@ A row without a wallet (`no-wallet`) or whose wallet has never signed in (`no-wa
 
 ### Run order
 
-1. Run the Organization cleanup and the Project ownership migration above, in that order.
-2. Deploy the API from #43 with `AUTH_DATABASE_URL` set for it (see below). Its migrator creates `engagements`, `engagement_projects` and `notifications`, and adds `budgets.engagement_id` and `project_contributors.organization_id`. From this deploy on, the client portal reads through Engagements only, so run step 4 right after it.
-3. `bun run db:migrate:engagements --dry-run` and check the report: NEAR Foundation should be `created` with its shared Projects, and its handover should show `work.efiz.near`'s user as owner with `agenticweb.near`'s user removed.
-4. `bun run db:migrate:engagements`.
-5. Ask NEAR Foundation's owner (`work.efiz.near`) to add an email on their Profile, so Engagement notifications reach them by email and not only in the app.
+From the #47 build, right after deploying it (the client portal reads through Engagements only from then on):
 
-The `clients` and `client_projects` tables stay, unused, until #48 drops them.
+1. `bun run db:migrate:engagements --dry-run` and check the report: NEAR Foundation should be `created` with its shared Projects, and its handover should show `work.efiz.near`'s user as owner with `agenticweb.near`'s user removed.
+2. `bun run db:migrate:engagements`.
+3. Ask NEAR Foundation's owner (`work.efiz.near`) to add an email on their Profile, so Engagement notifications reach them by email and not only in the app.
 
 ## Dropping the legacy Client model (#48)
 
-The API migration `0013_drop_clients` drops `clients`, `client_projects` and `budgets.client_id`. It runs inside the API's migrator at deploy and first checks that the Engagements migration is complete. It refuses, and leaves every table in place, when any of these is true:
+The API migration `0013_drop_clients` drops `clients`, `client_projects` and `budgets.client_id`. It runs inside the API's migrator at deploy and first checks that the Engagements migration is complete. A `clients` row is covered by its migrated Engagement (`legacy_client_id`), or by an active or ended Engagement of the same pair (the Agency's Organization through `organization_daos`, and `clients.org_id`). The migration refuses, and leaves every table in place, when any of these is true:
 
-- a `clients` row has no Engagement with its id in `legacy_client_id`,
-- a `client_projects` row is not in that Engagement's `engagement_projects`,
-- a Budget entry has a `client_id` but no `engagement_id`.
+- a `clients` row has no covering Engagement, unless its Agency and Client are the same Organization,
+- a `client_projects` row is not in a covering Engagement's `engagement_projects`,
+- a Budget entry with a `client_id` is not on a covering Engagement.
 
-The error reads "Legacy clients are not migrated to Engagements yet". The migration runs in a transaction, so a refusal changes nothing. Fix it with the #47 build: run `db:migrate:engagements` again, and map or delete rows it reports as `UNMAPPED_AGENCY_DAO`. Then deploy #48 again.
+The error reads "Legacy clients are not migrated to Engagements yet". The migration runs in a transaction, so a refusal changes nothing. Fix it, then deploy #48 again:
 
-**#48 must be deployed only after `db:migrate:engagements` and `db:migrate:project-ownership` have run.** Deploy the stack up to #47 first, run the scripts, then deploy #48 on its own.
+- `UNMAPPED_AGENCY_DAO`: map the Agency DAO to its Organization (Organization cleanup, or Settings → Treasury) or delete the row, then run `db:migrate:engagements` again from the #47 build.
+- `SELF_ENGAGEMENT`: the row is dropped as it is if it has no `client_projects` and no Budget entries. Otherwise delete its `client_projects` rows and clear `client_id` on its Budget entries (`UPDATE budgets SET client_id = NULL WHERE client_id = '<client-id>'`), since an Agency's own Projects need no Engagement.
+- `ACTIVE_ENGAGEMENT_EXISTS`: attach the row's links and Budget entries to the pair's Engagement. Find it with:
+
+  ```sql
+  SELECT c.id AS client_id, e.id AS engagement_id, e.status
+  FROM clients c
+  JOIN organization_daos d ON d.dao_account_id = c.agency_dao_account_id
+  JOIN engagements e ON e.agency_organization_id = d.organization_id
+    AND e.client_organization_id = c.org_id
+    AND e.status IN ('active', 'ended')
+  WHERE NOT EXISTS (SELECT 1 FROM engagements l WHERE l.legacy_client_id = c.id);
+  ```
+
+  Then, for each row (pick the active Engagement if the pair has several):
+
+  ```sql
+  BEGIN;
+  INSERT INTO engagement_projects (engagement_id, project_id)
+  SELECT '<engagement-id>', project_id FROM client_projects WHERE client_id = '<client-id>'
+  ON CONFLICT DO NOTHING;
+  UPDATE budgets SET engagement_id = '<engagement-id>'
+  WHERE client_id = '<client-id>' AND engagement_id IS NULL;
+  COMMIT;
+  ```
 
 ## Deploy order (#49 → #48)
 
@@ -145,11 +167,11 @@ Each script supports `--dry-run`; run it and check the report before the real ru
 
 1. Deploy the API from #49. The migrator creates `organization_daos` (`0005`).
 2. `bun run db:cleanup:organizations` (Organization cleanup above).
-3. Deploy the UI, the API and the projects plugin from #47 (which includes #41 to #46), with `AUTH_DATABASE_URL`, `RESEND_API_KEY` and `NOTIFY_FROM_EMAIL` set for the API. The migrator adds `0006` to `0012` (settings by Organization, Engagements, Prepayments, Change orders, subcontracting, dropping the billings client column, ideas, agent links and saved reports).
+3. Deploy the UI, the API and the projects plugin from #47 (which includes #41 to #46), with `AUTH_DATABASE_URL`, `RESEND_API_KEY`, `NOTIFY_FROM_EMAIL` and `APP_ORIGIN` (the public app origin used in email links; the `appOrigin` variable is the fallback) set for the API. The migrator adds `0006` to `0012` (settings by Organization, Engagements, Prepayments, Change orders, subcontracting with dropping the billings client column, ideas, agent links and saved reports).
 4. `bun run db:migrate:project-ownership` (Project ownership above). It moves Projects and settings to the Organization and fills the funding and paying Agency DAOs of Budget entries and Billings.
-5. `bun run db:migrate:engagements` (Engagements above), from #43 to #47. It turns `clients` rows into Engagements and hands Client Organizations over.
+5. `bun run db:migrate:engagements` from the #47 build (Engagements above). It turns `clients` rows into Engagements and hands Client Organizations over. Resolve every skipped row as described in [Dropping the legacy Client model](#dropping-the-legacy-client-model-48).
 6. Ask NEAR Foundation's owner to add an email on their Profile.
-7. Deploy the UI and the API from #48. The migrator runs `0013_drop_clients`, which refuses if step 5 is incomplete.
+7. Deploy the UI and the API from #48. The migrator runs `0013_drop_clients`, which refuses if step 5 is incomplete. The #48 API reads Projects and settings by Organization id only, so step 4 must have run.
 
 `bun run db:assign-owner` can run at any point from #41 on, whenever an Organization has no owner left.
 
