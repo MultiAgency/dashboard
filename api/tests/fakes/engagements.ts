@@ -139,6 +139,8 @@ export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
     ended,
     context,
     manager,
+    member: (userId: string, organizationId: string) =>
+      access.agencyScope(context(userId, organizationId), ROLE_MATRIX.work),
     activeEngagement,
   };
 }

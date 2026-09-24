@@ -68,6 +68,7 @@ describe("project ownership migration", () => {
         { daoAccountId: MULTIAGENCY_DAO, organizationId: "multiagency", projectIds: ["p1", "p2"] },
       ],
       rekeyedSettings: [{ daoAccountId: MULTIAGENCY_DAO, organizationId: "multiagency" }],
+      fundedBudgets: [],
     });
     expect(await owners()).toEqual([
       { id: "p1", owner_id: "creator.near", organization_id: "multiagency" },
