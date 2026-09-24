@@ -19,8 +19,8 @@ function AdminMembersPage() {
           Team
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          People in this Organization, invited by email as owner, admin, member or contributor. Not
-          the same as builders (project workers) or clients (paying customers).
+          People in this Organization, invited by email as owner, admin or member. Not the same as
+          builders (project workers) or clients (paying customers).
         </p>
       </header>
       <MembersAdminSection />
