@@ -1,77 +1,36 @@
-import type { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import { budgets } from "../../src/db/schema";
+import type { OrganizationScope } from "../../src/services/organization-access";
 import { engagementWorld, ORIGIN, SPOOFED_ORIGIN } from "../fakes/engagements";
-import { project } from "../fakes/projects";
-import { applyAllMigrations } from "./_pg";
+import { migratedDatabase } from "./_pg";
 
-const organizations = [
-  { id: "studio", name: "Studio", slug: "studio", daoAccountId: "studio.sputnik-dao.near" },
-  { id: "rival", name: "Rival", slug: "rival" },
-  { id: "acme", name: "Acme Corp", slug: "acme" },
-  { id: "alice-personal", name: "Alice", slug: "alice", isPersonal: true },
-];
-
-const members = [
-  { userId: "studio-admin", organizationId: "studio", role: "admin" as const },
-  { userId: "studio-owner", organizationId: "studio", role: "owner" as const },
-  { userId: "rival-admin", organizationId: "rival", role: "owner" as const },
-  { userId: "acme-owner", organizationId: "acme", role: "owner" as const },
-  { userId: "acme-member", organizationId: "acme", role: "member" as const },
-  { userId: "alice", organizationId: "alice-personal", role: "owner" as const },
-];
-
-const users = [
-  { id: "studio-admin", email: "admin@studio.example" },
-  { id: "studio-owner", email: "studio-owner.near@near.email" },
-  { id: "rival-admin", email: "rival@rival.example" },
-  { id: "acme-owner", email: "owner@acme.example" },
-  { id: "acme-member", email: "member@acme.example" },
-  { id: "alice", email: "alice@example.com" },
-  { id: "newco-boss", email: "boss@newco.example" },
-];
-
-const projects = [project("p1", "studio"), project("p2", "studio"), project("r1", "rival")];
+const refused = (promise: Promise<unknown>, reason: string) =>
+  expect(promise).rejects.toMatchObject(
+    reason === "NOT_FOUND" ? { code: reason } : { data: { reason } },
+  );
 
 describe("engagements", () => {
-  let pg: PGlite;
-  let db: Database;
+  const database = migratedDatabase({ perTest: true });
   let world: Awaited<ReturnType<typeof engagementWorld>>;
 
   beforeEach(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
-    world = await engagementWorld(db, { organizations, members, users, projects });
-  });
-
-  afterEach(async () => {
-    await pg.close();
+    world = await engagementWorld(database.db);
   });
 
   const studio = () => world.manager("studio-admin", "studio");
   const acme = () => world.manager("acme-owner", "acme");
   const inbox = async (userId: string) =>
     (await world.notifications.list(userId, { limit: 50 })).data.map((n) => n.kind);
-
-  async function activeWithAcme() {
-    const proposed = await world.engagements.propose(await studio(), {
-      slug: "acme",
-      name: "Acme Corp",
-    });
-    return world.engagements.accept(await acme(), proposed.id);
-  }
+  const proposeTo = async (slug = "acme", name = "Acme Corp", scope?: OrganizationScope) =>
+    world.engagements.propose(scope ?? (await studio()), { slug, name });
+  const share = async (engagementId: string, projectId: string, scope?: OrganizationScope) =>
+    world.engagements.share(scope ?? (await studio()), { engagementId, projectId });
+  const unshare = async (engagementId: string, projectId: string) =>
+    world.engagements.unshare(await studio(), { engagementId, projectId });
 
   describe("proposing to an existing Organization", () => {
     test("the Client accepts and both sides see the active Engagement", async () => {
-      const proposed = await world.engagements.propose(await studio(), {
-        slug: "ACME",
-        name: " acme corp ",
-      });
+      const proposed = await proposeTo("ACME", " acme corp ");
 
       expect(proposed).toMatchObject({
         status: "proposed",
@@ -79,22 +38,16 @@ describe("engagements", () => {
         agency: { id: "studio", name: "Studio" },
         client: { id: "acme", name: "Acme Corp" },
       });
-      const clientView = await world.engagements.list(await acme());
-      expect(clientView.data).toEqual([
+      expect((await world.engagements.list(await acme())).data).toEqual([
         expect.objectContaining({ id: proposed.id, status: "proposed", side: "client" }),
       ]);
 
-      const accepted = await world.engagements.accept(await acme(), proposed.id);
-
-      expect(accepted.status).toBe("active");
+      expect((await world.engagements.accept(await acme(), proposed.id)).status).toBe("active");
       expect((await world.engagements.get(await studio(), proposed.id)).status).toBe("active");
     });
 
-    test("the asked Organization's owners and admins are notified in the inbox and by email", async () => {
-      const proposed = await world.engagements.propose(await studio(), {
-        slug: "acme",
-        name: "Acme Corp",
-      });
+    test("the other side's owners and admins are notified in the inbox, and by email with links to the configured origin", async () => {
+      const proposed = await proposeTo();
 
       expect(await inbox("acme-owner")).toEqual(["engagement_proposed"]);
       expect(await inbox("acme-member")).toEqual([]);
@@ -114,84 +67,54 @@ describe("engagements", () => {
       expect(world.emails.map((e) => e.to)).toEqual(["owner@acme.example", "admin@studio.example"]);
     });
 
-    test("an Organization is found only by its slug and confirmed by its exact name", async () => {
-      const scope = await studio();
-
-      await expect(
-        world.engagements.propose(scope, { slug: "acme", name: "Acme" }),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
-        world.engagements.propose(scope, { slug: "nobody", name: "Nobody" }),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
-        world.engagements.propose(scope, { slug: "alice", name: "Alice" }),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
-        world.engagements.propose(scope, { slug: "studio", name: "Studio" }),
-      ).rejects.toMatchObject({ data: { reason: "SELF_ENGAGEMENT" } });
-      expect((await world.engagements.list(scope)).data).toEqual([]);
+    test.each([
+      ["a name that does not match", "acme", "Acme", "NOT_FOUND"],
+      ["an unknown slug", "nobody", "Nobody", "NOT_FOUND"],
+      ["a personal Organization", "alice", "Alice", "NOT_FOUND"],
+      ["itself", "studio", "Studio", "SELF_ENGAGEMENT"],
+    ])("proposing to %s is refused", async (_, slug, name, reason) => {
+      await refused(proposeTo(slug, name), reason);
+      expect((await world.engagements.list(await studio())).data).toEqual([]);
     });
 
     test("only one pending proposal and one active Engagement exist per Agency and Client", async () => {
-      const scope = await studio();
-      const first = await world.engagements.propose(scope, { slug: "acme", name: "Acme Corp" });
-
-      await expect(
-        world.engagements.propose(scope, { slug: "acme", name: "Acme Corp" }),
-      ).rejects.toMatchObject({ data: { reason: "ENGAGEMENT_EXISTS" } });
+      const first = await proposeTo();
+      await refused(proposeTo(), "ENGAGEMENT_EXISTS");
 
       await world.engagements.accept(await acme(), first.id);
 
-      await expect(
-        world.engagements.propose(scope, { slug: "acme", name: "Acme Corp" }),
-      ).rejects.toMatchObject({ data: { reason: "ENGAGEMENT_EXISTS" } });
-      const reverse = await world.engagements.propose(await acme(), {
-        slug: "studio",
-        name: "Studio",
-      });
-      expect(reverse.status).toBe("proposed");
+      await refused(proposeTo(), "ENGAGEMENT_EXISTS");
+      expect((await proposeTo("studio", "Studio", await acme())).status).toBe("proposed");
     });
 
     test("a declined or ended Engagement can be proposed again", async () => {
-      const scope = await studio();
-      const first = await world.engagements.propose(scope, { slug: "acme", name: "Acme Corp" });
-
-      const declined = await world.engagements.decline(await acme(), first.id);
-      expect(declined.status).toBe("declined");
+      const first = await proposeTo();
+      expect((await world.engagements.decline(await acme(), first.id)).status).toBe("declined");
       expect(await inbox("studio-admin")).toEqual(["engagement_declined"]);
 
-      const second = await world.engagements.propose(scope, { slug: "acme", name: "Acme Corp" });
+      const second = await proposeTo();
       await world.engagements.accept(await acme(), second.id);
-      await world.engagements.end(scope, second.id);
+      await world.engagements.end(await studio(), second.id);
 
-      const third = await world.engagements.propose(scope, { slug: "acme", name: "Acme Corp" });
-      expect(third.status).toBe("proposed");
+      expect((await proposeTo()).status).toBe("proposed");
     });
 
     test("only the Client decides a proposal, and only while it is proposed", async () => {
-      const proposed = await world.engagements.propose(await studio(), {
-        slug: "acme",
-        name: "Acme Corp",
-      });
+      const proposed = await proposeTo();
 
-      await expect(world.engagements.accept(await studio(), proposed.id)).rejects.toMatchObject({
-        code: "NOT_FOUND",
-      });
-      await expect(
+      await refused(world.engagements.accept(await studio(), proposed.id), "NOT_FOUND");
+      await refused(
         world.engagements.accept(await world.manager("rival-admin", "rival"), proposed.id),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-
+        "NOT_FOUND",
+      );
       await world.engagements.decline(await acme(), proposed.id);
-
-      await expect(world.engagements.accept(await acme(), proposed.id)).rejects.toMatchObject({
-        data: { reason: "NOT_PROPOSED" },
-      });
+      await refused(world.engagements.accept(await acme(), proposed.id), "NOT_PROPOSED");
     });
   });
 
   describe("ending", () => {
     test("either side ends an active Engagement and the other side is told", async () => {
-      const engagement = await activeWithAcme();
+      const engagement = await world.activeEngagement("acme");
 
       const ended = await world.engagements.end(await acme(), engagement.id);
 
@@ -199,77 +122,45 @@ describe("engagements", () => {
       expect(ended.endedAt).toBeInstanceOf(Date);
       expect(world.ended).toEqual([engagement.id]);
       expect(await inbox("studio-admin")).toContain("engagement_ended");
-      await expect(world.engagements.end(await studio(), engagement.id)).rejects.toMatchObject({
-        data: { reason: "NOT_ACTIVE" },
-      });
+      await refused(world.engagements.end(await studio(), engagement.id), "NOT_ACTIVE");
     });
 
     test("the Agency withdraws its own pending proposal by ending it", async () => {
-      const proposed = await world.engagements.propose(await studio(), {
-        slug: "acme",
-        name: "Acme Corp",
-      });
+      const proposed = await proposeTo();
 
-      await expect(world.engagements.end(await acme(), proposed.id)).rejects.toMatchObject({
-        data: { reason: "NOT_ACTIVE" },
-      });
-      const withdrawn = await world.engagements.end(await studio(), proposed.id);
-
-      expect(withdrawn.status).toBe("ended");
+      await refused(world.engagements.end(await acme(), proposed.id), "NOT_ACTIVE");
+      expect((await world.engagements.end(await studio(), proposed.id)).status).toBe("ended");
     });
   });
 
   describe("sharing", () => {
     test("the Agency shares its own Projects through an active Engagement only", async () => {
-      const proposed = await world.engagements.propose(await studio(), {
-        slug: "acme",
-        name: "Acme Corp",
-      });
-      await expect(
-        world.engagements.share(await studio(), { engagementId: proposed.id, projectId: "p1" }),
-      ).rejects.toMatchObject({ data: { reason: "NOT_ACTIVE" } });
+      const proposed = await proposeTo();
+      await refused(share(proposed.id, "p1"), "NOT_ACTIVE");
 
       await world.engagements.accept(await acme(), proposed.id);
-      await expect(
-        world.engagements.share(await studio(), { engagementId: proposed.id, projectId: "r1" }),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
-        world.engagements.share(await acme(), { engagementId: proposed.id, projectId: "p1" }),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await refused(share(proposed.id, "r1"), "NOT_FOUND");
+      await refused(share(proposed.id, "p1", await acme()), "NOT_FOUND");
 
-      const shared = await world.engagements.share(await studio(), {
-        engagementId: proposed.id,
-        projectId: "p1",
-      });
-      await world.engagements.share(await studio(), {
-        engagementId: proposed.id,
-        projectId: "p1",
-      });
+      const shared = await share(proposed.id, "p1");
+      await share(proposed.id, "p1");
 
       expect(shared.projectIds).toEqual(["p1"]);
       expect((await inbox("acme-owner")).filter((k) => k === "project_shared")).toHaveLength(1);
     });
 
     test("one Project is shared with several Clients", async () => {
-      const withAcme = await activeWithAcme();
+      await world.activeEngagement("acme", ["p1"]);
       const withNewco = await world.engagements.createWithClient(await studio(), {
         name: "Newco",
         slug: "newco",
         adminEmail: "boss@newco.example",
         projectIds: ["p1"],
       });
-      await world.engagements.share(await studio(), {
-        engagementId: withAcme.id,
-        projectId: "p1",
-      });
 
       const listed = await world.engagements.list(await studio());
 
-      expect(
-        listed.data
-          .map((e) => [e.client.name, e.projectIds])
-          .sort(([a], [b]) => (a! < b! ? -1 : 1)),
-      ).toEqual([
+      expect(listed.data.map((e) => [e.client.name, e.projectIds]).sort()).toEqual([
         ["Acme Corp", ["p1"]],
         ["Newco", ["p1"]],
       ]);
@@ -277,55 +168,30 @@ describe("engagements", () => {
     });
 
     test("unsharing is refused while the Project holds budget attributed to the Engagement", async () => {
-      const engagement = await activeWithAcme();
-      await world.engagements.share(await studio(), {
-        engagementId: engagement.id,
-        projectId: "p1",
-      });
-      await db.insert(budgets).values({
-        id: "attributed",
+      const engagement = await world.activeEngagement("acme", ["p1"]);
+      const entry = (id: string, amount: string) => ({
+        id,
         projectId: "p1",
         tokenId: "near",
-        amount: "100",
+        amount,
         actorAccountId: "admin.near",
         engagementId: engagement.id,
       });
+      await database.db.insert(budgets).values(entry("attributed", "100"));
 
-      await expect(
-        world.engagements.unshare(await studio(), { engagementId: engagement.id, projectId: "p1" }),
-      ).rejects.toMatchObject({ data: { reason: "ATTRIBUTED_BUDGET" } });
+      await refused(unshare(engagement.id, "p1"), "ATTRIBUTED_BUDGET");
 
-      await db.insert(budgets).values({
-        id: "pulled-back",
-        projectId: "p1",
-        tokenId: "near",
-        amount: "-100",
-        actorAccountId: "admin.near",
-        engagementId: engagement.id,
-      });
-      const unshared = await world.engagements.unshare(await studio(), {
-        engagementId: engagement.id,
-        projectId: "p1",
-      });
-
-      expect(unshared.projectIds).toEqual([]);
+      await database.db.insert(budgets).values(entry("pulled-back", "-100"));
+      expect((await unshare(engagement.id, "p1")).projectIds).toEqual([]);
       expect(await inbox("acme-owner")).toContain("project_unshared");
     });
 
     test("an ended Engagement keeps its shared Projects and takes no new sharing", async () => {
-      const engagement = await activeWithAcme();
-      await world.engagements.share(await studio(), {
-        engagementId: engagement.id,
-        projectId: "p1",
-      });
+      const engagement = await world.activeEngagement("acme", ["p1"]);
       await world.engagements.end(await studio(), engagement.id);
 
-      await expect(
-        world.engagements.share(await studio(), { engagementId: engagement.id, projectId: "p2" }),
-      ).rejects.toMatchObject({ data: { reason: "NOT_ACTIVE" } });
-      await expect(
-        world.engagements.unshare(await studio(), { engagementId: engagement.id, projectId: "p1" }),
-      ).rejects.toMatchObject({ data: { reason: "NOT_ACTIVE" } });
+      await refused(share(engagement.id, "p2"), "NOT_ACTIVE");
+      await refused(unshare(engagement.id, "p1"), "NOT_ACTIVE");
       expect((await world.engagements.get(await acme(), engagement.id)).projectIds).toEqual(["p1"]);
     });
   });
@@ -338,6 +204,16 @@ describe("engagements", () => {
         adminEmail: "Boss@Newco.example",
       });
     }
+
+    const invitationActions = [
+      ["resend", (id: string) => studio().then((s) => world.engagements.resendInvitation(s, id))],
+      ["cancel", (id: string) => studio().then((s) => world.engagements.cancelInvitation(s, id))],
+      [
+        "re-address",
+        (id: string) =>
+          studio().then((s) => world.engagements.changeInvitationEmail(s, id, "x@newco.example")),
+      ],
+    ] as const;
 
     test("creates the Client Organization without the Agency admin and invites its first admin as owner", async () => {
       const engagement = await createNewco();
@@ -360,13 +236,14 @@ describe("engagements", () => {
     });
 
     test("a taken slug is refused", async () => {
-      await expect(
+      await refused(
         world.engagements.createWithClient(await studio(), {
           name: "Another Acme",
           slug: "acme",
           adminEmail: "x@acme.example",
         }),
-      ).rejects.toMatchObject({ data: { reason: "SLUG_TAKEN" } });
+        "SLUG_TAKEN",
+      );
     });
 
     test("the Agency resends, re-addresses and cancels the invitation until it is accepted", async () => {
@@ -390,35 +267,18 @@ describe("engagements", () => {
 
       const canceled = await world.engagements.cancelInvitation(await studio(), engagement.id);
       expect(canceled.invitation?.status).toBe("canceled");
-
       const resent = await world.engagements.resendInvitation(await studio(), engagement.id);
       expect(resent.invitation?.status).toBe("pending");
-      await expect(
-        world.engagements.resendInvitation(await acme(), engagement.id),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await refused(world.engagements.resendInvitation(await acme(), engagement.id), "NOT_FOUND");
     });
 
-    test.each([
-      [
-        "resend",
-        (id: string) => async () => world.engagements.resendInvitation(await studio(), id),
-      ],
-      [
-        "cancel",
-        (id: string) => async () => world.engagements.cancelInvitation(await studio(), id),
-      ],
-      [
-        "re-address",
-        (id: string) => async () =>
-          world.engagements.changeInvitationEmail(await studio(), id, "ceo@newco.example"),
-      ],
-    ])("the Agency cannot %s the invitation after the Engagement ends", async (_, action) => {
+    test.each(
+      invitationActions,
+    )("the Agency cannot %s the invitation after the Engagement ends", async (_, action) => {
       const engagement = await createNewco();
       await world.engagements.end(await studio(), engagement.id);
 
-      await expect(action(engagement.id)()).rejects.toMatchObject({
-        data: { reason: "NOT_ACTIVE" },
-      });
+      await refused(action(engagement.id), "NOT_ACTIVE");
       expect(world.emails).toHaveLength(1);
     });
 
@@ -433,23 +293,14 @@ describe("engagements", () => {
       expect(clientView.data.map((e) => [e.agency.name, e.status, e.invitation])).toEqual([
         ["Studio", "active", null],
       ]);
-      const view = await world.engagements.get(await studio(), engagement.id);
-
-      expect(view.invitation?.status).toBe("accepted");
+      expect((await world.engagements.get(await studio(), engagement.id)).invitation?.status).toBe(
+        "accepted",
+      );
       expect(await inbox("studio-owner")).toEqual(["client_invite_accepted", "client_invite_sent"]);
       expect(world.organizations.roleOf("newco-boss", engagement.client.id)).toBe("owner");
-      expect(world.organizations.roleOf("studio-admin", engagement.client.id)).toBeNull();
-      for (const action of [
-        () => world.engagements.resendInvitation,
-        () => world.engagements.cancelInvitation,
-      ]) {
-        await expect(action()(await studio(), engagement.id)).rejects.toMatchObject({
-          data: { reason: "INVITATION_ACCEPTED" },
-        });
+      for (const [, action] of invitationActions) {
+        await refused(action(engagement.id), "INVITATION_ACCEPTED");
       }
-      await expect(
-        world.engagements.changeInvitationEmail(await studio(), engagement.id, "x@newco.example"),
-      ).rejects.toMatchObject({ data: { reason: "INVITATION_ACCEPTED" } });
     });
   });
 });

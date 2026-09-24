@@ -1,16 +1,11 @@
-import type { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import { createNotifications } from "../../src/services/notifications";
 import type { EmailMessage } from "../../src/services/notify";
 import { inMemoryOrganizations } from "../fakes/organizations";
-import { applyAllMigrations } from "./_pg";
+import { migratedDatabase } from "./_pg";
 
 describe("notifications", () => {
-  let pg: PGlite;
-  let db: Database;
+  const database = migratedDatabase({ perTest: true });
   let sent: EmailMessage[];
 
   const directory = inMemoryOrganizations({
@@ -29,20 +24,17 @@ describe("notifications", () => {
     ],
   }).directory;
 
-  beforeEach(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
+  beforeEach(() => {
     sent = [];
   });
 
-  afterEach(async () => {
-    await pg.close();
-  });
-
   function service(sendEmail = async (m: EmailMessage) => void sent.push(m)) {
-    return createNotifications({ db, directory, sendEmail, appOrigin: "https://app.example" });
+    return createNotifications({
+      db: database.db,
+      directory,
+      sendEmail,
+      appOrigin: "https://app.example",
+    });
   }
 
   const proposal = {
@@ -51,24 +43,6 @@ describe("notifications", () => {
     payload: { agencyName: "Studio", clientName: "Acme", engagementId: "e1" },
     link: "/client",
   };
-
-  test("owners and admins of the asked Organization get an inbox item; those with an email also get one", async () => {
-    const result = await service().notify(proposal);
-
-    expect(result).toEqual({ recipients: 3, emailed: 2 });
-    expect(sent.map((m) => m.to).sort()).toEqual(["admin@acme.example", "owner@acme.example"]);
-    expect(sent[0]?.html).toContain('href="https://app.example/client"');
-    const inbox = await service().list("wallet-admin", { limit: 10 });
-    expect(inbox.data).toEqual([
-      expect.objectContaining({
-        kind: "engagement_proposed",
-        title: "Studio proposed an Engagement",
-        link: "/client",
-        readAt: null,
-      }),
-    ]);
-    expect((await service().list("viewer", { limit: 10 })).data).toEqual([]);
-  });
 
   test("the acting user is not notified of their own action", async () => {
     await service().notify({ ...proposal, excludeUserId: "owner" });

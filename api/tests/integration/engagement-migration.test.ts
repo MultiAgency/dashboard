@@ -1,9 +1,5 @@
-import type { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import {
   budgets,
   clientProjects,
@@ -14,20 +10,17 @@ import {
 } from "../../src/db/schema";
 import { createEngagementMigration } from "../../src/services/engagement-migration";
 import { inMemoryOrganizations, seedAgencyDaos } from "../fakes/organizations";
-import { applyAllMigrations } from "./_pg";
+import { migratedDatabase } from "./_pg";
 
 const MULTIAGENCY_DAO = "multiagency.sputnik-dao.near";
 
 describe("migrating Clients to Engagements", () => {
-  let pg: PGlite;
-  let db: Database;
+  const database = migratedDatabase({ perTest: true });
+  let db: typeof database.db;
   let world: ReturnType<typeof inMemoryOrganizations>;
 
   beforeEach(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
+    db = database.db;
     const organizations = [
       { id: "multiagency", name: "MultiAgency", daoAccountId: MULTIAGENCY_DAO },
       { id: "near-foundation", name: "NEAR Foundation" },
@@ -64,31 +57,15 @@ describe("migrating Clients to Engagements", () => {
       { clientId: "nf", projectId: "p1" },
       { clientId: "nf", projectId: "p2" },
     ]);
+    const entry = { projectId: "p1", tokenId: "near", actorAccountId: "admin.near" };
     await db.insert(budgets).values([
-      {
-        id: "attributed",
-        projectId: "p1",
-        tokenId: "near",
-        amount: "100",
-        actorAccountId: "admin.near",
-        clientId: "nf",
-      },
-      {
-        id: "unattributed",
-        projectId: "p1",
-        tokenId: "near",
-        amount: "5",
-        actorAccountId: "admin.near",
-      },
+      { ...entry, id: "attributed", amount: "100", clientId: "nf" },
+      { ...entry, id: "unattributed", amount: "5" },
     ]);
     await db.insert(projectContributors).values([
       { projectId: "p1", nearAccount: "dev.near" },
       { projectId: "gone", nearAccount: "dev.near" },
     ]);
-  });
-
-  afterEach(async () => {
-    await pg.close();
   });
 
   function migration() {

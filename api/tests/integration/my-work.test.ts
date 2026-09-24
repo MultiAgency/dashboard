@@ -1,26 +1,18 @@
-import type { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import { billings, projectContributors, proposals } from "../../src/db/schema";
 import { createMeService } from "../../src/services/me";
 import { engagementWorld } from "../fakes/engagements";
 import { project } from "../fakes/projects";
-import { applyAllMigrations } from "./_pg";
+import { migratedDatabase } from "./_pg";
 
 const STUDIO_DAO = "studio.sputnik-dao.near";
 
 describe("my work as a Contributor", () => {
-  let pg: PGlite;
-  let db: Database;
+  const database = migratedDatabase({ perTest: true });
   let me: ReturnType<typeof createMeService>;
 
   beforeEach(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
+    const { db } = database;
     const world = await engagementWorld(db, {
       organizations: [
         { id: "studio", name: "Studio", daoAccountId: STUDIO_DAO },
@@ -47,10 +39,6 @@ describe("my work as a Contributor", () => {
     ]);
   });
 
-  afterEach(async () => {
-    await pg.close();
-  });
-
   const contributor = {
     userId: "dev",
     near: { primaryAccountId: "dev.near", linkedAccounts: [{ accountId: "alt.near" }] },
@@ -70,6 +58,7 @@ describe("my work as a Contributor", () => {
   });
 
   test("a Contributor sees only their own Billings, with the paying Agency's status", async () => {
+    const { db } = database;
     await db.insert(proposals).values({
       daoAccountId: STUDIO_DAO,
       proposalId: 7,
@@ -79,23 +68,10 @@ describe("my work as a Contributor", () => {
       kindType: "Transfer",
       submissionTime: "0",
     });
+    const billing = { projectId: "studio-work", tokenId: "near" };
     await db.insert(billings).values([
-      {
-        id: "mine",
-        projectId: "studio-work",
-        nearAccount: "dev.near",
-        tokenId: "near",
-        amount: "5",
-        proposalId: "7",
-      },
-      {
-        id: "theirs",
-        projectId: "studio-work",
-        nearAccount: "someone-else.near",
-        tokenId: "near",
-        amount: "9",
-        proposalId: "8",
-      },
+      { ...billing, id: "mine", nearAccount: "dev.near", amount: "5", proposalId: "7" },
+      { ...billing, id: "theirs", nearAccount: "someone-else.near", amount: "9", proposalId: "8" },
     ]);
 
     const { data } = await me.billings(contributor, { limit: 50 });

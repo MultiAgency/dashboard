@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { afterAll, beforeAll } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
 
@@ -40,15 +40,19 @@ export function applyProjectsPluginMigrations(pg: PgliteLike): Promise<void> {
   return applyMigrationsFrom(PROJECTS_MIGRATIONS_DIR, pg);
 }
 
-export function migratedDatabase(): { pg: PGlite; db: Database } {
+export function migratedDatabase(options: { perTest?: boolean } = {}): {
+  pg: PGlite;
+  db: Database;
+} {
   const state = {} as { pg: PGlite; db: Database };
-  beforeAll(async () => {
+  const [before, after] = options.perTest ? [beforeEach, afterEach] : [beforeAll, afterAll];
+  before(async () => {
     const { PGlite } = await import("@electric-sql/pglite");
     state.pg = new PGlite("memory://");
     await applyAllMigrations(state.pg);
     state.db = drizzle(state.pg, { schema }) as unknown as Database;
   });
-  afterAll(async () => {
+  after(async () => {
     await state.pg.close();
   });
   return state;
