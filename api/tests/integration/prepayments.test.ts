@@ -51,6 +51,8 @@ describe("prepayments", () => {
     });
   const spend = (engagementId: string, projectId: string, amount: string) =>
     entries(engagementId, [[projectId, amount]]);
+  const spendRefused = (engagementId: string, projectId: string, amount: string, reason: string) =>
+    expect(spend(engagementId, projectId, amount)).rejects.toMatchObject({ reason });
   const balance = async (engagementId: string, scope?: OrganizationScope) =>
     (await world.prepayments.balance(scope ?? (await studio()), { engagementId })).data;
   const nearBalance = async (engagementId: string) => (await balance(engagementId))[0]?.balance;
@@ -87,14 +89,13 @@ describe("prepayments", () => {
       const proposed = await world.engagements.propose(globex, { slug: "acme", name: "Acme Corp" });
       await world.engagements.accept(await acmeOwner(), proposed.id);
 
-      await expect(
-        world.prepayments.record(globex, {
-          engagementId: proposed.id,
-          tokenId: "near",
-          amount: "100",
-          period: "2026-09",
-        }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN", data: { reason: "NO_AGENCY_DAO" } });
+      const input = {
+        engagementId: proposed.id,
+        tokenId: "near",
+        amount: "100",
+        period: "2026-09",
+      };
+      await refused(world.prepayments.record(globex, input), "NO_AGENCY_DAO");
     });
 
     test.each([
@@ -105,12 +106,23 @@ describe("prepayments", () => {
       await refused(record(await engagement(), amount, period), reason);
     });
 
-    test("notifies the Client's owners and admins when a Prepayment is recorded, corrected or removed", async () => {
+    test("records, corrects every field and removes a Prepayment, notifying the Client's owners and admins", async () => {
       const id = await engagement();
       world.emails.length = 0;
+      const change = {
+        tokenId: USDC,
+        amount: "250",
+        period: "2026-10",
+        transferReference: "tx-123",
+      };
 
       const recorded = await record(id, "2000000000000000000000000", "2026-09");
-      await correct(recorded.id, { amount: "3000000000000000000000000" });
+      expect(
+        await world.prepayments.correct(await studio(), { id: recorded.id, ...change }),
+      ).toMatchObject(change);
+      expect(await balance(id)).toEqual([
+        { tokenId: USDC, prepaid: "250", budgeted: "0", balance: "250" },
+      ]);
       await remove(recorded.id);
 
       expect(await inbox("acme-owner")).toEqual([
@@ -151,29 +163,6 @@ describe("prepayments", () => {
   });
 
   describe("correcting and removing", () => {
-    test("corrects the amount, token, period and transfer reference", async () => {
-      const id = await engagement();
-      const recorded = await record(id, "1000", "2026-09");
-
-      const corrected = await world.prepayments.correct(await studio(), {
-        id: recorded.id,
-        tokenId: USDC,
-        amount: "250",
-        period: "2026-10",
-        transferReference: "tx-123",
-      });
-
-      expect(corrected).toMatchObject({
-        tokenId: USDC,
-        amount: "250",
-        period: "2026-10",
-        transferReference: "tx-123",
-      });
-      expect(await balance(id)).toEqual([
-        { tokenId: USDC, prepaid: "250", budgeted: "0", balance: "250" },
-      ]);
-    });
-
     test("refuses a correction or removal that takes the Prepaid balance below zero", async () => {
       const id = await engagement(["p1"]);
       const first = await record(id, "1000", "2026-08");
@@ -218,19 +207,14 @@ describe("prepayments", () => {
 
       await remove(recorded.id);
 
-      const listed = await Effect.runPromise(
-        createBudgetsService(database.db, world.directory).list(requireTreasury(await studio()), {
-          engagementId: id,
-          limit: 50,
-        }),
-      );
-      expect(listed.data.map((e) => e.amount)).toEqual(["800"]);
-      expect(await nearBalance(id)).toBe("200");
+      expect(await balance(id)).toEqual([
+        { tokenId: "near", prepaid: "1000", budgeted: "800", balance: "200" },
+      ]);
     });
   });
 
   describe("access", () => {
-    test("Client members read Prepayments and the balance but cannot change them", async () => {
+    test("Client members read Prepayments and the balance but cannot change them, other Organizations see nothing", async () => {
       const id = await engagement();
       const recorded = await record(id, "1000", "2026-09");
 
@@ -253,11 +237,6 @@ describe("prepayments", () => {
           code: expect.stringMatching(/NOT_FOUND|FORBIDDEN/),
         });
       }
-    });
-
-    test("other Organizations see nothing", async () => {
-      const id = await engagement();
-      const recorded = await record(id, "1000", "2026-09");
       const rival = await world.manager("rival-admin", "rival");
 
       await refused(world.prepayments.list(rival, { engagementId: id }), "NOT_FOUND");
@@ -273,11 +252,10 @@ describe("prepayments", () => {
       await refused(record(id, "1", "2026-10"), "NOT_ACTIVE");
       await refused(correct(recorded.id, { amount: "2" }), "NOT_ACTIVE");
       await refused(remove(recorded.id), "NOT_ACTIVE");
-      await expect(spend(id, "p1", "1")).rejects.toMatchObject({ reason: "NOT_ACTIVE" });
-      expect(
-        (await world.prepayments.list(await acmeMember(), { engagementId: id })).data,
-      ).toHaveLength(1);
-      expect((await balance(id, await acmeMember()))[0]?.balance).toBe("1000");
+      await spendRefused(id, "p1", "1", "NOT_ACTIVE");
+      const member = await acmeMember();
+      expect((await world.prepayments.list(member, { engagementId: id })).data).toHaveLength(1);
+      expect((await balance(id, member))[0]?.balance).toBe("1000");
     });
   });
 
@@ -296,13 +274,9 @@ describe("prepayments", () => {
         expect(row).toMatchObject({ engagementId: id, fundingDaoAccountId: STUDIO_DAO });
       }
       expect(await nearBalance(id)).toBe("600");
-      await expect(spend(id, "p2", "601")).rejects.toMatchObject({
-        reason: "PREPAID_BALANCE_EXCEEDED",
-      });
-      await expect(spend(id, "p1", "-151")).rejects.toMatchObject({
-        reason: "ATTRIBUTED_BUDGET_EXCEEDED",
-      });
-      await expect(spend(id, "internal", "1")).rejects.toMatchObject({ reason: "NOT_SHARED" });
+      await spendRefused(id, "p2", "601", "PREPAID_BALANCE_EXCEEDED");
+      await spendRefused(id, "p1", "-151", "ATTRIBUTED_BUDGET_EXCEEDED");
+      await spendRefused(id, "internal", "1", "NOT_SHARED");
     });
 
     test("plain Budgets routes move only the Agency's own budget", async () => {
@@ -312,19 +286,15 @@ describe("prepayments", () => {
       const service = createBudgetsService(database.db, world.directory);
       const scope = requireTreasury(await studio());
       const run = <A>(effect: Effect.Effect<A, unknown>) => Effect.runPromise(effect);
-      const failure = <A>(effect: Effect.Effect<A, unknown>) =>
-        Effect.runPromise(Effect.flip(effect));
+      const own = async <A>(effect: Effect.Effect<A, unknown>) =>
+        expect(await Effect.runPromise(Effect.flip(effect))).toMatchObject({
+          data: { reason: "ENGAGEMENT_ATTRIBUTED" },
+        });
       const move = { fromProjectId: "p1", toProjectId: "internal", tokenId: "near" };
       await run(service.create(scope, { projectId: "p1", tokenId: "near", amount: "100" }));
 
-      expect(
-        await failure(
-          service.deallocate(scope, { projectId: "p1", tokenId: "near", amount: "101" }),
-        ),
-      ).toMatchObject({ code: "BAD_REQUEST", data: { reason: "ENGAGEMENT_ATTRIBUTED" } });
-      expect(await failure(service.transfer(scope, { ...move, amount: "101" }))).toMatchObject({
-        data: { reason: "ENGAGEMENT_ATTRIBUTED" },
-      });
+      await own(service.deallocate(scope, { projectId: "p1", tokenId: "near", amount: "101" }));
+      await own(service.transfer(scope, { ...move, amount: "101" }));
 
       const { from, to } = await run(service.transfer(scope, { ...move, amount: "100" }));
       for (const leg of [from, to]) {
