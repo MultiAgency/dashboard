@@ -51,7 +51,9 @@ function NotificationsPage() {
     retry: false,
   });
   const items: Notification[] = inbox.data?.pages.flatMap((p) => p.data) ?? [];
-  const awaiting = useQuery(awaitingChangeOrdersQueryOptions(apiClient)).data?.data ?? [];
+  const awaiting = (useQuery(awaitingChangeOrdersQueryOptions(apiClient)).data?.data ?? []).filter(
+    (changeOrder) => changeOrder.canDecide,
+  );
   const unread = items.filter((n) => !n.readAt);
 
   const markRead = useMutation({

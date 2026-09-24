@@ -95,10 +95,10 @@ export function failureMessage(reason: string): string {
 }
 
 export function awaitingCountFor(
-  awaiting: readonly { engagementId: string }[],
+  awaiting: readonly { engagementId: string; canDecide: boolean }[],
   engagementId: string,
 ): number {
-  return awaiting.filter((c) => c.engagementId === engagementId).length;
+  return awaiting.filter((c) => c.canDecide && c.engagementId === engagementId).length;
 }
 
 export function awaitingLink(changeOrder: {

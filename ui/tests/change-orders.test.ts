@@ -89,8 +89,13 @@ describe("failureMessage", () => {
 });
 
 describe("awaitingCountFor", () => {
-  test("counts the Change orders awaiting the viewer on one Engagement", () => {
-    const awaiting = [{ engagementId: "e1" }, { engagementId: "e2" }, { engagementId: "e1" }];
+  test("counts the Change orders the viewer can decide on one Engagement", () => {
+    const awaiting = [
+      { engagementId: "e1", canDecide: true },
+      { engagementId: "e2", canDecide: true },
+      { engagementId: "e1", canDecide: true },
+      { engagementId: "e1", canDecide: false },
+    ];
     expect(awaitingCountFor(awaiting, "e1")).toBe(2);
     expect(awaitingCountFor(awaiting, "e3")).toBe(0);
   });
