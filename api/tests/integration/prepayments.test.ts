@@ -42,6 +42,7 @@ describe("prepayments", () => {
     writeEngagementEntries(database.db, {
       engagementId,
       actorAccountId: "admin.near",
+      statuses: new Map(),
       entries: legs.map(([projectId, amount]) => ({
         projectId,
         tokenId: "near",
