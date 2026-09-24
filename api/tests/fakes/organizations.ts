@@ -1,6 +1,7 @@
 import type { Database } from "../../src/db";
 import {
   type Organization,
+  type OrganizationMembers,
   type OrganizationRole,
   type Organizations,
   type PluginContext,
@@ -16,6 +17,10 @@ export type FakeOrganization = {
 };
 
 export type FakeMember = { userId: string; organizationId: string; role: OrganizationRole };
+
+function memberIdOf(member: FakeMember): string {
+  return `${member.organizationId}:${member.userId}`;
+}
 
 export function inMemoryOrganizations(seed: {
   organizations: FakeOrganization[];
@@ -52,9 +57,40 @@ export function inMemoryOrganizations(seed: {
     },
   };
 
+  const membersPort: OrganizationMembers = {
+    roster: async (_context, organizationId) => {
+      const organization = organizations.get(organizationId);
+      if (!organization) return null;
+      return {
+        organization,
+        members: members
+          .filter((m) => m.organizationId === organizationId)
+          .map((m) => ({ memberId: memberIdOf(m), userId: m.userId, role: m.role })),
+      };
+    },
+    addMember: async (_context, input) => {
+      if (
+        members.some((m) => m.userId === input.userId && m.organizationId === input.organizationId)
+      ) {
+        throw new Error("already a member");
+      }
+      members.push(input);
+    },
+    setRole: async (_context, input) => {
+      const member = members.find(
+        (m) => m.organizationId === input.organizationId && memberIdOf(m) === input.memberId,
+      );
+      if (!member) throw new Error("member not found");
+      member.role = input.role;
+    },
+  };
+
   return {
     port,
+    members: membersPort,
     ids: () => [...organizations.keys()].sort(),
+    roleOf: (userId: string, organizationId: string): OrganizationRole | null =>
+      members.find((m) => m.userId === userId && m.organizationId === organizationId)?.role ?? null,
   };
 }
 

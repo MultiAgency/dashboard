@@ -9,6 +9,7 @@ export const ORGANIZATION_ROLES: readonly OrganizationRole[] = [
 
 export type PluginContext = {
   userId?: string | null;
+  user?: { role?: string | null } | null;
   near?: {
     primaryAccountId?: string | null;
     linkedAccounts?: Array<{ accountId: string }> | null;
@@ -49,6 +50,24 @@ export type Organizations = {
   activeMembership(context: PluginContext): Promise<Membership | null>;
   list(): Promise<Organization[]>;
   remove(organizationId: string): Promise<void>;
+};
+
+export type RosterMember = { memberId: string; userId: string; role: OrganizationRole | null };
+
+export type Roster = { organization: Organization; members: RosterMember[] };
+
+export type AuthMemberRole = Exclude<OrganizationRole, "contributor">;
+
+export type OrganizationMembers = {
+  roster(context: PluginContext, organizationId: string): Promise<Roster | null>;
+  addMember(
+    context: PluginContext,
+    input: { organizationId: string; userId: string; role: AuthMemberRole },
+  ): Promise<void>;
+  setRole(
+    context: PluginContext,
+    input: { organizationId: string; memberId: string; role: AuthMemberRole },
+  ): Promise<void>;
 };
 
 export function parseOrgMetadata(raw: unknown): OrgMetadata {
@@ -112,6 +131,52 @@ export function betterAuthOrganizations(
     list: async () => (await client().listOrganizations()).map(toOrganization),
     remove: async (organizationId) => {
       await client().deleteOrganization({ organizationId });
+    },
+  };
+}
+
+export type BetterAuthMembersClient = {
+  getFullOrganization(input: { organizationId: string }): Promise<{
+    id: string;
+    name: string;
+    slug: string;
+    metadata: unknown;
+    createdAt: Date | string;
+    members: Array<{ id: string; userId: string; role: string }>;
+  } | null>;
+  addMember(input: {
+    userId: string;
+    role: AuthMemberRole;
+    organizationId: string;
+  }): Promise<unknown>;
+  updateMemberRole(input: {
+    memberId: string;
+    role: AuthMemberRole;
+    organizationId: string;
+  }): Promise<unknown>;
+};
+
+export function betterAuthOrganizationMembers(
+  client: (context: PluginContext) => BetterAuthMembersClient,
+): OrganizationMembers {
+  return {
+    roster: async (context, organizationId) => {
+      const full = await client(context).getFullOrganization({ organizationId });
+      if (!full) return null;
+      return {
+        organization: toOrganization(full),
+        members: full.members.map((m) => ({
+          memberId: m.id,
+          userId: m.userId,
+          role: toOrganizationRole(m.role),
+        })),
+      };
+    },
+    addMember: async (context, input) => {
+      await client(context).addMember(input);
+    },
+    setRole: async (context, input) => {
+      await client(context).updateMemberRole(input);
     },
   };
 }
