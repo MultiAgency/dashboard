@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, DataTable, Input } from "@/components";
+import { AssignOwnerForm } from "@/components/assign-owner-form";
 import type { ColumnDef } from "@/components/ui/data-table";
 import type { Organization } from "@/lib/auth";
 import { sessionQueryKey, useAuthClient } from "@/lib/auth";
@@ -90,6 +91,17 @@ function PlatformOrgs() {
           create agency workspace
         </div>
         <CreateAgencyForm onCreated={invalidate} />
+      </section>
+
+      <section className="space-y-3">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          assign an owner
+        </div>
+        <p className="text-sm text-muted-foreground max-w-2xl">
+          Recover an Organization that has no owner left. The person needs an account already; they
+          become its owner and can manage its members again.
+        </p>
+        <AssignOwnerForm />
       </section>
 
       <section className="space-y-3">
