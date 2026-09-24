@@ -373,6 +373,64 @@ export function awaitingChangeOrdersQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const ideasQueryKey = ["ideas"] as const;
+
+export function ideasListQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...ideasQueryKey, "list", ...workspaceKey(), engagementId] as const,
+    queryFn: () => apiClient.ideas.list({ engagementId }),
+    retry: false,
+  });
+}
+
+export const agentLinksQueryKey = ["agent-links"] as const;
+
+export function agentLinksListQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...agentLinksQueryKey, "list", ...workspaceKey(), engagementId] as const,
+    queryFn: () => apiClient.agentLinks.list({ engagementId }),
+    retry: false,
+  });
+}
+
+export const savedReportsQueryKey = ["reports"] as const;
+
+export function adminSavedReportsQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...savedReportsQueryKey, "admin", ...workspaceKey()] as const,
+    queryFn: () => apiClient.agency.reports.list({}),
+    retry: false,
+  });
+}
+
+export function adminSavedReportQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...savedReportsQueryKey, "admin", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.agency.reports.get({ id }),
+    retry: false,
+  });
+}
+
+export function clientSavedReportsQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...savedReportsQueryKey, "client", ...workspaceKey(), engagementId] as const,
+    queryFn: () => apiClient.clientPortal.reports.list({ engagementId }),
+    retry: false,
+  });
+}
+
+export function clientSavedReportQueryOptions(
+  apiClient: ApiClient,
+  engagementId: string,
+  id: string,
+) {
+  return queryOptions({
+    queryKey: [...savedReportsQueryKey, "client", ...workspaceKey(), engagementId, id] as const,
+    queryFn: () => apiClient.clientPortal.reports.get({ engagementId, id }),
+    retry: false,
+  });
+}
+
 export const clientPortalQueryKey = ["client", "portal"] as const;
 
 export function clientPortalDashboardSummaryQueryOptions(
@@ -468,6 +526,9 @@ export type DataChange =
   | { type: "prepayments" }
   | { type: "changeOrders" }
   | { type: "notifications" }
+  | { type: "ideas" }
+  | { type: "agentLinks" }
+  | { type: "reports" }
   | { type: "settings" };
 
 function staleKeys(change: DataChange): QueryKey[] {
@@ -529,6 +590,19 @@ function staleKeys(change: DataChange): QueryKey[] {
       ];
     case "notifications":
       return [notificationsQueryKey];
+    case "ideas":
+      return [
+        ideasQueryKey,
+        engagementsQueryKey,
+        ["admin", "projects"],
+        projectsListQueryKey,
+        clientPortalQueryKey,
+        notificationsQueryKey,
+      ];
+    case "agentLinks":
+      return [agentLinksQueryKey];
+    case "reports":
+      return [savedReportsQueryKey];
     case "settings":
       return [adminSettingsQueryKey, publicSettingsQueryKey];
   }

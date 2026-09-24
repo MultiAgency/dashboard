@@ -37,7 +37,7 @@ function EngagementLayout() {
   const others = (useQuery(engagementsListQueryOptions(apiClient)).data?.data ?? []).filter(
     (e) => e.side === "client" && canReadEngagement(e.status),
   );
-  const sections = clientEngagementSections(engagement.id);
+  const sections = clientEngagementSections(engagement.id, engagement.kind);
   const awaiting = awaitingCountFor(
     useQuery(awaitingChangeOrdersQueryOptions(apiClient)).data?.data ?? [],
     engagement.id,
