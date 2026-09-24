@@ -252,6 +252,7 @@ export const budgets = pgTable(
     engagementId: text("engagement_id").references(() => engagements.id, {
       onDelete: "set null",
     }),
+    fundingDaoAccountId: text("funding_dao_account_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
@@ -259,11 +260,36 @@ export const budgets = pgTable(
     projectIdx: index("budgets_project_id").on(t.projectId),
     clientIdx: index("budgets_client_id").on(t.clientId),
     engagementIdx: index("budgets_engagement_id").on(t.engagementId),
+    fundingDaoIdx: index("budgets_funding_dao").on(t.fundingDaoAccountId),
   }),
 );
 
 export type Budget = typeof budgets.$inferSelect;
 export type NewBudget = typeof budgets.$inferInsert;
+
+export const prepayments = pgTable(
+  "prepayments",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    daoAccountId: text("dao_account_id").notNull(),
+    tokenId: text("token_id").notNull(),
+    amount: text("amount").notNull(),
+    period: text("period").notNull(),
+    transferReference: text("transfer_reference"),
+    actorAccountId: text("actor_account_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("prepayments_engagement").on(t.engagementId, t.period),
+    daoIdx: index("prepayments_dao").on(t.daoAccountId),
+  }),
+);
+
+export type PrepaymentRow = typeof prepayments.$inferSelect;
 
 export const billings = pgTable(
   "billings",

@@ -9,6 +9,7 @@ import { createListingsService } from "../../src/services/listings";
 import { createNotifications } from "../../src/services/notifications";
 import type { EmailMessage } from "../../src/services/notify";
 import { createOrganizationAccess, ROLE_MATRIX } from "../../src/services/organization-access";
+import { createPrepaymentsService } from "../../src/services/prepayments";
 import type { PluginProject } from "../../src/services/project-directory";
 import { createProjectDirectory } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
@@ -102,6 +103,12 @@ export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
     },
   });
 
+  const prepayments = createPrepaymentsService({
+    db,
+    organizations: organizations.directory,
+    notifications,
+  });
+
   const context = (userId: string, organizationId: string, near?: string) => ({
     ...signedIn(userId, organizationId, near),
     reqHeaders: new Headers({ origin: SPOOFED_ORIGIN, "x-forwarded-host": "spoofed.example" }),
@@ -127,6 +134,7 @@ export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
     directory,
     notifications,
     engagements,
+    prepayments,
     emails,
     ended,
     context,

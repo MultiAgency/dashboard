@@ -170,4 +170,46 @@ describe("migrate — runtime migrator", () => {
     await expect(insert("e7", "agency", "agency", "proposed")).rejects.toThrow();
     await expect(insert("e8", "agency", "other", "paused")).rejects.toThrow();
   });
+
+  test("the prepayments migration records the funding Agency DAO of attributed Budget entries", async () => {
+    const { migrations } = await Effect.runPromise(loadMigrations());
+    await Effect.runPromise(
+      migrate(
+        driver.db,
+        migrations.filter((m) => m.tag < "0008"),
+      ),
+    );
+    await driver.db.execute(
+      sql`INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ('studio', 'studio.sputnik-dao.near')`,
+    );
+    await driver.db.execute(
+      sql`INSERT INTO clients (id, org_id, agency_dao_account_id, name) VALUES ('legacy', 'acme', 'legacy.sputnik-dao.near', 'Acme')`,
+    );
+    await driver.db.execute(
+      sql`INSERT INTO engagements (id, agency_organization_id, client_organization_id, status, proposed_by) VALUES ('e1', 'studio', 'acme', 'active', 'admin')`,
+    );
+    await driver.db.execute(
+      sql`INSERT INTO budgets (id, project_id, token_id, amount, actor_account_id, engagement_id, client_id) VALUES ('by-engagement', 'p1', 'near', '10', 'admin.near', 'e1', NULL), ('by-client', 'p1', 'near', '5', 'admin.near', NULL, 'legacy'), ('own', 'p1', 'near', '1', 'admin.near', NULL, NULL)`,
+    );
+
+    await Effect.runPromise(migrate(driver.db, migrations));
+
+    const raw = await driver.db.execute(
+      sql`SELECT id, funding_dao_account_id FROM budgets ORDER BY id`,
+    );
+    expect((raw as unknown as { rows: unknown[] }).rows).toEqual([
+      { id: "by-client", funding_dao_account_id: "legacy.sputnik-dao.near" },
+      { id: "by-engagement", funding_dao_account_id: "studio.sputnik-dao.near" },
+      { id: "own", funding_dao_account_id: null },
+    ]);
+    const insert = (period: string, amount: string) =>
+      driver.db.execute(
+        sql`INSERT INTO prepayments (id, engagement_id, dao_account_id, token_id, amount, period, actor_account_id) VALUES (${crypto.randomUUID()}, 'e1', 'studio.sputnik-dao.near', 'near', ${amount}, ${period}, 'admin.near')`,
+      );
+    await insert("2026-09", "100");
+    await insert("2026-09", "200");
+    await expect(insert("2026-13", "100")).rejects.toThrow();
+    await expect(insert("2026-9", "100")).rejects.toThrow();
+    await expect(insert("2026-10", "0")).rejects.toThrow();
+  });
 });
