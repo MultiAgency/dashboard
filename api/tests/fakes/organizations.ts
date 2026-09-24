@@ -7,7 +7,6 @@ import {
   toOrganization,
 } from "../../src/lib/organizations";
 import { createOrganizationAccess } from "../../src/services/organization-access";
-import type { OrganizationMembersStore } from "../../src/services/organization-recovery";
 
 export type FakeOrganization = {
   id: string;
@@ -18,16 +17,9 @@ export type FakeOrganization = {
 
 export type FakeMember = { userId: string; organizationId: string; role: OrganizationRole };
 
-function memberIdOf(member: FakeMember): string {
-  return `${member.organizationId}:${member.userId}`;
-}
-
-export type FakeUser = { id: string; email: string };
-
 export function inMemoryOrganizations(seed: {
   organizations: FakeOrganization[];
   members?: FakeMember[];
-  users?: FakeUser[];
 }) {
   const organizations = new Map<string, Organization>(
     seed.organizations.map((o) => [
@@ -60,43 +52,9 @@ export function inMemoryOrganizations(seed: {
     },
   };
 
-  const users = seed.users ?? [];
-
-  const membersStore: OrganizationMembersStore = {
-    findUserId: async (emailOrId) =>
-      users.find((u) => u.id === emailOrId || u.email.toLowerCase() === emailOrId.toLowerCase())
-        ?.id ?? null,
-    roster: async (organizationId) => {
-      const organization = organizations.get(organizationId);
-      if (!organization) return null;
-      return {
-        organization,
-        members: members
-          .filter((m) => m.organizationId === organizationId)
-          .map((m) => ({ memberId: memberIdOf(m), userId: m.userId, role: m.role })),
-      };
-    },
-    addOwner: async (input) => {
-      if (
-        members.some((m) => m.userId === input.userId && m.organizationId === input.organizationId)
-      ) {
-        throw new Error("already a member");
-      }
-      members.push({ ...input, role: "owner" });
-    },
-    promoteToOwner: async ({ memberId }) => {
-      const member = members.find((m) => memberIdOf(m) === memberId);
-      if (!member) throw new Error("member not found");
-      member.role = "owner";
-    },
-  };
-
   return {
     port,
-    members: membersStore,
     ids: () => [...organizations.keys()].sort(),
-    roleOf: (userId: string, organizationId: string): OrganizationRole | null =>
-      members.find((m) => m.userId === userId && m.organizationId === organizationId)?.role ?? null,
   };
 }
 
