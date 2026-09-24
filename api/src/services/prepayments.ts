@@ -3,7 +3,6 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type EngagementRow, engagements, type PrepaymentRow, prepayments } from "../db/schema";
 import type { OrganizationDirectory } from "../lib/organizations";
-import { originOf } from "./engagements";
 import type { NotificationKind, NotificationsService } from "./notifications";
 import { type OrganizationScope, requireTreasury, SHARED_STATUSES } from "./organization-access";
 import { lockEngagement, prepaidBalanceRows, prepaidBalances } from "./prepaid-balance";
@@ -145,7 +144,6 @@ export function createPrepaymentsService(deps: {
         },
         link: `/client/${engagement.id}/prepayments`,
         excludeUserId: scope.pluginContext.userId ?? null,
-        origin: originOf(scope.pluginContext.reqHeaders),
       });
     } catch (err) {
       console.warn("[API] notification failed:", err instanceof Error ? err.message : err);
