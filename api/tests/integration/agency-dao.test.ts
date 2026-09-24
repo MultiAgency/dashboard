@@ -172,6 +172,28 @@ describe("connecting an Agency DAO", () => {
     expect((await founderScope()).agencyDao).toBe(TREZU);
   });
 
+  test("refuses to disconnect a DAO that paid Billings as a Subcontractor, but not another DAO's", async () => {
+    const { service, connect, founderScope } = setup();
+    await connect(TREZU);
+    await state.db.insert(billings).values({
+      id: crypto.randomUUID(),
+      projectId: "someone-elses-project",
+      tokenId: "near",
+      amount: "5",
+      proposalId: "7",
+      payingDaoAccountId: TREZU,
+    });
+    await expect(service.disconnect(await founderScope())).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+
+    await state.db.update(billings).set({ payingDaoAccountId: "crew.sputnik-dao.near" });
+    await state.db.update(billings).set({ projectId: "site" });
+
+    await service.disconnect(await founderScope());
+    expect((await founderScope()).agencyDao).toBeNull();
+  });
+
   test("platform admins connect a DAO to a new Organization without holding a DAO role", async () => {
     const { access, service } = setup();
 

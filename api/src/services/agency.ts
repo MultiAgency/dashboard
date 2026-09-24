@@ -106,7 +106,10 @@ export function createAgencyService(
       Effect.gen(function* () {
         yield* Effect.promise(() => directory.forAgency(scope).require(projectId));
         const ledger = yield* Effect.promise(() => projectLedgers.load(scope, [projectId]));
-        return { budgets: ledger.rollupsFor(projectId) };
+        return {
+          budgets: ledger.rollupsFor(projectId),
+          subcontractorSpend: ledger.subcontractorSpendFor(projectId),
+        };
       }),
 
     createProject: (

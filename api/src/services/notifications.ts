@@ -26,6 +26,10 @@ export const NOTIFICATION_KINDS = {
     title: `The Engagement between ${p.agencyName} and ${p.clientName} ended`,
     body: `${p.endedBy} ended the Engagement. Its shared Projects stay visible as read-only history.`,
   }),
+  subcontract_started: (p) => ({
+    title: `${p.agencyName} subcontracted work to ${p.clientName}`,
+    body: `${p.agencyName} hired ${p.clientName} as its Subcontractor on ${p.projectTitles}. Assign your builders and bill them from your Agency DAO on MultiAgency.`,
+  }),
   project_shared: (p) => ({
     title: `${p.agencyName} shared ${p.projectTitle}`,
     body: `${p.agencyName} shared the Project ${p.projectTitle} with ${p.clientName}.`,

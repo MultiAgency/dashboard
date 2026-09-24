@@ -71,6 +71,13 @@
       "when": 1784668800000,
       "tag": "0009_change_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784755200000,
+      "tag": "0010_subcontracting",
+      "breakpoints": true
     }
   ]
 }

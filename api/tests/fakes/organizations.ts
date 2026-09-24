@@ -14,6 +14,11 @@ import {
 } from "../../src/lib/organizations";
 import { createOrganizationAccess } from "../../src/services/organization-access";
 import type { OrganizationMembersStore } from "../../src/services/organization-recovery";
+import {
+  createProjectDirectory,
+  type ProjectDirectory,
+} from "../../src/services/project-directory";
+import { inMemoryProjects } from "./projects";
 
 export type FakeOrganization = {
   id: string;
@@ -190,9 +195,15 @@ export function inMemoryAccess(
   db: unknown,
   seed: Partial<Parameters<typeof inMemoryOrganizations>[0]> = {},
   defaultDaoAccountId?: string,
+  directory: ProjectDirectory = createProjectDirectory(() => inMemoryProjects([]).client),
 ) {
   const { port } = inMemoryOrganizations({ organizations: [], ...seed });
-  return createOrganizationAccess({ db: db as Database, organizations: port, defaultDaoAccountId });
+  return createOrganizationAccess({
+    db: db as Database,
+    organizations: port,
+    directory,
+    defaultDaoAccountId,
+  });
 }
 
 export async function seedAgencyDaos(db: Database, organizations: FakeOrganization[]) {

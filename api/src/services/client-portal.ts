@@ -68,8 +68,15 @@ export function createClientPortalService(
         const engagement = yield* shared(context, input.engagementId);
         assertShared(engagement, input.projectId);
         const scope = withTreasury(engagement.scope);
-        if (!scope) return { budgets: [] };
-        return yield* agency.getBudget(scope, input.projectId);
+        if (!scope) return { budgets: [], subcontractorSpend: [] };
+        const rollup = yield* agency.getBudget(scope, input.projectId);
+        if (engagement.engagement.kind !== "subcontract") return rollup;
+        return {
+          budgets: [],
+          subcontractorSpend: rollup.subcontractorSpend.filter(
+            (row) => row.daoAccountId === engagement.viewerAgencyDao,
+          ),
+        };
       }),
 
     listBillings: (
@@ -80,10 +87,18 @@ export function createClientPortalService(
         const engagement = yield* shared(context, input.engagementId);
         if (input.projectId) assertShared(engagement, input.projectId);
         const scope = withTreasury(engagement.scope);
-        if (!scope || engagement.projectIds.length === 0) return { data: [], nextCursor: null };
+        const onlyOwn = engagement.engagement.kind === "subcontract";
+        if (
+          !scope ||
+          engagement.projectIds.length === 0 ||
+          (onlyOwn && !engagement.viewerAgencyDao)
+        ) {
+          return { data: [], nextCursor: null };
+        }
         return yield* billings.list(scope, {
           projectId: input.projectId,
           projectIds: engagement.projectIds,
+          payingDaoAccountId: onlyOwn ? (engagement.viewerAgencyDao ?? undefined) : undefined,
           cursor: input.cursor,
           limit: input.limit,
         });
@@ -100,6 +115,10 @@ export function createClientPortalService(
           note: input.note,
           startDate: input.startDate,
           endDate: input.endDate,
+          subcontractorDao:
+            engagement.engagement.kind === "subcontract"
+              ? (engagement.viewerAgencyDao ?? "")
+              : undefined,
         });
       }),
 
@@ -113,7 +132,9 @@ export function createClientPortalService(
           readOnly: engagement.readOnly,
           projectCount: projects.length,
         };
-        if (!scope || projects.length === 0) return { ...base, remainingByToken: [] };
+        if (!scope || projects.length === 0 || engagement.engagement.kind === "subcontract") {
+          return { ...base, remainingByToken: [] };
+        }
         const ledger = yield* Effect.promise(() =>
           projectLedgers.load(
             scope,

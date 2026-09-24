@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { Effect, Either } from "every-plugin/effect";
 import type { z } from "every-plugin/zod";
 import type { proposalPublicItem } from "../contract";
@@ -105,7 +105,15 @@ export function createProposalsService(db: Database, directory: ProjectDirectory
                     projectId: billings.projectId,
                   })
                   .from(billings)
-                  .where(inArray(billings.proposalId, proposalIdStrs)),
+                  .where(
+                    and(
+                      inArray(billings.proposalId, proposalIdStrs),
+                      or(
+                        eq(billings.payingDaoAccountId, scope.agencyDao),
+                        isNull(billings.payingDaoAccountId),
+                      ),
+                    ),
+                  ),
               )
             : [];
 

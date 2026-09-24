@@ -210,4 +210,50 @@ describe("migrate — runtime migrator", () => {
     await expect(insert("2026-9", "100")).rejects.toThrow();
     await expect(insert("2026-10", "0")).rejects.toThrow();
   });
+  test("the subcontracting migration records the paying Agency DAO and makes proposal ids unique per DAO", async () => {
+    const { migrations } = await Effect.runPromise(loadMigrations());
+    await Effect.runPromise(
+      migrate(
+        driver.db,
+        migrations.filter((m) => m.tag < "0010"),
+      ),
+    );
+    await driver.db.execute(
+      sql`INSERT INTO clients (id, org_id, agency_dao_account_id, name) VALUES ('legacy', 'acme', 'legacy.sputnik-dao.near', 'Acme')`,
+    );
+    await driver.db.execute(
+      sql`INSERT INTO budgets (id, project_id, token_id, amount, actor_account_id, funding_dao_account_id) VALUES ('funded', 'p1', 'near', '10', 'admin.near', 'studio.sputnik-dao.near'), ('mixed-a', 'p3', 'near', '1', 'admin.near', 'a.sputnik-dao.near'), ('mixed-b', 'p3', 'near', '1', 'admin.near', 'b.sputnik-dao.near')`,
+    );
+    await driver.db.execute(
+      sql`INSERT INTO billings (id, project_id, token_id, amount, proposal_id, client_id) VALUES ('by-client', 'p2', 'near', '1', '1', 'legacy'), ('by-budget', 'p1', 'near', '1', '2', NULL), ('ambiguous', 'p3', 'near', '1', '3', NULL), ('unknown', 'p4', 'near', '1', '4', NULL)`,
+    );
+    await driver.db.execute(
+      sql`INSERT INTO project_contributors (project_id, near_account, organization_id) VALUES ('p1', 'dev.near', 'studio')`,
+    );
+
+    await Effect.runPromise(migrate(driver.db, migrations));
+
+    const paying = await driver.db.execute(
+      sql`SELECT id, paying_dao_account_id FROM billings ORDER BY id`,
+    );
+    expect((paying as unknown as { rows: unknown[] }).rows).toEqual([
+      { id: "ambiguous", paying_dao_account_id: null },
+      { id: "by-budget", paying_dao_account_id: "studio.sputnik-dao.near" },
+      { id: "by-client", paying_dao_account_id: "legacy.sputnik-dao.near" },
+      { id: "unknown", paying_dao_account_id: null },
+    ]);
+    const assigned = await driver.db.execute(
+      sql`SELECT assigned_by_organization_id FROM project_contributors`,
+    );
+    expect((assigned as unknown as { rows: unknown[] }).rows).toEqual([
+      { assigned_by_organization_id: "studio" },
+    ]);
+    const insert = (id: string, dao: string) =>
+      driver.db.execute(
+        sql`INSERT INTO billings (id, project_id, token_id, amount, proposal_id, paying_dao_account_id) VALUES (${id}, 'p9', 'near', '1', '77', ${dao})`,
+      );
+    await insert("first", "studio.sputnik-dao.near");
+    await insert("other-dao", "crew.sputnik-dao.near");
+    await expect(insert("again", "studio.sputnik-dao.near")).rejects.toThrow();
+  });
 });

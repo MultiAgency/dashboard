@@ -25,10 +25,12 @@ export function createReportsService(
         note?: string;
         startDate?: string;
         endDate?: string;
+        subcontractorDao?: string;
       },
     ) =>
       Effect.gen(function* () {
         const { agencyDao } = scope;
+        const { subcontractorDao } = input;
         const allProjects = yield* Effect.promise(() => directory.forAgency(scope).list());
         let projectIds: string[];
 
@@ -103,7 +105,7 @@ export function createReportsService(
         const projectById = new Map(allProjects.map((p) => [p.id, p]));
 
         const budgetRowsAll =
-          projectIds.length > 0
+          projectIds.length > 0 && subcontractorDao === undefined
             ? yield* Effect.promise(() =>
                 db.select().from(budgets).where(inArray(budgets.projectId, projectIds)),
               )
@@ -128,13 +130,18 @@ export function createReportsService(
           return new Map(ids.map((id, i) => [id, found[i]?.name ?? id]));
         });
 
-        const billingRows = agencyDao
-          ? yield* Effect.promise(() =>
-              Promise.all(
-                billingRowsRaw.map((b) => enrichWithChainStatus(db, b as any, agencyDao)),
-              ),
-            )
-          : [];
+        const billingRows = yield* Effect.promise(() =>
+          Promise.all(
+            billingRowsRaw
+              .filter(
+                (b) => subcontractorDao === undefined || b.payingDaoAccountId === subcontractorDao,
+              )
+              .flatMap((b) => {
+                const payingDao = b.payingDaoAccountId ?? agencyDao;
+                return payingDao ? [enrichWithChainStatus(db, b, payingDao)] : [];
+              }),
+          ),
+        );
 
         const buildersResult = yield* Effect.promise(() =>
           plugins.builders(scope.pluginContext).listBuilders({ limit: 100 }),

@@ -29,6 +29,8 @@ describe("agency isolation", () => {
   let db: Database;
   let alpha: TreasuryScope;
   let alphaTreasurer: TreasuryScope;
+  let access: ReturnType<typeof inMemoryAccess>;
+  const names = { get: async () => null };
   const directory = createProjectDirectory(
     () =>
       inMemoryProjects([
@@ -44,13 +46,18 @@ describe("agency isolation", () => {
     await applyAllMigrations(pg);
     db = drizzle(pg, { schema }) as unknown as Database;
     await seedAgencyDaos(db, agencies);
-    const access = inMemoryAccess(db, {
-      organizations: agencies,
-      members: [
-        { userId: "alpha-admin", organizationId: "alpha-org", role: "admin" },
-        { userId: "alpha-treasurer", organizationId: "alpha-org", role: "owner" },
-      ],
-    });
+    access = inMemoryAccess(
+      db,
+      {
+        organizations: agencies,
+        members: [
+          { userId: "alpha-admin", organizationId: "alpha-org", role: "admin" },
+          { userId: "alpha-treasurer", organizationId: "alpha-org", role: "owner" },
+        ],
+      },
+      undefined,
+      directory,
+    );
     const manager = async (userId: string, organizationId: string, near: string) =>
       requireTreasury(
         await access.agencyScope(signedIn(userId, organizationId, near), ROLE_MATRIX.manage),
@@ -91,7 +98,7 @@ describe("agency isolation", () => {
 
       await expect(
         run(
-          createAssignmentsService(db, directory).delete(alpha, {
+          createAssignmentsService(db, directory, access, names).delete(alpha, {
             projectId: "beta-project",
             nearAccount: "dev.near",
           }),
