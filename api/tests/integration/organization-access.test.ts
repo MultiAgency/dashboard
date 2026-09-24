@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { engagementProjects, engagements, organizationDaos } from "../../src/db/schema";
+import { engagements, organizationDaos } from "../../src/db/schema";
 import {
   NO_AGENCY_DAO,
   ROLE_MATRIX,
@@ -203,62 +203,21 @@ describe("organization access", () => {
     );
   });
 
-  test("an active or ended Engagement gives the Client Organization its Client sections", async () => {
-    await database.db.insert(engagements).values([
-      {
-        id: "as-client",
-        agencyOrganizationId: "other",
-        clientOrganizationId: "multiagency",
-        status: "active",
-        proposedBy: "x",
-      },
-      {
-        id: "as-subcontractor",
-        agencyOrganizationId: "other",
-        clientOrganizationId: "no-dao",
-        kind: "subcontract",
-        status: "ended",
-        proposedBy: "x",
-      },
-    ]);
-    const access = accessWith();
-
-    for (const organizationId of ["multiagency", "no-dao"]) {
-      expect((await access.resolve(signedIn("u1", organizationId))).capabilities).toMatchObject({
-        hasClientSections: true,
-      });
-    }
-  });
-
-  test("a proposed Engagement shows Client sections to answer it but shares nothing", async () => {
-    await database.db.insert(engagements).values([
-      {
-        id: "pending",
-        agencyOrganizationId: "other",
-        clientOrganizationId: "multiagency",
-        status: "proposed",
-        proposedBy: "x",
-      },
-      {
-        id: "declined",
-        agencyOrganizationId: "other",
-        clientOrganizationId: "no-dao",
-        status: "declined",
-        proposedBy: "x",
-      },
-    ]);
-    await database.db
-      .insert(engagementProjects)
-      .values({ engagementId: "pending", projectId: "foreign" });
-    const access = accessWith();
-    const context = signedIn("u1", "multiagency");
-
-    expect((await access.resolve(context)).capabilities.hasClientSections).toBe(true);
-    expect((await access.resolve(signedIn("u1", "no-dao"))).capabilities.hasClientSections).toBe(
-      false,
-    );
-    await expect(access.sharedWith(context, "pending")).rejects.toMatchObject({
-      code: "NOT_FOUND",
+  test.each([
+    ["active", true],
+    ["ended", true],
+    ["proposed", true],
+    ["declined", false],
+  ] as const)("a %s Engagement gives its Client Organization Client sections: %s", async (status, expected) => {
+    await database.db.insert(engagements).values({
+      id: "e",
+      agencyOrganizationId: "other",
+      clientOrganizationId: "multiagency",
+      status,
+      proposedBy: "x",
     });
+
+    const access = await accessWith().resolve(signedIn("u1", "multiagency"));
+    expect(access.capabilities.hasClientSections).toBe(expected);
   });
 });

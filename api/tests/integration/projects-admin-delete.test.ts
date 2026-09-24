@@ -1,9 +1,5 @@
-import type { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import {
   billings,
   budgets,
@@ -17,22 +13,19 @@ import { createAgencyService } from "../../src/services/agency";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
 import { agencyScope, inMemoryProjectsPlugin, project } from "../fakes/projects";
-import { applyAllMigrations } from "./_pg";
+import { migratedDatabase } from "./_pg";
 
 const AGENCY_ORG = "agency-org";
 const scope = agencyScope("agency.sputnik-dao.testnet", { organizationId: AGENCY_ORG });
 
 describe("deleting a Project", () => {
-  let pg: PGlite;
-  let db: Database;
+  const database = migratedDatabase({ perTest: true });
+  let db: typeof database.db;
   let world: ReturnType<typeof inMemoryProjectsPlugin>;
   let deleted: string[];
 
   beforeEach(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
+    db = database.db;
     world = inMemoryProjectsPlugin([project("plain", AGENCY_ORG), project("used", AGENCY_ORG)]);
     deleted = [];
     const projects = world.plugins.projects;
@@ -44,10 +37,6 @@ describe("deleting a Project", () => {
         return { success: true };
       },
     })) as never;
-  });
-
-  afterEach(async () => {
-    await pg.close();
   });
 
   function agency() {
