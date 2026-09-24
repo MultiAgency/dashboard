@@ -1,20 +1,34 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, DataTable, Spinner } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Input } from "@/components/ui/input";
+import { refreshAccountQueries } from "@/lib/account";
 import { type AuthClient, useAuthClient } from "@/lib/auth";
+import {
+  canChangeRole,
+  isLastOwner,
+  memberDisplayName,
+  ORGANIZATION_ROLES,
+  type OrganizationRole,
+  realEmail,
+} from "@/lib/membership";
 
 type Member = {
   id: string;
   userId: string;
-  nearAccountId: string | null;
-  displayName: string | null;
-  role: "admin" | "member" | "owner";
+  displayName: string;
+  email: string | null;
+  role: string;
 };
+
+type InviteRole = Parameters<AuthClient["organization"]["inviteMember"]>[0]["role"];
+
+const LAST_OWNER_HINT =
+  "The only owner can't be removed or demoted. Make someone else owner first.";
 
 type Invitation = {
   id: string;
@@ -38,14 +52,14 @@ function unwrapMembers(res: unknown): Member[] {
       id: string;
       userId: string;
       role: string;
-      user?: { name?: string | null };
+      user?: { name?: string | null; email?: string | null };
     }>
   ).map((m) => ({
     id: m.id,
     userId: m.userId,
-    nearAccountId: m.user?.name ?? null,
-    displayName: m.user?.name ?? null,
-    role: m.role as Member["role"],
+    displayName: memberDisplayName({ userId: m.userId, name: m.user?.name, email: m.user?.email }),
+    email: realEmail(m.user?.email),
+    role: m.role,
   }));
 }
 
@@ -140,8 +154,9 @@ export function MembersAdminSection() {
           invite team member
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Email invitations join this agency workspace. Admins can manage projects, clients, and
-          settings. This does not create a builder profile — add builders separately under{" "}
+          Email invitations join this Organization. Owners and admins manage members, projects and
+          settings; members work on projects; contributors see the projects they are assigned to.
+          This does not create a builder profile — add builders separately under{" "}
           <Link
             to="/admin/contributors"
             className="underline underline-offset-2 hover:text-foreground"
@@ -191,6 +206,7 @@ export function MembersAdminSection() {
         ) : (
           <MembersTable
             members={members}
+            currentUserId={sessionQuery.data?.user?.id}
             onChanged={invalidateMembers}
             authClient={authClient}
             orgId={activeOrgId ?? undefined}
@@ -228,7 +244,7 @@ function PendingInvitationsTable({
     mutationFn: (invitation: Invitation) =>
       authClient.organization.inviteMember({
         email: invitation.email,
-        role: (invitation.role ?? "member") as "admin" | "member" | "owner",
+        role: (invitation.role ?? "member") as InviteRole,
         organizationId: orgId,
         resend: true,
       }),
@@ -325,15 +341,19 @@ function PendingInvitationsTable({
 
 function MembersTable({
   members,
+  currentUserId,
   onChanged,
   authClient,
   orgId,
 }: {
   members: Member[];
+  currentUserId?: string;
   onChanged: () => void;
   authClient: AuthClient;
   orgId?: string;
 }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [pendingRoles, setPendingRoles] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -341,18 +361,32 @@ function MembersTable({
   }, [members]);
 
   const updateMutation = useMutation({
-    mutationFn: ({ memberId, role }: { memberId: string; role: "admin" | "member" | "owner" }) =>
-      authClient.organization.updateMemberRole({ memberId, organizationId: orgId, role }),
+    mutationFn: async ({ memberId, role }: { memberId: string; role: OrganizationRole }) => {
+      const { error } = await authClient.organization.updateMemberRole({
+        memberId,
+        organizationId: orgId,
+        role,
+      });
+      if (error) throw new Error(error.message ?? "Failed to update role");
+    },
     onSuccess: () => {
       toast.success("Role updated");
       onChanged();
     },
-    onError: (e: Error) => toast.error(e.message || "Failed to update role"),
+    onError: (e: Error) => {
+      setPendingRoles({});
+      toast.error(e.message || "Failed to update role");
+    },
   });
 
   const removeMutation = useMutation({
-    mutationFn: (memberId: string) =>
-      authClient.organization.removeMember({ memberIdOrEmail: memberId, organizationId: orgId }),
+    mutationFn: async (memberId: string) => {
+      const { error } = await authClient.organization.removeMember({
+        memberIdOrEmail: memberId,
+        organizationId: orgId,
+      });
+      if (error) throw new Error(error.message ?? "Failed to remove member");
+    },
     onSuccess: () => {
       toast.success("Member removed");
       onChanged();
@@ -360,24 +394,36 @@ function MembersTable({
     onError: (e: Error) => toast.error(e.message || "Failed to remove member"),
   });
 
+  const leaveMutation = useMutation({
+    mutationFn: async () => {
+      if (!orgId) throw new Error("No active Organization");
+      const { error } = await authClient.organization.leave({ organizationId: orgId });
+      if (error) throw new Error(error.message ?? "Failed to leave the Organization");
+    },
+    onSuccess: async () => {
+      toast.success("You left the Organization");
+      await refreshAccountQueries(queryClient);
+      navigate({ to: "/welcome", replace: true });
+    },
+    onError: (e: Error) => toast.error(e.message || "Failed to leave the Organization"),
+  });
+
+  const busy = updateMutation.isPending || removeMutation.isPending || leaveMutation.isPending;
+
   const columns: ColumnDef<Member>[] = [
     {
       id: "displayName",
       header: "Name",
       accessorKey: "displayName",
-      cell: ({ row }) => (
-        <span className="font-mono text-sm">
-          {row.original.displayName ?? row.original.nearAccountId ?? row.original.userId}
-        </span>
-      ),
+      cell: ({ row }) => <span className="font-mono text-sm">{row.original.displayName}</span>,
     },
     {
-      id: "nearAccountId",
-      header: "NEAR Account",
-      accessorKey: "nearAccountId",
+      id: "email",
+      header: "Email",
+      accessorKey: "email",
       cell: ({ row }) => (
         <span className="font-mono text-sm text-muted-foreground">
-          {row.original.nearAccountId ?? "\u2014"}
+          {row.original.email ?? "\u2014"}
         </span>
       ),
     },
@@ -387,23 +433,29 @@ function MembersTable({
       accessorKey: "role",
       cell: ({ row }) => {
         const member = row.original;
+        const lastOwner = isLastOwner(members, member.id);
         return (
           <select
+            aria-label={`Role of ${member.displayName}`}
+            title={lastOwner ? LAST_OWNER_HINT : undefined}
             value={pendingRoles[member.id] ?? member.role}
             onChange={(e) => {
-              const newRole = e.target.value;
+              const newRole = e.target.value as OrganizationRole;
+              if (!canChangeRole(members, member.id, newRole)) {
+                toast.error(LAST_OWNER_HINT);
+                return;
+              }
               setPendingRoles((prev) => ({ ...prev, [member.id]: newRole }));
-              updateMutation.mutate({
-                memberId: member.id,
-                role: newRole as "admin" | "member" | "owner",
-              });
+              updateMutation.mutate({ memberId: member.id, role: newRole });
             }}
-            disabled={updateMutation.isPending || removeMutation.isPending}
+            disabled={busy || lastOwner}
             className="h-7 rounded border border-input bg-background px-2 font-mono text-[11px]"
           >
-            <option value="owner">owner</option>
-            <option value="admin">admin</option>
-            <option value="member">member</option>
+            {ORGANIZATION_ROLES.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
           </select>
         );
       },
@@ -414,15 +466,20 @@ function MembersTable({
       enableHiding: false,
       cell: ({ row }) => {
         const member = row.original;
+        const lastOwner = isLastOwner(members, member.id);
+        const isSelf = member.userId === currentUserId;
         return (
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => removeMutation.mutate(member.id)}
-            disabled={removeMutation.isPending || updateMutation.isPending}
-          >
-            {removeMutation.isPending ? "\u2026" : "remove"}
-          </Button>
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="destructive"
+              title={lastOwner ? LAST_OWNER_HINT : undefined}
+              onClick={() => (isSelf ? leaveMutation.mutate() : removeMutation.mutate(member.id))}
+              disabled={busy || lastOwner}
+            >
+              {isSelf ? "leave" : "remove"}
+            </Button>
+          </div>
         );
       },
     },
@@ -449,11 +506,17 @@ function AddMemberForm({
   orgId?: string;
 }) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "member" | "owner">("member");
+  const [role, setRole] = useState<OrganizationRole>("member");
 
   const addMutation = useMutation({
-    mutationFn: () =>
-      authClient.organization.inviteMember({ email: email.trim(), role, organizationId: orgId }),
+    mutationFn: async () => {
+      const { error } = await authClient.organization.inviteMember({
+        email: email.trim(),
+        role: role as InviteRole,
+        organizationId: orgId,
+      });
+      if (error) throw new Error(error.message ?? "Failed to invite member");
+    },
     onSuccess: () => {
       toast.success(`Invited ${email}`);
       setEmail("");
@@ -489,12 +552,15 @@ function AddMemberForm({
             <select
               id="invite-member-role"
               value={role}
-              onChange={(e) => setRole(e.target.value as typeof role)}
+              onChange={(e) => setRole(e.target.value as OrganizationRole)}
               disabled={addMutation.isPending}
               className="h-9 rounded-md border border-input bg-background px-3 py-1 font-mono text-xs"
             >
-              <option value="admin">admin</option>
-              <option value="member">member</option>
+              {ORGANIZATION_ROLES.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
             </select>
           </div>
           <Button

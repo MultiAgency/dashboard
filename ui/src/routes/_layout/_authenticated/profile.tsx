@@ -1,16 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Avatar, AvatarFallback, AvatarImage, Button, Card, CardContent } from "@/components";
 import { Field } from "@/components/admin-form";
+import { MyOrganizations } from "@/components/my-organizations";
+import { PendingInvitationsList } from "@/components/pending-invitations";
+import { SignInMethods } from "@/components/sign-in-methods";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
 import { type NearProfile, nearProfileQueryOptions } from "@/lib/near-profile";
 
 export const Route = createFileRoute("/_layout/_authenticated/profile")({
   head: () => ({
-    meta: [{ title: "Profile" }, { name: "description", content: "Your account and session." }],
+    meta: [
+      { title: "Profile" },
+      { name: "description", content: "Your account, sign-in methods and invitations." },
+    ],
   }),
   component: ProfilePage,
 });
@@ -96,35 +103,22 @@ function ProfilePage() {
         </CardContent>
       </Card>
 
-      <section className="space-y-3">
-        <div className="space-y-1">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            session
+      <ProfileSection id="invitations" eyebrow="organizations" title="Invitations">
+        <PendingInvitationsList />
+      </ProfileSection>
+
+      <ProfileSection eyebrow="organizations" title="Memberships">
+        <MyOrganizations />
+      </ProfileSection>
+
+      <ProfileSection eyebrow="session" title="Sign-in methods">
+        <SignInMethods />
+        <Field label="user id">
+          <div className="border-2 border-border bg-muted/10 p-3 font-mono text-xs break-all">
+            {user.id}
           </div>
-          <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-[0.95]">
-            Account
-          </h2>
-        </div>
-        <Card>
-          <CardContent className="grid gap-4">
-            <Field label="email">
-              <div className="border-2 border-border bg-muted/10 p-3 font-mono text-xs break-all">
-                {user.email || "—"}
-              </div>
-            </Field>
-            <Field label="near account">
-              <div className="border-2 border-border bg-muted/10 p-3 font-mono text-xs break-all">
-                {nearAccountId || "not linked"}
-              </div>
-            </Field>
-            <Field label="user id">
-              <div className="border-2 border-border bg-muted/10 p-3 font-mono text-xs break-all">
-                {user.id}
-              </div>
-            </Field>
-          </CardContent>
-        </Card>
-      </section>
+        </Field>
+      </ProfileSection>
 
       <section className="space-y-3">
         <div className="space-y-1">
@@ -156,5 +150,31 @@ function ProfilePage() {
         </Button>
       </section>
     </div>
+  );
+}
+
+function ProfileSection({
+  id,
+  eyebrow,
+  title,
+  children,
+}: {
+  id?: string;
+  eyebrow: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section id={id} className="space-y-3 scroll-mt-24">
+      <div className="space-y-1">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          {eyebrow}
+        </div>
+        <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-[0.95]">
+          {title}
+        </h2>
+      </div>
+      {children}
+    </section>
   );
 }
