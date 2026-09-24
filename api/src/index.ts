@@ -18,6 +18,7 @@ import {
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
 import { createAgencyDaoService } from "./services/agency-dao";
+import { createAgentLinksService } from "./services/agent-links";
 import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
 import { createBillingsService } from "./services/billings";
@@ -149,6 +150,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         notifications,
         organizations: organizationDirectory,
       });
+      const agentLinks = createAgentLinksService({ db });
       const clientPortal = createClientPortalService(
         access,
         agency,
@@ -183,6 +185,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         prepayments,
         changeOrders,
         ideas,
+        agentLinks,
         notifications,
         organizationDirectory,
         authPool,
@@ -219,6 +222,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       prepayments,
       changeOrders,
       ideas,
+      agentLinks,
       notifications,
       organizationDirectory,
       assignments,
@@ -490,6 +494,28 @@ export default createPlugin.withPlugins<PluginsClient>()({
         decline: builder.ideas.decline
           .use(manager)
           .handler(async ({ context, input }) => ideas.decline(context.scope, input)),
+      },
+
+      agentLinks: {
+        list: builder.agentLinks.list
+          .use(member)
+          .handler(async ({ context, input }) => agentLinks.list(context.scope, input)),
+
+        create: builder.agentLinks.create
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.create(context.scope, input)),
+
+        update: builder.agentLinks.update
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.update(context.scope, input)),
+
+        reorder: builder.agentLinks.reorder
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.reorder(context.scope, input)),
+
+        remove: builder.agentLinks.remove
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.remove(context.scope, input)),
       },
 
       clientPortal: {

@@ -455,6 +455,16 @@ const idea = z.object({
 
 const ideaIdInput = z.object({ id: z.string().min(1) });
 
+const agentLink = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  label: z.string(),
+  url: z.string(),
+  position: z.number().int().nonnegative(),
+});
+
+const agentLinkLabel = z.string().trim().min(1).max(120);
+
 const assignment = z.object({
   projectId: z.string(),
   nearAccount: z.string(),
@@ -1018,6 +1028,46 @@ export const contract = oc.router({
       .route({ method: "POST", path: "/ideas/{id}/decline" })
       .input(ideaIdInput)
       .output(idea)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  agentLinks: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/agent-links" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(agentLink) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    create: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/agent-links" })
+      .input(z.object({ engagementId: z.string().min(1), label: agentLinkLabel, url: httpUrl }))
+      .output(agentLink)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    update: oc
+      .route({ method: "PATCH", path: "/agent-links/{id}" })
+      .input(
+        z.object({
+          id: z.string().min(1),
+          label: agentLinkLabel.optional(),
+          url: httpUrl.optional(),
+        }),
+      )
+      .output(agentLink)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    reorder: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/agent-links/order" })
+      .input(
+        z.object({ engagementId: z.string().min(1), ids: z.array(z.string().min(1)).max(100) }),
+      )
+      .output(z.object({ data: z.array(agentLink) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    remove: oc
+      .route({ method: "DELETE", path: "/agent-links/{id}" })
+      .input(z.object({ id: z.string().min(1) }))
+      .output(z.object({ ok: z.literal(true) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
