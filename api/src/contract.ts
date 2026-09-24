@@ -1149,6 +1149,19 @@ export const contract = oc.router({
       .errors({ UNAUTHORIZED, FORBIDDEN }),
   },
 
+  platform: {
+    assignOwner: oc
+      .route({ method: "POST", path: "/platform/organizations/{organizationId}/owner" })
+      .input(
+        z.object({
+          organizationId: z.string().trim().min(1).max(200),
+          userId: z.string().trim().min(1).max(200),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
   team: {
     list: oc.route({ method: "GET", path: "/team" }).output(
       z.object({
