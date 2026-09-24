@@ -63,6 +63,7 @@ export function clientEngagementSections(engagementId: string): NavItem[] {
   return [
     { to: base, label: "overview" },
     { to: `${base}/projects`, label: "shared projects" },
+    { to: `${base}/prepayments`, label: "prepayments" },
     { to: `${base}/billings`, label: "billings" },
     { to: `${base}/reports`, label: "reports" },
   ];

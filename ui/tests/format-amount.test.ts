@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { formatTokenAmount, parseDecimalToBase } from "../src/lib/format-amount";
+import { baseToDecimal, formatTokenAmount, parseDecimalToBase } from "../src/lib/format-amount";
 
 const ONE_NEAR = "1000000000000000000000000";
 const HALF_NEAR = "500000000000000000000000";
@@ -124,5 +124,20 @@ describe("parseDecimalToBase", () => {
   test("handles tokens with zero decimals", () => {
     expect(parseDecimalToBase("100", 0)).toBe("100");
     expect(() => parseDecimalToBase("1.5", 0)).toThrow(/Too many fractional digits/);
+  });
+});
+
+describe("baseToDecimal", () => {
+  test("writes base units as a plain decimal that parses back to the same amount", () => {
+    for (const [amount, decimals, decimal] of [
+      [ONE_AND_QUARTER_NEAR, 24, "1.25"],
+      [ONE_NEAR, 24, "1"],
+      ["1", 6, "0.000001"],
+      ["1234567000", 6, "1234.567"],
+      ["0", 6, "0"],
+    ] as const) {
+      expect(baseToDecimal(amount, decimals)).toBe(decimal);
+      expect(parseDecimalToBase(decimal, decimals)).toBe(amount);
+    }
   });
 });

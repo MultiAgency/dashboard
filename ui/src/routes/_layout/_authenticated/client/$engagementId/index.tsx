@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components";
 import { AdminError } from "@/components/admin-error";
+import { PrepaidBalanceCard } from "@/components/prepayments";
 import { TokenAmountCell } from "@/components/token-amounts";
 import { useApiClient } from "@/lib/api";
 import { clientPortalDashboardSummaryQueryOptions } from "@/lib/queries";
@@ -28,7 +29,7 @@ function EngagementOverview() {
           Projects, budget and billings stay here as read-only history.
         </p>
       )}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
           <CardContent className="p-4">
             <div className="text-xs uppercase text-muted-foreground">Shared projects</div>
@@ -56,6 +57,7 @@ function EngagementOverview() {
             )}
           </CardContent>
         </Card>
+        <PrepaidBalanceCard engagementId={engagement.id} />
       </div>
     </div>
   );

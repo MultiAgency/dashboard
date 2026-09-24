@@ -45,6 +45,7 @@ import { Route as LayoutAuthenticatedAdminBudgetsIndexRouteImport } from './rout
 import { Route as LayoutAuthenticatedAdminBillingsIndexRouteImport } from './routes/_layout/_authenticated/admin/billings/index'
 import { Route as LayoutAuthenticatedAdminApplicationsIndexRouteImport } from './routes/_layout/_authenticated/admin/applications/index'
 import { Route as LayoutAuthenticatedClientEngagementIdReportsRouteImport } from './routes/_layout/_authenticated/client/$engagementId/reports'
+import { Route as LayoutAuthenticatedClientEngagementIdPrepaymentsRouteImport } from './routes/_layout/_authenticated/client/$engagementId/prepayments'
 import { Route as LayoutAuthenticatedClientEngagementIdBillingsRouteImport } from './routes/_layout/_authenticated/client/$engagementId/billings'
 import { Route as LayoutAuthenticatedAdminProjectsSlugRouteImport } from './routes/_layout/_authenticated/admin/projects/$slug'
 import { Route as LayoutAuthenticatedAdminEngagementsEngagementIdRouteImport } from './routes/_layout/_authenticated/admin/engagements/$engagementId'
@@ -253,6 +254,12 @@ const LayoutAuthenticatedClientEngagementIdReportsRoute =
     path: '/reports',
     getParentRoute: () => LayoutAuthenticatedClientEngagementIdRouteRoute,
   } as any)
+const LayoutAuthenticatedClientEngagementIdPrepaymentsRoute =
+  LayoutAuthenticatedClientEngagementIdPrepaymentsRouteImport.update({
+    id: '/prepayments',
+    path: '/prepayments',
+    getParentRoute: () => LayoutAuthenticatedClientEngagementIdRouteRoute,
+  } as any)
 const LayoutAuthenticatedClientEngagementIdBillingsRoute =
   LayoutAuthenticatedClientEngagementIdBillingsRouteImport.update({
     id: '/billings',
@@ -320,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/admin/engagements/$engagementId': typeof LayoutAuthenticatedAdminEngagementsEngagementIdRoute
   '/admin/projects/$slug': typeof LayoutAuthenticatedAdminProjectsSlugRoute
   '/client/$engagementId/billings': typeof LayoutAuthenticatedClientEngagementIdBillingsRoute
+  '/client/$engagementId/prepayments': typeof LayoutAuthenticatedClientEngagementIdPrepaymentsRoute
   '/client/$engagementId/reports': typeof LayoutAuthenticatedClientEngagementIdReportsRoute
   '/admin/applications/': typeof LayoutAuthenticatedAdminApplicationsIndexRoute
   '/admin/billings/': typeof LayoutAuthenticatedAdminBillingsIndexRoute
@@ -358,6 +366,7 @@ export interface FileRoutesByTo {
   '/admin/engagements/$engagementId': typeof LayoutAuthenticatedAdminEngagementsEngagementIdRoute
   '/admin/projects/$slug': typeof LayoutAuthenticatedAdminProjectsSlugRoute
   '/client/$engagementId/billings': typeof LayoutAuthenticatedClientEngagementIdBillingsRoute
+  '/client/$engagementId/prepayments': typeof LayoutAuthenticatedClientEngagementIdPrepaymentsRoute
   '/client/$engagementId/reports': typeof LayoutAuthenticatedClientEngagementIdReportsRoute
   '/admin/applications': typeof LayoutAuthenticatedAdminApplicationsIndexRoute
   '/admin/billings': typeof LayoutAuthenticatedAdminBillingsIndexRoute
@@ -403,6 +412,7 @@ export interface FileRoutesById {
   '/_layout/_authenticated/admin/engagements/$engagementId': typeof LayoutAuthenticatedAdminEngagementsEngagementIdRoute
   '/_layout/_authenticated/admin/projects/$slug': typeof LayoutAuthenticatedAdminProjectsSlugRoute
   '/_layout/_authenticated/client/$engagementId/billings': typeof LayoutAuthenticatedClientEngagementIdBillingsRoute
+  '/_layout/_authenticated/client/$engagementId/prepayments': typeof LayoutAuthenticatedClientEngagementIdPrepaymentsRoute
   '/_layout/_authenticated/client/$engagementId/reports': typeof LayoutAuthenticatedClientEngagementIdReportsRoute
   '/_layout/_authenticated/admin/applications/': typeof LayoutAuthenticatedAdminApplicationsIndexRoute
   '/_layout/_authenticated/admin/billings/': typeof LayoutAuthenticatedAdminBillingsIndexRoute
@@ -447,6 +457,7 @@ export interface FileRouteTypes {
     | '/admin/engagements/$engagementId'
     | '/admin/projects/$slug'
     | '/client/$engagementId/billings'
+    | '/client/$engagementId/prepayments'
     | '/client/$engagementId/reports'
     | '/admin/applications/'
     | '/admin/billings/'
@@ -485,6 +496,7 @@ export interface FileRouteTypes {
     | '/admin/engagements/$engagementId'
     | '/admin/projects/$slug'
     | '/client/$engagementId/billings'
+    | '/client/$engagementId/prepayments'
     | '/client/$engagementId/reports'
     | '/admin/applications'
     | '/admin/billings'
@@ -529,6 +541,7 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/admin/engagements/$engagementId'
     | '/_layout/_authenticated/admin/projects/$slug'
     | '/_layout/_authenticated/client/$engagementId/billings'
+    | '/_layout/_authenticated/client/$engagementId/prepayments'
     | '/_layout/_authenticated/client/$engagementId/reports'
     | '/_layout/_authenticated/admin/applications/'
     | '/_layout/_authenticated/admin/billings/'
@@ -800,6 +813,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedClientEngagementIdReportsRouteImport
       parentRoute: typeof LayoutAuthenticatedClientEngagementIdRouteRoute
     }
+    '/_layout/_authenticated/client/$engagementId/prepayments': {
+      id: '/_layout/_authenticated/client/$engagementId/prepayments'
+      path: '/prepayments'
+      fullPath: '/client/$engagementId/prepayments'
+      preLoaderRoute: typeof LayoutAuthenticatedClientEngagementIdPrepaymentsRouteImport
+      parentRoute: typeof LayoutAuthenticatedClientEngagementIdRouteRoute
+    }
     '/_layout/_authenticated/client/$engagementId/billings': {
       id: '/_layout/_authenticated/client/$engagementId/billings'
       path: '/billings'
@@ -896,6 +916,7 @@ const LayoutAuthenticatedAdminRouteRouteWithChildren =
 
 interface LayoutAuthenticatedClientEngagementIdRouteRouteChildren {
   LayoutAuthenticatedClientEngagementIdBillingsRoute: typeof LayoutAuthenticatedClientEngagementIdBillingsRoute
+  LayoutAuthenticatedClientEngagementIdPrepaymentsRoute: typeof LayoutAuthenticatedClientEngagementIdPrepaymentsRoute
   LayoutAuthenticatedClientEngagementIdReportsRoute: typeof LayoutAuthenticatedClientEngagementIdReportsRoute
   LayoutAuthenticatedClientEngagementIdIndexRoute: typeof LayoutAuthenticatedClientEngagementIdIndexRoute
   LayoutAuthenticatedClientEngagementIdProjectsSlugRoute: typeof LayoutAuthenticatedClientEngagementIdProjectsSlugRoute
@@ -906,6 +927,8 @@ const LayoutAuthenticatedClientEngagementIdRouteRouteChildren: LayoutAuthenticat
   {
     LayoutAuthenticatedClientEngagementIdBillingsRoute:
       LayoutAuthenticatedClientEngagementIdBillingsRoute,
+    LayoutAuthenticatedClientEngagementIdPrepaymentsRoute:
+      LayoutAuthenticatedClientEngagementIdPrepaymentsRoute,
     LayoutAuthenticatedClientEngagementIdReportsRoute:
       LayoutAuthenticatedClientEngagementIdReportsRoute,
     LayoutAuthenticatedClientEngagementIdIndexRoute:
