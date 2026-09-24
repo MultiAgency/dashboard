@@ -3,8 +3,13 @@ import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tansta
 import { Badge } from "@/components";
 import { EngagementStatusBadge } from "@/components/engagement-status";
 import { useApiClient } from "@/lib/api";
+import { awaitingCountFor } from "@/lib/change-orders";
 import { canReadEngagement, clientEngagementSections } from "@/lib/navigation";
-import { engagementDetailQueryOptions, engagementsListQueryOptions } from "@/lib/queries";
+import {
+  awaitingChangeOrdersQueryOptions,
+  engagementDetailQueryOptions,
+  engagementsListQueryOptions,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/client/$engagementId")({
   beforeLoad: async ({ context, params }) => {
@@ -33,6 +38,11 @@ function EngagementLayout() {
     (e) => e.side === "client" && canReadEngagement(e.status),
   );
   const sections = clientEngagementSections(engagement.id);
+  const awaiting = awaitingCountFor(
+    useQuery(awaitingChangeOrdersQueryOptions(apiClient)).data?.data ?? [],
+    engagement.id,
+  );
+  const planSection = `/client/${engagement.id}/plan`;
 
   const isActive = (to: string) =>
     to === sections[0]!.to
@@ -84,6 +94,11 @@ function EngagementLayout() {
             className={`${TAB_BASE} ${isActive(section.to) ? TAB_ACTIVE : TAB_INACTIVE}`}
           >
             {section.label}
+            {section.to === planSection && awaiting > 0 && (
+              <Badge variant="accent" className="ml-1 px-1.5 py-0 font-mono text-[10px]">
+                {awaiting}
+              </Badge>
+            )}
           </Link>
         ))}
       </nav>
