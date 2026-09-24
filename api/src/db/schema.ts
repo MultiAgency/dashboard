@@ -114,7 +114,6 @@ export const organizationDaos = pgTable(
   }),
 );
 
-
 export const ENGAGEMENT_STATUSES = ["proposed", "active", "declined", "ended"] as const;
 export const ENGAGEMENT_KINDS = ["client", "subcontract"] as const;
 
