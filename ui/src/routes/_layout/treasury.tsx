@@ -37,6 +37,7 @@ import {
 } from "@/components";
 import { Field } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { csvTimestamp, downloadCsv } from "@/lib/csv";
@@ -51,6 +52,7 @@ import {
   tokensListQueryOptions,
   treasuryPublicBalancesQueryOptions,
 } from "@/lib/queries";
+import { needsTreasury } from "@/lib/treasury";
 import { trezuProposalUrl } from "@/lib/trezu";
 
 const TREASURY_TABS = ["balances", "payouts"] as const;
@@ -105,7 +107,7 @@ type Token = {
 function TreasuryPage() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
-  const { canAccessAdmin } = useMeRoles();
+  const { canAccessAdmin, orgRole, agencyDao } = useMeRoles();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
@@ -173,7 +175,7 @@ function TreasuryPage() {
     retry: false,
   });
   const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
-  const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
+  const orgAccountId = orgRole ? agencyDao : (settingsQuery.data?.orgAccountId ?? null);
   const proposals = useMemo(
     () => proposalsQuery.data?.pages.flatMap((p) => p.data) ?? [],
     [proposalsQuery.data],
@@ -229,26 +231,30 @@ function TreasuryPage() {
         </p>
       </header>
 
-      <Tabs value={activeTab} onValueChange={(t) => setActiveTab(t as TreasuryTab)}>
-        <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.22em]">
-          <TabsTrigger value="balances">balances</TabsTrigger>
-          <TabsTrigger value="payouts">payouts</TabsTrigger>
-        </TabsList>
-        <TabsContent value="balances" className="mt-6">
-          <BalancesSection
-            isLoading={isLoading}
-            tokens={tokens}
-            visibleTokens={visibleTokens}
-            balanceByToken={balanceByToken}
-            onSelectToken={setSelectedToken}
-            view={balancesView}
-            onViewChange={setBalancesView}
-          />
-        </TabsContent>
-        <TabsContent value="payouts" className="mt-6">
-          <ProposalsList {...proposalsListProps} />
-        </TabsContent>
-      </Tabs>
+      {needsTreasury(tokensQuery.error) ? (
+        <ConnectTreasuryPrompt />
+      ) : (
+        <Tabs value={activeTab} onValueChange={(t) => setActiveTab(t as TreasuryTab)}>
+          <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.22em]">
+            <TabsTrigger value="balances">balances</TabsTrigger>
+            <TabsTrigger value="payouts">payouts</TabsTrigger>
+          </TabsList>
+          <TabsContent value="balances" className="mt-6">
+            <BalancesSection
+              isLoading={isLoading}
+              tokens={tokens}
+              visibleTokens={visibleTokens}
+              balanceByToken={balanceByToken}
+              onSelectToken={setSelectedToken}
+              view={balancesView}
+              onViewChange={setBalancesView}
+            />
+          </TabsContent>
+          <TabsContent value="payouts" className="mt-6">
+            <ProposalsList {...proposalsListProps} />
+          </TabsContent>
+        </Tabs>
+      )}
 
       <TokenDetailDialog
         token={selectedToken}
