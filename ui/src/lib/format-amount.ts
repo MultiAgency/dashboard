@@ -74,3 +74,10 @@ export function parseDecimalToBase(decimal: string, decimals: number): string {
   const result = `${whole}${padded}`.replace(/^0+(?=\d)/, "");
   return result === "" ? "0" : result;
 }
+
+export function baseToDecimal(amount: string, decimals: number): string {
+  const value = BigInt(amount);
+  const factor = 10n ** BigInt(decimals);
+  const fraction = (value % factor).toString().padStart(decimals, "0").replace(/0+$/, "");
+  return fraction ? `${value / factor}.${fraction}` : (value / factor).toString();
+}

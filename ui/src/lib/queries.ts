@@ -320,6 +320,24 @@ export function engagementDetailQueryOptions(apiClient: ApiClient, id: string) {
   });
 }
 
+export const prepaymentsQueryKey = ["prepayments"] as const;
+
+export function prepaymentsListQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...prepaymentsQueryKey, "list", ...workspaceKey(), engagementId] as const,
+    queryFn: () => apiClient.prepayments.list({ engagementId }),
+    retry: false,
+  });
+}
+
+export function prepaidBalanceQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...prepaymentsQueryKey, "balance", ...workspaceKey(), engagementId] as const,
+    queryFn: () => apiClient.prepayments.balance({ engagementId }),
+    retry: false,
+  });
+}
+
 export const clientPortalQueryKey = ["client", "portal"] as const;
 
 export function clientPortalDashboardSummaryQueryOptions(
@@ -412,6 +430,7 @@ export type DataChange =
   | { type: "applications" }
   | { type: "builders" }
   | { type: "engagements" }
+  | { type: "prepayments" }
   | { type: "notifications" }
   | { type: "settings" };
 
@@ -462,6 +481,8 @@ function staleKeys(change: DataChange): QueryKey[] {
       return [["admin", "contributors"]];
     case "engagements":
       return [engagementsQueryKey, clientPortalQueryKey, meRolesQueryKey];
+    case "prepayments":
+      return [prepaymentsQueryKey];
     case "notifications":
       return [notificationsQueryKey];
     case "settings":

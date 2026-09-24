@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workspaceNavigation } from "../src/lib/navigation";
+import { clientEngagementSections, workspaceNavigation } from "../src/lib/navigation";
 
 const labels = (...args: Parameters<typeof workspaceNavigation>) =>
   workspaceNavigation(...args).flatMap((g) => g.items.map((i) => i.label));
@@ -41,6 +41,18 @@ describe("workspaceNavigation", () => {
 
     expect(groups.find((g) => g.title === "as client")?.items).toEqual([
       { to: "/client", label: "agencies" },
+    ]);
+  });
+});
+
+describe("clientEngagementSections", () => {
+  it("gives Client members every read-only section of their Engagement, Prepayments included", () => {
+    expect(clientEngagementSections("e1")).toEqual([
+      { to: "/client/e1", label: "overview" },
+      { to: "/client/e1/projects", label: "shared projects" },
+      { to: "/client/e1/prepayments", label: "prepayments" },
+      { to: "/client/e1/billings", label: "billings" },
+      { to: "/client/e1/reports", label: "reports" },
     ]);
   });
 });

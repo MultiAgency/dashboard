@@ -11,7 +11,7 @@ import {
   resolveBudgetAuditDropdownOptions,
 } from "@/lib/admin-filter-graph";
 import { useApiClient } from "@/lib/api";
-import { formatTokenAmount, parseDecimalToBase } from "@/lib/format-amount";
+import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminBudgetsLogQueryKey,
   adminProjectBudgetQueryOptions,
@@ -23,6 +23,7 @@ import {
   engagementsListQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
+import { CUSTOM_TOKEN, deriveBaseAmount, TokenAmountFields } from "./token-amount-fields";
 
 function budgetVerb(amount: string, relatedBudgetId: string | null): string {
   const negative = amount.startsWith("-");
@@ -36,123 +37,6 @@ function VerbTag({ verb }: { verb: string }) {
       {verb}
     </span>
   );
-}
-
-type KnownToken = {
-  tokenId: string;
-  network: string;
-  symbol: string;
-  decimals: number;
-  name: string;
-  icon: string | null;
-};
-
-const CUSTOM_TOKEN = "__custom__";
-
-function TokenAmountFields({
-  idPrefix,
-  tokens,
-  tokenSelection,
-  setTokenSelection,
-  customTokenId,
-  setCustomTokenId,
-  amount,
-  setAmount,
-  amountError,
-  disabled,
-}: {
-  idPrefix: string;
-  tokens: KnownToken[];
-  tokenSelection: string;
-  setTokenSelection: (v: string) => void;
-  customTokenId: string;
-  setCustomTokenId: (v: string) => void;
-  amount: string;
-  setAmount: (v: string) => void;
-  amountError?: string;
-  disabled?: boolean;
-}) {
-  const isCustom = tokenSelection === CUSTOM_TOKEN;
-  const effectiveTokenId = isCustom ? customTokenId.trim() : tokenSelection;
-  const knownToken = tokens.find((t) => t.tokenId === effectiveTokenId);
-
-  return (
-    <>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="token" htmlFor={`${idPrefix}-token`}>
-          <select
-            id={`${idPrefix}-token`}
-            value={tokenSelection}
-            onChange={(e) => setTokenSelection(e.target.value)}
-            disabled={disabled}
-            className={selectClass}
-          >
-            {tokens.map((t) => (
-              <option key={t.tokenId} value={t.tokenId}>
-                {t.symbol} — {t.name}
-              </option>
-            ))}
-            <option value={CUSTOM_TOKEN}>Custom…</option>
-          </select>
-          {knownToken?.icon && (
-            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <img src={knownToken.icon} alt="" width={16} height={16} className="rounded-full" />
-              <span className="font-mono">{knownToken.tokenId}</span>
-            </div>
-          )}
-        </Field>
-        <Field
-          label={knownToken ? `amount (${knownToken.symbol})` : "amount (smallest unit)"}
-          htmlFor={`${idPrefix}-amount`}
-        >
-          <Input
-            id={`${idPrefix}-amount`}
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={knownToken ? "1.5" : "1000000000000000000000000"}
-            disabled={disabled}
-          />
-        </Field>
-      </div>
-      {isCustom && (
-        <Field label="custom token id" htmlFor={`${idPrefix}-custom-token`}>
-          <Input
-            id={`${idPrefix}-custom-token`}
-            value={customTokenId}
-            onChange={(e) => setCustomTokenId(e.target.value)}
-            placeholder="e.g. usdc.token.near"
-            disabled={disabled}
-          />
-        </Field>
-      )}
-      {isCustom && customTokenId.trim().length > 0 && !knownToken && (
-        <p className="text-xs text-muted-foreground">
-          ⚠ Decimals unknown for "{effectiveTokenId}". Enter the amount in the token's smallest
-          integer unit.
-        </p>
-      )}
-      {amountError && <p className="text-xs text-destructive">{amountError}</p>}
-    </>
-  );
-}
-
-function deriveBaseAmount(
-  amount: string,
-  knownToken: KnownToken | undefined,
-): { value: string; error: string } {
-  const trimmed = amount.trim();
-  if (trimmed === "") return { value: "", error: "" };
-  if (knownToken) {
-    try {
-      return { value: parseDecimalToBase(trimmed, knownToken.decimals), error: "" };
-    } catch (e) {
-      return { value: "", error: (e as Error).message };
-    }
-  }
-  return /^\d+$/.test(trimmed)
-    ? { value: trimmed, error: "" }
-    : { value: "", error: "Amount must be a positive integer (smallest unit)" };
 }
 
 export function BudgetsManager() {
@@ -432,6 +316,7 @@ function AgencyAuditLogPanel({
                           {engagementById.get(a.engagementId)?.client.name ?? a.engagementId}
                         </>
                       )}
+                      {a.fundingDaoAccountId && ` · from: ${a.fundingDaoAccountId}`}
                     </div>
                     {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
                     <div className="text-xs text-muted-foreground font-mono">
@@ -657,7 +542,8 @@ function TransferPanel({
             Moves budget from one project to another atomically. Two linked rows are appended to
             both projects' audit logs (a negative on source, a positive on target). The source
             project's remaining budget is allowed to go negative; over-budget is shown visually, not
-            blocked.
+            blocked. Only your own budget moves here: budget attributed to a Client's Engagement
+            moves only through Change orders.
           </p>
         </CardContent>
       </Card>
@@ -893,6 +779,7 @@ export function ProjectBudgetPanel({
                       {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
                       <div className="text-xs text-muted-foreground font-mono">
                         by {a.actorAccountId}
+                        {a.fundingDaoAccountId && ` · from: ${a.fundingDaoAccountId}`}
                       </div>
                     </div>
                   </div>
