@@ -193,12 +193,12 @@ export function displayToBaseUnits(decimalString: string, decimals: number): big
 
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
-import type { AgencyScope } from "./organization-access";
+import type { TreasuryScope } from "./organization-access";
 import { getDaoTokenIds, getFtMetadata, getStorageBalance } from "./sputnik";
 
 export function createTokensService(_db: Database) {
   return {
-    list: (scope: AgencyScope) =>
+    list: (scope: TreasuryScope) =>
       Effect.gen(function* () {
         const ids = yield* Effect.promise(() => getDaoTokenIds(scope.agencyDao));
         const resolved = yield* Effect.promise(() =>
@@ -231,7 +231,7 @@ export function createTokensService(_db: Database) {
         };
       }),
 
-    getStorageStatus: (scope: AgencyScope, input: { tokenId: string }) =>
+    getStorageStatus: (scope: TreasuryScope, input: { tokenId: string }) =>
       Effect.gen(function* () {
         if (input.tokenId === NATIVE_TOKEN_ID) {
           return { tokenId: input.tokenId, status: null };

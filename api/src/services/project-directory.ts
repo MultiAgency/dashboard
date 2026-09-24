@@ -33,11 +33,11 @@ export type AgencyProjects = {
   requireBySlug(slug: string): Promise<Project>;
 };
 
-export function toProject(p: PluginProject, agencyDao: string): Project {
+export function toProject(p: PluginProject): Project {
   return {
     id: p.id,
     ownerId: p.ownerId,
-    organizationId: p.organizationId ?? agencyDao,
+    organizationId: p.organizationId ?? "",
     slug: p.slug,
     title: p.title,
     description: p.description,
@@ -50,6 +50,13 @@ export function toProject(p: PluginProject, agencyDao: string): Project {
   };
 }
 
+function ownerKeys(scope: AgencyScope): string[] {
+  const legacyDaoKey = scope.agencyDao;
+  return [scope.organizationId, legacyDaoKey].filter(
+    (key, index, keys): key is string => key !== null && keys.indexOf(key) === index,
+  );
+}
+
 const notFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
 
 export function createProjectDirectory(
@@ -59,21 +66,24 @@ export function createProjectDirectory(
 
   function build(scope: AgencyScope): AgencyProjects {
     const client = () => projectsFor(scope.pluginContext);
+    const keys = ownerKeys(scope);
     let listing: Promise<Project[]> | undefined;
 
-    async function fetchAll(): Promise<Project[]> {
+    async function fetchOwnedBy(organizationId: string): Promise<Project[]> {
       const out: Project[] = [];
       let cursor: string | undefined;
       do {
-        const page = await client().listProjects({
-          organizationId: scope.agencyDao,
-          limit: 100,
-          cursor,
-        });
-        out.push(...page.data.map((p) => toProject(p, scope.agencyDao)));
+        const page = await client().listProjects({ organizationId, limit: 100, cursor });
+        out.push(...page.data.map(toProject));
         cursor = page.meta.nextCursor ?? undefined;
       } while (cursor);
       return out;
+    }
+
+    async function fetchAll(): Promise<Project[]> {
+      const pages = await Promise.all(keys.map(fetchOwnedBy));
+      const byId = new Map(pages.flat().map((p) => [p.id, p]));
+      return [...byId.values()];
     }
 
     async function fromCacheOr(
@@ -91,8 +101,8 @@ export function createProjectDirectory(
       } catch {
         throw notFound();
       }
-      if (upstream.organizationId !== scope.agencyDao) throw notFound();
-      return toProject(upstream, scope.agencyDao);
+      if (!upstream.organizationId || !keys.includes(upstream.organizationId)) throw notFound();
+      return toProject(upstream);
     }
 
     return {

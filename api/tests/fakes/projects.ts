@@ -1,5 +1,11 @@
-import type { AgencyScope } from "../../src/services/organization-access";
-import type { PluginProject, ProjectsClient } from "../../src/services/project-directory";
+import type { PluginContext } from "../../src/lib/organizations";
+import type { PluginsClient } from "../../src/lib/plugins-types.gen";
+import type { AgencyScope, TreasuryScope } from "../../src/services/organization-access";
+import {
+  createProjectDirectory,
+  type PluginProject,
+  type ProjectsClient,
+} from "../../src/services/project-directory";
 
 export function project(id: string, organizationId: string): PluginProject {
   return {
@@ -48,7 +54,10 @@ export function inMemoryProjects(projects: PluginProject[]) {
   return { client, calls };
 }
 
-export function agencyScope(agencyDao: string, overrides: Partial<AgencyScope> = {}): AgencyScope {
+export function agencyScope(
+  agencyDao: string,
+  overrides: Partial<Omit<AgencyScope, "agencyDao">> = {},
+): TreasuryScope {
   return {
     organizationId: null,
     agencyDao,
@@ -59,4 +68,43 @@ export function agencyScope(agencyDao: string, overrides: Partial<AgencyScope> =
     pluginContext: {},
     ...overrides,
   };
+}
+
+type CreateInput = Parameters<ReturnType<PluginsClient["projects"]>["createProject"]>[0];
+type UpdateInput = Parameters<ReturnType<PluginsClient["projects"]>["updateProject"]>[0];
+
+export function inMemoryProjectsPlugin(seed: PluginProject[]) {
+  const projects = [...seed];
+  const { client } = inMemoryProjects(projects);
+  const forContext = (context: PluginContext) => ({
+    ...client,
+    createProject: async (input: CreateInput): Promise<PluginProject> => {
+      const created: PluginProject = {
+        ...project(input.id ?? `created-${projects.length + 1}`, ""),
+        organizationId: context.organization?.activeOrganizationId ?? null,
+        ownerId: context.near?.primaryAccountId ?? context.userId ?? "anonymous",
+        kind: input.kind,
+        slug: input.slug,
+        title: input.title,
+        content: input.content ?? null,
+        visibility: input.visibility ?? "private",
+        repository: input.repository ?? null,
+      };
+      projects.push(created);
+      return created;
+    },
+    updateProject: async ({ id, ...patch }: UpdateInput): Promise<PluginProject> => {
+      const found = projects.find((p) => p.id === id);
+      if (!found) throw new Error("not found upstream");
+      for (const [key, value] of Object.entries(patch)) {
+        if (value !== undefined) Object.assign(found, { [key]: value });
+      }
+      return found;
+    },
+  });
+  const plugins = {
+    projects: forContext,
+    builders: () => ({ listBuilders: async () => ({ data: [] }) }),
+  } as unknown as PluginsClient;
+  return { plugins, directory: createProjectDirectory(forContext), projects };
 }

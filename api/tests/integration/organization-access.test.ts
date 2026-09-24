@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { organizationDaos } from "../../src/db/schema";
-import { ROLE_MATRIX } from "../../src/services/organization-access";
+import {
+  NO_AGENCY_DAO,
+  ROLE_MATRIX,
+  requireTreasury,
+} from "../../src/services/organization-access";
 import {
   type FakeMember,
   type FakeOrganization,
@@ -84,7 +88,7 @@ describe("organization access", () => {
   test.each([
     { role: "owner", manages: true, money: true, works: true, seesPrivate: true },
     { role: "admin", manages: true, money: true, works: true, seesPrivate: true },
-    { role: "member", manages: false, money: true, works: true, seesPrivate: false },
+    { role: "member", manages: false, money: true, works: true, seesPrivate: true },
     { role: "contributor", manages: false, money: false, works: false, seesPrivate: true },
   ])("$role capabilities and agency routes follow the role matrix", async (row) => {
     const access = accessWith();
@@ -105,7 +109,7 @@ describe("organization access", () => {
     );
   });
 
-  test("an owner of a DAO-less Organization keeps their role but never borrows the default Agency DAO", async () => {
+  test("an owner of a DAO-less Organization gets agency routes but never borrows the default Agency DAO", async () => {
     const access = accessWith();
     const context = signedIn("u1", "no-dao");
 
@@ -117,11 +121,40 @@ describe("organization access", () => {
       canManageMembers: true,
       hasAgencySections: true,
     });
-    await expect(access.agencyScope(context, ROLE_MATRIX.manage)).rejects.toMatchObject(FORBIDDEN);
+    const scope = await access.agencyScope(context, ROLE_MATRIX.manage);
+    expect(scope).toMatchObject({ organizationId: "no-dao", agencyDao: null, role: "owner" });
+    expect(() => requireTreasury(scope)).toThrow(
+      expect.objectContaining({ code: "FORBIDDEN", data: { reason: NO_AGENCY_DAO } }),
+    );
     expect(await access.publicScope(context)).toMatchObject({
+      organizationId: "no-dao",
+      agencyDao: null,
+      role: "owner",
+    });
+  });
+
+  test("a DAO-less Organization follows the dashboard network toggle", async () => {
+    const context = {
+      ...signedIn("u1", "no-dao"),
+      reqHeaders: new Headers({ cookie: "current_near_network=testnet" }),
+    };
+
+    expect((await accessWith().publicScope(context)).network).toBe("testnet");
+  });
+
+  test("anonymous visitors resolve the Organization mapped to the default Agency DAO", async () => {
+    await database.db
+      .insert(organizationDaos)
+      .values({ organizationId: "multiagency", daoAccountId: DEFAULT_DAO });
+
+    expect(await accessWith().publicScope({})).toMatchObject({
+      organizationId: "multiagency",
       agencyDao: DEFAULT_DAO,
       role: null,
-      canSeePrivate: false,
+    });
+    expect(await accessWith().defaultOrganization()).toEqual({
+      organizationId: "multiagency",
+      agencyDao: DEFAULT_DAO,
     });
   });
 
@@ -138,6 +171,11 @@ describe("organization access", () => {
       capabilities: NO_CAPABILITIES,
     });
     await expect(access.agencyScope(context, ROLE_MATRIX.work)).rejects.toMatchObject(FORBIDDEN);
+    expect(await access.publicScope(context)).toMatchObject({
+      agencyDao: DEFAULT_DAO,
+      role: null,
+      canSeePrivate: false,
+    });
   });
 
   test("a DAO mapped to another Organization is not granted from metadata", async () => {

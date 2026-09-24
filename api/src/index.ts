@@ -4,7 +4,7 @@ import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 import { contract } from "./contract";
 import { DatabaseLive, DatabaseTag } from "./db/layer";
-import { createAuthMiddleware } from "./lib/auth";
+import { type AuthContext, createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
 import { getNetwork, pinnedNetwork } from "./lib/network";
 import { betterAuthOrganizations } from "./lib/organizations";
@@ -22,7 +22,7 @@ import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
-import { createOrganizationAccess } from "./services/organization-access";
+import { createOrganizationAccess, requireTreasury } from "./services/organization-access";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
 import { createReportsService } from "./services/reports";
@@ -148,8 +148,16 @@ export default createPlugin.withPlugins<PluginsClient>()({
       nearn,
     } = services;
     const auth = createAuthMiddleware(builder);
-    const { member, manager, defaultOrganizationMember, defaultOrganizationManager } =
-      access.middleware(builder);
+    const {
+      member,
+      manager,
+      treasuryMember,
+      treasuryManager,
+      defaultOrganizationMember,
+      defaultOrganizationManager,
+    } = access.middleware(builder);
+    const publicTreasury = async (context: AuthContext) =>
+      requireTreasury(await access.publicScope(context));
 
     return {
       ping: builder.ping.handler(async () => ({
@@ -200,7 +208,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
             ),
 
           getBudget: builder.agency.projects.getBudget
-            .use(member)
+            .use(treasuryMember)
             .handler(async ({ context, input }) =>
               runEffect(agency.getBudget(context.scope, input.projectId)),
             ),
@@ -261,11 +269,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       clients: {
         list: builder.clients.list
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context }) => runEffect(clients.list(context.scope))),
 
         get: builder.clients.get
-          .use(member)
+          .use(treasuryMember)
           .handler(async ({ context, input }) => runEffect(clients.get(context.scope, input.id))),
 
         lookupByNearAccount: builder.clients.lookupByNearAccount
@@ -275,15 +283,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
           })),
 
         create: builder.clients.create
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(clients.create(context.scope, input))),
 
         update: builder.clients.update
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(clients.update(context.scope, input))),
 
         delete: builder.clients.delete
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) =>
             runEffect(clients.delete(context.scope, input.id)),
           ),
@@ -379,45 +387,45 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       budgets: {
         list: builder.budgets.list
-          .use(member)
+          .use(treasuryMember)
           .handler(async ({ context, input }) => runEffect(budgets.list(context.scope, input))),
 
         create: builder.budgets.create
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(budgets.create(context.scope, input))),
 
         deallocate: builder.budgets.deallocate
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) =>
             runEffect(budgets.deallocate(context.scope, input)),
           ),
 
         transfer: builder.budgets.transfer
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(budgets.transfer(context.scope, input))),
       },
 
       billings: {
         list: builder.billings.list
-          .use(member)
+          .use(treasuryMember)
           .handler(async ({ context, input }) => runEffect(billings.list(context.scope, input))),
 
         create: builder.billings.create
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(billings.create(context.scope, input))),
 
         delete: builder.billings.delete
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(billings.delete(context.scope, input))),
       },
 
       proposals: {
         list: builder.proposals.list.handler(async ({ context, input }) =>
-          runEffect(proposals.list(await access.publicScope(context), input)),
+          runEffect(proposals.list(await publicTreasury(context), input)),
         ),
 
         getPublicSummary: builder.proposals.getPublicSummary.handler(async ({ context }) =>
-          runEffect(proposals.getPublicSummary(await access.publicScope(context))),
+          runEffect(proposals.getPublicSummary(await publicTreasury(context))),
         ),
       },
 
@@ -439,31 +447,31 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       tokens: {
         list: builder.tokens.list.handler(async ({ context }) =>
-          runEffect(tokens.list(await access.publicScope(context))),
+          runEffect(tokens.list(await publicTreasury(context))),
         ),
 
         getStorageStatus: builder.tokens.getStorageStatus.handler(async ({ context, input }) =>
-          runEffect(tokens.getStorageStatus(await access.publicScope(context), input)),
+          runEffect(tokens.getStorageStatus(await publicTreasury(context), input)),
         ),
       },
 
       treasury: {
         getPublicBalances: builder.treasury.getPublicBalances.handler(async ({ context, input }) =>
-          runEffect(treasury.getPublicBalances(await access.publicScope(context), input)),
+          runEffect(treasury.getPublicBalances(await publicTreasury(context), input)),
         ),
 
         getBalances: builder.treasury.getBalances
-          .use(member)
+          .use(treasuryMember)
           .handler(async ({ context, input }) =>
             runEffect(treasury.getBalances(context.scope, input)),
           ),
 
         getRollups: builder.treasury.getRollups
-          .use(member)
+          .use(treasuryMember)
           .handler(async ({ context }) => runEffect(treasury.getRollups(context.scope))),
 
         getPublicSummary: builder.treasury.getPublicSummary.handler(async ({ context }) =>
-          runEffect(treasury.getPublicSummary(await access.publicScope(context))),
+          runEffect(treasury.getPublicSummary(await publicTreasury(context))),
         ),
       },
 
@@ -490,6 +498,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       team: {
         list: builder.team.list.handler(async ({ context }) => {
           const { agencyDao } = await access.publicScope(context);
+          if (!agencyDao) return { roles: [] };
           try {
             return { roles: await getRoles(agencyDao) };
           } catch {
@@ -501,7 +510,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
       agencyConfig: {
         getPublic: builder.agencyConfig.getPublic.handler(async ({ context }) => {
           const network = getNetwork(context.reqHeaders);
-          const resolved = await getResolvedPublicSettings(db, network);
+          const resolved = await getResolvedPublicSettings(
+            db,
+            network,
+            await access.defaultOrganization(),
+          );
           return {
             ...resolved,
             network,
@@ -512,14 +525,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
         get: builder.agencyConfig.get
           .use(manager)
           .handler(async ({ context }) =>
-            getAdminSettings(db, context.scope.agencyDao, getNetwork(context.reqHeaders)),
+            getAdminSettings(db, context.scope, getNetwork(context.reqHeaders)),
           ),
 
         update: builder.agencyConfig.update.use(manager).handler(async ({ context, input }) => {
-          const { agencyDao, actorId } = context.scope;
+          const { organizationId, actorId } = context.scope;
           await upsertSettings(
             db,
-            agencyDao,
+            organizationId,
             {
               nearnAccountId: input.nearnAccountId,
               websiteUrl: input.websiteUrl,

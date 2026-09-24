@@ -9,6 +9,7 @@ import {
   LIFECYCLE_TRANSITIONS,
   lifecycleToFlags,
 } from "../lib/listing-lifecycle";
+import type { Network } from "../lib/network";
 import { getNearnListing, isNearnAvailable, type NearnListing, NearnNotFoundError } from "./nearn";
 import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
@@ -190,7 +191,7 @@ export function listingRowToNearnPayload(row: Listing): NearnListing | null {
 // Refresh cached NEARN payload by slug; 404 → isArchived=true; testnet no-ops.
 export async function refreshNearnListing(
   slug: string,
-  orgAccountId: string,
+  network: Network,
   db: Database,
 ): Promise<Listing | null> {
   const existing = await db
@@ -200,7 +201,7 @@ export async function refreshNearnListing(
     .limit(1);
   const row = existing[0];
   if (!row) return null;
-  if (!isNearnAvailable(orgAccountId)) return row;
+  if (!isNearnAvailable(network)) return row;
 
   const now = new Date();
   try {
@@ -385,11 +386,11 @@ export function isStale(row: Listing): boolean {
   return Date.now() - row.syncedAt.getTime() > LISTING_STALENESS_MS;
 }
 
-async function maybeRefresh(row: Listing, orgAccountId: string, db: Database): Promise<Listing> {
+async function maybeRefresh(row: Listing, network: Network, db: Database): Promise<Listing> {
   if (row.source !== "nearn" || !row.externalId || !isStale(row)) return row;
-  if (!isNearnAvailable(orgAccountId)) return row;
+  if (!isNearnAvailable(network)) return row;
   try {
-    const refreshed = await refreshNearnListing(row.externalId, orgAccountId, db);
+    const refreshed = await refreshNearnListing(row.externalId, network, db);
     return refreshed ?? row;
   } catch (err) {
     console.warn(`[listings] refresh failed for slug=${row.externalId}:`, err);
@@ -404,7 +405,7 @@ export interface GetListingOpts {
 export async function getListingForProject(
   projectId: string,
   source: "nearn" | "internal",
-  orgAccountId: string,
+  network: Network,
   db: Database,
   opts: GetListingOpts = {},
 ): Promise<Listing | null> {
@@ -416,13 +417,13 @@ export async function getListingForProject(
   const row = rows[0];
   if (!row) return null;
   if (opts.skipRefresh) return row;
-  return maybeRefresh(row, orgAccountId, db);
+  return maybeRefresh(row, network, db);
 }
 
 export async function getListingsForProjects(
   projectIds: string[],
   source: "nearn" | "internal",
-  orgAccountId: string,
+  network: Network,
   db: Database,
   opts: GetListingOpts = {},
 ): Promise<Map<string, Listing>> {
@@ -434,7 +435,7 @@ export async function getListingsForProjects(
   if (opts.skipRefresh) {
     return new Map(rows.map((r) => [r.projectId, r]));
   }
-  const fresh = await Promise.all(rows.map((r) => maybeRefresh(r, orgAccountId, db)));
+  const fresh = await Promise.all(rows.map((r) => maybeRefresh(r, network, db)));
   return new Map(fresh.map((r) => [r.projectId, r]));
 }
 
@@ -487,19 +488,18 @@ export function createListingsService(db: Database, directory: ProjectDirectory)
 
   return {
     nearnFor: (scope: AgencyScope, projectId: string, opts: GetListingOpts = {}) =>
-      Effect.promise(() => getListingForProject(projectId, "nearn", scope.agencyDao, db, opts)),
+      Effect.promise(() => getListingForProject(projectId, "nearn", scope.network, db, opts)),
 
     forProjects: (
       scope: AgencyScope,
       projectIds: string[],
       source: "nearn" | "internal",
       opts: GetListingOpts = {},
-    ) =>
-      Effect.promise(() => getListingsForProjects(projectIds, source, scope.agencyDao, db, opts)),
+    ) => Effect.promise(() => getListingsForProjects(projectIds, source, scope.network, db, opts)),
 
     attachNearn: (scope: AgencyScope, projectId: string, slug: string) =>
       Effect.gen(function* () {
-        if (!isNearnAvailable(scope.agencyDao)) {
+        if (!isNearnAvailable(scope.network)) {
           return yield* Effect.fail(
             new ORPCError("BAD_REQUEST", {
               message: "NEARN is mainnet-only; cannot attach a listing on testnet",

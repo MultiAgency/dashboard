@@ -26,6 +26,7 @@ export function createReportsService(
       },
     ) =>
       Effect.gen(function* () {
+        const { agencyDao } = scope;
         const allProjects = yield* Effect.promise(() => directory.forAgency(scope).list());
         let projectIds: string[];
 
@@ -44,18 +45,17 @@ export function createReportsService(
         };
 
         if (input.clientId) {
-          const clientRows = yield* Effect.promise(() =>
-            db
-              .select()
-              .from(clients)
-              .where(
-                and(
-                  eq(clients.id, input.clientId!),
-                  eq(clients.agencyDaoAccountId, scope.agencyDao),
-                ),
+          const clientRows = agencyDao
+            ? yield* Effect.promise(() =>
+                db
+                  .select()
+                  .from(clients)
+                  .where(
+                    and(eq(clients.id, input.clientId!), eq(clients.agencyDaoAccountId, agencyDao)),
+                  )
+                  .limit(1),
               )
-              .limit(1),
-          );
+            : [];
           if (!clientRows[0]) {
             return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Client not found" }));
           }
@@ -113,11 +113,13 @@ export function createReportsService(
 
         const [clientRows, clientLinkRows] = yield* Effect.promise(() =>
           Promise.all([
-            db
-              .select()
-              .from(clients)
-              .where(eq(clients.agencyDaoAccountId, scope.agencyDao))
-              .orderBy(desc(clients.name)),
+            agencyDao
+              ? db
+                  .select()
+                  .from(clients)
+                  .where(eq(clients.agencyDaoAccountId, agencyDao))
+                  .orderBy(desc(clients.name))
+              : Promise.resolve([]),
             projectIds.length > 0
               ? db
                   .select()
@@ -127,11 +129,13 @@ export function createReportsService(
           ]),
         );
 
-        const billingRows = yield* Effect.promise(() =>
-          Promise.all(
-            billingRowsRaw.map((b) => enrichWithChainStatus(db, b as any, scope.agencyDao)),
-          ),
-        );
+        const billingRows = agencyDao
+          ? yield* Effect.promise(() =>
+              Promise.all(
+                billingRowsRaw.map((b) => enrichWithChainStatus(db, b as any, agencyDao)),
+              ),
+            )
+          : [];
 
         const buildersResult = yield* Effect.promise(() =>
           plugins.builders(scope.pluginContext).listBuilders({ limit: 100 }),
