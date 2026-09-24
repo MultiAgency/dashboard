@@ -25,20 +25,6 @@ const DEFAULT_TABLES: AuthTableNames = {
   member: "member",
 };
 
-type MemberColumns = { organizationId: string; userId: string; createdAt: string };
-
-const CAMEL_CASE: MemberColumns = {
-  organizationId: "organizationId",
-  userId: "userId",
-  createdAt: "createdAt",
-};
-
-const SNAKE_CASE: MemberColumns = {
-  organizationId: "organization_id",
-  userId: "user_id",
-  createdAt: "created_at",
-};
-
 function quote(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
 }
@@ -47,25 +33,17 @@ export function authDatabaseMembers(
   sql: SqlClient,
   tables: AuthTableNames = DEFAULT_TABLES,
 ): OrganizationMembersStore {
-  let columns: Promise<MemberColumns> | null = null;
+  const columns = columnResolver(sql);
 
-  async function detectColumns(): Promise<MemberColumns> {
-    const { rows } = await sql.query<{ column_name: string }>(
-      "SELECT column_name FROM information_schema.columns WHERE table_name = $1",
-      [tables.member],
-    );
-    const names = new Set(rows.map((r) => r.column_name));
-    if (names.has(CAMEL_CASE.organizationId)) return CAMEL_CASE;
-    if (names.has(SNAKE_CASE.organizationId)) return SNAKE_CASE;
-    throw new Error(
-      `Table ${tables.member} has neither organizationId nor organization_id; is this the auth database?`,
-    );
+  async function memberColumns() {
+    const m = await columns(tables.member);
+    if (!m.has("organizationId")) {
+      throw new Error(
+        `Table ${tables.member} has neither organizationId nor organization_id; is this the auth database?`,
+      );
+    }
+    return m;
   }
-
-  const memberColumns = () => {
-    columns ??= detectColumns();
-    return columns;
-  };
 
   const user = quote(tables.user);
   const organization = quote(tables.organization);
@@ -90,7 +68,7 @@ export function authDatabaseMembers(
       const found = organizations[0];
       if (!found) return null;
       const { rows: members } = await sql.query<{ id: string; userId: string; role: string }>(
-        `SELECT id, ${quote(c.userId)} AS "userId", role FROM ${member} WHERE ${quote(c.organizationId)} = $1`,
+        `SELECT id, ${c("userId")} AS "userId", role FROM ${member} WHERE ${c("organizationId")} = $1`,
         [organizationId],
       );
       return {
@@ -106,7 +84,7 @@ export function authDatabaseMembers(
     addOwner: async ({ organizationId, userId }) => {
       const c = await memberColumns();
       await sql.query(
-        `INSERT INTO ${member} (id, ${quote(c.organizationId)}, ${quote(c.userId)}, role, ${quote(c.createdAt)}) VALUES ($1, $2, $3, 'owner', now())`,
+        `INSERT INTO ${member} (id, ${c("organizationId")}, ${c("userId")}, role, ${c("createdAt")}) VALUES ($1, $2, $3, 'owner', now())`,
         [randomUUID(), organizationId, userId],
       );
     },

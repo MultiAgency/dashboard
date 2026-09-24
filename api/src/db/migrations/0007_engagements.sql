@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS "engagements" (
     "status" text NOT NULL,
     "proposed_by" text NOT NULL,
     "invitation_id" text,
-    "invitation_email" text,
     "invitation_accepted_at" timestamp,
     "legacy_client_id" text,
     "created_at" timestamp DEFAULT now() NOT NULL,

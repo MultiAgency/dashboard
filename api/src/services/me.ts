@@ -2,19 +2,14 @@ import { and, desc, inArray } from "drizzle-orm";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { billings, organizationDaos, projectContributors } from "../db/schema";
-import type { OrganizationDirectory, PluginContext } from "../lib/organizations";
+import {
+  nearAccountsOf,
+  type OrganizationDirectory,
+  type PluginContext,
+} from "../lib/organizations";
 import type { AgencyScope } from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
 import { enrichWithChainStatus } from "./sputnik";
-
-export function nearAccountsOf(context: PluginContext): string[] {
-  return [
-    ...new Set([
-      ...(context.near?.primaryAccountId ? [context.near.primaryAccountId] : []),
-      ...(context.near?.linkedAccounts ?? []).map((a) => a.accountId),
-    ]),
-  ];
-}
 
 export function createMeService(deps: {
   db: Database;

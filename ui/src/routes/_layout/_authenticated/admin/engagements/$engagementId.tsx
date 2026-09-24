@@ -1,7 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button, Card, CardContent, Input } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
@@ -11,12 +10,9 @@ import {
   type EngagementView,
   InvitationStatusBadge,
 } from "@/components/engagement-status";
+import { useEngagementAction } from "@/hooks/use-engagement-action";
 import { useApiClient } from "@/lib/api";
-import {
-  adminProjectsListQueryOptions,
-  engagementDetailQueryOptions,
-  refreshAfter,
-} from "@/lib/queries";
+import { adminProjectsListQueryOptions, engagementDetailQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/engagements/$engagementId")({
   head: () => ({
@@ -27,21 +23,6 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/engagements/
   }),
   component: EngagementDetailPage,
 });
-
-function useEngagementAction<TInput>(
-  action: (input: TInput) => Promise<EngagementView>,
-  success: string,
-) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: action,
-    onSuccess: async () => {
-      await refreshAfter(queryClient, { type: "engagements" });
-      toast.success(success);
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
 
 function EngagementDetailPage() {
   const { engagementId } = Route.useParams();
@@ -93,9 +74,9 @@ function EngagementDetailPage() {
         )}
       </header>
 
-      {engagement.invitation && engagement.invitation.status !== "accepted" && (
-        <InvitationPanel engagement={engagement} />
-      )}
+      {engagement.status === "active" &&
+        engagement.invitation &&
+        engagement.invitation.status !== "accepted" && <InvitationPanel engagement={engagement} />}
 
       <SharedProjects engagement={engagement} />
 

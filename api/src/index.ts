@@ -11,6 +11,7 @@ import { ContextSchema, runEffect } from "./lib/context";
 import { getNetwork, pinnedNetwork } from "./lib/network";
 import {
   betterAuthOrganizations,
+  nearAccountsOf,
   type PluginContext,
   unconfiguredDirectory,
 } from "./lib/organizations";
@@ -635,14 +636,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
               );
             }
             const scope = await access.agencyScope(context, ROLE_MATRIX.manage);
-            const near = (context as PluginContext).near;
             return agencyDaos.connectForMember(scope, {
               daoAccountId: input.daoAccountId,
               network,
-              walletAccounts: [
-                ...(near?.primaryAccountId ? [near.primaryAccountId] : []),
-                ...(near?.linkedAccounts ?? []).map((a) => a.accountId),
-              ],
+              walletAccounts: nearAccountsOf(context as PluginContext),
             });
           }),
 
