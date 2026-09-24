@@ -100,7 +100,7 @@ function proposerSide(engagement: EngagementRow, changeOrder: ChangeOrderRow): E
 
 function linkFor(engagement: EngagementRow, side: EngagementSide): string {
   return side === "agency"
-    ? `/admin/engagements/${engagement.id}`
+    ? `/admin/engagements/${engagement.id}?tab=plan`
     : `/client/${engagement.id}/plan`;
 }
 
