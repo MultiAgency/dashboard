@@ -5,18 +5,15 @@ import { DataTable } from "@/components";
 import { useApiClient } from "@/lib/api";
 import { clientPortalProjectsListQueryOptions } from "@/lib/queries";
 
-export const Route = createFileRoute("/_layout/_authenticated/client/projects/")({
-  component: ClientProjectsPage,
+export const Route = createFileRoute("/_layout/_authenticated/client/$engagementId/projects/")({
+  component: SharedProjectsPage,
 });
 
-function ClientProjectsPage() {
-  const { agencyDaoAccountId } = Route.useRouteContext();
+function SharedProjectsPage() {
+  const { engagement } = Route.useRouteContext();
   const apiClient = useApiClient();
-  const projectsQuery = useQuery(
-    clientPortalProjectsListQueryOptions(apiClient, agencyDaoAccountId),
-  );
+  const projectsQuery = useQuery(clientPortalProjectsListQueryOptions(apiClient, engagement.id));
   const projects = projectsQuery.data?.data ?? [];
-  const search = { agency: agencyDaoAccountId };
 
   const columns: ColumnDef<(typeof projects)[number]>[] = [
     {
@@ -25,9 +22,8 @@ function ClientProjectsPage() {
       accessorKey: "title",
       cell: ({ row }) => (
         <Link
-          to="/client/projects/$slug"
-          params={{ slug: row.original.slug }}
-          search={search}
+          to="/client/$engagementId/projects/$slug"
+          params={{ engagementId: engagement.id, slug: row.original.slug }}
           className="font-display text-sm uppercase font-bold hover:underline"
         >
           {row.original.title}
@@ -50,21 +46,16 @@ function ClientProjectsPage() {
   ];
 
   return (
-    <div className="space-y-4">
-      <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-        your projects
-      </h2>
-      <DataTable
-        readOnly
-        columns={columns}
-        data={projects}
-        isLoading={projectsQuery.isLoading}
-        error={projectsQuery.error}
-        onRetry={() => projectsQuery.refetch()}
-        emptyMessage="No projects linked to your client account yet."
-        csvFilename="client-projects"
-        viewId="client-projects"
-      />
-    </div>
+    <DataTable
+      readOnly
+      columns={columns}
+      data={projects}
+      isLoading={projectsQuery.isLoading}
+      error={projectsQuery.error}
+      onRetry={() => projectsQuery.refetch()}
+      emptyMessage={`${engagement.agency.name} has not shared any Project with you yet.`}
+      csvFilename="shared-projects"
+      viewId="client-projects"
+    />
   );
 }

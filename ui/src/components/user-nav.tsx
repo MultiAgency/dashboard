@@ -18,7 +18,7 @@ import { useNearSignIn } from "@/hooks/use-near-sign-in";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import { nearProfileQueryOptions } from "@/lib/near-profile";
-import { clientLookupQueryOptions, meRolesQueryOptions } from "@/lib/queries";
+import { meRolesQueryOptions } from "@/lib/queries";
 
 export function UserNav() {
   const queryClient = useQueryClient();
@@ -35,11 +35,8 @@ export function UserNav() {
   const nearAccountId = authClient.near.getAccountId();
   const { data: profile } = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
   const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
-  const { data: clientLookup } = useQuery({
-    ...clientLookupQueryOptions(apiClient, nearAccountId ?? ""),
-    enabled: !!user && !!nearAccountId,
-  });
   const orgRole = roles?.orgRole ?? null;
+  const hasClientSections = roles?.capabilities.hasClientSections ?? false;
   const isSuperAdmin = session?.user?.role === "admin";
   const avatarUrl =
     profile?.image?.url ??
@@ -121,20 +118,30 @@ export function UserNav() {
               profile
             </Link>
           </DropdownMenuItem>
-          {(orgRole === "admin" || orgRole === "member" || orgRole === "owner") && (
+          {orgRole && (
             <DropdownMenuItem asChild>
               <Link to="/admin/projects" className="font-mono text-xs uppercase tracking-wide">
-                agency dashboard
+                organization dashboard
               </Link>
             </DropdownMenuItem>
           )}
-          {clientLookup && clientLookup.memberships.length > 0 && (
+          {orgRole && hasClientSections && (
             <DropdownMenuItem asChild>
               <Link to="/client" className="font-mono text-xs uppercase tracking-wide">
-                client portal
+                agencies
               </Link>
             </DropdownMenuItem>
           )}
+          <DropdownMenuItem asChild>
+            <Link to="/dashboard" className="font-mono text-xs uppercase tracking-wide">
+              my work
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/notifications" className="font-mono text-xs uppercase tracking-wide">
+              notifications
+            </Link>
+          </DropdownMenuItem>
           {isSuperAdmin && (
             <DropdownMenuItem asChild>
               <Link to="/platform" className="font-mono text-xs uppercase tracking-wide">

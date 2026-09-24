@@ -14,13 +14,13 @@ import { useApiClient } from "@/lib/api";
 import { formatTokenAmount, parseDecimalToBase } from "@/lib/format-amount";
 import {
   adminBudgetsLogQueryKey,
-  adminClientsListQueryOptions,
   adminProjectBudgetQueryOptions,
   adminProjectBudgetsLogQueryKey,
   adminProjectsForTokenQueryKey,
   adminProjectsListQueryOptions,
   adminTokensQueryOptions,
   clientPortalProjectBudgetQueryOptions,
+  engagementsListQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
 
@@ -224,16 +224,22 @@ function AgencyAuditLogPanel({
 
   const [filterProject, setFilterProject] = useState<string>("");
   const [filterToken, setFilterToken] = useState<string>("");
-  const [filterClient, setFilterClient] = useState<string>("");
+  const [filterEngagement, setFilterEngagement] = useState<string>("");
 
-  const clientsQuery = useQuery(adminClientsListQueryOptions(apiClient));
-  const clients = clientsQuery.data?.data ?? [];
-  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+  const engagementsQuery = useQuery(engagementsListQueryOptions(apiClient));
+  const engagements = useMemo(
+    () =>
+      (engagementsQuery.data?.data ?? []).filter(
+        (e) => e.side === "agency" && (e.status === "active" || e.status === "ended"),
+      ),
+    [engagementsQuery.data],
+  );
+  const engagementById = useMemo(() => new Map(engagements.map((e) => [e.id, e])), [engagements]);
 
-  const clientProjectIds = useMemo(() => {
-    if (!filterClient) return null;
-    return new Set(clients.find((c) => c.id === filterClient)?.projectIds ?? []);
-  }, [filterClient, clients]);
+  const engagementProjectIds = useMemo(() => {
+    if (!filterEngagement) return null;
+    return new Set(engagementById.get(filterEngagement)?.projectIds ?? []);
+  }, [filterEngagement, engagementById]);
 
   const projectBudgetQuery = useQuery({
     ...adminProjectBudgetQueryOptions(apiClient, filterProject),
@@ -276,9 +282,10 @@ function AgencyAuditLogPanel({
     () =>
       projects.filter(
         (p) =>
-          dropdownOptions.projects.has(p.id) && (!clientProjectIds || clientProjectIds.has(p.id)),
+          dropdownOptions.projects.has(p.id) &&
+          (!engagementProjectIds || engagementProjectIds.has(p.id)),
       ),
-    [projects, dropdownOptions.projects, clientProjectIds],
+    [projects, dropdownOptions.projects, engagementProjectIds],
   );
   const filterTokens = useMemo(
     () => tokens.filter((t) => dropdownOptions.tokens.has(t.tokenId)),
@@ -302,13 +309,13 @@ function AgencyAuditLogPanel({
     queryKey: adminBudgetsLogQueryKey({
       projectId: filterProject || null,
       tokenId: filterToken || null,
-      clientId: filterClient || null,
+      engagementId: filterEngagement || null,
     }),
     queryFn: ({ pageParam }) =>
       apiClient.budgets.list({
         projectId: filterProject || undefined,
         tokenId: filterToken || undefined,
-        clientId: filterClient || undefined,
+        engagementId: filterEngagement || undefined,
         cursor: pageParam,
       }),
     initialPageParam: undefined as string | undefined,
@@ -316,7 +323,7 @@ function AgencyAuditLogPanel({
   });
 
   const rows = logQuery.data?.pages.flatMap((p) => p.data) ?? [];
-  const filtersActive = filterProject !== "" || filterToken !== "" || filterClient !== "";
+  const filtersActive = filterProject !== "" || filterToken !== "" || filterEngagement !== "";
 
   return (
     <section className="space-y-3">
@@ -329,23 +336,23 @@ function AgencyAuditLogPanel({
       </p>
       <Card>
         <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_1fr_auto]">
-          <Field label="client" htmlFor="audit-filter-client">
+          <Field label="client" htmlFor="audit-filter-engagement">
             <select
-              id="audit-filter-client"
-              value={filterClient}
+              id="audit-filter-engagement"
+              value={filterEngagement}
               onChange={(e) => {
-                setFilterClient(e.target.value);
+                setFilterEngagement(e.target.value);
                 if (e.target.value && filterProject) {
-                  const allowed = clients.find((c) => c.id === e.target.value)?.projectIds ?? [];
+                  const allowed = engagementById.get(e.target.value)?.projectIds ?? [];
                   if (!allowed.includes(filterProject)) setFilterProject("");
                 }
               }}
               className={selectClass}
             >
               <option value="">all clients</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              {engagements.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.client.name}
                 </option>
               ))}
             </select>
@@ -386,7 +393,7 @@ function AgencyAuditLogPanel({
               size="sm"
               disabled={!filtersActive}
               onClick={() => {
-                setFilterClient("");
+                setFilterEngagement("");
                 applyAuditFilters({ projectId: "", tokenId: "" });
               }}
             >
@@ -419,10 +426,10 @@ function AgencyAuditLogPanel({
                     </div>
                     <div className="text-xs text-muted-foreground font-mono">
                       project: {project ? `${project.title} (@${project.slug})` : a.projectId}
-                      {a.clientId && (
+                      {a.engagementId && (
                         <>
                           {" · client: "}
-                          {clientById.get(a.clientId)?.name ?? a.clientId}
+                          {engagementById.get(a.engagementId)?.client.name ?? a.engagementId}
                         </>
                       )}
                     </div>
@@ -662,18 +669,17 @@ export function ProjectBudgetPanel({
   projectId,
   readOnly = false,
   showAgencyBudgetLink = false,
-  clientPortal = false,
-  agencyDaoAccountId,
+  engagementId,
 }: {
   projectId: string;
   readOnly?: boolean;
   /** Link to /admin/budgets for cross-project transfers (project detail page). */
   showAgencyBudgetLink?: boolean;
-  /** Use client-portal API (read-only client access). */
-  clientPortal?: boolean;
-  agencyDaoAccountId?: string;
+  /** Read the Client's view of the budget through this Engagement. */
+  engagementId?: string;
 }) {
   const apiClient = useApiClient();
+  const clientPortal = engagementId !== undefined;
   const { allocate, deallocate } = useBudgetActions(projectId);
 
   const adminBudgetQuery = useQuery({
@@ -681,8 +687,8 @@ export function ProjectBudgetPanel({
     enabled: !clientPortal,
   });
   const clientBudgetQuery = useQuery({
-    ...clientPortalProjectBudgetQueryOptions(apiClient, agencyDaoAccountId ?? "", projectId),
-    enabled: clientPortal && !!agencyDaoAccountId,
+    ...clientPortalProjectBudgetQueryOptions(apiClient, engagementId ?? "", projectId),
+    enabled: clientPortal,
   });
   const budgetQuery = clientPortal ? clientBudgetQuery : adminBudgetQuery;
   const budgetsQuery = useInfiniteQuery({

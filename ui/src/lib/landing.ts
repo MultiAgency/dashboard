@@ -8,7 +8,7 @@ type Capabilities = {
   hasClientSections: boolean;
 };
 
-export type OrganizationHome = "/admin" | "/dashboard" | "/client" | "/profile";
+export type OrganizationHome = "/admin" | "/dashboard" | "/client";
 
 export function nonPersonalOrganizations<T extends OrganizationLike>(organizations: T[]): T[] {
   return organizations.filter((o) => !parseOrgMetadata(o.metadata).isPersonal);
@@ -23,10 +23,9 @@ export function organizationToActivate(
 }
 
 export function organizationHome(capabilities: Capabilities): OrganizationHome {
-  if (capabilities.canManageMembers) return "/admin";
-  if (capabilities.hasAgencySections) return "/dashboard";
+  if (capabilities.hasAgencySections) return "/admin";
   if (capabilities.hasClientSections) return "/client";
-  return "/profile";
+  return "/dashboard";
 }
 
 export function safeRedirect(target: unknown): string | null {

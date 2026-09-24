@@ -37,16 +37,16 @@ describe("organizationHome", () => {
     );
   });
 
-  test("members land on the Agency dashboard", () => {
-    expect(organizationHome({ ...none, hasAgencySections: true })).toBe("/dashboard");
+  test("members land on the Agency sections too", () => {
+    expect(organizationHome({ ...none, hasAgencySections: true })).toBe("/admin");
   });
 
   test("users with only Client-side access land on the Client sections", () => {
     expect(organizationHome({ ...none, hasClientSections: true })).toBe("/client");
   });
 
-  test("roles without sections land on their profile", () => {
-    expect(organizationHome(none)).toBe("/profile");
+  test("users without sections land on My work", () => {
+    expect(organizationHome(none)).toBe("/dashboard");
   });
 });
 

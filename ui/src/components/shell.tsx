@@ -4,6 +4,7 @@ import type * as React from "react";
 import type { ReactNode } from "react";
 import { AuthHashToasts } from "@/components/auth-hash-toasts";
 import { NetworkToggle } from "@/components/network-toggle";
+import { NotificationsBell } from "@/components/notifications-bell";
 import { OrgSwitcher } from "@/components/org-switcher";
 import {
   DropdownMenu,
@@ -187,6 +188,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 </DropdownMenuContent>
               </DropdownMenu>
               {isAuthenticated && <OrgSwitcher />}
+              {isAuthenticated && <NotificationsBell />}
               <NetworkToggle />
               <UserNav />
             </div>

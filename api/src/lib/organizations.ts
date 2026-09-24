@@ -28,7 +28,6 @@ export type PluginContext = {
 
 export type OrgMetadata = {
   daoAccountId?: string;
-  type?: "agency" | "client";
   isPersonal?: boolean;
 };
 

@@ -3,11 +3,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { z } from "zod";
+import { useAuthClient } from "@/app";
 import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
 import { TreasurySettings } from "@/components/admin/treasury-settings";
 import { AdminError } from "@/components/admin-error";
 import { useApiClient } from "@/lib/api";
-import { adminSettingsQueryOptions, refreshAfter } from "@/lib/queries";
+import { sessionQueryOptions } from "@/lib/auth";
+import {
+  adminSettingsQueryOptions,
+  myOrganizationsQueryOptions,
+  refreshAfter,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
   head: () => ({
@@ -37,6 +43,7 @@ function AdminSettingsPage() {
           Settings
         </h1>
       </header>
+      <OrganizationIdentity />
       <section id="treasury" className="space-y-3 scroll-mt-24">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
           treasury
@@ -50,6 +57,26 @@ function AdminSettingsPage() {
         <AdminSettings />
       </section>
     </div>
+  );
+}
+
+function OrganizationIdentity() {
+  const authClient = useAuthClient();
+  const apiClient = useApiClient();
+  const { data: session } = useQuery(sessionQueryOptions(authClient));
+  const organizations = useQuery(myOrganizationsQueryOptions(apiClient)).data?.data ?? [];
+  const active = organizations.find((o) => o.id === session?.session?.activeOrganizationId);
+  if (!active) return null;
+  return (
+    <Card>
+      <CardContent className="p-5 space-y-1">
+        <div className="font-display text-xl uppercase font-extrabold">{active.name}</div>
+        <p className="text-sm text-muted-foreground">
+          Slug <span className="font-mono text-foreground">{active.slug}</span>. An Agency needs
+          this slug and the exact name to propose an Engagement to your Organization.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -83,18 +83,25 @@ function AcceptInvitationPage() {
       {state === "signed-out" && <SignedOut redirect={here} email={search.email} />}
       {state === "verify-email" && <VerifyEmail email={userEmail} callbackURL={here} />}
       {state === "wrong-email" && <WrongEmail email={userEmail} redirect={here} />}
-      {state === "pending" && invitation && (
+      {state === "pending" && (
         <Card variant="hi-vis">
           <CardContent className="space-y-4">
-            <div className="space-y-1">
-              <div className="font-display text-3xl uppercase tracking-tight font-extrabold leading-tight break-words">
-                {invitation.organizationName}
+            {invitation ? (
+              <div className="space-y-1">
+                <div className="font-display text-3xl uppercase tracking-tight font-extrabold leading-tight break-words">
+                  {invitation.organizationName}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-mono">{invitation.inviterEmail}</span> invited you to join
+                  as <Badge variant="outline">{invitation.role ?? "member"}</Badge>
+                </p>
               </div>
+            ) : (
               <p className="text-sm text-muted-foreground">
-                <span className="font-mono">{invitation.inviterEmail}</span> invited you to join as{" "}
-                <Badge variant="outline">{invitation.role ?? "member"}</Badge>
+                An Agency set up an Organization for you on MultiAgency and invited you as its first
+                admin. You will own it and manage its team; the Agency is not a member.
               </p>
-            </div>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => accept.mutate(id)} disabled={busy}>
                 {accept.isPending ? "joining..." : "accept →"}

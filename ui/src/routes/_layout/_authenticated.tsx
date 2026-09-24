@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { sessionQueryOptions } from "@/lib/auth";
-import { meRolesQueryOptions } from "@/lib/queries";
+import { meRolesQueryOptions, setActiveOrganizationKey } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated")({
   beforeLoad: async ({ context, location }) => {
@@ -13,6 +13,7 @@ export const Route = createFileRoute("/_layout/_authenticated")({
     if (!session?.user) {
       throw redirect({ to: "/sign-in", search: { redirect: location.href } });
     }
+    setActiveOrganizationKey(session.session?.activeOrganizationId);
 
     void queryClient.prefetchQuery(meRolesQueryOptions(apiClient));
 
