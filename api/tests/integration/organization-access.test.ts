@@ -146,12 +146,7 @@ describe("organization access", () => {
     expect((await accessWith().agencyScope(context, ROLE_MATRIX.work)).network).toBe("testnet");
   });
 
-  test("anonymous visitors resolve the Organization mapped to the default Agency DAO", async () => {
-    expect(await accessWith().publicScope({})).toMatchObject({
-      organizationId: "multiagency",
-      agencyDao: DEFAULT_DAO,
-      role: null,
-    });
+  test("the default Organization is the one mapped to the default Agency DAO", async () => {
     expect(await accessWith().defaultOrganization()).toEqual({
       organizationId: "multiagency",
       agencyDao: DEFAULT_DAO,

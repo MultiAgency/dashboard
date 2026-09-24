@@ -1,15 +1,11 @@
-import type { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import { billings, budgets, organizationDaos } from "../../src/db/schema";
 import { createAgencyDaoService } from "../../src/services/agency-dao";
 import { ROLE_MATRIX } from "../../src/services/organization-access";
 import type { DaoRole } from "../../src/services/sputnik";
 import { inMemoryAccess, signedIn } from "../fakes/organizations";
 import { inMemoryProjectsPlugin, project } from "../fakes/projects";
-import { applyAllMigrations } from "./_pg";
+import { migratedDatabase } from "./_pg";
 
 const TREZU = "studio.sputnik-dao.near";
 const OTHER_TREZU = "studio-two.sputnik-dao.near";
@@ -27,25 +23,14 @@ const daos: Record<string, DaoRole[]> = {
 };
 
 describe("connecting an Agency DAO", () => {
-  let pg: PGlite;
-  let db: Database;
-
-  beforeAll(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
-  });
+  const state = migratedDatabase();
 
   beforeEach(async () => {
-    await pg.query("TRUNCATE organization_daos, budgets, billings CASCADE");
-  });
-
-  afterAll(async () => {
-    await pg.close();
+    await state.pg.query("TRUNCATE organization_daos, budgets, billings CASCADE");
   });
 
   function setup() {
+    const { db } = state;
     const { directory } = inMemoryProjectsPlugin([project("site", "studio")]);
     const access = inMemoryAccess(db, {
       organizations: [{ id: "studio" }, { id: "rival" }],
@@ -106,7 +91,9 @@ describe("connecting an Agency DAO", () => {
 
   test("refuses a DAO already connected to another Organization", async () => {
     const { connect } = setup();
-    await db.insert(organizationDaos).values({ organizationId: "rival", daoAccountId: TREZU });
+    await state.db
+      .insert(organizationDaos)
+      .values({ organizationId: "rival", daoAccountId: TREZU });
 
     await expect(connect(TREZU)).rejects.toMatchObject({
       code: "BAD_REQUEST",
@@ -125,16 +112,34 @@ describe("connecting an Agency DAO", () => {
     expect((await access.resolve(signedIn("founder", "studio"))).agencyDao).toBeNull();
   });
 
-  test("refuses to change or disconnect a DAO that funds Budget entries", async () => {
+  test.each([
+    [
+      "funds Budget entries",
+      () =>
+        state.db.insert(budgets).values({
+          id: crypto.randomUUID(),
+          projectId: "site",
+          tokenId: "near",
+          amount: "10",
+          actorAccountId: "founder.near",
+        }),
+    ],
+    [
+      "paid Billings",
+      () =>
+        state.db.insert(billings).values({
+          id: crypto.randomUUID(),
+          projectId: "site",
+          tokenId: "near",
+          amount: "5",
+          proposalId: "7",
+          nearAccount: "dev.near",
+        }),
+    ],
+  ])("refuses to change or disconnect a DAO that %s", async (_, reference) => {
     const { service, connect, founderScope } = setup();
     await connect(TREZU);
-    await db.insert(budgets).values({
-      id: crypto.randomUUID(),
-      projectId: "site",
-      tokenId: "near",
-      amount: "10",
-      actorAccountId: "founder.near",
-    });
+    await reference();
 
     expect((await service.status(await founderScope())).inUse).toBe(true);
     await expect(connect(OTHER_TREZU)).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -142,23 +147,6 @@ describe("connecting an Agency DAO", () => {
       code: "FORBIDDEN",
     });
     expect((await founderScope()).agencyDao).toBe(TREZU);
-  });
-
-  test("refuses to disconnect a DAO that paid Billings", async () => {
-    const { service, connect, founderScope } = setup();
-    await connect(TREZU);
-    await db.insert(billings).values({
-      id: crypto.randomUUID(),
-      projectId: "site",
-      tokenId: "near",
-      amount: "5",
-      proposalId: "7",
-      nearAccount: "dev.near",
-    });
-
-    await expect(service.disconnect(await founderScope())).rejects.toMatchObject({
-      code: "FORBIDDEN",
-    });
   });
 
   test("platform admins connect a DAO to a new Organization without holding a DAO role", async () => {

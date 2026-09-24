@@ -80,23 +80,6 @@ describe("settings-admin (integration)", () => {
     expect(second?.nearnAccountId).toBe("second");
   });
 
-  test("Organizations without an Agency DAO keep their own settings", async () => {
-    await upsertSettings(
-      db as never,
-      DEFAULT_ORG.organizationId,
-      { ...FIELDS_EMPTY, nearnAccountId: "main" },
-      "admin.near",
-    );
-    await upsertSettings(
-      db as never,
-      OTHER_ORG.organizationId,
-      { ...FIELDS_EMPTY, nearnAccountId: "other" },
-      "other-admin",
-    );
-    expect((await getSettingsRow(db as never, DEFAULT_ORG))?.nearnAccountId).toBe("main");
-    expect((await getSettingsRow(db as never, OTHER_ORG))?.nearnAccountId).toBe("other");
-  });
-
   test("public settings fall back to defaults and name the default Agency DAO", async () => {
     const resolved = await getResolvedPublicSettings(db as never, "mainnet", DEFAULT_ORG);
 

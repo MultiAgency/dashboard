@@ -3,11 +3,10 @@ import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
-import { organizationDaos, settings } from "../../src/db/schema";
-import {
-  createProjectOwnershipMigration,
-  type SqlClient,
-} from "../../src/services/project-ownership";
+import { settings } from "../../src/db/schema";
+import type { SqlClient } from "../../src/lib/auth-database";
+import { createProjectOwnershipMigration } from "../../src/services/project-ownership";
+import { seedAgencyDaos } from "../fakes/organizations";
 import { applyAllMigrations, applyProjectsPluginMigrations } from "./_pg";
 
 const MULTIAGENCY_DAO = "multiagency.sputnik-dao.near";
@@ -24,9 +23,7 @@ describe("project ownership migration", () => {
     await applyAllMigrations(apiPg);
     await applyProjectsPluginMigrations(projectsPg);
     db = drizzle(apiPg, { schema }) as unknown as Database;
-    await db
-      .insert(organizationDaos)
-      .values({ organizationId: "multiagency", daoAccountId: MULTIAGENCY_DAO });
+    await seedAgencyDaos(db, [{ id: "multiagency", daoAccountId: MULTIAGENCY_DAO }]);
     for (const [id, owner, organization] of [
       ["p1", "creator.near", MULTIAGENCY_DAO],
       ["p2", MULTIAGENCY_DAO, MULTIAGENCY_DAO],
@@ -63,25 +60,20 @@ describe("project ownership migration", () => {
     return rows;
   }
 
-  test("moves Projects from a mapped Agency DAO to its Organization and keeps their owner", async () => {
+  test("moves Projects and settings from a mapped Agency DAO to its Organization, keeping owners", async () => {
     const report = await migration().run();
 
-    expect(report.movedProjects).toEqual([
-      { daoAccountId: MULTIAGENCY_DAO, organizationId: "multiagency", projectIds: ["p1", "p2"] },
-    ]);
+    expect(report).toEqual({
+      movedProjects: [
+        { daoAccountId: MULTIAGENCY_DAO, organizationId: "multiagency", projectIds: ["p1", "p2"] },
+      ],
+      rekeyedSettings: [{ daoAccountId: MULTIAGENCY_DAO, organizationId: "multiagency" }],
+    });
     expect(await owners()).toEqual([
       { id: "p1", owner_id: "creator.near", organization_id: "multiagency" },
       { id: "p2", owner_id: MULTIAGENCY_DAO, organization_id: "multiagency" },
       { id: "p3", owner_id: "other.near", organization_id: "unmapped.sputnik-dao.near" },
       { id: "p4", owner_id: "solo.near", organization_id: null },
-    ]);
-  });
-
-  test("re-keys the Agency DAO's settings to its Organization", async () => {
-    const report = await migration().run();
-
-    expect(report.rekeyedSettings).toEqual([
-      { daoAccountId: MULTIAGENCY_DAO, organizationId: "multiagency" },
     ]);
     expect(await db.select().from(settings)).toMatchObject([
       { orgAccountId: "multiagency", daoAccountId: MULTIAGENCY_DAO, nearnAccountId: "multiagency" },
