@@ -1,9 +1,5 @@
-import type { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
 import type { Effect } from "every-plugin/effect";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import { budgets } from "../../src/db/schema";
 import { runEffect } from "../../src/lib/context";
 import { createAgencyService } from "../../src/services/agency";
@@ -12,53 +8,22 @@ import { createClientPortalService } from "../../src/services/client-portal";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
 import { createReportsService } from "../../src/services/reports";
-import { engagementWorld } from "../fakes/engagements";
-import { project } from "../fakes/projects";
-import { applyAllMigrations } from "./_pg";
-
-const STUDIO_DAO = "studio-reports.sputnik-dao.near";
-const CREW_DAO = "crew-reports.sputnik-dao.near";
-
-const organizations = [
-  { id: "studio", name: "Studio", slug: "studio", daoAccountId: STUDIO_DAO },
-  { id: "acme", name: "Acme Corp", slug: "acme" },
-  { id: "globex", name: "Globex", slug: "globex" },
-  { id: "crew", name: "Crew", slug: "crew", daoAccountId: CREW_DAO },
-];
-
-const members = [
-  { userId: "studio-admin", organizationId: "studio", role: "admin" as const },
-  { userId: "studio-member", organizationId: "studio", role: "member" as const },
-  { userId: "acme-owner", organizationId: "acme", role: "owner" as const },
-  { userId: "acme-member", organizationId: "acme", role: "member" as const },
-  { userId: "globex-owner", organizationId: "globex", role: "owner" as const },
-  { userId: "crew-owner", organizationId: "crew", role: "owner" as const },
-];
-
-const users = members.map((m) => ({ id: m.userId, email: `${m.userId}@example.com` }));
-
-const projects = [{ ...project("site", "studio"), slug: "site", title: "Website" }];
+import { clientWorkWorld, refused, STUDIO_DAO } from "../fakes/engagements";
 
 const run = <A>(effect: Effect.Effect<A, unknown>) => runEffect(effect);
+const near = (amount: string) => [{ tokenId: "near", amount }];
 
 describe("saved reports", () => {
-  let pg: PGlite;
-  let db: Database;
-  let world: Awaited<ReturnType<typeof engagementWorld>>;
+  const state = clientWorkWorld();
   let reports: ReturnType<typeof createReportsService>;
   let portal: ReturnType<typeof createClientPortalService>;
   let acmeEngagement: string;
   let globexEngagement: string;
 
   beforeEach(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
-    world = await engagementWorld(db, { organizations, members, users, projects });
+    const { db, world } = state;
     const listings = createListingsService(db, world.directory);
     const ledgers = createProjectLedgers(db, listings);
-    const agency = createAgencyService(db, world.plugins, world.directory, listings, ledgers);
     reports = createReportsService(
       db,
       world.directory,
@@ -67,14 +32,14 @@ describe("saved reports", () => {
     );
     portal = createClientPortalService(
       world.access,
-      agency,
+      createAgencyService(db, world.plugins, world.directory, listings, ledgers),
       createBillingsService(db, world.directory, world.access),
       reports,
       world.directory,
       ledgers,
     );
-    acmeEngagement = await engage("acme", "acme-owner", "Acme Corp");
-    globexEngagement = await engage("globex", "globex-owner", "Globex");
+    acmeEngagement = (await world.activeEngagement("acme", ["site"])).id;
+    globexEngagement = (await world.activeEngagement("globex", ["site"])).id;
     await db
       .insert(budgets)
       .values([
@@ -83,13 +48,18 @@ describe("saved reports", () => {
       ]);
   });
 
-  afterEach(async () => {
-    await pg.close();
-  });
+  const studio = () => state.world.manager("studio-admin", "studio");
+  const acme = () => state.world.context("acme-owner", "acme");
+  const agencyReport = async (engagementId?: string) =>
+    run(
+      reports.generateSaved(
+        await studio(),
+        { engagementId, note: "Internal" },
+        { organizationId: "studio", userId: "studio-admin" },
+      ),
+    );
 
-  const studio = () => world.manager("studio-admin", "studio");
-
-  function budget(id: string, engagementId: string, amount: string) {
+  function budget(id: string, engagementId: string | null, amount: string) {
     return {
       id,
       projectId: "site",
@@ -101,16 +71,9 @@ describe("saved reports", () => {
     };
   }
 
-  async function engage(slug: string, ownerId: string, name: string) {
-    const proposed = await world.engagements.propose(await studio(), { slug, name });
-    await world.engagements.accept(await world.manager(ownerId, slug), proposed.id);
-    await world.engagements.share(await studio(), { engagementId: proposed.id, projectId: "site" });
-    return proposed.id;
-  }
-
   const clientReport = (userId: string, organizationId: string, engagementId: string) =>
     run(
-      portal.generateReport(world.context(userId, organizationId), {
+      portal.generateReport(state.world.context(userId, organizationId), {
         engagementId,
         note: "For the board",
         startDate: "2020-01-01",
@@ -122,9 +85,7 @@ describe("saved reports", () => {
     const generated = await clientReport("acme-member", "acme", acmeEngagement);
 
     expect(generated.clientBreakdown.map((row) => row.clientName)).toEqual(["Acme Corp"]);
-    const listed = await portal.listReports(world.context("acme-owner", "acme"), {
-      engagementId: acmeEngagement,
-    });
+    const listed = await portal.listReports(acme(), { engagementId: acmeEngagement });
     expect(listed.data).toEqual([
       expect.objectContaining({
         id: generated.id,
@@ -135,7 +96,7 @@ describe("saved reports", () => {
         endDate: "2099-12-31",
       }),
     ]);
-    const opened = await portal.getReport(world.context("acme-owner", "acme"), {
+    const opened = await portal.getReport(acme(), {
       engagementId: acmeEngagement,
       id: generated.id,
     });
@@ -145,62 +106,55 @@ describe("saved reports", () => {
     });
   });
 
-  test("a saved report is visible only to the Organization that generated it", async () => {
-    const acmeReport = await clientReport("acme-member", "acme", acmeEngagement);
-    const agencyReport = await run(
-      reports.generateSaved(
-        await studio(),
-        { engagementId: acmeEngagement, note: "Internal" },
-        { organizationId: "studio", userId: "studio-admin" },
-      ),
-    );
+  test("budget on a co-funded Project counts only for the Engagement that funded it", async () => {
+    await state.db.insert(budgets).values(budget("internal", null, "50"));
 
-    const agencyList = await reports.listSaved("studio");
-    expect(agencyList.data.map((r) => r.id)).toEqual([agencyReport.id]);
-    await expect(reports.getSaved("studio", acmeReport.id)).rejects.toMatchObject({
-      code: "NOT_FOUND",
-    });
+    const acmeView = await clientReport("acme-member", "acme", acmeEngagement);
+    const globexView = await clientReport("globex-owner", "globex", globexEngagement);
+    const agencyAcme = await agencyReport(acmeEngagement);
+    const agencyWide = await agencyReport();
+
+    expect(acmeView.overview.budgetByToken).toEqual(near("700"));
+    expect(acmeView.clientBreakdown[0]?.budgetByToken).toEqual(near("700"));
+    expect(globexView.overview.budgetByToken).toEqual(near("300"));
+    expect(agencyAcme.overview.budgetByToken).toEqual(near("750"));
+    expect(agencyAcme.clientBreakdown.map((row) => row.clientName)).toEqual(["Acme Corp"]);
+    expect(agencyWide.overview.budgetByToken).toEqual(near("1050"));
     expect(
-      (
-        await portal.listReports(world.context("acme-owner", "acme"), {
-          engagementId: acmeEngagement,
-        })
-      ).data.map((r) => r.id),
-    ).toEqual([acmeReport.id]);
-    await expect(
-      portal.getReport(world.context("acme-owner", "acme"), {
-        engagementId: acmeEngagement,
-        id: agencyReport.id,
-      }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(
-      portal.getReport(world.context("globex-owner", "globex"), {
-        engagementId: globexEngagement,
-        id: acmeReport.id,
-      }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    await expect(
-      portal.listReports(world.context("globex-owner", "globex"), {
-        engagementId: acmeEngagement,
-      }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      agencyWide.clientBreakdown
+        .map((row) => [row.clientName, row.budgetByToken])
+        .sort(([a], [b]) => String(a).localeCompare(String(b))),
+    ).toEqual([
+      ["Acme Corp", near("700")],
+      ["Globex", near("300")],
+    ]);
   });
 
-  test("the Agency's report for one Engagement names only that Client", async () => {
-    const report = await run(
-      reports.generateSaved(
-        await studio(),
-        { engagementId: globexEngagement },
-        { organizationId: "studio", userId: "studio-admin" },
-      ),
-    );
+  test("a saved report is visible only to the Organization that generated it", async () => {
+    const acmeReport = await clientReport("acme-member", "acme", acmeEngagement);
+    const internal = await agencyReport(acmeEngagement);
 
-    expect(report.clientBreakdown.map((row) => row.clientName)).toEqual(["Globex"]);
-    expect((await reports.listSaved("studio", { engagementId: acmeEngagement })).data).toEqual([]);
+    expect((await reports.listSaved("studio")).data.map((r) => r.id)).toEqual([internal.id]);
+    expect((await reports.listSaved("studio", { engagementId: globexEngagement })).data).toEqual(
+      [],
+    );
+    await refused(reports.getSaved("studio", acmeReport.id), "NOT_FOUND");
+    const acmeList = await portal.listReports(acme(), { engagementId: acmeEngagement });
+    expect(acmeList.data.map((r) => r.id)).toEqual([acmeReport.id]);
+    await refused(
+      portal.getReport(acme(), { engagementId: acmeEngagement, id: internal.id }),
+      "NOT_FOUND",
+    );
+    const globex = state.world.context("globex-owner", "globex");
+    await refused(
+      portal.getReport(globex, { engagementId: globexEngagement, id: acmeReport.id }),
+      "NOT_FOUND",
+    );
+    await refused(portal.listReports(globex, { engagementId: acmeEngagement }), "NOT_FOUND");
   });
 
   test("a Subcontractor's saved report leaves out the end Client's money", async () => {
-    const subcontract = await world.engagements.subcontract(await studio(), {
+    const subcontract = await state.world.engagements.subcontract(await studio(), {
       slug: "crew",
       name: "Crew",
       projectIds: ["site"],
@@ -210,7 +164,7 @@ describe("saved reports", () => {
 
     expect(report.overview.budgetByToken).toEqual([]);
     expect(report.clientBreakdown.map((row) => row.clientName)).toEqual(["Crew"]);
-    const opened = await portal.getReport(world.context("crew-owner", "crew"), {
+    const opened = await portal.getReport(state.world.context("crew-owner", "crew"), {
       engagementId: subcontract.id,
       id: report.id,
     });
