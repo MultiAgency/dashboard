@@ -230,6 +230,7 @@ export const projectContributors = pgTable(
     role: text("role"),
     onboardingStatus: text("onboarding_status").notNull().default("pending"),
     organizationId: text("organization_id"),
+    assignedByOrganizationId: text("assigned_by_organization_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
@@ -405,12 +406,16 @@ export const billings = pgTable(
     tokenId: text("token_id").notNull(),
     amount: text("amount").notNull(),
     proposalId: text("proposal_id").notNull(),
+    payingDaoAccountId: text("paying_dao_account_id"),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     cursor: index("billings_cursor").on(t.createdAt, t.id),
-    proposalUnique: uniqueIndex("billings_proposal_unique").on(t.proposalId),
+    payingDaoProposalUnique: uniqueIndex("billings_paying_dao_proposal_unique").on(
+      t.payingDaoAccountId,
+      t.proposalId,
+    ),
     projectIdx: index("billings_project_id").on(t.projectId),
     clientIdx: index("billings_client_id").on(t.clientId),
     nearAccountIdx: index("billings_near_account").on(t.nearAccount),

@@ -1,4 +1,4 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import type { DecoratedMiddleware } from "every-plugin/orpc";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
@@ -16,6 +16,7 @@ import type {
   Organizations,
   PluginContext,
 } from "../lib/organizations";
+import type { Project, ProjectDirectory } from "./project-directory";
 
 export type AgencyScope = {
   organizationId: string | null;
@@ -62,7 +63,23 @@ export type SharedEngagement = {
   readOnly: boolean;
   projectIds: string[];
   scope: AgencyScope;
+  viewerAgencyDao: string | null;
 };
+
+export type SubcontractedProject = {
+  project: Project;
+  engagement: EngagementRow;
+  readOnly: boolean;
+  ownerScope: AgencyScope;
+};
+
+export type WorkableProject = {
+  project: Project;
+  relation: "owned" | "subcontractor";
+  ownerScope: AgencyScope;
+};
+
+const projectNotFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
 
 function hasRole(roles: readonly OrganizationRole[], role: OrganizationRole | null): boolean {
   return role !== null && roles.includes(role);
@@ -102,9 +119,10 @@ export async function agencyDaoOf(db: Database, organizationId: string): Promise
 export function createOrganizationAccess(deps: {
   db: Database;
   organizations: Organizations;
+  directory: ProjectDirectory;
   defaultDaoAccountId?: string;
 }) {
-  const { db, organizations, defaultDaoAccountId } = deps;
+  const { db, organizations, directory, defaultDaoAccountId } = deps;
 
   async function resolve(context: PluginContext): Promise<OrganizationAccess> {
     const membership = context.userId ? await organizations.activeMembership(context) : null;
@@ -267,7 +285,69 @@ export function createOrganizationAccess(deps: {
       readOnly: engagement.status !== "active",
       projectIds: await sharedProjectIds(engagement.id),
       scope: await readScopeOfAgency(context, engagement.agencyOrganizationId),
+      viewerAgencyDao: access.agencyDao,
     };
+  }
+
+  async function subcontractedIn(
+    scope: AgencyScope,
+    projectId?: string,
+  ): Promise<SubcontractedProject[]> {
+    if (!scope.organizationId) return [];
+    const rows = await db
+      .select({ engagement: engagements, projectId: engagementProjects.projectId })
+      .from(engagementProjects)
+      .innerJoin(engagements, eq(engagements.id, engagementProjects.engagementId))
+      .where(
+        and(
+          eq(engagements.clientOrganizationId, scope.organizationId),
+          eq(engagements.kind, "subcontract"),
+          inArray(engagements.status, SHARED_STATUSES),
+          projectId ? eq(engagementProjects.projectId, projectId) : undefined,
+        ),
+      )
+      .orderBy(asc(engagements.status), asc(engagementProjects.createdAt));
+    const byProject = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      if (!byProject.has(row.projectId)) byProject.set(row.projectId, row);
+    }
+    const ownerScopes = new Map<string, AgencyScope>();
+    const found = await Promise.all(
+      [...byProject.values()].map(async ({ engagement, projectId: id }) => {
+        const agencyId = engagement.agencyOrganizationId;
+        const ownerScope =
+          ownerScopes.get(agencyId) ?? (await readScopeOfAgency(scope.pluginContext, agencyId));
+        ownerScopes.set(agencyId, ownerScope);
+        const project = await directory
+          .forAgency(ownerScope)
+          .require(id)
+          .catch(() => null);
+        return project
+          ? { project, engagement, readOnly: engagement.status !== "active", ownerScope }
+          : null;
+      }),
+    );
+    return found.filter((p): p is SubcontractedProject => p !== null);
+  }
+
+  async function workableProject(
+    scope: AgencyScope,
+    projectId: string,
+    options: { write?: boolean } = {},
+  ): Promise<WorkableProject> {
+    const owned = await directory
+      .forAgency(scope)
+      .require(projectId)
+      .catch(() => null);
+    if (owned) return { project: owned, relation: "owned", ownerScope: scope };
+    const [shared] = await subcontractedIn(scope, projectId);
+    if (!shared) throw projectNotFound();
+    if (options.write && shared.readOnly) {
+      throw forbidden("The subcontract has ended. Its shared Projects are read-only history.", {
+        reason: "ENGAGEMENT_ENDED",
+      });
+    }
+    return { project: shared.project, relation: "subcontractor", ownerScope: shared.ownerScope };
   }
 
   type AccessMiddleware<TScope extends AgencyScope> = DecoratedMiddleware<
@@ -326,6 +406,8 @@ export function createOrganizationAccess(deps: {
 
     sharedWith,
     readScopeOfAgency,
+    workableProject,
+    subcontractedProjects: (scope: AgencyScope) => subcontractedIn(scope),
   };
 }
 

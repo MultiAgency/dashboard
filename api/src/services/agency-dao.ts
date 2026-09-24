@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, ne } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { billings, budgets, organizationDaos, prepayments } from "../db/schema";
@@ -32,12 +32,27 @@ export function createAgencyDaoService(deps: {
 }) {
   const { db, directory, daoRoles } = deps;
 
-  async function countRows(table: typeof budgets | typeof billings, projectIds: string[]) {
+  async function countBudgets(projectIds: string[]) {
     if (projectIds.length === 0) return 0;
     const [row] = await db
       .select({ n: count() })
-      .from(table)
-      .where(inArray(table.projectId, projectIds));
+      .from(budgets)
+      .where(inArray(budgets.projectId, projectIds));
+    return row?.n ?? 0;
+  }
+
+  async function countBillings(daoAccountId: string, projectIds: string[]) {
+    const [row] = await db
+      .select({ n: count() })
+      .from(billings)
+      .where(
+        or(
+          eq(billings.payingDaoAccountId, daoAccountId),
+          projectIds.length > 0
+            ? and(isNull(billings.payingDaoAccountId), inArray(billings.projectId, projectIds))
+            : undefined,
+        ),
+      );
     return row?.n ?? 0;
   }
 
@@ -50,8 +65,8 @@ export function createAgencyDaoService(deps: {
   }
 
   const treasuryReferences = [
-    (_dao: string, projectIds: string[]) => countRows(budgets, projectIds),
-    (_dao: string, projectIds: string[]) => countRows(billings, projectIds),
+    (_dao: string, projectIds: string[]) => countBudgets(projectIds),
+    (dao: string, projectIds: string[]) => countBillings(dao, projectIds),
     (dao: string) => countPrepayments(dao),
   ];
 

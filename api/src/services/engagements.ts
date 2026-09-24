@@ -16,8 +16,8 @@ import {
 } from "../lib/organizations";
 import type { NotificationKind, NotificationsService } from "./notifications";
 import { appUrl, type EmailSender, escapeHtml } from "./notify";
-import type { OrganizationScope } from "./organization-access";
-import type { ProjectDirectory } from "./project-directory";
+import type { AgencyScope, OrganizationScope, SubcontractedProject } from "./organization-access";
+import type { Project, ProjectDirectory } from "./project-directory";
 
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -28,6 +28,13 @@ export type InvitationView = {
   status: "pending" | "expired" | "accepted" | "rejected" | "canceled";
   expiresAt: Date;
   link: string;
+};
+
+export type SharedWithUsView = {
+  engagementId: string;
+  readOnly: boolean;
+  agency: { id: string; name: string; slug: string };
+  project: Project & { nearnListingId: null };
 };
 
 export type EngagementView = {
@@ -112,6 +119,7 @@ export function createEngagementsService(deps: {
   notifications: NotificationsService;
   sendEmail: EmailSender | null;
   appOrigin: string;
+  subcontracted: (scope: AgencyScope) => Promise<SubcontractedProject[]>;
   onEnded?: (engagement: EngagementRow) => Promise<void>;
   now?: () => Date;
 }) {
@@ -257,11 +265,15 @@ export function createEngagementsService(deps: {
     const url = appUrl(deps.appOrigin, invitationLink(invitation));
     if (!sendEmail || !url) return;
     const { agencyName, clientName } = await partyNames(row);
+    const role =
+      row.kind === "subcontract"
+        ? ` ${escapeHtml(agencyName)} hires ${escapeHtml(clientName)} as its Subcontractor.`
+        : "";
     try {
       await sendEmail({
         to: invitation.email,
         subject: `${agencyName} invited you to ${clientName} on MultiAgency`,
-        html: `<p>${escapeHtml(agencyName)} set up ${escapeHtml(clientName)} on MultiAgency and invited you as its first admin. You will own ${escapeHtml(clientName)} and manage its team.</p><p><a href="${escapeHtml(url)}">Accept the invitation</a></p>`,
+        html: `<p>${escapeHtml(agencyName)} set up ${escapeHtml(clientName)} on MultiAgency and invited you as its first admin.${role} You will own ${escapeHtml(clientName)} and manage its team.</p><p><a href="${escapeHtml(url)}">Accept the invitation</a></p>`,
       });
     } catch (err) {
       console.warn("[API] invitation email failed:", err instanceof Error ? err.message : err);
@@ -335,6 +347,19 @@ export function createEngagementsService(deps: {
     }
   }
 
+  async function findCounterpart(scope: OrganizationScope, input: { slug: string; name: string }) {
+    const found = await organizations.findBySlug(input.slug);
+    if (!found || found.isPersonal || !sameName(found.name, input.name)) {
+      throw new ORPCError("NOT_FOUND", {
+        message: "No Organization matches this slug and name.",
+      });
+    }
+    if (found.id === scope.organizationId) {
+      throw badRequest("SELF_ENGAGEMENT", "An Organization cannot engage itself.");
+    }
+    return found;
+  }
+
   async function shareProjects(engagementId: string, projectIds: string[]) {
     const unique = [...new Set(projectIds)];
     if (unique.length === 0) return [];
@@ -368,7 +393,13 @@ export function createEngagementsService(deps: {
 
     createWithClient: async (
       scope: OrganizationScope,
-      input: { name: string; slug: string; adminEmail: string; projectIds?: string[] },
+      input: {
+        name: string;
+        slug: string;
+        adminEmail: string;
+        projectIds?: string[];
+        kind?: EngagementRow["kind"];
+      },
     ) => {
       await requireOwnedProjects(scope, input.projectIds ?? []);
       let client: Organization;
@@ -384,7 +415,7 @@ export function createEngagementsService(deps: {
         id: crypto.randomUUID(),
         agencyOrganizationId: scope.organizationId,
         clientOrganizationId: client.id,
-        kind: "client",
+        kind: input.kind ?? "client",
         status: "active",
         proposedBy: userIdOf(scope),
         decidedAt: now(),
@@ -393,19 +424,46 @@ export function createEngagementsService(deps: {
       return view(scope, await invite(scope, row, input.adminEmail));
     },
 
-    propose: async (
+    subcontract: async (
       scope: OrganizationScope,
-      input: { slug: string; name: string; kind?: EngagementRow["kind"] },
+      input: { slug: string; name: string; projectIds?: string[] },
     ) => {
-      const client = await organizations.findBySlug(input.slug);
-      if (!client || client.isPersonal || !sameName(client.name, input.name)) {
-        throw new ORPCError("NOT_FOUND", {
-          message: "No Organization matches this slug and name.",
-        });
-      }
-      if (client.id === scope.organizationId) {
-        throw badRequest("SELF_ENGAGEMENT", "An Organization cannot engage itself.");
-      }
+      const subcontractor = await findCounterpart(scope, input);
+      const shared = await requireOwnedProjects(scope, input.projectIds ?? []);
+      const row = await insertEngagement({
+        id: crypto.randomUUID(),
+        agencyOrganizationId: scope.organizationId,
+        clientOrganizationId: subcontractor.id,
+        kind: "subcontract",
+        status: "active",
+        proposedBy: userIdOf(scope),
+        decidedAt: now(),
+      });
+      await shareProjects(row.id, input.projectIds ?? []);
+      await tell(scope, row, "client", "subcontract_started", {
+        projectTitles: shared.map((p) => p.title).join(", ") || "no Projects yet",
+      });
+      return view(scope, row);
+    },
+
+    sharedWithUs: async (scope: OrganizationScope): Promise<{ data: SharedWithUsView[] }> => {
+      const shared = await deps.subcontracted(scope);
+      const names = await namesOf(shared.map((s) => s.engagement.agencyOrganizationId));
+      return {
+        data: shared.map((s) => ({
+          engagementId: s.engagement.id,
+          readOnly: s.readOnly,
+          agency: party(
+            names.get(s.engagement.agencyOrganizationId),
+            s.engagement.agencyOrganizationId,
+          ),
+          project: { ...s.project, nearnListingId: null },
+        })),
+      };
+    },
+
+    propose: async (scope: OrganizationScope, input: { slug: string; name: string }) => {
+      const client = await findCounterpart(scope, input);
       const [active] = await db
         .select({ id: engagements.id })
         .from(engagements)
@@ -427,7 +485,7 @@ export function createEngagementsService(deps: {
         id: crypto.randomUUID(),
         agencyOrganizationId: scope.organizationId,
         clientOrganizationId: client.id,
-        kind: input.kind ?? "client",
+        kind: "client",
         status: "proposed",
         proposedBy: userIdOf(scope),
       });
