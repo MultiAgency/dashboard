@@ -16,26 +16,16 @@ import { createBillingsService } from "../../src/services/billings";
 import { createClientPortalService } from "../../src/services/client-portal";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
-import {
-  createOrganizationAccess,
-  type OrganizationAccessService,
-} from "../../src/services/organization-access";
+import type { OrganizationAccessService } from "../../src/services/organization-access";
 import { createProjectDirectory, type ProjectsClient } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
-import { inMemoryOrganizations } from "../fakes/organizations";
+import { inMemoryAccess } from "../fakes/organizations";
 import { applyAllMigrations } from "./_pg";
 
 const AGENCY_A = "agency-a.sputnik-dao.near";
 const AGENCY_B = "agency-b.sputnik-dao.near";
 const NEAR_ACCOUNT = "client.near";
 const CLIENT_CONTEXT = { near: { primaryAccountId: NEAR_ACCOUNT } };
-
-function organizationAccess(db: ReturnType<typeof drizzle>) {
-  return createOrganizationAccess({
-    db: db as never,
-    organizations: inMemoryOrganizations({ organizations: [] }).port,
-  });
-}
 
 describe("client-portal — resolveClientScope (via organization access)", () => {
   let pg: PGlite;
@@ -47,7 +37,7 @@ describe("client-portal — resolveClientScope (via organization access)", () =>
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg);
-    access = organizationAccess(db);
+    access = inMemoryAccess(db);
   });
 
   afterEach(async () => {
@@ -77,13 +67,9 @@ describe("client-portal — resolveClientScope (via organization access)", () =>
   });
 
   test.each([
-    { case: "an unknown NEAR account", nearAccount: "stranger.near", agency: AGENCY_A },
-    {
-      case: "the right NEAR account at another Agency",
-      nearAccount: NEAR_ACCOUNT,
-      agency: AGENCY_B,
-    },
-  ])("$case resolves to no client portal", async ({ nearAccount, agency }) => {
+    ["stranger.near", AGENCY_A],
+    [NEAR_ACCOUNT, AGENCY_B],
+  ])("%s has no client portal at %s", async (nearAccount, agency) => {
     await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
 
     await expect(
@@ -95,6 +81,7 @@ describe("client-portal — resolveClientScope (via organization access)", () =>
 // Agency id ends in .testnet so `isNearnAvailable` short-circuits the NEARN listing
 // lookup in agency.listProjects — keeps these tests free of network calls.
 const AGENCY_C = "agency-c.sputnik-dao.testnet";
+const AT_C = { agencyDaoAccountId: AGENCY_C };
 
 type FakeUpstreamProject = {
   id: string;
@@ -184,7 +171,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const billingsService = createBillingsService(db as never, directory);
     const reports = createReportsService(db as never, directory, plugins);
     return createClientPortalService(
-      organizationAccess(db),
+      inMemoryAccess(db),
       agency,
       billingsService,
       reports,
@@ -224,9 +211,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const plugins = createFakePlugins([makeProject({ id: "project-1", slug: "project-one" })]);
     const portal = buildPortal(plugins);
 
-    const summary = await Effect.runPromise(
-      portal.dashboardSummary(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C }),
-    );
+    const summary = await Effect.runPromise(portal.dashboardSummary(CLIENT_CONTEXT, AT_C));
 
     expect(summary.projectCount).toBe(1);
     expect(summary.remainingByToken).toEqual([{ tokenId: "near", amount: "1000" }]);
@@ -242,9 +227,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     ]);
     const portal = buildPortal(plugins);
 
-    const result = await Effect.runPromise(
-      portal.listProjects(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C }),
-    );
+    const result = await Effect.runPromise(portal.listProjects(CLIENT_CONTEXT, AT_C));
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]?.id).toBe("project-a");
@@ -267,7 +250,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     const result = await Effect.runPromise(
-      portal.getProject(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C, slug: "project-a-slug" }),
+      portal.getProject(CLIENT_CONTEXT, { ...AT_C, slug: "project-a-slug" }),
     );
 
     expect(result.project.slug).toBe("project-a-slug");
@@ -287,9 +270,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     await expect(
-      Effect.runPromise(
-        portal.getProject(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C, slug: "project-c-slug" }),
-      ),
+      Effect.runPromise(portal.getProject(CLIENT_CONTEXT, { ...AT_C, slug: "project-c-slug" })),
     ).rejects.toThrow(/Project not found/);
   });
 
@@ -321,7 +302,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     const result = await Effect.runPromise(
-      portal.getBudget(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C, projectId: "project-a" }),
+      portal.getBudget(CLIENT_CONTEXT, { ...AT_C, projectId: "project-a" }),
     );
 
     expect(result.budgets).toEqual([
@@ -381,18 +362,14 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     const page1 = await Effect.runPromise(
-      portal.listBillings(CLIENT_CONTEXT, { agencyDaoAccountId: AGENCY_C, limit: 2 }),
+      portal.listBillings(CLIENT_CONTEXT, { ...AT_C, limit: 2 }),
     );
     expect(page1.data).toHaveLength(2);
     expect(page1.data.every((b) => b.clientId === "client-9")).toBe(true);
     expect(page1.nextCursor).not.toBeNull();
 
     const page2 = await Effect.runPromise(
-      portal.listBillings(CLIENT_CONTEXT, {
-        agencyDaoAccountId: AGENCY_C,
-        limit: 2,
-        cursor: page1.nextCursor!,
-      }),
+      portal.listBillings(CLIENT_CONTEXT, { ...AT_C, limit: 2, cursor: page1.nextCursor! }),
     );
     expect(page2.data).toHaveLength(1);
     expect(page2.data[0]?.id).toBe("billing-9-0");

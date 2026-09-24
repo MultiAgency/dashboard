@@ -1,43 +1,27 @@
-import type { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import { clientProjects, clients, organizationDaos } from "../../src/db/schema";
 import { createOrganizationCleanup } from "../../src/services/organization-cleanup";
 import { type FakeOrganization, inMemoryOrganizations } from "../fakes/organizations";
-import { applyAllMigrations } from "./_pg";
+import { migratedDatabase } from "./_pg";
 
 const MULTIAGENCY = "multiagency.sputnik-dao.near";
 const OTHER = "other.sputnik-dao.near";
 
 describe("organization cleanup", () => {
-  let pg: PGlite;
-  let db: Database;
-
-  beforeAll(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
-  });
+  const database = migratedDatabase();
 
   beforeEach(async () => {
-    await pg.query("TRUNCATE organization_daos, clients, client_projects CASCADE");
-    await db.insert(clients).values({
+    await database.pg.query("TRUNCATE organization_daos, clients, client_projects CASCADE");
+    await database.db.insert(clients).values({
       id: "nf",
       orgId: "client-org",
       agencyDaoAccountId: MULTIAGENCY,
       name: "NEAR Foundation",
     });
-    await db.insert(clientProjects).values([
+    await database.db.insert(clientProjects).values([
       { clientId: "nf", projectId: "alive" },
       { clientId: "nf", projectId: "deleted" },
     ]);
-  });
-
-  afterAll(async () => {
-    await pg.close();
   });
 
   const duplicated: FakeOrganization[] = [
@@ -52,20 +36,21 @@ describe("organization cleanup", () => {
   function cleanupWith() {
     const fake = inMemoryOrganizations({ organizations: duplicated });
     const cleanup = createOrganizationCleanup({
-      db,
+      db: database.db,
       organizations: fake.port,
       existingProjects: async (ids) => new Set(ids.filter((id) => id === "alive")),
     });
     return { fake, cleanup };
   }
 
-  async function mappings() {
-    const rows = await db.select().from(organizationDaos);
-    return rows.map((r) => [r.organizationId, r.daoAccountId]).sort();
-  }
-
-  async function linkedProjects() {
-    return (await db.select().from(clientProjects)).map((l) => l.projectId).sort();
+  async function stateOf(fake: ReturnType<typeof cleanupWith>["fake"]) {
+    const mapped = await database.db.select().from(organizationDaos);
+    const links = await database.db.select().from(clientProjects);
+    return {
+      organizations: fake.ids(),
+      mappings: mapped.map((r) => [r.organizationId, r.daoAccountId]).sort(),
+      links: links.map((l) => l.projectId).sort(),
+    };
   }
 
   test("keeps the oldest Organization of a duplicated Agency DAO, maps every Agency DAO and drops dangling links", async () => {
@@ -73,54 +58,55 @@ describe("organization cleanup", () => {
 
     const report = await cleanup.run();
 
-    expect(fake.ids()).toEqual(["client-org", "multiagency", "other", "personal"]);
     expect(report.removedOrganizations.sort()).toEqual(["another-copy", "test-copy"]);
-    expect(await mappings()).toEqual([
-      ["multiagency", MULTIAGENCY],
-      ["other", OTHER],
-    ]);
-    expect(await linkedProjects()).toEqual(["alive"]);
     expect(report.removedClientProjectLinks).toEqual([{ clientId: "nf", projectId: "deleted" }]);
+    expect(await stateOf(fake)).toEqual({
+      organizations: ["client-org", "multiagency", "other", "personal"],
+      mappings: [
+        ["multiagency", MULTIAGENCY],
+        ["other", OTHER],
+      ],
+      links: ["alive"],
+    });
   });
 
   test("keeps the Organization already mapped to the Agency DAO", async () => {
-    await db
+    await database.db
       .insert(organizationDaos)
       .values({ organizationId: "test-copy", daoAccountId: MULTIAGENCY });
     const { fake, cleanup } = cleanupWith();
 
     await cleanup.run();
 
-    expect(fake.ids()).toEqual(["client-org", "other", "personal", "test-copy"]);
-    expect(await mappings()).toEqual([
-      ["other", OTHER],
-      ["test-copy", MULTIAGENCY],
-    ]);
+    expect(await stateOf(fake)).toMatchObject({
+      organizations: ["client-org", "other", "personal", "test-copy"],
+      mappings: [
+        ["other", OTHER],
+        ["test-copy", MULTIAGENCY],
+      ],
+    });
   });
 
   test("running it again changes nothing", async () => {
     const { fake, cleanup } = cleanupWith();
     await cleanup.run();
+    const cleaned = await stateOf(fake);
 
     expect(await cleanup.run()).toEqual({
       removedOrganizations: [],
       mappedOrganizations: [],
       removedClientProjectLinks: [],
     });
-    expect(fake.ids()).toEqual(["client-org", "multiagency", "other", "personal"]);
-    expect(await linkedProjects()).toEqual(["alive"]);
+    expect(await stateOf(fake)).toEqual(cleaned);
   });
 
-  test("a dry run reports the changes without making them", async () => {
+  test("a dry run reports the changes a real run makes without making them", async () => {
     const { fake, cleanup } = cleanupWith();
+    const before = await stateOf(fake);
 
-    const report = await cleanup.run({ dryRun: true });
+    const dryRun = await cleanup.run({ dryRun: true });
 
-    expect(report.removedOrganizations.sort()).toEqual(["another-copy", "test-copy"]);
-    expect(report.mappedOrganizations).toHaveLength(2);
-    expect(report.removedClientProjectLinks).toHaveLength(1);
-    expect(fake.ids()).toHaveLength(duplicated.length);
-    expect(await mappings()).toEqual([]);
-    expect(await linkedProjects()).toEqual(["alive", "deleted"]);
+    expect(await stateOf(fake)).toEqual(before);
+    expect(dryRun).toEqual(await cleanup.run());
   });
 });

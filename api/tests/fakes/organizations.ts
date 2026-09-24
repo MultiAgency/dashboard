@@ -1,3 +1,4 @@
+import type { Database } from "../../src/db";
 import {
   type Organization,
   type OrganizationRole,
@@ -5,6 +6,7 @@ import {
   type PluginContext,
   toOrganization,
 } from "../../src/lib/organizations";
+import { createOrganizationAccess } from "../../src/services/organization-access";
 
 export type FakeOrganization = {
   id: string;
@@ -66,4 +68,13 @@ export function signedIn(
     organization: activeOrganizationId ? { activeOrganizationId } : null,
     ...(near ? { near: { primaryAccountId: near } } : {}),
   };
+}
+
+export function inMemoryAccess(
+  db: unknown,
+  seed: Partial<Parameters<typeof inMemoryOrganizations>[0]> = {},
+  defaultDaoAccountId?: string,
+) {
+  const { port } = inMemoryOrganizations({ organizations: [], ...seed });
+  return createOrganizationAccess({ db: db as Database, organizations: port, defaultDaoAccountId });
 }

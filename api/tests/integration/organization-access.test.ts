@@ -1,13 +1,13 @@
-import type { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import { organizationDaos } from "../../src/db/schema";
-import type { OrganizationRole } from "../../src/lib/organizations";
-import { createOrganizationAccess, ROLE_MATRIX } from "../../src/services/organization-access";
-import { type FakeOrganization, inMemoryOrganizations, signedIn } from "../fakes/organizations";
-import { applyAllMigrations } from "./_pg";
+import { ROLE_MATRIX } from "../../src/services/organization-access";
+import {
+  type FakeMember,
+  type FakeOrganization,
+  inMemoryAccess,
+  signedIn,
+} from "../fakes/organizations";
+import { migratedDatabase } from "./_pg";
 
 const DEFAULT_DAO = "multiagency.sputnik-dao.near";
 const OTHER_DAO = "other.sputnik-dao.near";
@@ -27,51 +27,33 @@ const organizations: FakeOrganization[] = [
   { id: "odd", isPersonal: true, daoAccountId: OTHER_DAO },
 ];
 
-const ROLES: OrganizationRole[] = ["owner", "admin", "member", "contributor"];
-
-const members = [
-  ...ROLES.map((role) => ({ userId: role, organizationId: "other", role })),
-  { userId: "staff", organizationId: "multiagency", role: "member" as const },
-  ...["multiagency", "no-dao", "personal", "odd"].map((organizationId) => ({
-    userId: "u1",
-    organizationId,
-    role: "owner" as const,
-  })),
+const members: FakeMember[] = [
+  { userId: "owner", organizationId: "other", role: "owner" },
+  { userId: "admin", organizationId: "other", role: "admin" },
+  { userId: "member", organizationId: "other", role: "member" },
+  { userId: "contributor", organizationId: "other", role: "contributor" },
+  { userId: "staff", organizationId: "multiagency", role: "member" },
+  { userId: "u1", organizationId: "multiagency", role: "owner" },
+  { userId: "u1", organizationId: "no-dao", role: "owner" },
+  { userId: "u1", organizationId: "personal", role: "owner" },
+  { userId: "u1", organizationId: "odd", role: "owner" },
 ];
 
-function outcome(promise: Promise<unknown>) {
-  return promise.then(
+const outcome = (p: Promise<unknown>) =>
+  p.then(
     () => "allowed",
-    (error: { code?: string }) => error.code,
+    (e: { code?: string }) => e.code,
   );
-}
 
 describe("organization access", () => {
-  let pg: PGlite;
-  let db: Database;
-
-  beforeAll(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
-  });
+  const database = migratedDatabase();
 
   beforeEach(async () => {
-    await pg.query("TRUNCATE organization_daos");
+    await database.pg.query("TRUNCATE organization_daos");
   });
 
-  afterAll(async () => {
-    await pg.close();
-  });
-
-  function accessWith(defaultDaoAccountId: string | null = DEFAULT_DAO) {
-    return createOrganizationAccess({
-      db,
-      organizations: inMemoryOrganizations({ organizations, members }).port,
-      defaultDaoAccountId: defaultDaoAccountId ?? undefined,
-    });
-  }
+  const accessWith = (defaultDao: string | null = DEFAULT_DAO) =>
+    inMemoryAccess(database.db, { organizations, members }, defaultDao ?? undefined);
 
   test("anonymous requests act for the default Agency DAO with no role and no private access", async () => {
     expect(await accessWith().publicScope({})).toMatchObject({
@@ -100,38 +82,26 @@ describe("organization access", () => {
   });
 
   test.each([
-    { role: "owner", canSeePrivate: true, canManageMembers: true, canUseMoney: true, works: true },
-    { role: "admin", canSeePrivate: true, canManageMembers: true, canUseMoney: true, works: true },
-    {
-      role: "member",
-      canSeePrivate: false,
-      canManageMembers: false,
-      canUseMoney: true,
-      works: true,
-    },
-    {
-      role: "contributor",
-      canSeePrivate: true,
-      canManageMembers: false,
-      canUseMoney: false,
-      works: false,
-    },
+    { role: "owner", manages: true, money: true, works: true, seesPrivate: true },
+    { role: "admin", manages: true, money: true, works: true, seesPrivate: true },
+    { role: "member", manages: false, money: true, works: true, seesPrivate: false },
+    { role: "contributor", manages: false, money: false, works: false, seesPrivate: true },
   ])("$role capabilities and agency routes follow the role matrix", async (row) => {
     const access = accessWith();
     const context = signedIn(row.role, "other");
 
     expect((await access.resolve(context)).capabilities).toEqual({
-      canManageMembers: row.canManageMembers,
-      canUseMoney: row.canUseMoney,
+      canManageMembers: row.manages,
+      canUseMoney: row.money,
       hasAgencySections: row.works,
       hasClientSections: false,
     });
-    expect((await access.publicScope(context)).canSeePrivate).toBe(row.canSeePrivate);
+    expect((await access.publicScope(context)).canSeePrivate).toBe(row.seesPrivate);
     expect(await outcome(access.agencyScope(context, ROLE_MATRIX.work))).toBe(
       row.works ? "allowed" : "FORBIDDEN",
     );
     expect(await outcome(access.agencyScope(context, ROLE_MATRIX.manage))).toBe(
-      row.canManageMembers ? "allowed" : "FORBIDDEN",
+      row.manages ? "allowed" : "FORBIDDEN",
     );
   });
 
@@ -171,7 +141,7 @@ describe("organization access", () => {
   });
 
   test("a DAO mapped to another Organization is not granted from metadata", async () => {
-    await db
+    await database.db
       .insert(organizationDaos)
       .values({ organizationId: "other", daoAccountId: DEFAULT_DAO });
 
@@ -179,7 +149,7 @@ describe("organization access", () => {
   });
 
   test("the mapping takes precedence over Organization metadata", async () => {
-    await db
+    await database.db
       .insert(organizationDaos)
       .values({ organizationId: "no-dao", daoAccountId: "mapped.sputnik-dao.near" });
 

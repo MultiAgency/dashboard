@@ -11,12 +11,11 @@ import { createClientPortalService } from "../../src/services/client-portal";
 import { createClientsService } from "../../src/services/clients";
 import {
   type AgencyScope,
-  createOrganizationAccess,
   type OrganizationAccessService,
   ROLE_MATRIX,
 } from "../../src/services/organization-access";
 import { createProjectDirectory } from "../../src/services/project-directory";
-import { inMemoryOrganizations, signedIn } from "../fakes/organizations";
+import { inMemoryAccess, signedIn } from "../fakes/organizations";
 import { inMemoryProjects, project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
@@ -44,32 +43,22 @@ describe("agency isolation", () => {
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg, { schema }) as unknown as Database;
-    access = createOrganizationAccess({
-      db,
-      organizations: inMemoryOrganizations({
-        organizations: [
-          { id: "alpha-org", daoAccountId: ALPHA },
-          { id: "beta-org", daoAccountId: BETA },
-        ],
-        members: [
-          { userId: "alpha-admin", organizationId: "alpha-org", role: "admin" },
-          { userId: "alpha-treasurer", organizationId: "alpha-org", role: "owner" },
-          { userId: "beta-admin", organizationId: "beta-org", role: "admin" },
-        ],
-      }).port,
+    access = inMemoryAccess(db, {
+      organizations: [
+        { id: "alpha-org", daoAccountId: ALPHA },
+        { id: "beta-org", daoAccountId: BETA },
+      ],
+      members: [
+        { userId: "alpha-admin", organizationId: "alpha-org", role: "admin" },
+        { userId: "alpha-treasurer", organizationId: "alpha-org", role: "owner" },
+        { userId: "beta-admin", organizationId: "beta-org", role: "admin" },
+      ],
     });
-    alpha = await access.agencyScope(
-      signedIn("alpha-admin", "alpha-org", "admin.near"),
-      ROLE_MATRIX.manage,
-    );
-    beta = await access.agencyScope(
-      signedIn("beta-admin", "beta-org", "admin.near"),
-      ROLE_MATRIX.manage,
-    );
-    alphaTreasurer = await access.agencyScope(
-      signedIn("alpha-treasurer", "alpha-org", "treasurer.near"),
-      ROLE_MATRIX.manage,
-    );
+    const manager = (userId: string, organizationId: string, near: string) =>
+      access.agencyScope(signedIn(userId, organizationId, near), ROLE_MATRIX.manage);
+    alpha = await manager("alpha-admin", "alpha-org", "admin.near");
+    beta = await manager("beta-admin", "beta-org", "admin.near");
+    alphaTreasurer = await manager("alpha-treasurer", "alpha-org", "treasurer.near");
   });
 
   beforeEach(async () => {
@@ -129,12 +118,9 @@ describe("agency isolation", () => {
     });
 
     test("people can only look up client memberships for their own NEAR accounts", async () => {
+      const service = createClientsService(db, directory);
       await run(
-        createClientsService(db, directory).create(beta, {
-          orgId: "beta-org",
-          name: "Beta Corp",
-          nearAccountId: "ceo.near",
-        }),
+        service.create(beta, { orgId: "beta-org", name: "Beta Corp", nearAccountId: "ceo.near" }),
       );
       const ceo = { near: { primaryAccountId: "ceo.near", linkedAccounts: [] } };
       const stranger = {
