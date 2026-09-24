@@ -402,7 +402,6 @@ export const billings = pgTable(
     id: text("id").primaryKey(),
     projectId: text("project_id").notNull(),
     nearAccount: text("near_account"),
-    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     tokenId: text("token_id").notNull(),
     amount: text("amount").notNull(),
     proposalId: text("proposal_id").notNull(),
@@ -417,7 +416,6 @@ export const billings = pgTable(
       t.proposalId,
     ),
     projectIdx: index("billings_project_id").on(t.projectId),
-    clientIdx: index("billings_client_id").on(t.clientId),
     nearAccountIdx: index("billings_near_account").on(t.nearAccount),
   }),
 );

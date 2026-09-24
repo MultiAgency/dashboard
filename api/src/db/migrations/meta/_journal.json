@@ -78,6 +78,13 @@
       "when": 1784755200000,
       "tag": "0010_subcontracting",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784841600000,
+      "tag": "0011_billings_drop_client",
+      "breakpoints": true
     }
   ]
 }
