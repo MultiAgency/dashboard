@@ -15,9 +15,6 @@ import { getNetwork } from "./network";
 // `invalidateQueries({ queryKey: [...] })` is prefix-match, so passing the
 // network-less prefix invalidates every network's cached entry at once
 // (which is what callers usually want).
-//
-// Workspace queries also carry the active Organization id (`workspaceKey()`),
-// so switching Organization never serves another Organization's cached data.
 
 let activeOrganizationId: string | null = null;
 
