@@ -10,7 +10,7 @@ import { isNearnAvailable } from "./nearn";
 import type { AgencyScope, TreasuryScope } from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
 import { toProject } from "./project-directory";
-import { deleteProjectCascade } from "./projects";
+import { deleteProjectCascade, projectDeletionBlockers } from "./projects";
 
 type ProjectKind = Project["kind"];
 type ProjectStatus = Project["status"];
@@ -244,6 +244,16 @@ export function createAgencyService(
     deleteProject: (scope: AgencyScope, input: { id: string }) =>
       Effect.gen(function* () {
         yield* Effect.promise(() => directory.forAgency(scope).require(input.id));
+        const blockers = yield* Effect.promise(() => projectDeletionBlockers(db, input.id));
+        if (blockers.length > 0) {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message:
+                "This Project is shared through an Engagement or has Budget entries or Billings. Archive it instead.",
+              data: { reason: "ARCHIVE_ONLY", blockers },
+            }),
+          );
+        }
         yield* Effect.promise(() => deleteProjectCascade(db, input.id));
         yield* Effect.promise(() =>
           plugins.projects(scope.pluginContext).deleteProject({ id: input.id }),

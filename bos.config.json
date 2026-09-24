@@ -26,6 +26,7 @@
       },
       "secrets": [
         "API_DATABASE_URL",
+        "AUTH_DATABASE_URL",
         "APPLICATIONS_WEBHOOK_URL",
         "CONTACT_FORM_WEBHOOK_URL",
         "CONTACT_FORM_WEBHOOK_SECRET",

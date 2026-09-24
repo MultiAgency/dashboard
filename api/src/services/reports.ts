@@ -2,7 +2,8 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { billings, budgets, clientProjects, clients } from "../db/schema";
+import { billings, budgets, engagementProjects, engagements } from "../db/schema";
+import type { OrganizationDirectory } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
@@ -13,12 +14,13 @@ export function createReportsService(
   db: Database,
   directory: ProjectDirectory,
   plugins: PluginsClient,
+  organizations: Pick<OrganizationDirectory, "get">,
 ) {
   return {
     generate: (
       scope: AgencyScope,
       input: {
-        clientId?: string;
+        engagementId?: string;
         projectId?: string;
         note?: string;
         startDate?: string;
@@ -44,39 +46,53 @@ export function createReportsService(
           return true;
         };
 
-        if (input.clientId) {
-          const clientRows = agencyDao
+        const agencyEngagements = scope.organizationId
+          ? yield* Effect.promise(() =>
+              db
+                .select()
+                .from(engagements)
+                .where(
+                  and(
+                    eq(engagements.agencyOrganizationId, scope.organizationId!),
+                    inArray(engagements.status, ["active", "ended"]),
+                  ),
+                ),
+            )
+          : [];
+        const reported = input.engagementId
+          ? agencyEngagements.filter((e) => e.id === input.engagementId)
+          : agencyEngagements;
+        if (input.engagementId && reported.length === 0) {
+          return yield* Effect.fail(
+            new ORPCError("NOT_FOUND", { message: "Engagement not found" }),
+          );
+        }
+        const links =
+          reported.length > 0
             ? yield* Effect.promise(() =>
                 db
                   .select()
-                  .from(clients)
+                  .from(engagementProjects)
                   .where(
-                    and(eq(clients.id, input.clientId!), eq(clients.agencyDaoAccountId, agencyDao)),
-                  )
-                  .limit(1),
+                    inArray(
+                      engagementProjects.engagementId,
+                      reported.map((e) => e.id),
+                    ),
+                  ),
               )
             : [];
-          if (!clientRows[0]) {
-            return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Client not found" }));
-          }
-          const links = yield* Effect.promise(() =>
-            db
-              .select({ projectId: clientProjects.projectId })
-              .from(clientProjects)
-              .where(eq(clientProjects.clientId, input.clientId!)),
-          );
-          const agencyProjectIds = new Set(allProjects.map((p) => p.id));
-          projectIds = links.map((l) => l.projectId).filter((id) => agencyProjectIds.has(id));
-        } else {
-          projectIds = allProjects.map((p) => p.id);
-        }
+
+        const agencyProjectIds = new Set(allProjects.map((p) => p.id));
+        projectIds = input.engagementId
+          ? [...new Set(links.map((l) => l.projectId))].filter((id) => agencyProjectIds.has(id))
+          : allProjects.map((p) => p.id);
 
         if (input.projectId) {
           if (!projectIds.includes(input.projectId)) {
             return yield* Effect.fail(
               new ORPCError("NOT_FOUND", {
-                message: input.clientId
-                  ? "Project not linked to this client"
+                message: input.engagementId
+                  ? "Project not shared through this Engagement"
                   : "Project not found in this agency",
               }),
             );
@@ -98,12 +114,7 @@ export function createReportsService(
                 db
                   .select()
                   .from(billings)
-                  .where(
-                    and(
-                      inArray(billings.projectId, projectIds),
-                      input.clientId ? eq(billings.clientId, input.clientId) : undefined,
-                    ),
-                  )
+                  .where(inArray(billings.projectId, projectIds))
                   .orderBy(desc(billings.createdAt)),
               )
             : [];
@@ -111,23 +122,11 @@ export function createReportsService(
         const budgetRows = budgetRowsAll.filter(inPeriod);
         const billingRowsRaw = billingRowsRawAll.filter(inPeriod);
 
-        const [clientRows, clientLinkRows] = yield* Effect.promise(() =>
-          Promise.all([
-            agencyDao
-              ? db
-                  .select()
-                  .from(clients)
-                  .where(eq(clients.agencyDaoAccountId, agencyDao))
-                  .orderBy(desc(clients.name))
-              : Promise.resolve([]),
-            projectIds.length > 0
-              ? db
-                  .select()
-                  .from(clientProjects)
-                  .where(inArray(clientProjects.projectId, projectIds))
-              : Promise.resolve([]),
-          ]),
-        );
+        const clientNames = yield* Effect.promise(async () => {
+          const ids = [...new Set(reported.map((e) => e.clientOrganizationId))];
+          const found = await Promise.all(ids.map((id) => organizations.get(id)));
+          return new Map(ids.map((id, i) => [id, found[i]?.name ?? id]));
+        });
 
         const billingRows = agencyDao
           ? yield* Effect.promise(() =>
@@ -168,14 +167,6 @@ export function createReportsService(
           contributorStats.set(b.nearAccount, existing);
         }
 
-        const clientById = new Map(clientRows.map((c) => [c.id, c]));
-        const projectsByClient = new Map<string, string[]>();
-        for (const link of clientLinkRows) {
-          const list = projectsByClient.get(link.clientId) ?? [];
-          list.push(link.projectId);
-          projectsByClient.set(link.clientId, list);
-        }
-
         const clientBreakdown: Array<{
           clientName: string;
           projectTitle: string;
@@ -184,26 +175,20 @@ export function createReportsService(
           spentByToken: ReturnType<typeof sumByToken>;
         }> = [];
 
-        const relevantClientIds = input.clientId
-          ? [input.clientId]
-          : [...new Set(clientLinkRows.map((l) => l.clientId))];
-
-        for (const clientId of relevantClientIds) {
-          const client = clientById.get(clientId);
-          if (!client) continue;
-          const pids = (projectsByClient.get(clientId) ?? []).filter((pid) =>
-            projectIds.includes(pid),
-          );
+        for (const engagement of reported) {
+          const clientName =
+            clientNames.get(engagement.clientOrganizationId) ?? engagement.clientOrganizationId;
+          const pids = links
+            .filter((l) => l.engagementId === engagement.id && projectIds.includes(l.projectId))
+            .map((l) => l.projectId);
           for (const pid of pids) {
             const project = projectById.get(pid);
-            const projectBudgets = budgetRows.filter((b) => b.projectId === pid);
-            const projectBillings = paidBillings.filter((b) => b.projectId === pid);
             clientBreakdown.push({
-              clientName: client.name,
+              clientName,
               projectTitle: project?.title ?? pid,
               projectSlug: project?.slug ?? pid,
-              budgetByToken: sumByToken(projectBudgets),
-              spentByToken: sumByToken(projectBillings),
+              budgetByToken: sumByToken(budgetRows.filter((b) => b.projectId === pid)),
+              spentByToken: sumByToken(paidBillings.filter((b) => b.projectId === pid)),
             });
           }
         }
