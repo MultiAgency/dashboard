@@ -42,7 +42,7 @@ describe("notifications", () => {
   });
 
   function service(sendEmail = async (m: EmailMessage) => void sent.push(m)) {
-    return createNotifications({ db, directory, sendEmail });
+    return createNotifications({ db, directory, sendEmail, appOrigin: "https://app.example" });
   }
 
   const proposal = {
@@ -50,7 +50,6 @@ describe("notifications", () => {
     kind: "engagement_proposed" as const,
     payload: { agencyName: "Studio", clientName: "Acme", engagementId: "e1" },
     link: "/client",
-    origin: "https://app.example",
   };
 
   test("owners and admins of the asked Organization get an inbox item; those with an email also get one", async () => {
@@ -58,7 +57,7 @@ describe("notifications", () => {
 
     expect(result).toEqual({ recipients: 3, emailed: 2 });
     expect(sent.map((m) => m.to).sort()).toEqual(["admin@acme.example", "owner@acme.example"]);
-    expect(sent[0]?.html).toContain("https://app.example/client");
+    expect(sent[0]?.html).toContain('href="https://app.example/client"');
     const inbox = await service().list("wallet-admin", { limit: 10 });
     expect(inbox.data).toEqual([
       expect.objectContaining({

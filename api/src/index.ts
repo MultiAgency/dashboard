@@ -47,6 +47,7 @@ import { createTreasuryService } from "./services/treasury";
 export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({
     agencyDaoAccount: z.string().optional(),
+    appOrigin: z.string().url().default("https://dev.multiagency.ai"),
   }),
 
   secrets: z.object({
@@ -57,6 +58,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
     CONTACT_FORM_WEBHOOK_SECRET: z.string().optional(),
     RESEND_API_KEY: z.string().optional(),
     NOTIFY_FROM_EMAIL: z.string().optional(),
+    APP_ORIGIN: z.string().url().optional(),
   }),
 
   context: ContextSchema,
@@ -82,6 +84,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const organizationDirectory = authPool
         ? authDatabaseDirectory(authPool)
         : unconfiguredDirectory();
+      const appOrigin = config.secrets.APP_ORIGIN ?? config.variables.appOrigin;
       const sendEmail = resendEmailSender({
         resendApiKey: config.secrets.RESEND_API_KEY,
         fromEmail: config.secrets.NOTIFY_FROM_EMAIL,
@@ -90,6 +93,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         db,
         directory: organizationDirectory,
         sendEmail,
+        appOrigin,
       });
       const access = createOrganizationAccess({
         db,
@@ -116,6 +120,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         projects: directory,
         notifications,
         sendEmail,
+        appOrigin,
       });
       const clientPortal = createClientPortalService(
         access,

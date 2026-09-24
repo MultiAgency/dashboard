@@ -3,7 +3,7 @@ import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { notifications } from "../db/schema";
 import type { OrganizationDirectory } from "../lib/organizations";
-import { type EmailSender, escapeHtml } from "./notify";
+import { appUrl, type EmailSender, escapeHtml } from "./notify";
 
 type Payload = Record<string, string>;
 
@@ -69,15 +69,15 @@ export type NotifyInput = {
   payload: Payload;
   link: string;
   excludeUserId?: string | null;
-  origin?: string | null;
 };
 
 export function createNotifications(deps: {
   db: Database;
   directory: OrganizationDirectory;
   sendEmail: EmailSender | null;
+  appOrigin: string;
 }) {
-  const { db, directory, sendEmail } = deps;
+  const { db, directory, sendEmail, appOrigin } = deps;
 
   async function deliverEmails(
     to: string[],
@@ -120,7 +120,7 @@ export function createNotifications(deps: {
       const emails = [
         ...new Set(recipients.flatMap((r) => (r.email ? [r.email.toLowerCase()] : []))),
       ];
-      const url = input.origin ? new URL(input.link, input.origin).toString() : null;
+      const url = appUrl(appOrigin, input.link);
       const emailed = await deliverEmails(emails, render(input.kind, input.payload), url);
       return { recipients: recipients.length, emailed };
     },
