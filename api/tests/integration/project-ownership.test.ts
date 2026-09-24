@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
-import { settings } from "../../src/db/schema";
+import { budgets, settings } from "../../src/db/schema";
 import type { SqlClient } from "../../src/lib/auth-database";
 import { createProjectOwnershipMigration } from "../../src/services/project-ownership";
 import { seedAgencyDaos } from "../fakes/organizations";
@@ -96,7 +96,46 @@ describe("project ownership migration", () => {
 
     const report = await migration().run();
 
-    expect(report).toEqual({ movedProjects: [], rekeyedSettings: [] });
+    expect(report).toEqual({ movedProjects: [], rekeyedSettings: [], fundedBudgets: [] });
     expect(await owners()).toEqual(after);
+  });
+
+  test("records the funding Agency DAO of Budget entries on the DAO's Projects, before or after the move", async () => {
+    const entry = (id: string, projectId: string, fundingDaoAccountId: string | null = null) => ({
+      id,
+      projectId,
+      tokenId: "near",
+      amount: "10",
+      actorAccountId: "admin.near",
+      fundingDaoAccountId,
+    });
+    await db
+      .insert(budgets)
+      .values([
+        entry("b1", "p1"),
+        entry("b2", "p2"),
+        entry("b3", "p2", "other.sputnik-dao.near"),
+        entry("b4", "p3"),
+      ]);
+    await projectsPg.query("UPDATE projects SET organization_id = 'multiagency' WHERE id = 'p2'");
+
+    const dry = await migration().run({ dryRun: true });
+    expect(dry.fundedBudgets).toEqual([{ daoAccountId: MULTIAGENCY_DAO, budgetIds: ["b1", "b2"] }]);
+    expect(
+      (await db.select().from(budgets)).filter((b) => b.fundingDaoAccountId === null),
+    ).toHaveLength(3);
+
+    await migration().run();
+
+    const funding = Object.fromEntries(
+      (await db.select().from(budgets)).map((b) => [b.id, b.fundingDaoAccountId]),
+    );
+    expect(funding).toEqual({
+      b1: MULTIAGENCY_DAO,
+      b2: MULTIAGENCY_DAO,
+      b3: "other.sputnik-dao.near",
+      b4: null,
+    });
+    expect((await migration().run()).fundedBudgets).toEqual([]);
   });
 });

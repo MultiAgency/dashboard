@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { billings, budgets, organizationDaos } from "../../src/db/schema";
+import { billings, budgets, engagements, organizationDaos, prepayments } from "../../src/db/schema";
 import { createAgencyDaoService } from "../../src/services/agency-dao";
 import { ROLE_MATRIX } from "../../src/services/organization-access";
 import type { DaoRole } from "../../src/services/sputnik";
@@ -26,7 +26,9 @@ describe("connecting an Agency DAO", () => {
   const state = migratedDatabase();
 
   beforeEach(async () => {
-    await state.pg.query("TRUNCATE organization_daos, budgets, billings CASCADE");
+    await state.pg.query(
+      "TRUNCATE organization_daos, budgets, billings, prepayments, engagements CASCADE",
+    );
   });
 
   function setup() {
@@ -135,6 +137,27 @@ describe("connecting an Agency DAO", () => {
           proposalId: "7",
           nearAccount: "dev.near",
         }),
+    ],
+    [
+      "holds Prepayments",
+      async () => {
+        await state.db.insert(engagements).values({
+          id: "e1",
+          agencyOrganizationId: "studio",
+          clientOrganizationId: "rival",
+          status: "active",
+          proposedBy: "founder",
+        });
+        await state.db.insert(prepayments).values({
+          id: "p1",
+          engagementId: "e1",
+          daoAccountId: TREZU,
+          tokenId: "near",
+          amount: "10",
+          period: "2026-09",
+          actorAccountId: "founder.near",
+        });
+      },
     ],
   ])("refuses to change or disconnect a DAO that %s", async (_, reference) => {
     const { service, connect, founderScope } = setup();

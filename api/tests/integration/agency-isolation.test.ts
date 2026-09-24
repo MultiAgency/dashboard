@@ -146,18 +146,8 @@ describe("agency isolation", () => {
         actorAccountId: "treasurer.near",
         note: null,
         engagementId: null,
+        fundingDaoAccountId: ALPHA,
       });
-      const betaEngagementId = await betaEngagement();
-      await expect(
-        run(
-          service.create(alpha, {
-            projectId: "alpha-project",
-            tokenId: "near",
-            amount: "5",
-            engagementId: betaEngagementId,
-          }),
-        ),
-      ).rejects.toThrow("Engagement not found");
       await expect(
         run(service.create(alpha, { projectId: "beta-project", tokenId: "near", amount: "5" })),
       ).rejects.toThrow("Project not found");

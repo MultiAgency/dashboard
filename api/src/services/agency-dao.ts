@@ -1,7 +1,7 @@
 import { and, count, eq, inArray, ne } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { billings, budgets, organizationDaos } from "../db/schema";
+import { billings, budgets, organizationDaos, prepayments } from "../db/schema";
 import type { Network } from "../lib/network";
 import { agencyDaoOf, type OrganizationScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
@@ -33,6 +33,7 @@ export function createAgencyDaoService(deps: {
   const { db, directory, daoRoles } = deps;
 
   async function countRows(table: typeof budgets | typeof billings, projectIds: string[]) {
+    if (projectIds.length === 0) return 0;
     const [row] = await db
       .select({ n: count() })
       .from(table)
@@ -40,17 +41,26 @@ export function createAgencyDaoService(deps: {
     return row?.n ?? 0;
   }
 
+  async function countPrepayments(daoAccountId: string) {
+    const [row] = await db
+      .select({ n: count() })
+      .from(prepayments)
+      .where(eq(prepayments.daoAccountId, daoAccountId));
+    return row?.n ?? 0;
+  }
+
   const treasuryReferences = [
-    (projectIds: string[]) => countRows(budgets, projectIds),
-    (projectIds: string[]) => countRows(billings, projectIds),
+    (_dao: string, projectIds: string[]) => countRows(budgets, projectIds),
+    (_dao: string, projectIds: string[]) => countRows(billings, projectIds),
+    (dao: string) => countPrepayments(dao),
   ];
 
   async function inUse(scope: OrganizationScope): Promise<boolean> {
-    if (!scope.agencyDao) return false;
+    const dao = scope.agencyDao;
+    if (!dao) return false;
     const projectIds = (await directory.forAgency(scope).list()).map((p) => p.id);
-    if (projectIds.length === 0) return false;
     const counts = await Promise.all(
-      treasuryReferences.map((references) => references(projectIds)),
+      treasuryReferences.map((references) => references(dao, projectIds)),
     );
     return counts.some((n) => n > 0);
   }
@@ -58,7 +68,7 @@ export function createAgencyDaoService(deps: {
   async function requireUnreferenced(scope: OrganizationScope): Promise<void> {
     if (await inUse(scope)) {
       throw forbidden(
-        "This Agency DAO funds Budget entries or Billings of your Projects, so it cannot be changed or disconnected.",
+        "This Agency DAO holds Prepayments or funds Budget entries or Billings of your Projects, so it cannot be changed or disconnected.",
       );
     }
   }

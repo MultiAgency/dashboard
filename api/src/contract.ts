@@ -314,7 +314,39 @@ const budget = z.object({
   actorAccountId: z.string(),
   relatedBudgetId: z.string().nullable(),
   engagementId: z.string().nullable(),
+  fundingDaoAccountId: z.string().nullable(),
   createdAt: z.date(),
+});
+
+const prepaymentPeriod = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "a calendar month written as YYYY-MM");
+
+const positiveBaseAmount = z
+  .string()
+  .regex(/^[1-9]\d*$/, "positive integer string in the token's smallest unit")
+  .max(80);
+
+const transferReference = z.string().trim().max(500);
+
+const prepayment = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  daoAccountId: z.string(),
+  tokenId: z.string(),
+  amount: z.string(),
+  period: z.string(),
+  transferReference: z.string().nullable(),
+  actorAccountId: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+const prepaidBalance = z.object({
+  tokenId: z.string(),
+  prepaid: z.string(),
+  budgeted: z.string(),
+  balance: z.string(),
 });
 
 const billing = z.object({
@@ -706,6 +738,54 @@ export const contract = oc.router({
     },
   },
 
+  prepayments: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/prepayments" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(prepayment) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    balance: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/prepaid-balance" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(prepaidBalance) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    record: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/prepayments" })
+      .input(
+        z.object({
+          engagementId: z.string().min(1),
+          tokenId,
+          amount: positiveBaseAmount,
+          period: prepaymentPeriod,
+          transferReference: transferReference.optional(),
+        }),
+      )
+      .output(prepayment)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    correct: oc
+      .route({ method: "PATCH", path: "/prepayments/{id}" })
+      .input(
+        z.object({
+          id: z.string().min(1),
+          tokenId: tokenId.optional(),
+          amount: positiveBaseAmount.optional(),
+          period: prepaymentPeriod.optional(),
+          transferReference: transferReference.nullable().optional(),
+        }),
+      )
+      .output(prepayment)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    remove: oc
+      .route({ method: "DELETE", path: "/prepayments/{id}" })
+      .input(z.object({ id: z.string().min(1) }))
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
   clientPortal: {
     dashboard: {
       summary: oc
@@ -950,7 +1030,6 @@ export const contract = oc.router({
           tokenId,
           amount: baseAmount,
           note: z.string().max(2000).optional(),
-          engagementId: z.string().optional(),
         }),
       )
       .output(z.object({ budget }))
@@ -964,7 +1043,6 @@ export const contract = oc.router({
           tokenId,
           amount: baseAmount,
           note: z.string().max(2000).optional(),
-          engagementId: z.string().optional(),
         }),
       )
       .output(z.object({ budget }))
