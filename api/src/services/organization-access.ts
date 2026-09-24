@@ -1,4 +1,4 @@
-import { asc, desc, eq, or } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import type { DecoratedMiddleware } from "every-plugin/orpc";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
@@ -46,15 +46,7 @@ export type Capabilities = {
   hasClientSections: boolean;
 };
 
-export type Engagement = EngagementRow;
-
 export const SHARED_STATUSES: EngagementRow["status"][] = ["active", "ended"];
-
-export type Engagements = { asAgency: Engagement[]; asClient: Engagement[] };
-
-const NO_ENGAGEMENTS: Engagements = { asAgency: [], asClient: [] };
-
-export type ProjectRelation = "owned" | "client" | "subcontractor";
 
 export type OrganizationAccess = {
   organization: Organization | null;
@@ -66,8 +58,7 @@ export type OrganizationAccess = {
 };
 
 export type SharedEngagement = {
-  engagement: Engagement;
-  relation: Exclude<ProjectRelation, "owned">;
+  engagement: EngagementRow;
   readOnly: boolean;
   projectIds: string[];
   scope: AgencyScope;
@@ -121,10 +112,8 @@ export function createOrganizationAccess(deps: {
     const role = organization && !organization.isPersonal ? (membership?.role ?? null) : null;
     const agencyDao =
       organization && !organization.isPersonal ? await agencyDaoOf(db, organization.id) : null;
-    const related =
-      organization && role && !organization.isPersonal
-        ? await engagementsOf(organization.id)
-        : NO_ENGAGEMENTS;
+    const hasClientSections =
+      organization !== null && role !== null && (await isClientOfAnyAgency(organization.id));
     return {
       organization,
       role,
@@ -134,7 +123,7 @@ export function createOrganizationAccess(deps: {
         canManageMembers: hasRole(ROLE_MATRIX.manage, role),
         canUseMoney: agencyDao !== null && hasRole(ROLE_MATRIX.work, role),
         hasAgencySections: hasRole(ROLE_MATRIX.work, role),
-        hasClientSections: related.asClient.some((e) => e.status !== "declined"),
+        hasClientSections,
       },
       pluginContext: context,
     };
@@ -207,21 +196,18 @@ export function createOrganizationAccess(deps: {
     }
   }
 
-  async function engagementsOf(organizationId: string): Promise<Engagements> {
-    const rows = await db
-      .select()
+  async function isClientOfAnyAgency(organizationId: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: engagements.id })
       .from(engagements)
       .where(
-        or(
-          eq(engagements.agencyOrganizationId, organizationId),
+        and(
           eq(engagements.clientOrganizationId, organizationId),
+          ne(engagements.status, "declined"),
         ),
       )
-      .orderBy(desc(engagements.updatedAt));
-    return {
-      asAgency: rows.filter((r) => r.agencyOrganizationId === organizationId),
-      asClient: rows.filter((r) => r.clientOrganizationId === organizationId),
-    };
+      .limit(1);
+    return row !== undefined;
   }
 
   async function sharedProjectIds(engagementId: string): Promise<string[]> {
@@ -278,7 +264,6 @@ export function createOrganizationAccess(deps: {
     }
     return {
       engagement,
-      relation: engagement.kind === "subcontract" ? "subcontractor" : "client",
       readOnly: engagement.status !== "active",
       projectIds: await sharedProjectIds(engagement.id),
       scope: await readScopeOfAgency(context, engagement.agencyOrganizationId),

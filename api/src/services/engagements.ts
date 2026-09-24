@@ -286,10 +286,7 @@ export function createEngagementsService(deps: {
       inviterId: userIdOf(scope),
       expiresAt: new Date(now().getTime() + INVITATION_TTL_MS),
     });
-    const updated = await update(row.id, {
-      invitationId: invitation.id,
-      invitationEmail: invitation.email,
-    });
+    const updated = await update(row.id, { invitationId: invitation.id });
     await sendInvitation(updated, invitation);
     await tell(scope, updated, "agency", "client_invite_sent", { email: invitation.email });
     return updated;

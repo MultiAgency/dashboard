@@ -164,7 +164,6 @@ export const engagements = pgTable(
     status: text("status", { enum: ENGAGEMENT_STATUSES }).notNull(),
     proposedBy: text("proposed_by").notNull(),
     invitationId: text("invitation_id"),
-    invitationEmail: text("invitation_email"),
     invitationAcceptedAt: timestamp("invitation_accepted_at", { withTimezone: false }),
     legacyClientId: text("legacy_client_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),

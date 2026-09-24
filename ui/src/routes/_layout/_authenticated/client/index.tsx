@@ -1,15 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button, Card, CardContent } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Loading } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EngagementStatusBadge, type EngagementView } from "@/components/engagement-status";
+import { useEngagementAction } from "@/hooks/use-engagement-action";
 import { useApiClient } from "@/lib/api";
 import { canReadEngagement, isManager } from "@/lib/navigation";
-import { engagementsListQueryOptions, refreshAfter } from "@/lib/queries";
+import { engagementsListQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/client/")({
   head: () => ({
@@ -67,23 +67,16 @@ function EngagementCard({
   canDecide: boolean;
 }) {
   const apiClient = useApiClient();
-  const queryClient = useQueryClient();
   const [confirmEnd, setConfirmEnd] = useState(false);
-  const decide = useMutation({
-    mutationFn: (action: "accept" | "decline" | "end") =>
-      apiClient.engagements[action]({ id: engagement.id }),
-    onSuccess: async (_, action) => {
-      await refreshAfter(queryClient, { type: "engagements" });
-      toast.success(
-        action === "accept"
-          ? `You now work with ${engagement.agency.name}`
-          : action === "decline"
-            ? "Proposal declined"
-            : "Engagement ended",
-      );
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+  const decide = useEngagementAction(
+    (action: "accept" | "decline" | "end") => apiClient.engagements[action]({ id: engagement.id }),
+    (_, action) =>
+      action === "accept"
+        ? `You now work with ${engagement.agency.name}`
+        : action === "decline"
+          ? "Proposal declined"
+          : "Engagement ended",
+  );
 
   return (
     <Card>

@@ -26,6 +26,15 @@ export type PluginContext = {
   } | null;
 };
 
+export function nearAccountsOf(context: PluginContext): string[] {
+  return [
+    ...new Set([
+      ...(context.near?.primaryAccountId ? [context.near.primaryAccountId] : []),
+      ...(context.near?.linkedAccounts ?? []).map((a) => a.accountId),
+    ]),
+  ];
+}
+
 export type OrgMetadata = {
   daoAccountId?: string;
   isPersonal?: boolean;

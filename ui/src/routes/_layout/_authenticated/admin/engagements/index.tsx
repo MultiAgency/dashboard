@@ -1,8 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Button, Card, CardContent, DataTable, Input } from "@/components";
 import { Field, selectClass } from "@/components/admin-form";
 import {
@@ -10,12 +9,9 @@ import {
   type EngagementView,
   InvitationStatusBadge,
 } from "@/components/engagement-status";
+import { useEngagementAction } from "@/hooks/use-engagement-action";
 import { useApiClient } from "@/lib/api";
-import {
-  adminProjectsListQueryOptions,
-  engagementsListQueryOptions,
-  refreshAfter,
-} from "@/lib/queries";
+import { adminProjectsListQueryOptions, engagementsListQueryOptions } from "@/lib/queries";
 import { isValidSlug, slugify } from "@/lib/slugify";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/engagements/")({
@@ -115,7 +111,6 @@ function EngagementsPage() {
 
 function NewClientForm() {
   const apiClient = useApiClient();
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
   const projects = projectsQuery.data?.data ?? [];
@@ -125,24 +120,24 @@ function NewClientForm() {
   const [adminEmail, setAdminEmail] = useState("");
   const [projectIds, setProjectIds] = useState<string[]>([]);
 
-  const create = useMutation({
-    mutationFn: () =>
+  const create = useEngagementAction(
+    () =>
       apiClient.engagements.createWithClient({
         name: name.trim(),
         slug: slug.trim(),
         adminEmail: adminEmail.trim(),
         projectIds,
       }),
-    onSuccess: async (engagement) => {
-      await refreshAfter(queryClient, { type: "engagements" });
-      toast.success(`${engagement.client.name} created — invitation sent to ${adminEmail.trim()}`);
-      navigate({
-        to: "/admin/engagements/$engagementId",
-        params: { engagementId: engagement.id },
-      });
+    (engagement) => `${engagement.client.name} created — invitation sent to ${adminEmail.trim()}`,
+    {
+      failure: "Could not create the Client",
+      onDone: (engagement) =>
+        navigate({
+          to: "/admin/engagements/$engagementId",
+          params: { engagementId: engagement.id },
+        }),
     },
-    onError: (e: Error) => toast.error(e.message || "Could not create the Client"),
-  });
+  );
 
   const valid = name.trim() && isValidSlug(slug.trim()) && adminEmail.includes("@");
 
@@ -215,20 +210,20 @@ function NewClientForm() {
 
 function ProposeForm() {
   const apiClient = useApiClient();
-  const queryClient = useQueryClient();
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
 
-  const propose = useMutation({
-    mutationFn: () => apiClient.engagements.propose({ slug: slug.trim(), name: name.trim() }),
-    onSuccess: async (engagement) => {
-      await refreshAfter(queryClient, { type: "engagements" });
-      toast.success(`Engagement proposed to ${engagement.client.name}`);
-      setSlug("");
-      setName("");
+  const propose = useEngagementAction(
+    () => apiClient.engagements.propose({ slug: slug.trim(), name: name.trim() }),
+    (engagement) => `Engagement proposed to ${engagement.client.name}`,
+    {
+      failure: "Could not propose the Engagement",
+      onDone: () => {
+        setSlug("");
+        setName("");
+      },
     },
-    onError: (e: Error) => toast.error(e.message || "Could not propose the Engagement"),
-  });
+  );
 
   return (
     <Card>
