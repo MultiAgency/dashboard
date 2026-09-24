@@ -16,7 +16,6 @@ import { applyAllMigrations } from "./_pg";
 
 const PROJECT_A = "00000000-0000-0000-0000-00000000000a";
 const PROJECT_B = "00000000-0000-0000-0000-00000000000b";
-const MAINNET_ORG = "agency.sputnik-dao.near";
 
 let slugCounter = 0;
 function uniqueSlug(): string {
@@ -149,7 +148,7 @@ describe("listings cache invalidation", () => {
 
   test("refreshNearnListing returns null when no row matches the slug", async () => {
     globalThis.fetch = vi.fn(() => Promise.reject(new Error("RPC should not be called"))) as never;
-    const result = await refreshNearnListing("nonexistent", MAINNET_ORG, db as never);
+    const result = await refreshNearnListing("nonexistent", "mainnet", db as never);
     expect(result).toBeNull();
   });
 
@@ -177,7 +176,7 @@ describe("listings cache invalidation", () => {
     globalThis.fetch = vi.fn(() =>
       Promise.resolve(nearnResponse({ error: "not found" }, 404)),
     ) as never;
-    const refreshed = await refreshNearnListing(slug, MAINNET_ORG, db as never);
+    const refreshed = await refreshNearnListing(slug, "mainnet", db as never);
 
     expect(refreshed?.isArchived).toBe(true);
     expect(refreshed?.externalId).toBe(slug);
@@ -190,7 +189,7 @@ describe("listings cache invalidation", () => {
     const fetchSpy = vi.fn(() => Promise.reject(new Error("NEARN should not be hit on testnet")));
     globalThis.fetch = fetchSpy as never;
 
-    const result = await refreshNearnListing(slug, "agency.sputnikv2.testnet", db as never);
+    const result = await refreshNearnListing(slug, "testnet", db as never);
     expect(result?.externalId).toBe(slug);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -204,7 +203,7 @@ describe("listings cache invalidation", () => {
         nearnResponse(sample(slug, { title: "Build portal v2", isWinnersAnnounced: true })),
       ),
     ) as never;
-    const refreshed = await refreshNearnListing(slug, MAINNET_ORG, db as never);
+    const refreshed = await refreshNearnListing(slug, "mainnet", db as never);
     expect(refreshed?.title).toBe("Build portal v2");
     expect(refreshed?.isWinnersAnnounced).toBe(true);
 

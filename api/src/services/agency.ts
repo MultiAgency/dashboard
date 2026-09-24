@@ -7,7 +7,7 @@ import type { PluginsClient } from "../lib/plugins-types.gen";
 import type { ProjectLedgers } from "./ledger";
 import { type ListingsService, listingRowToNearnPayload } from "./listings";
 import { isNearnAvailable } from "./nearn";
-import type { AgencyScope } from "./organization-access";
+import type { AgencyScope, TreasuryScope } from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
 import { toProject } from "./project-directory";
 import { deleteProjectCascade } from "./projects";
@@ -36,7 +36,7 @@ export function createAgencyService(
         const all = yield* Effect.promise(() => directory.forAgency(scope).list());
         const projects = scope.canSeePrivate ? all : all.filter(isPublicActive);
 
-        const linkByProjectId: Map<string, Listing> = isNearnAvailable(scope.agencyDao)
+        const linkByProjectId: Map<string, Listing> = isNearnAvailable(scope.network)
           ? yield* listings.forProjects(
               scope,
               projects.map((p) => p.id),
@@ -102,7 +102,7 @@ export function createAgencyService(
         };
       }),
 
-    getBudget: (scope: AgencyScope, projectId: string) =>
+    getBudget: (scope: TreasuryScope, projectId: string) =>
       Effect.gen(function* () {
         yield* Effect.promise(() => directory.forAgency(scope).require(projectId));
         const ledger = yield* Effect.promise(() => projectLedgers.load(scope, [projectId]));
@@ -153,7 +153,7 @@ export function createAgencyService(
               new ORPCError("BAD_REQUEST", { message: "Result must mention a parent scope" }),
             );
           }
-          const mention = `@${scope.agencyDao}/${parentSlug}`;
+          const mention = `@${parent.ownerId}/${parentSlug}`;
           content = input.description?.trim()
             ? `${mention}\n\n${input.description.trim()}`
             : mention;
@@ -169,7 +169,7 @@ export function createAgencyService(
             content,
             repository: input.repository,
             visibility: (input.visibility ?? "private") as ProjectVisibility,
-            organizationId: scope.agencyDao,
+            organizationId: scope.organizationId ?? undefined,
           }),
         );
 
@@ -188,7 +188,7 @@ export function createAgencyService(
           : null;
 
         return {
-          project: withListingId(toProject(final, scope.agencyDao), attached?.externalId ?? null),
+          project: withListingId(toProject(final), attached?.externalId ?? null),
         };
       }),
 
@@ -222,7 +222,6 @@ export function createAgencyService(
                   visibility: projectPatch.visibility as ProjectVisibility | undefined,
                 }),
               ),
-              scope.agencyDao,
             )
           : existing;
 

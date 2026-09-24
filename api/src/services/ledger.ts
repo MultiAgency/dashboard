@@ -3,7 +3,7 @@ import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { billings, budgets, type Listing } from "../db/schema";
 import type { ListingsService } from "./listings";
-import type { AgencyScope } from "./organization-access";
+import type { TreasuryScope } from "./organization-access";
 import { type DaoProposalStatus, enrichWithChainStatus } from "./sputnik";
 import { displayToBaseUnits, getTokenMetadataBySymbol } from "./tokens";
 
@@ -131,7 +131,7 @@ function toProjectRollup(r: TokenRollup): ProjectRollup {
 async function loadRows(
   db: Database,
   listings: ListingsService,
-  scope: AgencyScope,
+  scope: TreasuryScope,
   projectIds: string[],
 ) {
   if (projectIds.length === 0) {
@@ -162,7 +162,7 @@ async function loadRows(
 
 export function createProjectLedgers(db: Database, listings: ListingsService) {
   return {
-    load: async (scope: AgencyScope, projectIds: string[]): Promise<ProjectLedger> => {
+    load: async (scope: TreasuryScope, projectIds: string[]): Promise<ProjectLedger> => {
       const { budgetRows, bills, nearnListings, internalListings } = await loadRows(
         db,
         listings,

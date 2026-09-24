@@ -5,7 +5,7 @@ import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { type Budget, budgets } from "../db/schema";
 import type { ClientsService } from "./clients";
-import type { AgencyScope } from "./organization-access";
+import type { TreasuryScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
 export class BudgetInsufficientError extends Error {
@@ -210,7 +210,7 @@ export function createBudgetsService(
   clients: ClientsService,
 ) {
   const inAgency = <A>(
-    scope: AgencyScope,
+    scope: TreasuryScope,
     refs: { projectIds: string[]; clientId?: string },
     run: () => Promise<A>,
   ) =>
@@ -228,7 +228,7 @@ export function createBudgetsService(
 
   return {
     list: (
-      scope: AgencyScope,
+      scope: TreasuryScope,
       input: {
         projectId?: string;
         tokenId?: string;
@@ -258,7 +258,7 @@ export function createBudgetsService(
       }),
 
     create: (
-      scope: AgencyScope,
+      scope: TreasuryScope,
       input: {
         projectId: string;
         tokenId: string;
@@ -277,7 +277,7 @@ export function createBudgetsService(
       })),
 
     deallocate: (
-      scope: AgencyScope,
+      scope: TreasuryScope,
       input: {
         projectId: string;
         tokenId: string;
@@ -296,7 +296,7 @@ export function createBudgetsService(
       })),
 
     transfer: (
-      scope: AgencyScope,
+      scope: TreasuryScope,
       input: {
         fromProjectId: string;
         toProjectId: string;

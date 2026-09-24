@@ -4,7 +4,7 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { billings } from "../db/schema";
-import type { AgencyScope } from "./organization-access";
+import type { TreasuryScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 import { enrichWithChainStatus, getProposal } from "./sputnik";
 import { NATIVE_TOKEN_ID } from "./tokens";
@@ -12,7 +12,7 @@ import { NATIVE_TOKEN_ID } from "./tokens";
 export function createBillingsService(db: Database, directory: ProjectDirectory) {
   return {
     list: (
-      scope: AgencyScope,
+      scope: TreasuryScope,
       input: {
         projectId?: string;
         projectIds?: string[];
@@ -81,7 +81,7 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
       }),
 
     create: (
-      scope: AgencyScope,
+      scope: TreasuryScope,
       input: {
         projectId: string;
         nearAccount?: string;
@@ -179,7 +179,7 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
         return { billing: enhanced };
       }),
 
-    delete: (scope: AgencyScope, input: { id: string }) =>
+    delete: (scope: TreasuryScope, input: { id: string }) =>
       Effect.gen(function* () {
         const existing = yield* Effect.promise(() =>
           db
