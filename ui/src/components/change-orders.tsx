@@ -1,6 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { toast } from "sonner";
 import {
   Alert,
   AlertDescription,
@@ -11,6 +10,7 @@ import {
   CardContent,
   Input,
 } from "@/components";
+import { TokenSelect } from "@/components/admin/token-amount-fields";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, selectClass } from "@/components/admin-form";
 import { TokenAmountCell } from "@/components/token-amounts";
@@ -22,13 +22,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useRefreshingMutation } from "@/hooks/use-refreshing-mutation";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import {
   type ChangeOrderItem,
   failureMessage,
   planChangeItems,
-  prepaidBalanceLegs,
   signedBaseAmount,
 } from "@/lib/change-orders";
 import { baseToDecimal, formatTokenAmount, tokenDecimals } from "@/lib/format-amount";
@@ -36,7 +36,6 @@ import {
   allocationPlanQueryOptions,
   changeOrdersListQueryOptions,
   prepaidBalanceQueryOptions,
-  refreshAfter,
 } from "@/lib/queries";
 import { tokenDisplayName } from "@/lib/report-amounts";
 
@@ -70,19 +69,11 @@ function useChangeOrderMutation<TInput>(
   action: (input: TInput) => Promise<ChangeOrderView>,
   success: (result: ChangeOrderView) => string,
 ) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: action,
-    onSuccess: async (result) => {
-      await refreshAfter(queryClient, { type: "changeOrders" });
-      if (result.status === "failed") {
-        toast.error(`Not applied: ${failureMessage(result.failureReason ?? "")}`);
-      } else {
-        toast.success(success(result));
-      }
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+  return useRefreshingMutation({ type: "changeOrders" }, action, success, (result) =>
+    result.status === "failed"
+      ? `Not applied: ${failureMessage(result.failureReason ?? "")}`
+      : undefined,
+  );
 }
 
 function useTokenOptions(engagementId: string) {
@@ -95,39 +86,12 @@ function useTokenOptions(engagementId: string) {
       ...balances.map((b) => b.tokenId),
       ...(plan?.lines ?? []).map((l) => l.tokenId),
     ]),
-  ];
+  ].map((tokenId) => ({ tokenId, label: tokenDisplayName(tokenId) }));
 }
 
 function displayAmount(amount: string, tokenId: string): string {
   const decimals = tokenDecimals(tokenId);
   return decimals === undefined ? amount : baseToDecimal(amount, decimals);
-}
-
-function TokenSelect({
-  id,
-  value,
-  tokens,
-  onChange,
-}: {
-  id: string;
-  value: string;
-  tokens: string[];
-  onChange: (tokenId: string) => void;
-}) {
-  return (
-    <select
-      id={id}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={selectClass}
-    >
-      {tokens.map((tokenId) => (
-        <option key={tokenId} value={tokenId}>
-          {tokenDisplayName(tokenId)}
-        </option>
-      ))}
-    </select>
-  );
 }
 
 export function ShortfallWarnings({
@@ -293,7 +257,7 @@ function PlanEditor({
                 <TokenSelect
                   id={`plan-token-${index}`}
                   value={line.tokenId}
-                  tokens={tokens}
+                  options={tokens}
                   onChange={(tokenId) => update(index, { tokenId })}
                 />
               </Field>
@@ -349,8 +313,6 @@ function PlanEditor({
 
 type MoveRow = { target: string; tokenId: string; amount: string };
 
-const PREPAID_BALANCE = "__prepaid_balance__";
-
 function MoveForm({ engagementId, projects }: { engagementId: string; projects: ProjectOption[] }) {
   const apiClient = useApiClient();
   const tokens = useTokenOptions(engagementId);
@@ -366,12 +328,11 @@ function MoveForm({ engagementId, projects }: { engagementId: string; projects: 
   const moves: ChangeOrderItem[] = invalid
     ? []
     : parsed.map((r) => ({
-        projectId: r.target === PREPAID_BALANCE ? null : r.target,
+        projectId: r.target,
         tokenId: r.tokenId,
         kind: "one_off_move",
         amount: r.value,
       }));
-  const legs = prepaidBalanceLegs(moves);
 
   const propose = useChangeOrderMutation(
     () =>
@@ -416,14 +377,13 @@ function MoveForm({ engagementId, projects }: { engagementId: string; projects: 
                     {p.title}
                   </option>
                 ))}
-                <option value={PREPAID_BALANCE}>Prepaid balance</option>
               </select>
             </Field>
             <Field label="token" htmlFor={`move-token-${index}`}>
               <TokenSelect
                 id={`move-token-${index}`}
                 value={row.tokenId}
-                tokens={tokens}
+                options={tokens}
                 onChange={(tokenId) => update(index, { tokenId })}
               />
             </Field>
@@ -455,12 +415,6 @@ function MoveForm({ engagementId, projects }: { engagementId: string; projects: 
         >
           add a line
         </Button>
-        {legs.length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            Prepaid balance:{" "}
-            {legs.map((leg) => formatTokenAmount(leg.amount, leg.tokenId)).join(", ")}
-          </p>
-        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="takes effect" htmlFor="move-effective">
             <select

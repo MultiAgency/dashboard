@@ -1,6 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { toast } from "sonner";
 import {
   Button,
   Card,
@@ -18,9 +17,10 @@ import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
 import type { EngagementView } from "@/components/engagement-status";
 import { PrepaidBalanceCard, PrepaymentTable, type PrepaymentView } from "@/components/prepayments";
 import { useMeRoles } from "@/hooks/use-me-roles";
+import { useRefreshingMutation } from "@/hooks/use-refreshing-mutation";
 import { useApiClient } from "@/lib/api";
 import { baseToDecimal, formatTokenAmount } from "@/lib/format-amount";
-import { adminTokensQueryOptions, refreshAfter } from "@/lib/queries";
+import { adminTokensQueryOptions } from "@/lib/queries";
 import {
   CUSTOM_TOKEN,
   deriveBaseAmount,
@@ -39,21 +39,6 @@ function currentPeriod(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
-function usePrepaymentMutation<TInput>(
-  action: (input: TInput) => Promise<unknown>,
-  success: string,
-) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: action,
-    onSuccess: async () => {
-      await refreshAfter(queryClient, { type: "prepayments" });
-      toast.success(success);
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-}
-
 function PrepaymentForm({
   engagementId,
   tokens,
@@ -66,7 +51,8 @@ function PrepaymentForm({
   onSaved: () => void;
 }) {
   const apiClient = useApiClient();
-  const save = usePrepaymentMutation(
+  const save = useRefreshingMutation(
+    { type: "prepayments" },
     (fields: PrepaymentFields) =>
       prepayment
         ? apiClient.prepayments.correct({
@@ -177,7 +163,8 @@ export function PrepaymentsPanel({ engagement }: { engagement: EngagementView })
   const active = engagement.status === "active";
   const writable = active && canAccessAdmin && agencyDao !== null;
 
-  const remove = usePrepaymentMutation(
+  const remove = useRefreshingMutation(
+    { type: "prepayments" },
     (id: string) => apiClient.prepayments.remove({ id }),
     "Prepayment removed",
   );

@@ -37,22 +37,6 @@ export function planChangeItems(current: PlanLine[], edited: PlanLine[]): Change
   return items;
 }
 
-export function prepaidBalanceLegs(moves: ChangeOrderItem[]): ChangeOrderItem[] {
-  const net = new Map<string, bigint>();
-  for (const move of moves) {
-    if (move.kind !== "one_off_move" || move.projectId === null) continue;
-    net.set(move.tokenId, (net.get(move.tokenId) ?? 0n) + BigInt(move.amount));
-  }
-  return [...net.entries()]
-    .filter(([, amount]) => amount !== 0n)
-    .map(([tokenId, amount]) => ({
-      projectId: null,
-      tokenId,
-      kind: "one_off_move" as const,
-      amount: (-amount).toString(),
-    }));
-}
-
 export function signedBaseAmount(
   input: string,
   decimals: number | undefined,
