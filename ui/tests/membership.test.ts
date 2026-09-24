@@ -63,8 +63,8 @@ describe("last owner guard", () => {
     expect(canChangeRole(soleOwner, "m1", "owner")).toBe(true);
   });
 
-  test("other members can move to any role, including contributor", () => {
-    expect(canChangeRole(soleOwner, "m2", "contributor")).toBe(true);
+  test("other members can move to any role", () => {
+    expect(canChangeRole(soleOwner, "m2", "member")).toBe(true);
     expect(canChangeRole(twoOwners, "m1", "member")).toBe(true);
   });
 });

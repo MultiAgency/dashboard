@@ -25,8 +25,6 @@ type Member = {
   role: string;
 };
 
-type InviteRole = Parameters<AuthClient["organization"]["inviteMember"]>[0]["role"];
-
 const LAST_OWNER_HINT =
   "The only owner can't be removed or demoted. Make someone else owner first.";
 
@@ -155,15 +153,14 @@ export function MembersAdminSection() {
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
           Email invitations join this Organization. Owners and admins manage members, projects and
-          settings; members work on projects; contributors see the projects they are assigned to.
-          This does not create a builder profile — add builders separately under{" "}
+          settings; members work on projects. Contributors need no invitation: add them under{" "}
           <Link
             to="/admin/contributors"
             className="underline underline-offset-2 hover:text-foreground"
           >
             Builders
-          </Link>
-          .
+          </Link>{" "}
+          and assign their NEAR account to a project.
         </p>
         <AddMemberForm
           onAdded={invalidateAll}
@@ -244,7 +241,7 @@ function PendingInvitationsTable({
     mutationFn: (invitation: Invitation) =>
       authClient.organization.inviteMember({
         email: invitation.email,
-        role: (invitation.role ?? "member") as InviteRole,
+        role: ORGANIZATION_ROLES.find((r) => r === invitation.role) ?? "member",
         organizationId: orgId,
         resend: true,
       }),
@@ -512,7 +509,7 @@ function AddMemberForm({
     mutationFn: async () => {
       const { error } = await authClient.organization.inviteMember({
         email: email.trim(),
-        role: role as InviteRole,
+        role,
         organizationId: orgId,
       });
       if (error) throw new Error(error.message ?? "Failed to invite member");
