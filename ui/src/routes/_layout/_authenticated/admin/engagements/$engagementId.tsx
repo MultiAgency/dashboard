@@ -13,6 +13,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components";
+import { AgentLinksPanel } from "@/components/admin/agent-links-panel";
+import { IdeasInbox } from "@/components/admin/ideas-inbox";
 import { PrepaymentsPanel } from "@/components/admin/prepayments-panel";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
@@ -28,15 +30,24 @@ import { useEngagementAction } from "@/hooks/use-engagement-action";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { awaitingCountFor } from "@/lib/change-orders";
+import { acceptsIdeas } from "@/lib/navigation";
 import {
   adminProjectsListQueryOptions,
   awaitingChangeOrdersQueryOptions,
   engagementDetailQueryOptions,
 } from "@/lib/queries";
 
+const ENGAGEMENT_TABS = ["projects", "prepayments", "plan", "ideas", "links"] as const;
+
+type EngagementTab = (typeof ENGAGEMENT_TABS)[number];
+
 const engagementSearchSchema = z.object({
-  tab: z.enum(["projects", "prepayments", "plan"]).optional().catch("projects"),
+  tab: z.enum(ENGAGEMENT_TABS).optional().catch("projects"),
 });
+
+function isEngagementTab(value: string): value is EngagementTab {
+  return (ENGAGEMENT_TABS as readonly string[]).includes(value);
+}
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/engagements/$engagementId")({
   validateSearch: engagementSearchSchema,
@@ -127,7 +138,7 @@ function EngagementDetailPage() {
           onValueChange={(value) => {
             void navigate({
               search: {
-                tab: value === "prepayments" || value === "plan" ? value : undefined,
+                tab: isEngagementTab(value) && value !== "projects" ? value : undefined,
               },
               replace: true,
             });
@@ -144,6 +155,8 @@ function EngagementDetailPage() {
                 </Badge>
               )}
             </TabsTrigger>
+            {acceptsIdeas(engagement.kind) && <TabsTrigger value="ideas">ideas</TabsTrigger>}
+            <TabsTrigger value="links">agent links</TabsTrigger>
           </TabsList>
           <TabsContent value="projects" className="mt-6">
             <SharedProjects engagement={engagement} />
@@ -160,6 +173,14 @@ function EngagementDetailPage() {
               active={engagement.status === "active"}
               canManage={canAccessAdmin}
             />
+          </TabsContent>
+          {acceptsIdeas(engagement.kind) && (
+            <TabsContent value="ideas" className="mt-6">
+              <IdeasInbox engagement={engagement} canManage={canAccessAdmin} />
+            </TabsContent>
+          )}
+          <TabsContent value="links" className="mt-6">
+            <AgentLinksPanel engagement={engagement} canManage={canAccessAdmin} />
           </TabsContent>
         </Tabs>
       )}

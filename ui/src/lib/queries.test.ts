@@ -15,7 +15,10 @@ import {
   adminProjectDetailQueryOptions,
   adminProjectsForTokenQueryKey,
   adminProjectsListQueryKey,
+  adminSavedReportQueryOptions,
+  adminSavedReportsQueryOptions,
   adminSettingsQueryOptions,
+  agentLinksListQueryOptions,
   allocationPlanQueryOptions,
   awaitingChangeOrdersQueryOptions,
   changeOrdersListQueryOptions,
@@ -23,8 +26,10 @@ import {
   clientPortalDashboardSummaryQueryOptions,
   clientPortalProjectBudgetQueryOptions,
   clientPortalProjectsListQueryOptions,
+  clientSavedReportsQueryOptions,
   engagementDetailQueryOptions,
   engagementsListQueryOptions,
+  ideasListQueryOptions,
   meRolesQueryOptions,
   prepaidBalanceQueryOptions,
   prepaymentsListQueryOptions,
@@ -195,6 +200,37 @@ describe("refreshAfter", () => {
         "plan",
       ]);
     }
+  });
+});
+
+describe("refreshAfter for ideas, agent links and saved reports", () => {
+  it("a decided idea refreshes ideas, the Engagement's shared Projects and the Agency's Projects", async () => {
+    const { queryClient, stale } = cacheWith({
+      ideas: ideasListQueryOptions(api, "e1").queryKey,
+      engagement: engagementDetailQueryOptions(api, "e1").queryKey,
+      adminProjects: adminProjectsListQueryKey,
+      clientProjects: clientPortalProjectsListQueryOptions(api, "e1").queryKey,
+      links: agentLinksListQueryOptions(api, "e1").queryKey,
+      reports: adminSavedReportsQueryOptions(api).queryKey,
+    });
+
+    await refreshAfter(queryClient, { type: "ideas" });
+
+    expect(stale()).toEqual(["adminProjects", "clientProjects", "engagement", "ideas"]);
+  });
+
+  it("agent links and saved reports refresh only themselves", async () => {
+    const { queryClient, stale } = cacheWith({
+      links: agentLinksListQueryOptions(api, "e1").queryKey,
+      adminReports: adminSavedReportsQueryOptions(api).queryKey,
+      adminReport: adminSavedReportQueryOptions(api, "r1").queryKey,
+      clientReports: clientSavedReportsQueryOptions(api, "e1").queryKey,
+      ideas: ideasListQueryOptions(api, "e1").queryKey,
+    });
+
+    await refreshAfter(queryClient, { type: "agentLinks" }, { type: "reports" });
+
+    expect(stale()).toEqual(["adminReport", "adminReports", "clientReports", "links"]);
   });
 });
 
