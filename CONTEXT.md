@@ -16,3 +16,6 @@ Code, docs and issues use these words with these meanings. The UI may say "alloc
 | **Billing** | A payout on a Project, recorded against a transfer proposal of the paying Agency DAO. Its status comes from the chain. |
 | **Allocation plan** | The agreed amount per Project per period that recording a Prepayment turns into Budget entries. |
 | **Change order** | A proposal by either side of an Engagement to change the Allocation plan or move budget, approved by the other side. |
+| **Idea** | Work a Client member suggests to an Agency through an active Engagement. It is a private Project of kind idea owned by the Agency and created by that member; the Agency accepts it (turning it into a Project or scope) or declines it. |
+| **Agent link** | A labelled link to an agent a Client can use through its Engagement, managed by the Agency. |
+| **Saved report** | A generated report kept with its note and date range, visible to the members of the Organization that generated it. |
