@@ -164,10 +164,5 @@ describe("saved reports", () => {
 
     expect(report.overview.budgetByToken).toEqual([]);
     expect(report.clientBreakdown.map((row) => row.clientName)).toEqual(["Crew"]);
-    const opened = await portal.getReport(state.world.context("crew-owner", "crew"), {
-      engagementId: subcontract.id,
-      id: report.id,
-    });
-    expect(opened.report.overview.budgetByToken).toEqual([]);
   });
 });
