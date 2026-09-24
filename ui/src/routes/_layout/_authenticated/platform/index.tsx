@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Card, CardContent, DataTable, Input } from "@/components";
+import { Button, Card, CardContent, DataTable, Input } from "@/components";
 import type { ColumnDef } from "@/components/ui/data-table";
+import { useApiClient } from "@/lib/api";
 import type { Organization } from "@/lib/auth";
 import { sessionQueryKey, useAuthClient } from "@/lib/auth";
+import { availableSlug, isOrganizationSlugTaken } from "@/lib/slugify";
 
 export const Route = createFileRoute("/_layout/_authenticated/platform/")({
   head: () => ({
@@ -50,18 +52,6 @@ function PlatformOrgs() {
       accessorKey: "slug",
     },
     {
-      id: "type",
-      header: "Type",
-      cell: ({ row }) => {
-        const rawMeta = row.original.metadata;
-        const meta = typeof rawMeta === "string" ? JSON.parse(rawMeta) : (rawMeta ?? {});
-        const isAgency = (meta as Record<string, unknown>).type === "agency";
-        return (
-          <Badge variant={isAgency ? "default" : "outline"}>{isAgency ? "agency" : "client"}</Badge>
-        );
-      },
-    },
-    {
       id: "createdAt",
       header: "Created",
       accessorKey: "createdAt",
@@ -80,14 +70,14 @@ function PlatformOrgs() {
           Workspaces
         </h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          Create agency workspaces with a linked Sputnik DAO. You become the owner; the admin email
-          receives a separate invite. Create paying clients from Admin → Clients instead.
+          Create Organizations, optionally with an Agency DAO. You become the owner; the admin email
+          receives a separate invite. Owners can also connect an Agency DAO later in Settings.
         </p>
       </div>
 
       <section className="space-y-3">
         <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          create agency workspace
+          create organization
         </div>
         <CreateAgencyForm onCreated={invalidate} />
       </section>
@@ -128,6 +118,7 @@ function slugify(text: string): string {
 
 function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
   const authClient = useAuthClient();
+  const apiClient = useApiClient();
   const [formKey, setFormKey] = useState(0);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -153,13 +144,27 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
       const org = await authClient.organization.create({
         name: name.trim(),
         slug: finalSlug,
-        metadata: {
-          type: "agency",
-          daoAccountId: daoAccountId.trim(),
-        },
       });
+      if (isOrganizationSlugTaken(org.error?.code)) {
+        const isTaken = async (candidate: string) =>
+          !!(await authClient.organization.checkSlug({ slug: candidate })).error;
+        const suggestion = await availableSlug(finalSlug, isTaken);
+        throw new Error(
+          suggestion
+            ? `The slug "${finalSlug}" is already taken. Try "${suggestion}".`
+            : `The slug "${finalSlug}" is already taken.`,
+        );
+      }
       if (org.error) throw new Error(org.error.message || "Failed to create workspace");
       if (!org.data?.id) throw new Error("Failed to create workspace");
+
+      const dao = daoAccountId.trim();
+      const daoError = dao
+        ? await apiClient.agencyDao
+            .connect({ daoAccountId: dao, organizationId: org.data.id })
+            .then(() => null)
+            .catch((e: Error) => e.message || "Failed to connect the Agency DAO")
+        : null;
 
       const invite = await authClient.organization.inviteMember({
         email: adminEmail.trim(),
@@ -169,10 +174,16 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
 
       return {
         org: org.data,
+        daoError,
         inviteError: invite.error?.message ?? null,
       };
     },
-    onSuccess: ({ org, inviteError }) => {
+    onSuccess: ({ org, daoError, inviteError }) => {
+      if (daoError) {
+        toast.warning(
+          `"${org.name}" was created, but its Agency DAO was not connected: ${daoError}`,
+        );
+      }
       if (inviteError) {
         toast.warning(
           `Agency "${org.name}" was created and you were added as owner, but the admin invite failed: ${inviteError}`,
@@ -189,7 +200,7 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
   });
 
   const isPending = createMutation.isPending;
-  const canSubmit = !!name.trim() && !!adminEmail.trim() && !!daoAccountId.trim();
+  const canSubmit = !!name.trim() && !!adminEmail.trim();
 
   return (
     <Card key={formKey}>
@@ -237,7 +248,7 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
           </div>
           <div className="space-y-1">
             <label htmlFor="workspace-dao" className={LABEL_CLS}>
-              sputnik dao account (required)
+              agency dao (optional)
             </label>
             <Input
               id="workspace-dao"
@@ -249,7 +260,7 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
               disabled={isPending}
             />
             <p className="font-mono text-[10px] text-muted-foreground">
-              links this workspace to a Sputnik DAO for treasury and proposals.
+              connects a Sputnik DAO for money features. It must exist on the current network.
             </p>
           </div>
           <div className="space-y-1">
@@ -276,7 +287,7 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
             disabled={!canSubmit || isPending}
             className="w-full font-display uppercase tracking-wide"
           >
-            {isPending ? "creating…" : "create agency →"}
+            {isPending ? "creating…" : "create organization →"}
           </Button>
         </form>
       </CardContent>

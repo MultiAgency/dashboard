@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuthClient } from "@/app";
 import { Card, CardContent } from "@/components";
+import { CreateOrganizationForm } from "@/components/create-organization-form";
 import { PendingInvitationsList } from "@/components/pending-invitations";
 import { landingDestination, WELCOME_PATH } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
@@ -57,9 +58,9 @@ function WelcomePage() {
           Welcome
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
-          You are not a member of any Organization yet. Accept an invitation below to join one. If
-          you are expecting an invitation, ask an owner or admin of that Organization to send it to
-          the email on your Profile.
+          You are not a member of any Organization yet. Accept an invitation below to join one, or
+          create your own. If you are expecting an invitation, ask an owner or admin of that
+          Organization to send it to the email on your Profile.
         </p>
       </header>
 
@@ -68,6 +69,17 @@ function WelcomePage() {
           pending invitations
         </div>
         <PendingInvitationsList />
+      </section>
+
+      <section className="space-y-3">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          create an organization
+        </div>
+        <Card>
+          <CardContent className="p-5">
+            <CreateOrganizationForm />
+          </CardContent>
+        </Card>
       </section>
     </div>
   );
