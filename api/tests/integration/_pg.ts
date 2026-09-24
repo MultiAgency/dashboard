@@ -9,22 +9,35 @@ import * as schema from "../../src/db/schema";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(HERE, "../../src/db/migrations");
-const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR)
-  .filter((f) => f.endsWith(".sql"))
-  .sort();
+const PROJECTS_MIGRATIONS_DIR = resolve(HERE, "../../../plugins/projects/src/db/migrations");
+
+function sqlFiles(dir: string): string[] {
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((f) => resolve(dir, f));
+}
 
 interface PgliteLike {
   query: (sql: string) => Promise<unknown>;
 }
 
-export async function applyAllMigrations(pg: PgliteLike): Promise<void> {
-  for (const file of MIGRATION_FILES) {
-    const sql = readFileSync(resolve(MIGRATIONS_DIR, file), "utf8");
+async function applyMigrationsFrom(dir: string, pg: PgliteLike): Promise<void> {
+  for (const file of sqlFiles(dir)) {
+    const sql = readFileSync(file, "utf8");
     for (const stmt of sql.split("--> statement-breakpoint")) {
       const trimmed = stmt.trim();
       if (trimmed) await pg.query(trimmed);
     }
   }
+}
+
+export function applyAllMigrations(pg: PgliteLike): Promise<void> {
+  return applyMigrationsFrom(MIGRATIONS_DIR, pg);
+}
+
+export function applyProjectsPluginMigrations(pg: PgliteLike): Promise<void> {
+  return applyMigrationsFrom(PROJECTS_MIGRATIONS_DIR, pg);
 }
 
 export function migratedDatabase(): { pg: PGlite; db: Database } {

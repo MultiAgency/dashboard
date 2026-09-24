@@ -27,6 +27,31 @@ It does three things:
 
 Until step 3 runs, Organizations keep resolving their Agency DAO from metadata, so nothing changes for users. Later migration steps from #40 (Project ownership, Engagements, dropping `clients`) run after this one.
 
+## Project ownership
+
+`bun run db:migrate:project-ownership` moves Project ownership from the Agency DAO account to the owning Organization (#42). It is idempotent: a second run changes nothing.
+
+For every Agency DAO mapped in `api_db.organization_daos` it:
+
+1. Sets `organization_id` of the DAO's Projects in `projects_db` to the Organization id. `owner_id` is not changed, so existing `@<ownerId>/<slug>` mentions keep resolving.
+2. Re-keys the DAO's `settings` row in `api_db` to the Organization id, unless the Organization already has one. The API migration `0006_settings_by_organization` does the same at deploy; this step covers mappings added after it ran.
+
+Projects of DAOs without a mapping are left alone and reported by neither step.
+
+### Environment
+
+| Variable | Meaning |
+| --- | --- |
+| `API_DATABASE_URL` | `api_db`, reads `organization_daos` and updates `settings` |
+| `PROJECTS_DATABASE_URL` | `projects_db`, updates `projects.organization_id` |
+
+### Run order
+
+1. Run the Organization cleanup above, so each Agency DAO is mapped to one Organization.
+2. Deploy the API and the projects plugin from #42. Until step 4 runs, the API still lists Projects whose `organization_id` is the Organization's Agency DAO, but members only see private Projects of that kind that they created, and the client portal only sees public ones.
+3. `bun run db:migrate:project-ownership --dry-run` and check the report.
+4. `bun run db:migrate:project-ownership` right after the deploy.
+
 ## Assign an Organization owner
 
 `bun run db:assign-owner <organization-id> <user-email-or-id> [--dry-run]` recovers an Organization that has no owner left (#41). It works directly on the auth database, because the auth API only lets members of an Organization change its members.
