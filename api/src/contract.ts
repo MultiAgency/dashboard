@@ -1120,6 +1120,12 @@ export const contract = oc.router({
       .output(
         z.object({
           orgRole: z.enum(["admin", "member", "owner"]).nullable(),
+          capabilities: z.object({
+            canManageMembers: z.boolean(),
+            canUseMoney: z.boolean(),
+            hasAgencySections: z.boolean(),
+            hasClientSections: z.boolean(),
+          }),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),

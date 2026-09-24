@@ -193,7 +193,7 @@ export function displayToBaseUnits(decimalString: string, decimals: number): big
 
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { AgencyScope } from "./organization-access";
 import { getDaoTokenIds, getFtMetadata, getStorageBalance } from "./sputnik";
 
 export function createTokensService(_db: Database) {

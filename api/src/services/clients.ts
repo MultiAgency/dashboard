@@ -3,7 +3,7 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type Client, clientProjects, clients } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
 const clientNotFound = () => new ORPCError("NOT_FOUND", { message: "Client not found" });
@@ -79,73 +79,6 @@ export function createClientsService(db: Database, directory: ProjectDirectory) 
       Effect.gen(function* () {
         yield* requireClient(scope, clientId);
         return yield* projectIdsOf(clientId);
-      }),
-
-    membershipsFor: (
-      caller: {
-        near?: {
-          primaryAccountId?: string | null;
-          linkedAccounts?: Array<{ accountId: string }> | null;
-        } | null;
-      },
-      nearAccountId: string,
-    ) =>
-      Effect.gen(function* () {
-        const own = new Set([
-          ...(caller.near?.primaryAccountId ? [caller.near.primaryAccountId] : []),
-          ...(caller.near?.linkedAccounts ?? []).map((a) => a.accountId),
-        ]);
-        if (!own.has(nearAccountId)) {
-          return yield* Effect.fail(
-            new ORPCError("FORBIDDEN", { message: "You can only look up your own NEAR accounts" }),
-          );
-        }
-        const rows = yield* Effect.promise(() =>
-          db
-            .select()
-            .from(clients)
-            .where(eq(clients.nearAccountId, nearAccountId))
-            .orderBy(desc(clients.updatedAt)),
-        );
-        if (rows.length === 0) return [];
-
-        const clientIds = rows.map((r) => r.id);
-        const projectRows = yield* Effect.promise(() =>
-          db.select().from(clientProjects).where(inArray(clientProjects.clientId, clientIds)),
-        );
-        const projectsByClient = new Map<string, string[]>();
-        for (const row of projectRows) {
-          const list = projectsByClient.get(row.clientId) ?? [];
-          list.push(row.projectId);
-          projectsByClient.set(row.clientId, list);
-        }
-
-        return rows.map((client) => ({
-          client,
-          projectIds: projectsByClient.get(client.id) ?? [],
-        }));
-      }),
-
-    getByNearAndAgency: (nearAccountId: string, agencyDaoAccountId: string) =>
-      Effect.gen(function* () {
-        const rows = yield* Effect.promise(() =>
-          db
-            .select()
-            .from(clients)
-            .where(
-              and(
-                eq(clients.nearAccountId, nearAccountId),
-                eq(clients.agencyDaoAccountId, agencyDaoAccountId),
-              ),
-            )
-            .limit(1),
-        );
-        const row = rows[0];
-        if (!row) return null;
-        const projectRows = yield* Effect.promise(() =>
-          db.select().from(clientProjects).where(eq(clientProjects.clientId, row.id)),
-        );
-        return { client: row, projectIds: projectRows.map((p) => p.projectId) };
       }),
 
     create: (

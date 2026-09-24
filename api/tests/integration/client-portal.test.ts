@@ -14,34 +14,45 @@ import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createAgencyService } from "../../src/services/agency";
 import { createBillingsService } from "../../src/services/billings";
 import { createClientPortalService } from "../../src/services/client-portal";
-import { createClientsService } from "../../src/services/clients";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
+import {
+  createOrganizationAccess,
+  type OrganizationAccessService,
+} from "../../src/services/organization-access";
 import {
   createProjectDirectory,
   type ProjectDirectory,
   type ProjectsClient,
 } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
+import { inMemoryOrganizations } from "../fakes/organizations";
 import { applyAllMigrations } from "./_pg";
 
 const AGENCY_A = "agency-a.sputnik-dao.near";
 const AGENCY_B = "agency-b.sputnik-dao.near";
 const NEAR_ACCOUNT = "client.near";
 const CLIENT_CONTEXT = { near: { primaryAccountId: NEAR_ACCOUNT } };
-const unusedDirectory = {} as ProjectDirectory;
 
-describe("client-portal — resolveClientScope (via clients.getByNearAndAgency)", () => {
+function organizationAccess(db: ReturnType<typeof drizzle>, directory: ProjectDirectory) {
+  return createOrganizationAccess({
+    db: db as never,
+    organizations: inMemoryOrganizations({ organizations: [] }).port,
+    directory,
+  });
+}
+
+describe("client-portal — resolveClientScope (via organization access)", () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
-  let clientsService: ReturnType<typeof createClientsService>;
+  let access: OrganizationAccessService;
 
   beforeEach(async () => {
     const { PGlite } = await import("@electric-sql/pglite");
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg);
-    clientsService = createClientsService(db as never, unusedDirectory);
+    access = organizationAccess(db, {} as ProjectDirectory);
   });
 
   afterEach(async () => {
@@ -63,34 +74,29 @@ describe("client-portal — resolveClientScope (via clients.getByNearAndAgency)"
   test("valid nearAccountId + agencyDaoAccountId resolves the right client", async () => {
     await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
 
-    const result = await Effect.runPromise(
-      clientsService.getByNearAndAgency(NEAR_ACCOUNT, AGENCY_A),
-    );
+    const result = await Effect.runPromise(access.clientPortal(CLIENT_CONTEXT, AGENCY_A));
 
-    expect(result).not.toBeNull();
-    expect(result?.client.id).toBe("client-1");
-    expect(result?.client.agencyDaoAccountId).toBe(AGENCY_A);
-    expect(result?.projectIds).toEqual([]);
+    expect(result.client.id).toBe("client-1");
+    expect(result.client.agencyDaoAccountId).toBe(AGENCY_A);
+    expect(result.projectIds).toEqual([]);
   });
 
   test("unknown NEAR account resolves to no scope", async () => {
     await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
 
-    const result = await Effect.runPromise(
-      clientsService.getByNearAndAgency("stranger.near", AGENCY_A),
-    );
-
-    expect(result).toBeNull();
+    await expect(
+      Effect.runPromise(
+        access.clientPortal({ near: { primaryAccountId: "stranger.near" } }, AGENCY_A),
+      ),
+    ).rejects.toThrow(/No client portal/);
   });
 
   test("right NEAR account but wrong agencyDaoAccountId resolves to no scope (cross-agency leak check)", async () => {
     await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
 
-    const result = await Effect.runPromise(
-      clientsService.getByNearAndAgency(NEAR_ACCOUNT, AGENCY_B),
+    await expect(Effect.runPromise(access.clientPortal(CLIENT_CONTEXT, AGENCY_B))).rejects.toThrow(
+      /No client portal/,
     );
-
-    expect(result).toBeNull();
   });
 });
 
@@ -186,7 +192,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const billingsService = createBillingsService(db as never, directory);
     const reports = createReportsService(db as never, directory, plugins);
     return createClientPortalService(
-      createClientsService(db as never, directory),
+      organizationAccess(db, directory),
       agency,
       billingsService,
       reports,

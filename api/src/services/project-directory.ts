@@ -1,6 +1,7 @@
 import { ORPCError } from "every-plugin/orpc";
-import type { AgencyScope, PluginContext } from "../lib/agency-scope";
+import type { PluginContext } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
+import type { AgencyScope } from "./organization-access";
 
 type PluginProjectsClient = ReturnType<PluginsClient["projects"]>;
 

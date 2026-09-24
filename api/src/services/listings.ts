@@ -3,7 +3,6 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type Listing, listings, type NewListing } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
 import {
   flagsToLifecycle,
   type InternalListingLifecycle,
@@ -11,6 +10,7 @@ import {
   lifecycleToFlags,
 } from "../lib/listing-lifecycle";
 import { getNearnListing, isNearnAvailable, type NearnListing, NearnNotFoundError } from "./nearn";
+import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
 const LISTING_STALENESS_MS = 5 * 60_000;

@@ -1,30 +1,13 @@
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
-import { type AgencyScope, agencyScopeForClient, type PluginContext } from "../lib/agency-scope";
+import type { PluginContext } from "../lib/organizations";
 import type { AgencyService } from "./agency";
 import type { BillingsService } from "./billings";
-import type { ClientsService } from "./clients";
 import type { ProjectLedgers } from "./ledger";
+import type { OrganizationAccessService } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 import { sumByToken } from "./report-tokens";
 import type { ReportsService } from "./reports";
-
-async function resolveClientScope(
-  clientsService: ClientsService,
-  nearAccountId: string,
-  agencyDaoAccountId: string,
-) {
-  const lookup = await Effect.runPromise(
-    clientsService.getByNearAndAgency(nearAccountId, agencyDaoAccountId),
-  );
-  if (!lookup) {
-    throw new ORPCError("FORBIDDEN", {
-      message:
-        "No client portal for this wallet at this agency. Ask your agency to add your NEAR account under Clients.",
-    });
-  }
-  return lookup;
-}
 
 function assertLinkedProject(projectIds: string[], projectId: string) {
   if (!projectIds.includes(projectId)) {
@@ -33,7 +16,7 @@ function assertLinkedProject(projectIds: string[], projectId: string) {
 }
 
 export function createClientPortalService(
-  clientsService: ClientsService,
+  access: OrganizationAccessService,
   agency: AgencyService,
   billings: BillingsService,
   reports: ReportsService,
@@ -43,24 +26,7 @@ export function createClientPortalService(
   const notFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
 
   const clientScope = (context: PluginContext, agencyDaoAccountId: string) =>
-    Effect.gen(function* () {
-      const nearAccountId = context.near?.primaryAccountId;
-      if (!nearAccountId) {
-        return yield* Effect.fail(
-          new ORPCError("FORBIDDEN", {
-            message: "Sign in with your NEAR wallet to use the client portal.",
-          }),
-        );
-      }
-      const client = yield* Effect.promise(() =>
-        resolveClientScope(clientsService, nearAccountId, agencyDaoAccountId),
-      );
-      const scope: AgencyScope | null =
-        client.projectIds.length === 0
-          ? null
-          : agencyScopeForClient(context, client.client.agencyDaoAccountId);
-      return { client: client.client, projectIds: client.projectIds, scope };
-    });
+    access.clientPortal(context, agencyDaoAccountId);
 
   return {
     listProjects: (context: PluginContext, input: { agencyDaoAccountId: string }) =>

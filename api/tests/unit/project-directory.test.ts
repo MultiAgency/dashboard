@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgencyScope } from "../../src/lib/agency-scope";
+import type { AgencyScope } from "../../src/services/organization-access";
 import { createProjectDirectory } from "../../src/services/project-directory";
 import { agencyScope, inMemoryProjects, project } from "../fakes/projects";
 

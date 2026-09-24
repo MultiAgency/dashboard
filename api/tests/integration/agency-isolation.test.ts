@@ -9,8 +9,15 @@ import { createBillingsService } from "../../src/services/billings";
 import { createBudgetsService } from "../../src/services/budgets";
 import { createClientPortalService } from "../../src/services/client-portal";
 import { createClientsService } from "../../src/services/clients";
+import {
+  type AgencyScope,
+  createOrganizationAccess,
+  type OrganizationAccessService,
+  ROLE_MATRIX,
+} from "../../src/services/organization-access";
 import { createProjectDirectory } from "../../src/services/project-directory";
-import { agencyScope, inMemoryProjects, project } from "../fakes/projects";
+import { inMemoryOrganizations, signedIn } from "../fakes/organizations";
+import { inMemoryProjects, project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
 const ALPHA = "alpha.sputnik-dao.near";
@@ -19,8 +26,10 @@ const BETA = "beta.sputnik-dao.near";
 describe("agency isolation", () => {
   let pg: PGlite;
   let db: Database;
-  const alpha = agencyScope(ALPHA);
-  const beta = agencyScope(BETA);
+  let access: OrganizationAccessService;
+  let alpha: AgencyScope;
+  let beta: AgencyScope;
+  let alphaTreasurer: AgencyScope;
   const directory = createProjectDirectory(
     () =>
       inMemoryProjects([
@@ -35,6 +44,33 @@ describe("agency isolation", () => {
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg, { schema }) as unknown as Database;
+    access = createOrganizationAccess({
+      db,
+      organizations: inMemoryOrganizations({
+        organizations: [
+          { id: "alpha-org", daoAccountId: ALPHA },
+          { id: "beta-org", daoAccountId: BETA },
+        ],
+        members: [
+          { userId: "alpha-admin", organizationId: "alpha-org", role: "admin" },
+          { userId: "alpha-treasurer", organizationId: "alpha-org", role: "owner" },
+          { userId: "beta-admin", organizationId: "beta-org", role: "admin" },
+        ],
+      }).port,
+      directory,
+    });
+    alpha = await access.agencyScope(
+      signedIn("alpha-admin", "alpha-org", "admin.near"),
+      ROLE_MATRIX.manage,
+    );
+    beta = await access.agencyScope(
+      signedIn("beta-admin", "beta-org", "admin.near"),
+      ROLE_MATRIX.manage,
+    );
+    alphaTreasurer = await access.agencyScope(
+      signedIn("alpha-treasurer", "alpha-org", "treasurer.near"),
+      ROLE_MATRIX.manage,
+    );
   });
 
   beforeEach(async () => {
@@ -94,21 +130,24 @@ describe("agency isolation", () => {
     });
 
     test("people can only look up client memberships for their own NEAR accounts", async () => {
-      const service = createClientsService(db, directory);
       await run(
-        service.create(beta, { orgId: "beta-org", name: "Beta Corp", nearAccountId: "ceo.near" }),
+        createClientsService(db, directory).create(beta, {
+          orgId: "beta-org",
+          name: "Beta Corp",
+          nearAccountId: "ceo.near",
+        }),
       );
       const ceo = { near: { primaryAccountId: "ceo.near", linkedAccounts: [] } };
       const stranger = {
         near: { primaryAccountId: "stranger.near", linkedAccounts: [{ accountId: "alt.near" }] },
       };
 
-      const own = await run(service.membershipsFor(ceo, "ceo.near"));
+      const own = await run(access.clientMemberships(ceo, "ceo.near"));
       expect(own.map((m) => m.client.name)).toEqual(["Beta Corp"]);
-      await expect(run(service.membershipsFor(stranger, "ceo.near"))).rejects.toThrow(
+      await expect(run(access.clientMemberships(stranger, "ceo.near"))).rejects.toThrow(
         "You can only look up your own NEAR accounts",
       );
-      expect(await run(service.membershipsFor(stranger, "alt.near"))).toEqual([]);
+      expect(await run(access.clientMemberships(stranger, "alt.near"))).toEqual([]);
     });
 
     test("a client can only be linked to the agency's own projects", async () => {
@@ -179,7 +218,7 @@ describe("agency isolation", () => {
       const service = createBudgetsService(db, directory, createClientsService(db, directory));
 
       const { budget } = await run(
-        service.create(agencyScope(ALPHA, { actorId: "treasurer.near" }), {
+        service.create(alphaTreasurer, {
           projectId: "alpha-project",
           tokenId: "near",
           amount: "5",
@@ -239,7 +278,7 @@ describe("agency isolation", () => {
         },
       ]);
       const portal = createClientPortalService(
-        clientsService,
+        access,
         {} as never,
         createBillingsService(db, directory),
         {} as never,
@@ -267,7 +306,7 @@ describe("agency isolation", () => {
         }),
       );
       const portal = createClientPortalService(
-        clientsService,
+        access,
         {} as never,
         createBillingsService(db, directory),
         {} as never,
