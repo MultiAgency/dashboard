@@ -256,4 +256,18 @@ describe("migrate — runtime migrator", () => {
     await insert("other-dao", "crew.sputnik-dao.near");
     await expect(insert("again", "studio.sputnik-dao.near")).rejects.toThrow();
   });
+
+  test("the billings client column is gone after all migrations", async () => {
+    const { migrations } = await Effect.runPromise(loadMigrations());
+    await Effect.runPromise(migrate(driver.db, migrations));
+
+    const columns = await driver.db.execute(
+      sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'billings' AND column_name = 'client_id'`,
+    );
+    const indexes = await driver.db.execute(
+      sql`SELECT indexname FROM pg_indexes WHERE indexname = 'billings_client_id'`,
+    );
+    expect((columns as unknown as { rows: unknown[] }).rows).toEqual([]);
+    expect((indexes as unknown as { rows: unknown[] }).rows).toEqual([]);
+  });
 });

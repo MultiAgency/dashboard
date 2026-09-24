@@ -294,8 +294,6 @@ describe("reports.generate", () => {
   });
 
   test("generate (client route) — scoped to one client, doesn't leak another client's data into the response", async () => {
-    // Both clients are linked to the SAME project, and each has its own billing row on
-    // it — this exercises the billings.clientId filter directly, not just project scoping.
     await insertClient("client-a");
     await insertClient("client-b");
     await linkProject("client-a", "project-shared");
