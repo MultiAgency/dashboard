@@ -3,7 +3,7 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { billings, budgets, organizationDaos } from "../db/schema";
 import type { Network } from "../lib/network";
-import type { OrganizationScope } from "./organization-access";
+import { agencyDaoOf, type OrganizationScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 import { type DaoRole, isSputnikDao, networkOf } from "./sputnik";
 
@@ -31,15 +31,6 @@ export function createAgencyDaoService(deps: {
   daoRoles: DaoRoles;
 }) {
   const { db, directory, daoRoles } = deps;
-
-  async function mappedDao(organizationId: string): Promise<string | null> {
-    const [row] = await db
-      .select()
-      .from(organizationDaos)
-      .where(eq(organizationDaos.organizationId, organizationId))
-      .limit(1);
-    return row?.daoAccountId ?? null;
-  }
 
   async function countRows(table: typeof budgets | typeof billings, projectIds: string[]) {
     const [row] = await db
@@ -118,7 +109,7 @@ export function createAgencyDaoService(deps: {
     if (request.walletAccounts) requireWalletRole(roles, request.walletAccounts);
     await requireFree(daoAccountId, request.organizationId);
 
-    const existing = await mappedDao(request.organizationId);
+    const existing = await agencyDaoOf(db, request.organizationId);
     if (existing === daoAccountId) return { daoAccountId };
     if (existing && current) await requireUnreferenced(current);
     if (existing && !current) {

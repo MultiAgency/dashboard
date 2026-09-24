@@ -2,10 +2,7 @@ import { eq, notExists } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Database } from "../db";
 import { organizationDaos, settings } from "../db/schema";
-
-export type SqlClient = {
-  query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
-};
+import type { SqlClient } from "../lib/auth-database";
 
 export type OwnershipMove = { daoAccountId: string; organizationId: string; projectIds: string[] };
 
