@@ -105,4 +105,37 @@ describe("migrate — runtime migrator", () => {
     const rawClients = await driver.db.execute(sql`SELECT id FROM clients`);
     expect((rawClients as unknown as { rows: { id: string }[] }).rows).toEqual([{ id: "nf" }]);
   });
+  test("the settings migration re-keys settings from the Agency DAO to its Organization", async () => {
+    const { migrations } = await Effect.runPromise(loadMigrations());
+    await Effect.runPromise(
+      migrate(
+        driver.db,
+        migrations.filter((m) => m.tag < "0006"),
+      ),
+    );
+    await driver.db.execute(
+      sql`INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ('multiagency', 'multiagency.sputnik-dao.near')`,
+    );
+    await driver.db.execute(
+      sql`INSERT INTO settings (org_account_id, nearn_account_id, created_by, updated_by) VALUES ('multiagency.sputnik-dao.near', 'multiagency', 'admin.near', 'admin.near'), ('unmapped.sputnik-dao.near', 'unmapped', 'admin.near', 'admin.near')`,
+    );
+
+    await Effect.runPromise(migrate(driver.db, migrations));
+
+    const raw = await driver.db.execute(
+      sql`SELECT org_account_id, dao_account_id, nearn_account_id FROM settings ORDER BY nearn_account_id`,
+    );
+    expect((raw as unknown as { rows: unknown[] }).rows).toEqual([
+      {
+        org_account_id: "multiagency",
+        dao_account_id: "multiagency.sputnik-dao.near",
+        nearn_account_id: "multiagency",
+      },
+      {
+        org_account_id: "unmapped.sputnik-dao.near",
+        dao_account_id: null,
+        nearn_account_id: "unmapped",
+      },
+    ]);
+  });
 });
