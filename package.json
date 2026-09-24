@@ -88,7 +88,6 @@
     "db:cleanup:organizations": "tsx scripts/cleanup-organizations.ts",
     "db:assign-owner": "tsx scripts/assign-organization-owner.ts",
     "db:migrate:project-ownership": "tsx scripts/migrate-project-ownership.ts",
-    "db:migrate:engagements": "tsx scripts/migrate-engagements.ts",
     "types:gen": "node node_modules/.bin/bos types gen && bun scripts/ensure-auth-types.ts",
     "postinstall": "bun run types:gen || true",
     "changeset": "changeset",

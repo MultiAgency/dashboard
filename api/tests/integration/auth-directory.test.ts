@@ -1,6 +1,6 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { authDatabaseDirectory, authDatabaseMembers } from "../../src/lib/auth-database";
+import { authDatabaseDirectory } from "../../src/lib/auth-database";
 
 const NAMINGS = {
   camelCase: (camel: string) => camel,
@@ -10,7 +10,6 @@ const NAMINGS = {
 async function betterAuthDatabase(name: (camel: string) => string) {
   const { PGlite } = await import("@electric-sql/pglite");
   const pg = new PGlite("memory://");
-  const nearAccount = name("nearAccount");
   await pg.exec(`
     CREATE TABLE "user" (id text PRIMARY KEY, name text NOT NULL, email text NOT NULL UNIQUE);
     CREATE TABLE "organization" (
@@ -34,11 +33,6 @@ async function betterAuthDatabase(name: (camel: string) => string) {
       "${name("inviterId")}" text NOT NULL REFERENCES "user"(id),
       "${name("createdAt")}" timestamp NOT NULL
     );
-    CREATE TABLE "${nearAccount}" (
-      id text PRIMARY KEY,
-      "${name("userId")}" text NOT NULL REFERENCES "user"(id),
-      "${name("accountId")}" text NOT NULL
-    );
     INSERT INTO "user" VALUES
       ('owner', 'Owner', 'owner@acme.example'),
       ('admin', 'Admin', 'admin.near@near.email'),
@@ -51,7 +45,6 @@ async function betterAuthDatabase(name: (camel: string) => string) {
       ('m2', 'acme', 'admin', 'admin', now()),
       ('m3', 'acme', 'viewer', 'member', now()),
       ('m4', 'personal', 'owner', 'owner', now());
-    INSERT INTO "${nearAccount}" VALUES ('n1', 'admin', 'admin.near');
   `);
   return pg;
 }
@@ -134,17 +127,5 @@ describe.each(Object.entries(NAMINGS))("auth directory on a %s auth database", (
 
     await directory.updateInvitation(invitation.id, { status: "canceled" });
     expect((await directory.invitation(invitation.id))?.status).toBe("canceled");
-  });
-
-  test("finds wallet users by NEAR account and removes members", async () => {
-    const members = authDatabaseMembers(pg);
-
-    expect(await members.findUserIdByNearAccount("admin.near")).toBe("admin");
-    expect(await members.findUserIdByNearAccount("stranger.near")).toBeNull();
-    await members.removeMember({ memberId: "m2" });
-    expect((await members.roster("acme"))?.members.map((m) => m.userId).sort()).toEqual([
-      "owner",
-      "viewer",
-    ]);
   });
 });
