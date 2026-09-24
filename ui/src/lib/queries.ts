@@ -338,6 +338,33 @@ export function prepaidBalanceQueryOptions(apiClient: ApiClient, engagementId: s
   });
 }
 
+export const changeOrdersQueryKey = ["change-orders"] as const;
+
+export function changeOrdersListQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...changeOrdersQueryKey, "list", ...workspaceKey(), engagementId] as const,
+    queryFn: () => apiClient.changeOrders.list({ engagementId }),
+    retry: false,
+  });
+}
+
+export function allocationPlanQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...changeOrdersQueryKey, "plan", ...workspaceKey(), engagementId] as const,
+    queryFn: () => apiClient.changeOrders.plan({ engagementId }),
+    retry: false,
+  });
+}
+
+export function awaitingChangeOrdersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...changeOrdersQueryKey, "awaiting", ...workspaceKey()] as const,
+    queryFn: () => apiClient.changeOrders.awaiting(),
+    refetchInterval: 60_000,
+    retry: false,
+  });
+}
+
 export const clientPortalQueryKey = ["client", "portal"] as const;
 
 export function clientPortalDashboardSummaryQueryOptions(
@@ -431,6 +458,7 @@ export type DataChange =
   | { type: "builders" }
   | { type: "engagements" }
   | { type: "prepayments" }
+  | { type: "changeOrders" }
   | { type: "notifications" }
   | { type: "settings" };
 
@@ -482,7 +510,15 @@ function staleKeys(change: DataChange): QueryKey[] {
     case "engagements":
       return [engagementsQueryKey, clientPortalQueryKey, meRolesQueryKey];
     case "prepayments":
-      return [prepaymentsQueryKey];
+    case "changeOrders":
+      return [
+        prepaymentsQueryKey,
+        changeOrdersQueryKey,
+        ["admin", "budgets"],
+        adminProjectBudgetQueryKey,
+        clientPortalQueryKey,
+        notificationsQueryKey,
+      ];
     case "notifications":
       return [notificationsQueryKey];
     case "settings":
