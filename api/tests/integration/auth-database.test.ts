@@ -76,18 +76,23 @@ describe.each(Object.entries(NAMINGS))("owner recovery on a %s auth database", (
     expect(await roleOf(pg, "staff", "client", columns)).toBe("owner");
   });
 
-  test("changes nothing on a dry run", async () => {
-    await recovery().assignOwner({ organizationId: "client", user: "alice", dryRun: true });
+  test("reports the change without making it on a dry run", async () => {
+    const result = await recovery().assignOwner({
+      organizationId: "client",
+      user: "alice",
+      dryRun: true,
+    });
 
+    expect(result).toMatchObject({ action: "added", applied: false });
     expect(await roleOf(pg, "alice", "client", columns)).toBeNull();
   });
 
-  test("refuses Organizations that have an owner and personal Organizations", async () => {
-    await expect(
-      recovery().assignOwner({ organizationId: "owned", user: "alice" }),
-    ).rejects.toMatchObject({ code: "HAS_OWNER" });
-    await expect(
-      recovery().assignOwner({ organizationId: "personal", user: "staff" }),
-    ).rejects.toMatchObject({ code: "PERSONAL_ORGANIZATION" });
+  test.each([
+    ["owned", "alice", "HAS_OWNER"],
+    ["personal", "staff", "PERSONAL_ORGANIZATION"],
+    ["missing", "alice", "ORGANIZATION_NOT_FOUND"],
+    ["client", "nobody@example.com", "USER_NOT_FOUND"],
+  ])("refuses Organization %s for %s with %s", async (organizationId, user, code) => {
+    await expect(recovery().assignOwner({ organizationId, user })).rejects.toMatchObject({ code });
   });
 });
