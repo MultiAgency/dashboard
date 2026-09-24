@@ -1018,7 +1018,7 @@ export const contract = oc.router({
     get: oc
       .route({ method: "GET", path: "/admin/contributors/{nearAccount}" })
       .input(z.object({ nearAccount: nearAccountId }))
-      .output(z.object({ contributor }))
+      .output(z.object({ contributor, canEdit: z.boolean() }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
     create: oc

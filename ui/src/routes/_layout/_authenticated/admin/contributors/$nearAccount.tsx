@@ -148,7 +148,13 @@ function ContributorDetailPage() {
         </div>
       </header>
 
-      <ContributorProfileForm nearAccount={nearAccount} contributor={contributor} />
+      {contributorQuery.data?.canEdit ? (
+        <ContributorProfileForm nearAccount={nearAccount} contributor={contributor} />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Builder profiles are global. Only the builder or a platform admin can edit this one.
+        </p>
+      )}
 
       <BuilderSummaryPanel billings={billings} projectCount={assignments.length} />
 

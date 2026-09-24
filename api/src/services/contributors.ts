@@ -5,6 +5,7 @@ import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
 import type { PluginContext } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
+import { nearAccountsOf } from "./me";
 
 export type BuilderProfile = {
   nearAccount: string;
@@ -59,6 +60,21 @@ function stubProfile(nearAccount: string): BuilderProfile {
   };
 }
 
+function canEditProfile(
+  context: PluginContext,
+  profile: { nearAccount: string; userId?: string | null },
+): boolean {
+  const user = (context as { user?: { role?: string | null } | null }).user;
+  if (user?.role === "admin") return true;
+  if (
+    context.userId &&
+    (profile.userId === context.userId || profile.nearAccount === context.userId)
+  ) {
+    return true;
+  }
+  return nearAccountsOf(context).includes(profile.nearAccount);
+}
+
 export function createContributorsService(db: Database, plugins: PluginsClient) {
   return {
     list: (context: PluginContext) =>
@@ -95,11 +111,17 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         const builder = yield* Effect.either(
           Effect.tryPromise(() => plugins.builders(context).getBuilder({ nearAccount })),
         );
-        if (Either.isRight(builder)) return { contributor: toProfile(builder.right.data) };
+        if (Either.isRight(builder)) {
+          const profile = builder.right.data;
+          return {
+            contributor: toProfile(profile),
+            canEdit: canEditProfile(context, profile),
+          };
+        }
         if (assignmentRows.length === 0) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Builder not found" }));
         }
-        return { contributor: stubProfile(nearAccount) };
+        return { contributor: stubProfile(nearAccount), canEdit: true };
       }),
 
     create: (
@@ -119,9 +141,14 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
             new ORPCError("BAD_REQUEST", { message: "nearAccount is required" }),
           );
         }
+        const nearAccount = input.nearAccount.trim();
+        const existing = yield* Effect.either(
+          Effect.tryPromise(() => plugins.builders(context).getBuilder({ nearAccount })),
+        );
+        if (Either.isRight(existing)) return { contributor: toProfile(existing.right.data) };
         const result = yield* Effect.promise(() =>
           plugins.builders(context).createBuilder({
-            nearAccount: input.nearAccount.trim(),
+            nearAccount,
             name: input.name,
             bio: input.bio,
             skills: input.skills,
@@ -152,11 +179,18 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           location: input.location,
           links: input.links,
         };
-        const result = yield* Effect.tryPromise(() =>
-          plugins.builders(context).updateBuilderProfile(profile),
-        ).pipe(
-          Effect.orElse(() =>
-            Effect.promise(() => plugins.builders(context).createBuilder(profile)),
+        const result = yield* Effect.tryPromise({
+          try: () => plugins.builders(context).updateBuilderProfile(profile),
+          catch: (err) => err,
+        }).pipe(
+          Effect.catchIf(
+            (err) => err instanceof ORPCError && err.code === "NOT_FOUND",
+            () => Effect.promise(() => plugins.builders(context).createBuilder(profile)),
+          ),
+          Effect.mapError((err) =>
+            err instanceof ORPCError
+              ? err
+              : new ORPCError("INTERNAL_SERVER_ERROR", { message: String(err) }),
           ),
         );
         return { contributor: toProfile(result.data) };
