@@ -3,8 +3,7 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
-import { type Budget, budgets } from "../db/schema";
-import type { ClientsService } from "./clients";
+import { type Budget, budgets, engagementProjects, engagements } from "../db/schema";
 import type { TreasuryScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
@@ -41,14 +40,14 @@ export type BudgetListItem = Pick<
   | "note"
   | "actorAccountId"
   | "relatedBudgetId"
-  | "clientId"
+  | "engagementId"
   | "createdAt"
 >;
 
 export interface ListBudgetsInput {
   projectIds: string[] | null;
   tokenId?: string;
-  clientId?: string;
+  engagementId?: string;
   cursor?: string;
   limit: number;
 }
@@ -74,7 +73,7 @@ export async function listBudgets(
       note: budgets.note,
       actorAccountId: budgets.actorAccountId,
       relatedBudgetId: budgets.relatedBudgetId,
-      clientId: budgets.clientId,
+      engagementId: budgets.engagementId,
       createdAt: budgets.createdAt,
     })
     .from(budgets)
@@ -82,7 +81,7 @@ export async function listBudgets(
       and(
         input.projectIds !== null ? inArray(budgets.projectId, input.projectIds) : undefined,
         input.tokenId ? eq(budgets.tokenId, input.tokenId) : undefined,
-        input.clientId ? eq(budgets.clientId, input.clientId) : undefined,
+        input.engagementId ? eq(budgets.engagementId, input.engagementId) : undefined,
         cursorWhere(budgets.createdAt, budgets.id, input.cursor),
       ),
     )
@@ -102,7 +101,7 @@ export interface CreateBudgetInput {
   amount: string;
   note: string | null;
   actorAccountId: string;
-  clientId?: string | null;
+  engagementId?: string | null;
 }
 
 export async function createBudget(db: Database, input: CreateBudgetInput): Promise<Budget> {
@@ -116,7 +115,7 @@ export async function createBudget(db: Database, input: CreateBudgetInput): Prom
       amount: input.amount,
       note: input.note,
       actorAccountId: input.actorAccountId,
-      clientId: input.clientId ?? null,
+      engagementId: input.engagementId ?? null,
     })
     .returning();
   if (!row) throw new Error("budgets insert returned no row");
@@ -204,26 +203,50 @@ const toOrpcError = (err: unknown) =>
           message: err instanceof Error ? err.message : String(err),
         });
 
-export function createBudgetsService(
-  db: Database,
-  directory: ProjectDirectory,
-  clients: ClientsService,
-) {
+const engagementNotFound = () => new ORPCError("NOT_FOUND", { message: "Engagement not found" });
+
+export function createBudgetsService(db: Database, directory: ProjectDirectory) {
+  const engagementProjectIds = async (scope: TreasuryScope, engagementId: string) => {
+    const [engagement] = await db
+      .select({ id: engagements.id })
+      .from(engagements)
+      .where(
+        and(
+          eq(engagements.id, engagementId),
+          scope.organizationId
+            ? eq(engagements.agencyOrganizationId, scope.organizationId)
+            : undefined,
+        ),
+      )
+      .limit(1);
+    if (!engagement || !scope.organizationId) throw engagementNotFound();
+    const rows = await db
+      .select({ projectId: engagementProjects.projectId })
+      .from(engagementProjects)
+      .where(eq(engagementProjects.engagementId, engagementId));
+    return rows.map((r) => r.projectId);
+  };
+
   const inAgency = <A>(
     scope: TreasuryScope,
-    refs: { projectIds: string[]; clientId?: string },
+    refs: { projectIds: string[]; engagementId?: string },
     run: () => Promise<A>,
   ) =>
-    Effect.gen(function* () {
-      if (refs.clientId) yield* clients.projectIdsFor(scope, refs.clientId);
-      return yield* Effect.tryPromise({
-        try: async () => {
-          const projects = directory.forAgency(scope);
-          for (const projectId of refs.projectIds) await projects.require(projectId);
-          return run();
-        },
-        catch: toOrpcError,
-      });
+    Effect.tryPromise({
+      try: async () => {
+        if (refs.engagementId) {
+          const shared = new Set(await engagementProjectIds(scope, refs.engagementId));
+          if (refs.projectIds.some((id) => !shared.has(id))) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "The Project is not shared through this Engagement",
+            });
+          }
+        }
+        const projects = directory.forAgency(scope);
+        for (const projectId of refs.projectIds) await projects.require(projectId);
+        return run();
+      },
+      catch: toOrpcError,
     });
 
   return {
@@ -232,7 +255,7 @@ export function createBudgetsService(
       input: {
         projectId?: string;
         tokenId?: string;
-        clientId?: string;
+        engagementId?: string;
         cursor?: string;
         limit: number;
       },
@@ -242,15 +265,20 @@ export function createBudgetsService(
         let projectIds = input.projectId
           ? [(yield* Effect.promise(() => projects.require(input.projectId!))).id]
           : (yield* Effect.promise(() => projects.list())).map((p) => p.id);
-        if (input.clientId) {
-          const clientProjectIds = new Set(yield* clients.projectIdsFor(scope, input.clientId));
-          projectIds = projectIds.filter((id) => clientProjectIds.has(id));
+        if (input.engagementId) {
+          const shared = new Set(
+            yield* Effect.tryPromise({
+              try: () => engagementProjectIds(scope, input.engagementId!),
+              catch: toOrpcError,
+            }),
+          );
+          projectIds = projectIds.filter((id) => shared.has(id));
         }
         return yield* Effect.promise(() =>
           listBudgets(db, {
             projectIds,
             tokenId: input.tokenId,
-            clientId: input.clientId,
+            engagementId: input.engagementId,
             cursor: input.cursor,
             limit: input.limit,
           }),
@@ -264,17 +292,21 @@ export function createBudgetsService(
         tokenId: string;
         amount: string;
         note?: string;
-        clientId?: string;
+        engagementId?: string;
       },
     ) =>
-      inAgency(scope, { projectIds: [input.projectId], clientId: input.clientId }, async () => ({
-        budget: await createBudget(db, {
-          ...input,
-          note: input.note ?? null,
-          clientId: input.clientId ?? null,
-          actorAccountId: scope.actorId,
+      inAgency(
+        scope,
+        { projectIds: [input.projectId], engagementId: input.engagementId },
+        async () => ({
+          budget: await createBudget(db, {
+            ...input,
+            note: input.note ?? null,
+            engagementId: input.engagementId ?? null,
+            actorAccountId: scope.actorId,
+          }),
         }),
-      })),
+      ),
 
     deallocate: (
       scope: TreasuryScope,
@@ -283,17 +315,21 @@ export function createBudgetsService(
         tokenId: string;
         amount: string;
         note?: string;
-        clientId?: string;
+        engagementId?: string;
       },
     ) =>
-      inAgency(scope, { projectIds: [input.projectId], clientId: input.clientId }, async () => ({
-        budget: await deallocateBudget(db, {
-          ...input,
-          note: input.note ?? null,
-          clientId: input.clientId ?? null,
-          actorAccountId: scope.actorId,
+      inAgency(
+        scope,
+        { projectIds: [input.projectId], engagementId: input.engagementId },
+        async () => ({
+          budget: await deallocateBudget(db, {
+            ...input,
+            note: input.note ?? null,
+            engagementId: input.engagementId ?? null,
+            actorAccountId: scope.actorId,
+          }),
         }),
-      })),
+      ),
 
     transfer: (
       scope: TreasuryScope,

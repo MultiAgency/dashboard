@@ -62,33 +62,52 @@ async function sendWebhook(url: string, app: ApplicationNotification): Promise<v
   }
 }
 
+export type EmailMessage = { to: string; subject: string; html: string };
+
+export type EmailSender = (message: EmailMessage) => Promise<void>;
+
+export function resendEmailSender(config: {
+  resendApiKey?: string;
+  fromEmail?: string;
+}): EmailSender | null {
+  const { resendApiKey, fromEmail } = config;
+  if (!resendApiKey || !fromEmail) return null;
+  return async (message) => {
+    const res = await fetchWithTimeout("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${resendApiKey}`,
+      },
+      body: JSON.stringify({ from: fromEmail, ...message }),
+    });
+    if (!res.ok) {
+      throw new Error(`resend POST failed: ${res.status}`);
+    }
+  };
+}
+
+export function escapeHtml(value: string | null): string {
+  return value === null
+    ? "—"
+    : value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 async function sendResendEmail(
   config: { resendApiKey: string; fromEmail: string; contactEmail: string },
   app: ApplicationNotification,
 ): Promise<void> {
-  const subject = `New ${app.kind} message — ${app.name}`;
-  const html = renderEmailHtml(app);
-  const res = await fetchWithTimeout("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.resendApiKey}`,
-    },
-    body: JSON.stringify({
-      from: config.fromEmail,
-      to: config.contactEmail,
-      subject,
-      html,
-    }),
+  const send = resendEmailSender(config);
+  await send?.({
+    to: config.contactEmail,
+    subject: `New ${app.kind} message — ${app.name}`,
+    html: renderEmailHtml(app),
   });
-  if (!res.ok) {
-    throw new Error(`resend POST failed: ${res.status}`);
-  }
 }
 
 function renderEmailHtml(app: ApplicationNotification): string {
   const esc = (s: string | null): string =>
-    s === null ? "—" : s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    s === null ? "â€”" : s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<p>New <strong>${esc(app.kind)}</strong> message received.</p>
 <ul>
 <li><strong>Name:</strong> ${esc(app.name)}</li>

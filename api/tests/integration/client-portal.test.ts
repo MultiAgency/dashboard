@@ -1,378 +1,230 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { Effect } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import type { Effect } from "every-plugin/effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import {
-  billings,
-  budgets,
-  clientProjects,
-  clients,
-  projectContributors,
-} from "../../src/db/schema";
+import type { Database } from "../../src/db";
+import * as schema from "../../src/db/schema";
+import { billings, budgets, projectContributors } from "../../src/db/schema";
+import { runEffect } from "../../src/lib/context";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createAgencyService } from "../../src/services/agency";
 import { createBillingsService } from "../../src/services/billings";
 import { createClientPortalService } from "../../src/services/client-portal";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
-import type { OrganizationAccessService } from "../../src/services/organization-access";
-import { createProjectDirectory, type ProjectsClient } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
-import { inMemoryAccess } from "../fakes/organizations";
+import { engagementWorld } from "../fakes/engagements";
+import { project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
-const AGENCY_A = "agency-a.sputnik-dao.near";
-const AGENCY_B = "agency-b.sputnik-dao.near";
-const NEAR_ACCOUNT = "client.near";
-const CLIENT_CONTEXT = { near: { primaryAccountId: NEAR_ACCOUNT } };
+const STUDIO_DAO = "studio.sputnik-dao.testnet";
 
-describe("client-portal — resolveClientScope (via organization access)", () => {
+const organizations = [
+  { id: "studio", name: "Studio", slug: "studio", daoAccountId: STUDIO_DAO },
+  { id: "acme", name: "Acme Corp", slug: "acme" },
+  { id: "globex", name: "Globex", slug: "globex" },
+];
+
+const members = [
+  { userId: "studio-admin", organizationId: "studio", role: "admin" as const },
+  { userId: "acme-owner", organizationId: "acme", role: "owner" as const },
+  { userId: "acme-viewer", organizationId: "acme", role: "member" as const },
+  { userId: "globex-owner", organizationId: "globex", role: "owner" as const },
+];
+
+const users = members.map((m) => ({ id: m.userId, email: `${m.userId}@example.com` }));
+
+const projects = [
+  { ...project("shared", "studio"), slug: "shared", title: "Shared work" },
+  { ...project("internal", "studio"), slug: "internal", title: "Internal work" },
+];
+
+const run = <A>(effect: Effect.Effect<A, unknown>) => runEffect(effect);
+
+describe("client portal through Engagements", () => {
   let pg: PGlite;
-  let db: ReturnType<typeof drizzle>;
-  let access: OrganizationAccessService;
+  let db: Database;
+  let world: Awaited<ReturnType<typeof engagementWorld>>;
+  let portal: ReturnType<typeof createClientPortalService>;
+  let acmeEngagement: string;
+  let globexEngagement: string;
 
   beforeEach(async () => {
     const { PGlite } = await import("@electric-sql/pglite");
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
-    db = drizzle(pg);
-    access = inMemoryAccess(db);
-  });
-
-  afterEach(async () => {
-    await pg.close();
-  });
-
-  async function insertClient(id: string, agencyDaoAccountId: string, nearAccountId: string) {
-    await db.insert(clients).values({
-      id,
-      orgId: agencyDaoAccountId,
-      agencyDaoAccountId,
-      name: "Test Client",
-      nearAccountId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-  }
-
-  test("valid nearAccountId + agencyDaoAccountId resolves the right client", async () => {
-    await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
-
-    const result = await Effect.runPromise(access.clientPortal(CLIENT_CONTEXT, AGENCY_A));
-
-    expect(result.client.id).toBe("client-1");
-    expect(result.client.agencyDaoAccountId).toBe(AGENCY_A);
-    expect(result.projectIds).toEqual([]);
-  });
-
-  test.each([
-    ["stranger.near", AGENCY_A],
-    [NEAR_ACCOUNT, AGENCY_B],
-  ])("%s has no client portal at %s", async (nearAccount, agency) => {
-    await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
-
-    await expect(
-      Effect.runPromise(access.clientPortal({ near: { primaryAccountId: nearAccount } }, agency)),
-    ).rejects.toThrow(/No client portal/);
-  });
-});
-
-// Agency id ends in .testnet so `isNearnAvailable` short-circuits the NEARN listing
-// lookup in agency.listProjects — keeps these tests free of network calls.
-const AGENCY_C = "agency-c.sputnik-dao.testnet";
-const AT_C = { agencyDaoAccountId: AGENCY_C };
-
-type FakeUpstreamProject = {
-  id: string;
-  ownerId: string;
-  organizationId: string;
-  slug: string;
-  title: string;
-  description: string | null;
-  repository: string | null;
-  kind: string;
-  status: string;
-  visibility: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-function makeProject(overrides: Partial<FakeUpstreamProject> & { id: string; slug: string }) {
-  return {
-    ownerId: "owner.near",
-    organizationId: AGENCY_C,
-    title: overrides.title ?? overrides.slug,
-    description: null,
-    repository: null,
-    kind: "project",
-    status: "active",
-    visibility: "public",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    ...overrides,
-  } as FakeUpstreamProject;
-}
-
-function createFakePlugins(
-  projects: FakeUpstreamProject[],
-  builders: Array<{ nearAccount: string; name: string | null }> = [],
-): PluginsClient {
-  return {
-    projects: () =>
-      ({
-        listProjects: async ({ organizationId }: { organizationId: string }) => ({
-          data: projects.filter((p) => p.organizationId === organizationId),
-          meta: { nextCursor: null },
-        }),
-        getProject: async ({ id }: { id: string }) => {
-          const project = projects.find((p) => p.id === id);
-          if (!project) {
-            throw new ORPCError("NOT_FOUND", { message: "Project not found" });
-          }
-          return { data: project };
-        },
-        getProjectBySlug: async ({ slug }: { slug: string }) => {
-          const project = projects.find((p) => p.slug === slug);
-          if (!project) {
-            throw new ORPCError("NOT_FOUND", { message: "Project not found" });
-          }
-          return { data: project };
-        },
-      }) as never,
-    builders: () =>
-      ({
-        listBuilders: async () => ({ data: builders }),
-      }) as never,
-    auth: () => ({}) as never,
-  } as PluginsClient;
-}
-
-describe("client-portal — dashboardSummary / listProjects / getProject", () => {
-  let pg: PGlite;
-  let db: ReturnType<typeof drizzle>;
-
-  beforeEach(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg);
-  });
-
-  afterEach(async () => {
-    await pg.close();
-  });
-
-  function buildPortal(plugins: PluginsClient) {
-    const directory = createProjectDirectory(() => plugins.projects() as ProjectsClient);
-    const listings = createListingsService(db as never, directory);
-    const projectLedgers = createProjectLedgers(db as never, listings);
-    const agency = createAgencyService(db as never, plugins, directory, listings, projectLedgers);
-    const billingsService = createBillingsService(db as never, directory);
-    const reports = createReportsService(db as never, directory, plugins);
-    return createClientPortalService(
-      inMemoryAccess(db),
-      agency,
-      billingsService,
-      reports,
-      directory,
-      projectLedgers,
-    );
-  }
-
-  async function insertClient(id: string) {
-    await db.insert(clients).values({
-      id,
-      orgId: AGENCY_C,
-      agencyDaoAccountId: AGENCY_C,
-      name: "Test Client",
-      nearAccountId: NEAR_ACCOUNT,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-  }
-
-  async function linkProject(clientId: string, projectId: string) {
-    await db.insert(clientProjects).values({ clientId, projectId, createdAt: new Date() });
-  }
-
-  test("dashboard.summary — correct projectCount and remainingByToken for a client with projects + billings", async () => {
-    await insertClient("client-4");
-    await linkProject("client-4", "project-1");
-    await db.insert(budgets).values({
-      id: "budget-1",
-      projectId: "project-1",
-      tokenId: "near",
-      amount: "1000",
-      actorAccountId: "admin.near",
-      createdAt: new Date(),
-    });
-
-    const plugins = createFakePlugins([makeProject({ id: "project-1", slug: "project-one" })]);
-    const portal = buildPortal(plugins);
-
-    const summary = await Effect.runPromise(portal.dashboardSummary(CLIENT_CONTEXT, AT_C));
-
-    expect(summary.projectCount).toBe(1);
-    expect(summary.remainingByToken).toEqual([{ tokenId: "near", amount: "1000" }]);
-  });
-
-  test("projects.list — only returns projects belonging to that client, not siblings under the same agency", async () => {
-    await insertClient("client-5");
-    await linkProject("client-5", "project-a");
-
-    const plugins = createFakePlugins([
-      makeProject({ id: "project-a", slug: "project-a-slug" }),
-      makeProject({ id: "project-b", slug: "project-b-slug" }),
-    ]);
-    const portal = buildPortal(plugins);
-
-    const result = await Effect.runPromise(portal.listProjects(CLIENT_CONTEXT, AT_C));
-
-    expect(result.data).toHaveLength(1);
-    expect(result.data[0]?.id).toBe("project-a");
-  });
-
-  test("projects.get — returns project + contributors for a valid slug", async () => {
-    await insertClient("client-6");
-    await linkProject("client-6", "project-a");
-    await db.insert(projectContributors).values({
-      projectId: "project-a",
-      nearAccount: "builder.near",
-      role: "engineer",
-      createdAt: new Date(),
-    });
-
-    const plugins = createFakePlugins(
-      [makeProject({ id: "project-a", slug: "project-a-slug" })],
-      [{ nearAccount: "builder.near", name: "Builder Name" }],
-    );
-    const portal = buildPortal(plugins);
-
-    const result = await Effect.runPromise(
-      portal.getProject(CLIENT_CONTEXT, { ...AT_C, slug: "project-a-slug" }),
+    db = drizzle(pg, { schema }) as unknown as Database;
+    world = await engagementWorld(db, { organizations, members, users, projects });
+    const plugins = {
+      builders: () => ({
+        listBuilders: async () => ({ data: [{ nearAccount: "builder.near", name: "Builder" }] }),
+      }),
+    } as unknown as PluginsClient;
+    const listings = createListingsService(db, world.directory);
+    const ledgers = createProjectLedgers(db, listings);
+    portal = createClientPortalService(
+      world.access,
+      createAgencyService(db, plugins, world.directory, listings, ledgers),
+      createBillingsService(db, world.directory),
+      createReportsService(db, world.directory, plugins, world.organizations.directory),
+      world.directory,
+      ledgers,
     );
 
-    expect(result.project.slug).toBe("project-a-slug");
-    expect(result.contributors).toEqual([
-      { nearAccount: "builder.near", name: "Builder Name", role: "engineer" },
-    ]);
-  });
+    const studio = await world.manager("studio-admin", "studio");
+    for (const [slug, name, owner] of [
+      ["acme", "Acme Corp", "acme-owner"],
+      ["globex", "Globex", "globex-owner"],
+    ] as const) {
+      const proposed = await world.engagements.propose(studio, { slug, name });
+      await world.engagements.accept(await world.manager(owner, slug), proposed.id);
+      await world.engagements.share(studio, { engagementId: proposed.id, projectId: "shared" });
+      if (slug === "acme") acmeEngagement = proposed.id;
+      else globexEngagement = proposed.id;
+    }
 
-  test("projects.get — NOT_FOUND for a slug belonging to a different client", async () => {
-    await insertClient("client-7");
-    await linkProject("client-7", "project-a");
-
-    const plugins = createFakePlugins([
-      makeProject({ id: "project-a", slug: "project-a-slug" }),
-      makeProject({ id: "project-c", slug: "project-c-slug" }),
-    ]);
-    const portal = buildPortal(plugins);
-
-    await expect(
-      Effect.runPromise(portal.getProject(CLIENT_CONTEXT, { ...AT_C, slug: "project-c-slug" })),
-    ).rejects.toThrow(/Project not found/);
-  });
-
-  test("projects.getBudget — budget numbers match seeded billings/budgets", async () => {
-    await insertClient("client-8");
-    await linkProject("client-8", "project-a");
-    await db.insert(budgets).values({
-      id: "budget-8",
-      projectId: "project-a",
-      tokenId: "near",
-      amount: "1000",
-      actorAccountId: "admin.near",
-      createdAt: new Date(),
-    });
-    // Non-numeric proposalId short-circuits enrichWithChainStatus's DAO lookup and
-    // defaults to "InProgress" — keeps this test free of any network/RPC call.
-    await db.insert(billings).values({
-      id: "billing-8",
-      projectId: "project-a",
-      clientId: "client-8",
-      nearAccount: "builder.near",
-      tokenId: "near",
-      amount: "200",
-      proposalId: "not-a-number",
-      createdAt: new Date(),
-    });
-
-    const plugins = createFakePlugins([makeProject({ id: "project-a", slug: "project-a-slug" })]);
-    const portal = buildPortal(plugins);
-
-    const result = await Effect.runPromise(
-      portal.getBudget(CLIENT_CONTEXT, { ...AT_C, projectId: "project-a" }),
-    );
-
-    expect(result.budgets).toEqual([
+    await db.insert(budgets).values([
       {
+        id: "budget-acme",
+        projectId: "shared",
         tokenId: "near",
-        budget: "1000",
-        allocated: "0",
-        committed: "200",
-        paid: "0",
-        remaining: "800",
+        amount: "1000",
+        actorAccountId: "admin.near",
+        engagementId: acmeEngagement,
+      },
+      {
+        id: "budget-internal",
+        projectId: "internal",
+        tokenId: "near",
+        amount: "5000",
+        actorAccountId: "admin.near",
       },
     ]);
-  });
-
-  test("billings.list — scoped to the client, with pagination cursor working", async () => {
-    await insertClient("client-9");
-    await linkProject("client-9", "project-a");
-    // A second client under the same agency, sharing the project — proves billings
-    // scoping is by billings.clientId, not just project membership.
-    await db.insert(clients).values({
-      id: "client-other",
-      orgId: AGENCY_C,
-      agencyDaoAccountId: AGENCY_C,
-      name: "Other Client",
-      nearAccountId: "other-client.near",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    const base = Date.parse("2024-01-01T00:00:00.000Z");
-    for (let i = 0; i < 3; i++) {
-      await db.insert(billings).values({
-        id: `billing-9-${i}`,
-        projectId: "project-a",
-        clientId: "client-9",
+    await db.insert(billings).values([
+      {
+        id: "billing-acme",
+        projectId: "shared",
         nearAccount: "builder.near",
         tokenId: "near",
         amount: "100",
-        proposalId: `prop-9-${i}`,
-        createdAt: new Date(base + i * 1000),
-      });
-    }
-    // Belongs to a different client under the same agency/project set — must never
-    // leak into client-9's page.
-    await db.insert(billings).values({
-      id: "billing-other",
-      projectId: "project-a",
-      clientId: "client-other",
-      nearAccount: "other.near",
-      tokenId: "near",
-      amount: "999",
-      proposalId: "prop-other",
-      createdAt: new Date(base + 5000),
+        proposalId: "not-a-number-1",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+      {
+        id: "billing-unattributed",
+        projectId: "shared",
+        nearAccount: "builder.near",
+        tokenId: "near",
+        amount: "200",
+        proposalId: "not-a-number-2",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+      {
+        id: "billing-internal",
+        projectId: "internal",
+        nearAccount: "builder.near",
+        tokenId: "near",
+        amount: "999",
+        proposalId: "not-a-number-3",
+        createdAt: new Date("2026-01-03T00:00:00Z"),
+      },
+    ]);
+    await db
+      .insert(projectContributors)
+      .values({ projectId: "shared", nearAccount: "builder.near", role: "engineer" });
+  });
+
+  afterEach(async () => {
+    await pg.close();
+  });
+
+  const viewer = () => world.context("acme-viewer", "acme");
+
+  test("a Client member without a NEAR wallet sees the private shared Project in full", async () => {
+    const listed = await run(portal.listProjects(viewer(), { engagementId: acmeEngagement }));
+    expect(listed.data.map((p) => p.slug)).toEqual(["shared"]);
+    expect(listed.data[0]?.visibility).toBe("private");
+
+    const detail = await run(
+      portal.getProject(viewer(), { engagementId: acmeEngagement, slug: "shared" }),
+    );
+    expect(detail.project.title).toBe("Shared work");
+    expect(detail.contributors).toEqual([
+      { nearAccount: "builder.near", name: "Builder", role: "engineer" },
+    ]);
+
+    await expect(
+      run(portal.getProject(viewer(), { engagementId: acmeEngagement, slug: "internal" })),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  test("a Client sees every Billing on its shared Projects, attributed or not", async () => {
+    const listed = await run(
+      portal.listBillings(viewer(), { engagementId: acmeEngagement, limit: 50 }),
+    );
+
+    expect(listed.data.map((b) => b.id)).toEqual(["billing-unattributed", "billing-acme"]);
+    const budget = await run(
+      portal.getBudget(viewer(), { engagementId: acmeEngagement, projectId: "shared" }),
+    );
+    expect(budget.budgets).toEqual([
+      expect.objectContaining({ tokenId: "near", budget: "1000", committed: "300" }),
+    ]);
+  });
+
+  test("each party sees only what flows through its own Engagement", async () => {
+    const globex = world.context("globex-owner", "globex");
+
+    await expect(
+      run(portal.listProjects(globex, { engagementId: acmeEngagement })),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      run(
+        portal.listProjects(world.context("studio-admin", "studio"), {
+          engagementId: acmeEngagement,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    const acmeReport = await run(portal.generateReport(viewer(), { engagementId: acmeEngagement }));
+    expect(acmeReport.clientBreakdown.map((row) => row.clientName)).toEqual(["Acme Corp"]);
+    expect(acmeReport.overview.projectCount).toBe(1);
+
+    const globexProjects = await run(
+      portal.listProjects(globex, { engagementId: globexEngagement }),
+    );
+    expect(globexProjects.data.map((p) => p.id)).toEqual(["shared"]);
+  });
+
+  test("an ended Engagement stays readable as history, a declined or proposed one does not", async () => {
+    await world.engagements.end(await world.manager("studio-admin", "studio"), acmeEngagement);
+
+    const summary = await run(portal.dashboardSummary(viewer(), { engagementId: acmeEngagement }));
+    expect(summary).toMatchObject({ status: "ended", readOnly: true, projectCount: 1 });
+    expect(
+      (await run(portal.listBillings(viewer(), { engagementId: acmeEngagement, limit: 50 }))).data,
+    ).toHaveLength(2);
+
+    const proposed = await world.engagements.propose(
+      await world.manager("studio-admin", "studio"),
+      {
+        slug: "acme",
+        name: "Acme Corp",
+      },
+    );
+    await expect(
+      run(portal.listProjects(viewer(), { engagementId: proposed.id })),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  test("the Client's dashboard summarises remaining budget on its shared Projects", async () => {
+    const summary = await run(portal.dashboardSummary(viewer(), { engagementId: acmeEngagement }));
+
+    expect(summary).toEqual({
+      status: "active",
+      readOnly: false,
+      projectCount: 1,
+      remainingByToken: [{ tokenId: "near", amount: "700" }],
     });
-
-    const plugins = createFakePlugins([makeProject({ id: "project-a", slug: "project-a-slug" })]);
-    const portal = buildPortal(plugins);
-
-    const page1 = await Effect.runPromise(
-      portal.listBillings(CLIENT_CONTEXT, { ...AT_C, limit: 2 }),
-    );
-    expect(page1.data).toHaveLength(2);
-    expect(page1.data.every((b) => b.clientId === "client-9")).toBe(true);
-    expect(page1.nextCursor).not.toBeNull();
-
-    const page2 = await Effect.runPromise(
-      portal.listBillings(CLIENT_CONTEXT, { ...AT_C, limit: 2, cursor: page1.nextCursor! }),
-    );
-    expect(page2.data).toHaveLength(1);
-    expect(page2.data[0]?.id).toBe("billing-9-0");
-    expect(page2.nextCursor).toBeNull();
   });
 });

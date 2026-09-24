@@ -52,6 +52,73 @@ export type Organizations = {
   remove(organizationId: string): Promise<void>;
 };
 
+export type InvitationStatus = "pending" | "accepted" | "rejected" | "canceled";
+
+export type Invitation = {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: OrganizationRole | null;
+  status: InvitationStatus;
+  expiresAt: Date;
+};
+
+export type OrganizationManager = {
+  userId: string;
+  role: OrganizationRole;
+  email: string | null;
+};
+
+export type UserMembership = {
+  organization: Organization;
+  role: OrganizationRole | null;
+};
+
+export type OrganizationDirectory = {
+  get(organizationId: string): Promise<Organization | null>;
+  findBySlug(slug: string): Promise<Organization | null>;
+  managers(organizationId: string): Promise<OrganizationManager[]>;
+  memberships(userId: string): Promise<UserMembership[]>;
+  create(input: { name: string; slug: string }): Promise<Organization>;
+  invite(input: {
+    organizationId: string;
+    email: string;
+    role: OrganizationRole;
+    inviterId: string;
+    expiresAt: Date;
+  }): Promise<Invitation>;
+  invitation(invitationId: string): Promise<Invitation | null>;
+  updateInvitation(
+    invitationId: string,
+    patch: { status?: InvitationStatus; expiresAt?: Date },
+  ): Promise<void>;
+};
+
+export class SlugTakenError extends Error {
+  constructor(readonly slug: string) {
+    super(`The slug "${slug}" is already taken`);
+    this.name = "SlugTakenError";
+  }
+}
+
+export const MANAGER_ROLES: readonly OrganizationRole[] = ["owner", "admin"];
+
+const WALLET_EMAIL_DOMAIN = "@near.email";
+const TEMPORARY_EMAIL = /^temp-[0-9a-f]{8}@/i;
+
+export function deliverableEmail(email: string | null | undefined): string | null {
+  const trimmed = email?.trim();
+  if (!trimmed?.includes("@")) return null;
+  if (trimmed.toLowerCase().endsWith(WALLET_EMAIL_DOMAIN) || TEMPORARY_EMAIL.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+export function toInvitationStatus(raw: string | null | undefined): InvitationStatus {
+  return raw === "accepted" || raw === "rejected" || raw === "canceled" ? raw : "pending";
+}
+
 export function parseOrgMetadata(raw: unknown): OrgMetadata {
   if (!raw) return {};
   if (typeof raw === "string") {
@@ -114,5 +181,23 @@ export function betterAuthOrganizations(
     remove: async (organizationId) => {
       await client().deleteOrganization({ organizationId });
     },
+  };
+}
+
+export function unconfiguredDirectory(): OrganizationDirectory {
+  const unavailable = async (): Promise<never> => {
+    throw new Error(
+      "AUTH_DATABASE_URL is not configured for the API, so Organizations outside the caller's session cannot be read or created.",
+    );
+  };
+  return {
+    get: async () => null,
+    findBySlug: async () => null,
+    managers: async () => [],
+    memberships: async () => [],
+    create: unavailable,
+    invite: unavailable,
+    invitation: async () => null,
+    updateInvitation: unavailable,
   };
 }

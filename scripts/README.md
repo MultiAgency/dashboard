@@ -70,3 +70,53 @@ It reads the `user`, `organization` and `member` tables and detects whether `mem
 
 1. `bun run db:assign-owner <organization-id> <email> --dry-run` and check the report (`action` is `promoted` or `added`).
 2. Run it again without `--dry-run`.
+
+## Engagements
+
+`bun run db:migrate:engagements` turns the legacy `clients` rows into Engagements (#43). It is idempotent: a second run changes nothing, and `--dry-run` reports what it would do.
+
+In `api_db` it:
+
+1. Creates an active Engagement for each `clients` row between the Agency's Organization (found through `organization_daos` by the row's Agency DAO) and the Client's existing Organization (`clients.org_id`). The Engagement remembers the row in `legacy_client_id`, so a rerun finds it again. Rows whose Agency DAO has no Organization are reported as `UNMAPPED_AGENCY_DAO` and left alone.
+2. Copies the row's `client_projects` into `engagement_projects`.
+3. Points each Budget entry attributed to the row (`budgets.client_id`) at the Engagement (`budgets.engagement_id`). `client_id` stays until the `clients` table is dropped (#48).
+4. Fills `project_contributors.organization_id` from `projects_db`, so Contributors see their assigned Projects under "My work".
+
+In `auth_db` it hands each Client Organization over to the Client:
+
+5. Finds the user of the row's NEAR wallet (`clients.near_account_id`) through the NEAR account table and makes them owner of the Client's Organization (added, or promoted if already a member).
+6. Removes every member of the Client's Organization who is also a member of the Agency's Organization, except that wallet user. For NEAR Foundation this makes `work.efiz.near` owner and removes `agenticweb.near`.
+
+A row without a wallet (`no-wallet`) or whose wallet has never signed in (`no-wallet-user`) keeps its members; fix it later with `db:assign-owner`, then run this script again to remove Agency staff.
+
+### Environment
+
+| Variable | Meaning |
+| --- | --- |
+| `API_DATABASE_URL` | `api_db` |
+| `PROJECTS_DATABASE_URL` | `projects_db`, read only |
+| `AUTH_DATABASE_URL` | The auth plugin's database |
+
+### Run order
+
+1. Run the Organization cleanup and the Project ownership migration above, in that order.
+2. Deploy the API from #43 with `AUTH_DATABASE_URL` set for it (see below). Its migrator creates `engagements`, `engagement_projects` and `notifications`, and adds `budgets.engagement_id` and `project_contributors.organization_id`. From this deploy on, the client portal reads through Engagements only, so run step 4 right after it.
+3. `bun run db:migrate:engagements --dry-run` and check the report: NEAR Foundation should be `created` with its shared Projects, and its handover should show `work.efiz.near`'s user as owner with `agenticweb.near`'s user removed.
+4. `bun run db:migrate:engagements`.
+5. Ask NEAR Foundation's owner (`work.efiz.near`) to add an email on their Profile, so Engagement notifications reach them by email and not only in the app.
+
+The `clients` and `client_projects` tables stay, unused, until #48 drops them.
+
+## The API and the auth database
+
+From #43 the API reads the auth database directly (`AUTH_DATABASE_URL`, the same database the auth plugin uses). The auth plugin's API only acts as the signed-in caller, so it cannot:
+
+- create a Client Organization without making the Agency admin its owner,
+- let the Agency manage the Client's first-admin invitation after it created the Organization without joining it,
+- find an Organization the caller is not a member of by its slug,
+- name the owners and admins of another Organization to notify them,
+- list the caller's Organizations with their role for the switcher.
+
+The API writes only two things there: a new Organization with no members, and the first-admin invitation (created, re-dated, canceled). Accepting the invitation still goes through the auth plugin. The invitation email is sent by the API through Resend (`RESEND_API_KEY`, `NOTIFY_FROM_EMAIL`), with the same `/accept-invitation/<id>` link the auth plugin uses.
+
+Without `AUTH_DATABASE_URL` the API still starts, but creating Clients, finding Organizations by slug, notifications and the switcher's list are unavailable.

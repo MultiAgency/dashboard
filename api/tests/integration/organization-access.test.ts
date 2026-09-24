@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { organizationDaos } from "../../src/db/schema";
+import { engagementProjects, engagements, organizationDaos } from "../../src/db/schema";
 import {
   NO_AGENCY_DAO,
   ROLE_MATRIX,
@@ -54,7 +54,7 @@ describe("organization access", () => {
   const database = migratedDatabase();
 
   beforeEach(async () => {
-    await database.pg.query("TRUNCATE organization_daos");
+    await database.pg.query("TRUNCATE organization_daos, engagements CASCADE");
     await seedAgencyDaos(database.db, organizations);
   });
 
@@ -177,7 +177,7 @@ describe("organization access", () => {
   });
 
   test("Organization metadata naming a DAO grants no Agency DAO without a connection", async () => {
-    await database.pg.query("TRUNCATE organization_daos");
+    await database.pg.query("TRUNCATE organization_daos, engagements CASCADE");
 
     expect((await accessWith().resolve(signedIn("owner", "other"))).agencyDao).toBeNull();
   });
@@ -201,5 +201,52 @@ describe("organization access", () => {
     expect(() => access.requireDefaultOrganization(outsider)).toThrow(
       expect.objectContaining(FORBIDDEN),
     );
+  });
+
+  test("an active or ended Engagement gives the Client Organization its Client sections", async () => {
+    await database.db.insert(engagements).values([
+      {
+        id: "as-client",
+        agencyOrganizationId: "other",
+        clientOrganizationId: "multiagency",
+        status: "active",
+        proposedBy: "x",
+      },
+      {
+        id: "as-subcontractor",
+        agencyOrganizationId: "other",
+        clientOrganizationId: "no-dao",
+        kind: "subcontract",
+        status: "ended",
+        proposedBy: "x",
+      },
+    ]);
+    const access = accessWith();
+
+    for (const organizationId of ["multiagency", "no-dao"]) {
+      expect((await access.resolve(signedIn("u1", organizationId))).capabilities).toMatchObject({
+        hasClientSections: true,
+      });
+    }
+  });
+
+  test("a proposed Engagement gives no Client sections and no shared reads", async () => {
+    await database.db.insert(engagements).values({
+      id: "pending",
+      agencyOrganizationId: "other",
+      clientOrganizationId: "multiagency",
+      status: "proposed",
+      proposedBy: "x",
+    });
+    await database.db
+      .insert(engagementProjects)
+      .values({ engagementId: "pending", projectId: "foreign" });
+    const access = accessWith();
+    const context = signedIn("u1", "multiagency");
+
+    expect((await access.resolve(context)).capabilities.hasClientSections).toBe(false);
+    await expect(access.sharedWith(context, "pending")).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 });

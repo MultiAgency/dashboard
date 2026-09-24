@@ -3,15 +3,22 @@ import { drizzle } from "drizzle-orm/pglite";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { billings, budgets, clientProjects, clients, proposals } from "../../src/db/schema";
+import { billings, budgets, engagementProjects, engagements, proposals } from "../../src/db/schema";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createProjectDirectory, type ProjectsClient } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
+import { inMemoryOrganizations } from "../fakes/organizations";
 import { agencyScope } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
 const AGENCY = "agency-r.sputnik-dao.near";
-const scope = agencyScope(AGENCY);
+const scope = agencyScope(AGENCY, { organizationId: "agency-org" });
+const organizations = inMemoryOrganizations({
+  organizations: [
+    { id: "client-a", name: "Client A" },
+    { id: "client-b", name: "Client B" },
+  ],
+}).directory;
 
 type FakeUpstreamProject = {
   id: string;
@@ -88,23 +95,21 @@ describe("reports.generate", () => {
 
   function buildReports(plugins: PluginsClient) {
     const directory = createProjectDirectory(() => plugins.projects() as ProjectsClient);
-    return createReportsService(db as never, directory, plugins);
+    return createReportsService(db as never, directory, plugins, organizations);
   }
 
-  async function insertClient(id: string, name: string) {
-    await db.insert(clients).values({
+  async function insertClient(id: string) {
+    await db.insert(engagements).values({
       id,
-      orgId: AGENCY,
-      agencyDaoAccountId: AGENCY,
-      name,
-      nearAccountId: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      agencyOrganizationId: "agency-org",
+      clientOrganizationId: id,
+      status: "active",
+      proposedBy: "admin",
     });
   }
 
-  async function linkProject(clientId: string, projectId: string) {
-    await db.insert(clientProjects).values({ clientId, projectId, createdAt: new Date() });
+  async function linkProject(engagementId: string, projectId: string) {
+    await db.insert(engagementProjects).values({ engagementId, projectId });
   }
 
   async function insertBudget(id: string, projectId: string, tokenId: string, amount: string) {
@@ -123,7 +128,6 @@ describe("reports.generate", () => {
   async function insertApprovedBilling(opts: {
     id: string;
     projectId: string;
-    clientId?: string;
     nearAccount: string;
     tokenId: string;
     amount: string;
@@ -141,7 +145,6 @@ describe("reports.generate", () => {
     await db.insert(billings).values({
       id: opts.id,
       projectId: opts.projectId,
-      clientId: opts.clientId ?? null,
       nearAccount: opts.nearAccount,
       tokenId: opts.tokenId,
       amount: opts.amount,
@@ -160,12 +163,12 @@ describe("reports.generate", () => {
     ).rejects.toThrow(/startDate must be on or before endDate/);
   });
 
-  test("generate (client route) — unknown client → NOT_FOUND", async () => {
+  test("generate (client route) — unknown engagement → NOT_FOUND", async () => {
     const reports = buildReports(createFakePlugins([]));
 
     await expect(
-      Effect.runPromise(reports.generate(scope, { clientId: "does-not-exist" })),
-    ).rejects.toThrow(/Client not found/);
+      Effect.runPromise(reports.generate(scope, { engagementId: "does-not-exist" })),
+    ).rejects.toThrow(/Engagement not found/);
   });
 
   test("generate — no date range → covers full history, period reflects that", async () => {
@@ -192,14 +195,13 @@ describe("reports.generate", () => {
   });
 
   test("generate — per-token summation across multiple billings is correct", async () => {
-    await insertClient("client-a", "Client A");
+    await insertClient("client-a");
     await linkProject("client-a", "project-a");
     await insertBudget("budget-near", "project-a", "near", "1000");
     await insertBudget("budget-usdc", "project-a", "usdc", "500");
     await insertApprovedBilling({
       id: "billing-1",
       projectId: "project-a",
-      clientId: "client-a",
       nearAccount: "alice.near",
       tokenId: "near",
       amount: "100",
@@ -208,7 +210,6 @@ describe("reports.generate", () => {
     await insertApprovedBilling({
       id: "billing-2",
       projectId: "project-a",
-      clientId: "client-a",
       nearAccount: "bob.near",
       tokenId: "near",
       amount: "50",
@@ -217,7 +218,6 @@ describe("reports.generate", () => {
     await insertApprovedBilling({
       id: "billing-3",
       projectId: "project-a",
-      clientId: "client-a",
       nearAccount: "alice.near",
       tokenId: "usdc",
       amount: "20",
@@ -241,26 +241,24 @@ describe("reports.generate", () => {
   });
 
   test("generate (admin route) — agency-wide, includes clientBreakdown across multiple clients", async () => {
-    await insertClient("client-a", "Client A");
+    await insertClient("client-a");
     await linkProject("client-a", "project-a");
     await insertBudget("budget-a", "project-a", "near", "1000");
     await insertApprovedBilling({
       id: "billing-a",
       projectId: "project-a",
-      clientId: "client-a",
       nearAccount: "alice.near",
       tokenId: "near",
       amount: "200",
       proposalId: 1,
     });
 
-    await insertClient("client-b", "Client B");
+    await insertClient("client-b");
     await linkProject("client-b", "project-b");
     await insertBudget("budget-b", "project-b", "near", "2000");
     await insertApprovedBilling({
       id: "billing-b",
       projectId: "project-b",
-      clientId: "client-b",
       nearAccount: "bob.near",
       tokenId: "near",
       amount: "300",
@@ -298,15 +296,14 @@ describe("reports.generate", () => {
   test("generate (client route) — scoped to one client, doesn't leak another client's data into the response", async () => {
     // Both clients are linked to the SAME project, and each has its own billing row on
     // it — this exercises the billings.clientId filter directly, not just project scoping.
-    await insertClient("client-a", "Client A");
-    await insertClient("client-b", "Client B");
+    await insertClient("client-a");
+    await insertClient("client-b");
     await linkProject("client-a", "project-shared");
     await linkProject("client-b", "project-shared");
     await insertBudget("budget-shared", "project-shared", "near", "1000");
     await insertApprovedBilling({
       id: "billing-a",
       projectId: "project-shared",
-      clientId: "client-a",
       nearAccount: "alice.near",
       tokenId: "near",
       amount: "100",
@@ -315,7 +312,6 @@ describe("reports.generate", () => {
     await insertApprovedBilling({
       id: "billing-b",
       projectId: "project-shared",
-      clientId: "client-b",
       nearAccount: "bob.near",
       tokenId: "near",
       amount: "999",
@@ -326,25 +322,27 @@ describe("reports.generate", () => {
       createFakePlugins([makeProject({ id: "project-shared", slug: "project-shared-slug" })]),
     );
 
-    const result = await Effect.runPromise(reports.generate(scope, { clientId: "client-a" }));
+    const result = await Effect.runPromise(reports.generate(scope, { engagementId: "client-a" }));
 
-    expect(result.overview.billedByToken).toEqual([{ tokenId: "near", amount: "100" }]);
-    expect(result.contributorStats.map((c) => c.nearAccount)).toEqual(["alice.near"]);
+    expect(result.overview.billedByToken).toEqual([{ tokenId: "near", amount: "1099" }]);
+    expect(result.contributorStats.map((c) => c.nearAccount).sort()).toEqual([
+      "alice.near",
+      "bob.near",
+    ]);
     expect(result.clientBreakdown).toEqual([
       expect.objectContaining({
         clientName: "Client A",
-        spentByToken: [{ tokenId: "near", amount: "100" }],
+        spentByToken: [{ tokenId: "near", amount: "1099" }],
       }),
     ]);
   });
 
   test("generate — contributorStats billing counts match seeded data", async () => {
-    await insertClient("client-a", "Client A");
+    await insertClient("client-a");
     await linkProject("client-a", "project-a");
     await insertApprovedBilling({
       id: "billing-carol-1",
       projectId: "project-a",
-      clientId: "client-a",
       nearAccount: "carol.near",
       tokenId: "near",
       amount: "10",
@@ -353,7 +351,6 @@ describe("reports.generate", () => {
     await insertApprovedBilling({
       id: "billing-carol-2",
       projectId: "project-a",
-      clientId: "client-a",
       nearAccount: "carol.near",
       tokenId: "near",
       amount: "20",
@@ -362,7 +359,6 @@ describe("reports.generate", () => {
     await insertApprovedBilling({
       id: "billing-carol-3",
       projectId: "project-a",
-      clientId: "client-a",
       nearAccount: "carol.near",
       tokenId: "near",
       amount: "30",
@@ -371,7 +367,6 @@ describe("reports.generate", () => {
     await insertApprovedBilling({
       id: "billing-dave-1",
       projectId: "project-a",
-      clientId: "client-a",
       nearAccount: "dave.near",
       tokenId: "near",
       amount: "5",
@@ -380,7 +375,6 @@ describe("reports.generate", () => {
     await insertApprovedBilling({
       id: "billing-dave-2",
       projectId: "project-a",
-      clientId: "client-a",
       nearAccount: "dave.near",
       tokenId: "near",
       amount: "5",
