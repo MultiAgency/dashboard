@@ -5,7 +5,20 @@ import { contract } from "./contract";
 import { DatabaseLive } from "./db/layer";
 import { createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
-import { BuilderService, BuilderServiceLive } from "./services/builders";
+import { type BuilderCaller, BuilderService, BuilderServiceLive } from "./services/builders";
+
+function callerOf(context: unknown): BuilderCaller {
+  const ctx = context as {
+    userId: string;
+    near?: { primaryAccountId?: string | null } | null;
+    user?: { role?: string | null } | null;
+  };
+  return {
+    userId: ctx.userId,
+    walletAddress: ctx.near?.primaryAccountId ?? undefined,
+    userRole: ctx.user?.role ?? undefined,
+  };
+}
 
 export default createPlugin({
   variables: z.object({}),
@@ -63,23 +76,18 @@ export default createPlugin({
           return { data: result };
         }),
 
-      createBuilder: builder.createBuilder.handler(async ({ input }) => {
-        const result = await runEffect(services.builder.createBuilder(input));
-        return { data: result };
-      }),
+      createBuilder: builder.createBuilder
+        .use(auth.requireAuth)
+        .handler(async ({ input, context }) => {
+          const result = await runEffect(services.builder.createBuilder(input, callerOf(context)));
+          return { data: result };
+        }),
 
       updateBuilderProfile: builder.updateBuilderProfile
         .use(auth.requireAuth)
         .handler(async ({ input, context, errors }) => {
-          const ctx = context as any;
           const result = await runEffect(
-            services.builder.updateBuilderProfile(
-              input.nearAccount,
-              input,
-              ctx.userId,
-              ctx.near?.primaryAccountId ?? undefined,
-              ctx.user?.role,
-            ),
+            services.builder.updateBuilderProfile(input.nearAccount, input, callerOf(context)),
           );
           if (!result) {
             throw errors.NOT_FOUND({
