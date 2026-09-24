@@ -60,7 +60,7 @@ export function agencyScope(
   overrides: Partial<Omit<AgencyScope, "agencyDao">> = {},
 ): TreasuryScope {
   return {
-    organizationId: null,
+    organizationId: agencyDao,
     agencyDao,
     network: agencyDao.endsWith(".testnet") ? "testnet" : "mainnet",
     role: "admin",

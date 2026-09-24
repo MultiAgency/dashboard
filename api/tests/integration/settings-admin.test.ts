@@ -122,23 +122,14 @@ describe("settings-admin (integration)", () => {
     });
   });
 
-  test("a row still keyed by the Agency DAO is read until it is re-keyed", async () => {
+  test("a row still keyed by the Agency DAO is not read", async () => {
     await upsertSettings(
       db as never,
       DEFAULT_DAO,
-      { ...FIELDS_EMPTY, nearnAccountId: "legacy" },
+      { ...FIELDS_EMPTY, nearnAccountId: "unmigrated" },
       "admin.near",
     );
 
-    expect((await getSettingsRow(db as never, DEFAULT_ORG))?.nearnAccountId).toBe("legacy");
-
-    await upsertSettings(
-      db as never,
-      DEFAULT_ORG.organizationId,
-      { ...FIELDS_EMPTY, nearnAccountId: "current" },
-      "admin.near",
-    );
-
-    expect((await getSettingsRow(db as never, DEFAULT_ORG))?.nearnAccountId).toBe("current");
+    expect(await getSettingsRow(db as never, DEFAULT_ORG)).toBeNull();
   });
 });
