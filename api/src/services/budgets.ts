@@ -10,6 +10,7 @@ import {
   engagements,
   organizationDaos,
 } from "../db/schema";
+import { projectSpend } from "./ledger";
 import type { TreasuryScope } from "./organization-access";
 import { lockEngagement, prepaidBalances } from "./prepaid-balance";
 import type { ProjectDirectory } from "./project-directory";
@@ -35,7 +36,8 @@ export type EngagementBudgetReason =
   | "NO_AGENCY_DAO"
   | "NOT_SHARED"
   | "PREPAID_BALANCE_EXCEEDED"
-  | "ATTRIBUTED_BUDGET_EXCEEDED";
+  | "ATTRIBUTED_BUDGET_EXCEEDED"
+  | "REMAINING_EXCEEDED";
 
 export class EngagementBudgetError extends Error {
   constructor(
@@ -305,6 +307,19 @@ async function checkEngagementEntries(
     }
     if (sums.total + delta < 0n) {
       throw new BudgetInsufficientError(projectId, tokenId, sums.total, delta);
+    }
+    if (delta < 0n) {
+      const spent = await projectSpend(tx, {
+        projectId,
+        tokenId,
+        payingDaoAccountId: dao.daoAccountId,
+      });
+      if (sums.total - spent + delta < 0n) {
+        throw new EngagementBudgetError(
+          "REMAINING_EXCEEDED",
+          `Only ${(sums.total - spent).toString()} of this Project's ${tokenId} budget is not yet Allocated, Committed or Paid.`,
+        );
+      }
     }
   }
   const balances = await prepaidBalances(tx, engagementId);

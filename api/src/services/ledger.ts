@@ -1,8 +1,8 @@
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { billings, budgets, type Listing } from "../db/schema";
-import type { ListingsService } from "./listings";
+import { getListingsForProjects, type ListingsService } from "./listings";
 import type { TreasuryScope } from "./organization-access";
 import { type DaoProposalStatus, enrichWithChainStatus } from "./sputnik";
 import { displayToBaseUnits, getTokenMetadataBySymbol } from "./tokens";
@@ -158,6 +158,41 @@ async function loadRows(
     billingRows.map((b) => enrichWithChainStatus(db, b, scope.agencyDao)),
   );
   return { budgetRows, bills, nearnListings, internalListings };
+}
+
+export async function projectSpend(
+  db: Database,
+  input: { projectId: string; tokenId: string; payingDaoAccountId: string },
+): Promise<bigint> {
+  const network = input.payingDaoAccountId.endsWith(".testnet") ? "testnet" : "mainnet";
+  const billingRows = await db
+    .select({ amount: billings.amount, proposalId: billings.proposalId })
+    .from(billings)
+    .where(and(eq(billings.projectId, input.projectId), eq(billings.tokenId, input.tokenId)));
+  const bills: BillingForRollup[] = [];
+  for (const row of billingRows) {
+    bills.push(await enrichWithChainStatus(db, row, input.payingDaoAccountId));
+  }
+  const skipRefresh = { skipRefresh: true };
+  const nearn = await getListingsForProjects([input.projectId], "nearn", network, db, skipRefresh);
+  const internal = await getListingsForProjects(
+    [input.projectId],
+    "internal",
+    network,
+    db,
+    skipRefresh,
+  );
+  const rollup = rollupForToken({
+    tokenId: input.tokenId,
+    budgetAmounts: [],
+    billings: bills,
+    listing: resolveActiveListing(
+      nearn.get(input.projectId) ?? null,
+      internal.get(input.projectId) ?? null,
+      network,
+    ),
+  });
+  return rollup.allocated + rollup.committed + rollup.paid;
 }
 
 export function createProjectLedgers(db: Database, listings: ListingsService) {

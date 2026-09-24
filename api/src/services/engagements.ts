@@ -1,7 +1,13 @@
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { budgets, type EngagementRow, engagementProjects, engagements } from "../db/schema";
+import {
+  allocationPlanLines,
+  budgets,
+  type EngagementRow,
+  engagementProjects,
+  engagements,
+} from "../db/schema";
 import {
   type Invitation,
   type Organization,
@@ -75,8 +81,29 @@ export async function unshareBlockers(
   for (const row of rows) {
     byToken.set(row.tokenId, (byToken.get(row.tokenId) ?? 0n) + BigInt(row.amount));
   }
-  return [...byToken.values()].some((total) => total !== 0n) ? ["ATTRIBUTED_BUDGET"] : [];
+  const [planLine] = await db
+    .select({ id: allocationPlanLines.id })
+    .from(allocationPlanLines)
+    .where(
+      and(
+        eq(allocationPlanLines.engagementId, engagementId),
+        eq(allocationPlanLines.projectId, projectId),
+        isNull(allocationPlanLines.supersededBy),
+      ),
+    )
+    .limit(1);
+  return [
+    ...([...byToken.values()].some((total) => total !== 0n) ? ["ATTRIBUTED_BUDGET"] : []),
+    ...(planLine ? ["PLAN_LINES"] : []),
+  ];
 }
+
+const UNSHARE_BLOCKED: Record<string, string> = {
+  ATTRIBUTED_BUDGET:
+    "This Project has budget attributed to this Engagement. Pull it back through a Change order before unsharing.",
+  PLAN_LINES:
+    "This Project is in the Allocation plan. Remove it from the plan through a Change order before unsharing.",
+};
 
 export function createEngagementsService(deps: {
   db: Database;
@@ -494,10 +521,7 @@ export function createEngagementsService(deps: {
       if (!link) throw new ORPCError("NOT_FOUND", { message: "Project is not shared" });
       const blockers = await unshareBlockers(db, row.id, input.projectId);
       if (blockers.length > 0) {
-        throw badRequest(
-          blockers[0]!,
-          "This Project has budget attributed to this Engagement. Pull it back through a Change order before unsharing.",
-        );
+        throw badRequest(blockers[0]!, UNSHARE_BLOCKED[blockers[0]!]!);
       }
       await db
         .delete(engagementProjects)

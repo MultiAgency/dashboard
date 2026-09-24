@@ -54,6 +54,30 @@ export const NOTIFICATION_KINDS = {
     title: `${p.agencyName} removed a Prepayment`,
     body: `${p.agencyName} removed the Prepayment of ${p.amount} for ${p.period}.`,
   }),
+  change_order_proposed: (p) => ({
+    title: `${p.proposerName} proposed a Change order`,
+    body: `${p.proposerName} proposed a Change order on the Engagement between ${p.agencyName} and ${p.clientName}. Approve or reject it on MultiAgency.`,
+  }),
+  change_order_withdrawn: (p) => ({
+    title: `${p.proposerName} withdrew a Change order`,
+    body: `${p.proposerName} withdrew a Change order on the Engagement between ${p.agencyName} and ${p.clientName}. Nothing changes.`,
+  }),
+  change_order_approved: (p) => ({
+    title: `${p.deciderName} approved your Change order`,
+    body: `${p.deciderName} approved your Change order on the Engagement between ${p.agencyName} and ${p.clientName}.`,
+  }),
+  change_order_rejected: (p) => ({
+    title: `${p.deciderName} rejected your Change order`,
+    body: `${p.deciderName} rejected your Change order on the Engagement between ${p.agencyName} and ${p.clientName}. Nothing changes.`,
+  }),
+  change_order_failed: (p) => ({
+    title: "A Change order could not be applied",
+    body: `A Change order on the Engagement between ${p.agencyName} and ${p.clientName} could not be applied because the limits no longer allowed it. Nothing changed; propose a new one if still needed.`,
+  }),
+  plan_shortfall: (p) => ({
+    title: `The Allocation plan for ${p.period} was not fully applied`,
+    body: `The Prepaid balance of ${p.clientName} with ${p.agencyName} did not cover ${p.count} plan line(s) for ${p.period} (${p.amounts}). They were skipped.`,
+  }),
 } satisfies Record<string, Template>;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

@@ -4,6 +4,7 @@ import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createAgencyService } from "../../src/services/agency";
 import { createBillingsService } from "../../src/services/billings";
 import { createClientPortalService } from "../../src/services/client-portal";
+import { createChangeOrdersService } from "../../src/services/change-orders";
 import { createEngagementsService } from "../../src/services/engagements";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
@@ -77,7 +78,11 @@ export const STUDIO_SEED: Seed = {
   ],
 };
 
-export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
+export async function engagementWorld(
+  db: Database,
+  seed: Seed = STUDIO_SEED,
+  options: { now?: () => Date } = {},
+) {
   await seedAgencyDaos(db, seed.organizations);
   const organizations = inMemoryOrganizations({
     ...seed,
@@ -96,6 +101,12 @@ export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
     sendEmail,
     appOrigin: ORIGIN,
   });
+  const changeOrders = createChangeOrdersService({
+    db,
+    organizations: organizations.directory,
+    notifications,
+    now: options.now,
+  });
   const ended: string[] = [];
   const engagements = createEngagementsService({
     db,
@@ -106,6 +117,7 @@ export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
     appOrigin: ORIGIN,
     onEnded: async (engagement) => {
       ended.push(engagement.id);
+      await changeOrders.withdrawPending(engagement);
     },
   });
 
@@ -113,6 +125,8 @@ export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
     db,
     organizations: organizations.directory,
     notifications,
+    onPlanApplied: changeOrders.notifyPlanApplied,
+    now: options.now,
   });
 
   const context = (userId: string, organizationId: string, near?: string) => ({
@@ -141,6 +155,7 @@ export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
     notifications,
     engagements,
     prepayments,
+    changeOrders,
     emails,
     ended,
     context,

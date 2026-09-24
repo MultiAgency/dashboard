@@ -22,6 +22,7 @@ import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
 import { createBillingsService } from "./services/billings";
 import { createBudgetsService } from "./services/budgets";
+import { createChangeOrdersService } from "./services/change-orders";
 import { createClientPortalService } from "./services/client-portal";
 import { createContactFormService } from "./services/contact-form";
 import { createContributorsService } from "./services/contributors";
@@ -116,6 +117,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const budgets = createBudgetsService(db, directory);
       const billings = createBillingsService(db, directory);
       const reports = createReportsService(db, directory, plugins, organizationDirectory);
+      const changeOrders = createChangeOrdersService({
+        db,
+        organizations: organizationDirectory,
+        notifications,
+      });
       const engagements = createEngagementsService({
         db,
         organizations: organizationDirectory,
@@ -123,11 +129,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
         notifications,
         sendEmail,
         appOrigin,
+        onEnded: changeOrders.withdrawPending,
       });
       const prepayments = createPrepaymentsService({
         db,
         organizations: organizationDirectory,
         notifications,
+        onPlanApplied: changeOrders.notifyPlanApplied,
       });
       const clientPortal = createClientPortalService(
         access,
@@ -161,6 +169,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         contributors,
         engagements,
         prepayments,
+        changeOrders,
         notifications,
         organizationDirectory,
         authPool,
@@ -195,6 +204,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       contributors,
       engagements,
       prepayments,
+      changeOrders,
       notifications,
       organizationDirectory,
       assignments,
@@ -410,6 +420,36 @@ export default createPlugin.withPlugins<PluginsClient>()({
         remove: builder.prepayments.remove
           .use(manager)
           .handler(async ({ context, input }) => prepayments.remove(context.scope, input)),
+      },
+
+      changeOrders: {
+        list: builder.changeOrders.list
+          .use(member)
+          .handler(async ({ context, input }) => changeOrders.list(context.scope, input)),
+
+        awaiting: builder.changeOrders.awaiting
+          .use(member)
+          .handler(async ({ context }) => changeOrders.awaiting(context.scope)),
+
+        plan: builder.changeOrders.plan
+          .use(member)
+          .handler(async ({ context, input }) => changeOrders.plan(context.scope, input)),
+
+        propose: builder.changeOrders.propose
+          .use(manager)
+          .handler(async ({ context, input }) => changeOrders.propose(context.scope, input)),
+
+        withdraw: builder.changeOrders.withdraw
+          .use(manager)
+          .handler(async ({ context, input }) => changeOrders.withdraw(context.scope, input)),
+
+        approve: builder.changeOrders.approve
+          .use(manager)
+          .handler(async ({ context, input }) => changeOrders.approve(context.scope, input)),
+
+        reject: builder.changeOrders.reject
+          .use(manager)
+          .handler(async ({ context, input }) => changeOrders.reject(context.scope, input)),
       },
 
       clientPortal: {
