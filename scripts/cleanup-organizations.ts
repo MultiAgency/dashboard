@@ -41,26 +41,17 @@ function authApi(baseUrl: string, cookie: string): BetterAuthOrganizationsClient
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const apiPool = new pg.Pool({ connectionString: requireEnv("API_DATABASE_URL") });
-  const projectsPool = new pg.Pool({ connectionString: requireEnv("PROJECTS_DATABASE_URL") });
   const api = authApi(requireEnv("AUTH_BASE_URL"), requireEnv("AUTH_SESSION_COOKIE"));
 
   try {
     const cleanup = createOrganizationCleanup({
       db: drizzle(apiPool, { schema: apiSchema }) as unknown as Database,
       organizations: betterAuthOrganizations(() => api),
-      existingProjects: async (ids) => {
-        const { rows } = await projectsPool.query<{ id: string }>(
-          "SELECT id FROM projects WHERE id = ANY($1)",
-          [ids],
-        );
-        return new Set(rows.map((r) => r.id));
-      },
     });
     const report = await cleanup.run({ dryRun });
     console.log(JSON.stringify({ dryRun, ...report }, null, 2));
   } finally {
     await apiPool.end();
-    await projectsPool.end();
   }
 }
 

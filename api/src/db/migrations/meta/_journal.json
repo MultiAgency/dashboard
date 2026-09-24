@@ -85,6 +85,13 @@
       "when": 1784928000000,
       "tag": "0012_ideas_agent_links_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1785014400000,
+      "tag": "0013_drop_clients",
+      "breakpoints": true
     }
   ]
 }

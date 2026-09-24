@@ -102,28 +102,6 @@ export const listings = pgTable(
 export type Listing = typeof listings.$inferSelect;
 export type NewListing = typeof listings.$inferInsert;
 
-export const clients = pgTable(
-  "clients",
-  {
-    id: text("id").primaryKey(),
-    orgId: text("org_id").notNull(),
-    agencyDaoAccountId: text("agency_dao_account_id").notNull(),
-    name: text("name").notNull(),
-    nearAccountId: text("near_account_id"),
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
-    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
-  },
-  (t) => ({
-    orgIdx: index("clients_org_id").on(t.orgId),
-    agencyNearIdx: uniqueIndex("clients_agency_near_unique")
-      .on(t.agencyDaoAccountId, t.nearAccountId)
-      .where(sql`${t.nearAccountId} IS NOT NULL`),
-  }),
-);
-
-export type Client = typeof clients.$inferSelect;
-export type NewClient = typeof clients.$inferInsert;
-
 export const organizationDaos = pgTable(
   "organization_daos",
   {
@@ -136,20 +114,6 @@ export const organizationDaos = pgTable(
   }),
 );
 
-export const clientProjects = pgTable(
-  "client_projects",
-  {
-    clientId: text("client_id")
-      .notNull()
-      .references(() => clients.id, { onDelete: "cascade" }),
-    projectId: text("project_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.clientId, t.projectId] }),
-    projectIdx: index("client_projects_project_id").on(t.projectId),
-  }),
-);
 
 export const ENGAGEMENT_STATUSES = ["proposed", "active", "declined", "ended"] as const;
 export const ENGAGEMENT_KINDS = ["client", "subcontract"] as const;
@@ -249,7 +213,6 @@ export const budgets = pgTable(
     note: text("note"),
     actorAccountId: text("actor_account_id").notNull(),
     relatedBudgetId: text("related_budget_id"),
-    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     engagementId: text("engagement_id").references(() => engagements.id, {
       onDelete: "set null",
     }),
@@ -259,7 +222,6 @@ export const budgets = pgTable(
   (t) => ({
     cursor: index("budgets_cursor").on(t.createdAt, t.id),
     projectIdx: index("budgets_project_id").on(t.projectId),
-    clientIdx: index("budgets_client_id").on(t.clientId),
     engagementIdx: index("budgets_engagement_id").on(t.engagementId),
     fundingDaoIdx: index("budgets_funding_dao").on(t.fundingDaoAccountId),
   }),

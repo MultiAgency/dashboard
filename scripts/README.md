@@ -4,18 +4,18 @@
 
 `bun run db:cleanup:organizations` prepares production data for "Clients as Organizations" (#40, #49). It is idempotent: a second run changes nothing.
 
-It does three things:
+It does two things:
 
 1. Deletes Organizations that duplicate another Organization's Agency DAO (Better-Auth metadata `daoAccountId`), through the auth API. For each DAO it keeps the Organization already mapped in `organization_daos`, otherwise the oldest one. Personal Organizations are never touched.
 2. Maps each remaining Agency DAO to its Organization in `api_db.organization_daos`.
-3. Deletes `client_projects` links to Projects that no longer exist in `projects_db`.
+
+Up to #47 it also deleted legacy `client_projects` links to Projects that no longer exist. That table is dropped in #48; run the cleanup from a #47 build if that step has not run yet (see [Deploy order](#deploy-order-49--48)).
 
 ### Environment
 
 | Variable | Meaning |
 | --- | --- |
 | `API_DATABASE_URL` | `api_db` |
-| `PROJECTS_DATABASE_URL` | `projects_db`, read only |
 | `AUTH_BASE_URL` | Host that serves `/api/auth/*`, for example `https://multiagency.ai` |
 | `AUTH_SESSION_COOKIE` | Cookie header of a session that owns every duplicate Organization. The auth API only lists the caller's own Organizations. |
 
@@ -26,6 +26,8 @@ It does three things:
 3. `bun run db:cleanup:organizations`.
 
 Until step 3 runs, Organizations keep resolving their Agency DAO from metadata, so nothing changes for users. Later migration steps from #40 (Project ownership, Engagements, dropping `clients`) run after this one.
+
+Organization metadata is read only for `daoAccountId` and `isPersonal`. The old `type` flag is never read or written (#48).
 
 ## Project ownership
 
@@ -50,9 +52,11 @@ Projects of DAOs without a mapping are left alone and reported by neither step.
 ### Run order
 
 1. Run the Organization cleanup above, so each Agency DAO is mapped to one Organization. From #42 on, the API reads an Organization's Agency DAO only from `organization_daos` (connected in Settings → Treasury), not from Organization metadata.
-2. Deploy the API and the projects plugin from #42. Until step 4 runs, the API still lists Projects whose `organization_id` is the Organization's Agency DAO, but members only see private Projects of that kind that they created, and the client portal only sees public ones.
+2. Deploy the API and the projects plugin from #42. Until step 4 runs, the API from #42 to #47 still lists Projects whose `organization_id` is the Organization's Agency DAO (and reads settings still keyed by it), but members only see private Projects of that kind that they created, and the client portal only sees public ones.
 3. `bun run db:migrate:project-ownership --dry-run` and check the report.
 4. `bun run db:migrate:project-ownership` right after the deploy.
+
+From #48 the API reads Projects and settings by Organization id only. A Project or settings row still keyed by the Agency DAO is invisible, so **#48 must be deployed only after this script has run**. The script stays: a rerun is harmless and reports nothing.
 
 ### Funding Agency DAO of Budget entries (#44)
 
@@ -87,13 +91,15 @@ It reads the `user`, `organization` and `member` tables and detects whether `mem
 
 ## Engagements
 
-`bun run db:migrate:engagements` turns the legacy `clients` rows into Engagements (#43). It is idempotent: a second run changes nothing, and `--dry-run` reports what it would do.
+`bun run db:migrate:engagements` turned the legacy `clients` rows into Engagements (#43). It is idempotent: a second run changes nothing, and `--dry-run` reports what it would do.
+
+**Retired in #48.** Its source tables (`clients`, `client_projects`, `budgets.client_id`) are dropped by the #48 migration, so the script and its service are removed. Run it from a #43 to #47 build, before deploying #48.
 
 In `api_db` it:
 
 1. Creates an active Engagement for each `clients` row between the Agency's Organization (found through `organization_daos` by the row's Agency DAO) and the Client's existing Organization (`clients.org_id`). The Engagement remembers the row in `legacy_client_id`, so a rerun finds it again. Rows whose Agency DAO has no Organization are reported as `UNMAPPED_AGENCY_DAO` and left alone.
 2. Copies the row's `client_projects` into `engagement_projects`.
-3. Points each Budget entry attributed to the row (`budgets.client_id`) at the Engagement (`budgets.engagement_id`). `client_id` stays until the `clients` table is dropped (#48).
+3. Points each Budget entry attributed to the row (`budgets.client_id`) at the Engagement (`budgets.engagement_id`).
 4. Fills `project_contributors.organization_id` from `projects_db`, so Contributors see their assigned Projects under "My work".
 
 In `auth_db` it hands each Client Organization over to the Client:
@@ -120,6 +126,32 @@ A row without a wallet (`no-wallet`) or whose wallet has never signed in (`no-wa
 5. Ask NEAR Foundation's owner (`work.efiz.near`) to add an email on their Profile, so Engagement notifications reach them by email and not only in the app.
 
 The `clients` and `client_projects` tables stay, unused, until #48 drops them.
+
+## Dropping the legacy Client model (#48)
+
+The API migration `0013_drop_clients` drops `clients`, `client_projects` and `budgets.client_id`. It runs inside the API's migrator at deploy and first checks that the Engagements migration is complete. It refuses, and leaves every table in place, when any of these is true:
+
+- a `clients` row has no Engagement with its id in `legacy_client_id`,
+- a `client_projects` row is not in that Engagement's `engagement_projects`,
+- a Budget entry has a `client_id` but no `engagement_id`.
+
+The error reads "Legacy clients are not migrated to Engagements yet". The migration runs in a transaction, so a refusal changes nothing. Fix it with the #47 build: run `db:migrate:engagements` again, and map or delete rows it reports as `UNMAPPED_AGENCY_DAO`. Then deploy #48 again.
+
+**#48 must be deployed only after `db:migrate:engagements` and `db:migrate:project-ownership` have run.** Deploy the stack up to #47 first, run the scripts, then deploy #48 on its own.
+
+## Deploy order (#49 → #48)
+
+Each script supports `--dry-run`; run it and check the report before the real run.
+
+1. Deploy the API from #49. The migrator creates `organization_daos` (`0005`).
+2. `bun run db:cleanup:organizations` (Organization cleanup above).
+3. Deploy the UI, the API and the projects plugin from #47 (which includes #41 to #46), with `AUTH_DATABASE_URL`, `RESEND_API_KEY` and `NOTIFY_FROM_EMAIL` set for the API. The migrator adds `0006` to `0012` (settings by Organization, Engagements, Prepayments, Change orders, subcontracting, dropping the billings client column, ideas, agent links and saved reports).
+4. `bun run db:migrate:project-ownership` (Project ownership above). It moves Projects and settings to the Organization and fills the funding and paying Agency DAOs of Budget entries and Billings.
+5. `bun run db:migrate:engagements` (Engagements above), from #43 to #47. It turns `clients` rows into Engagements and hands Client Organizations over.
+6. Ask NEAR Foundation's owner to add an email on their Profile.
+7. Deploy the UI and the API from #48. The migrator runs `0013_drop_clients`, which refuses if step 5 is incomplete.
+
+`bun run db:assign-owner` can run at any point from #41 on, whenever an Organization has no owner left.
 
 ## The API and the auth database
 

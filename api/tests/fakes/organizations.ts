@@ -35,7 +35,7 @@ function memberIdOf(member: FakeMember): string {
   return `${member.organizationId}:${member.userId}`;
 }
 
-export type FakeUser = { id: string; email: string; nearAccountId?: string };
+export type FakeUser = { id: string; email: string };
 
 export function inMemoryOrganizations(seed: {
   organizations: FakeOrganization[];
@@ -101,12 +101,6 @@ export function inMemoryOrganizations(seed: {
       const member = members.find((m) => memberIdOf(m) === memberId);
       if (!member) throw new Error("member not found");
       member.role = "owner";
-    },
-    findUserIdByNearAccount: async (accountId) =>
-      users.find((u) => u.nearAccountId === accountId)?.id ?? null,
-    removeMember: async ({ memberId }) => {
-      const index = members.findIndex((m) => memberIdOf(m) === memberId);
-      if (index >= 0) members.splice(index, 1);
     },
   };
 
