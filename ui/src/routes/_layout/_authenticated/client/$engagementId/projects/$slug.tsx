@@ -1,38 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, getRouteApi, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { Badge } from "@/components";
 import { BillingsAdminSection } from "@/components/admin/billings-section";
 import { ProjectBudgetPanel } from "@/components/admin/project-budget-panel";
 import { useApiClient } from "@/lib/api";
 import { clientPortalProjectDetailQueryOptions } from "@/lib/queries";
 
-const clientPortalRoute = getRouteApi("/_layout/_authenticated/client");
-
-export const Route = createFileRoute("/_layout/_authenticated/client/projects/$slug")({
-  loader: async ({ context, params, location }) => {
-    const agencyDaoAccountId = new URLSearchParams(location.search).get("agency");
-    if (!agencyDaoAccountId) return null;
-    const data = await context.queryClient
-      .ensureQueryData(
-        clientPortalProjectDetailQueryOptions(context.apiClient, agencyDaoAccountId, params.slug),
-      )
-      .catch(() => null);
-    if (!data) return null;
-    return data;
+export const Route = createFileRoute("/_layout/_authenticated/client/$engagementId/projects/$slug")(
+  {
+    component: SharedProjectPage,
   },
-  component: ClientProjectDetailPage,
-});
+);
 
-function ClientProjectDetailPage() {
+function SharedProjectPage() {
   const { slug } = Route.useParams();
-  const { client, agencyDaoAccountId } = clientPortalRoute.useRouteContext();
+  const { engagement } = Route.useRouteContext();
   const apiClient = useApiClient();
-  const search = { agency: agencyDaoAccountId };
-
   const projectQuery = useQuery(
-    clientPortalProjectDetailQueryOptions(apiClient, agencyDaoAccountId, slug),
+    clientPortalProjectDetailQueryOptions(apiClient, engagement.id, slug),
   );
-  const projectId = projectQuery.data?.project.id;
 
   if (projectQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading project…</p>;
@@ -47,11 +33,11 @@ function ClientProjectDetailPage() {
     <div className="space-y-6">
       <div>
         <Link
-          to="/client/projects"
-          search={search}
+          to="/client/$engagementId/projects"
+          params={{ engagementId: engagement.id }}
           className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
         >
-          ← your projects
+          ← shared projects
         </Link>
       </div>
 
@@ -85,24 +71,9 @@ function ClientProjectDetailPage() {
         </section>
       )}
 
-      {projectId && (
-        <ProjectBudgetPanel
-          projectId={projectId}
-          readOnly
-          clientPortal
-          agencyDaoAccountId={agencyDaoAccountId}
-        />
-      )}
+      <ProjectBudgetPanel projectId={project.id} readOnly engagementId={engagement.id} />
 
-      {projectId && (
-        <BillingsAdminSection
-          readOnly
-          clientPortal
-          clientId={client.id}
-          agencyDaoAccountId={agencyDaoAccountId}
-          fixedProjectId={projectId}
-        />
-      )}
+      <BillingsAdminSection readOnly engagementId={engagement.id} fixedProjectId={project.id} />
     </div>
   );
 }

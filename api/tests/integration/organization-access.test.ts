@@ -230,21 +230,33 @@ describe("organization access", () => {
     }
   });
 
-  test("a proposed Engagement gives no Client sections and no shared reads", async () => {
-    await database.db.insert(engagements).values({
-      id: "pending",
-      agencyOrganizationId: "other",
-      clientOrganizationId: "multiagency",
-      status: "proposed",
-      proposedBy: "x",
-    });
+  test("a proposed Engagement shows Client sections to answer it but shares nothing", async () => {
+    await database.db.insert(engagements).values([
+      {
+        id: "pending",
+        agencyOrganizationId: "other",
+        clientOrganizationId: "multiagency",
+        status: "proposed",
+        proposedBy: "x",
+      },
+      {
+        id: "declined",
+        agencyOrganizationId: "other",
+        clientOrganizationId: "no-dao",
+        status: "declined",
+        proposedBy: "x",
+      },
+    ]);
     await database.db
       .insert(engagementProjects)
       .values({ engagementId: "pending", projectId: "foreign" });
     const access = accessWith();
     const context = signedIn("u1", "multiagency");
 
-    expect((await access.resolve(context)).capabilities.hasClientSections).toBe(false);
+    expect((await access.resolve(context)).capabilities.hasClientSections).toBe(true);
+    expect((await access.resolve(signedIn("u1", "no-dao"))).capabilities.hasClientSections).toBe(
+      false,
+    );
     await expect(access.sharedWith(context, "pending")).rejects.toMatchObject({
       code: "NOT_FOUND",
     });

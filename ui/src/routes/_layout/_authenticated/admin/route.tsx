@@ -1,30 +1,24 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { sessionQueryOptions } from "@/lib/auth";
+import { isManager, isWorkspaceRole } from "@/lib/navigation";
+import { meRolesQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin")({
   beforeLoad: async ({ context }) => {
-    const session = await context.queryClient.ensureQueryData(
-      sessionQueryOptions(context.authClient, context.session),
-    );
+    const [session, roles] = await Promise.all([
+      context.queryClient.ensureQueryData(sessionQueryOptions(context.authClient, context.session)),
+      context.queryClient.ensureQueryData(meRolesQueryOptions(context.apiClient)),
+    ]);
 
     const isSuperAdmin = session?.user?.role === "admin";
+    const orgRole = isWorkspaceRole(roles.orgRole) ? roles.orgRole : null;
 
-    let orgRole: string | null = null;
-    if (session?.session?.activeOrganizationId) {
-      const orgList = await context.authClient.organization.list();
-      const activeOrg = (orgList.data ?? []).find(
-        (o) => o.id === session.session!.activeOrganizationId,
-      );
-      orgRole = (activeOrg as { role?: string } | undefined)?.role ?? null;
-    }
-    const isOrgAdmin = orgRole === "admin" || orgRole === "owner";
-
-    if (!isSuperAdmin && !isOrgAdmin) {
-      throw redirect({ to: "/", hash: "unauthorized" });
+    if (!isSuperAdmin && !orgRole) {
+      throw redirect({ to: "/dashboard" });
     }
 
-    return { session, isSuperAdmin, isOrgAdmin };
+    return { session, isSuperAdmin, isOrgAdmin: isManager(orgRole) };
   },
   component: AdminLayout,
 });
@@ -33,7 +27,7 @@ function AdminLayout() {
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-        agency dashboard
+        organization dashboard
       </div>
       <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
         <AdminSidebar />

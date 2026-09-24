@@ -4,7 +4,7 @@ import type { ApiClient } from "./api";
 import { type AuthClient, sessionQueryKey, sessionQueryOptions } from "./auth";
 import { pendingInvitations } from "./invitations";
 import { type OrganizationHome, organizationHome, organizationToActivate } from "./landing";
-import { meRolesQueryKey, meRolesQueryOptions } from "./queries";
+import { meRolesQueryKey, meRolesQueryOptions, myOrganizationsQueryKey } from "./queries";
 
 export const WELCOME_PATH = "/welcome";
 
@@ -56,6 +56,7 @@ export async function refreshAccountQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
     queryClient.invalidateQueries({ queryKey: meRolesQueryKey }),
     queryClient.invalidateQueries({ queryKey: ["organizations"] }),
+    queryClient.invalidateQueries({ queryKey: myOrganizationsQueryKey }),
     queryClient.invalidateQueries({ queryKey: ["members"] }),
     queryClient.invalidateQueries({ queryKey: userInvitationsQueryKey }),
   ]);

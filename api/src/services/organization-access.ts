@@ -134,7 +134,7 @@ export function createOrganizationAccess(deps: {
         canManageMembers: hasRole(ROLE_MATRIX.manage, role),
         canUseMoney: agencyDao !== null && hasRole(ROLE_MATRIX.work, role),
         hasAgencySections: hasRole(ROLE_MATRIX.work, role),
-        hasClientSections: related.asClient.some((e) => SHARED_STATUSES.includes(e.status)),
+        hasClientSections: related.asClient.some((e) => e.status !== "declined"),
       },
       pluginContext: context,
     };
