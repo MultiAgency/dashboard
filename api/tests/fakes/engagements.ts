@@ -1,4 +1,4 @@
-import { expect } from "vitest";
+import { beforeEach, expect } from "vitest";
 import type { Database } from "../../src/db";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createAgencyService } from "../../src/services/agency";
@@ -14,6 +14,7 @@ import { createOrganizationAccess, ROLE_MATRIX } from "../../src/services/organi
 import { createPrepaymentsService } from "../../src/services/prepayments";
 import type { PluginProject } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
+import { migratedDatabase } from "../integration/_pg";
 import {
   type FakeMember,
   type FakeOrganization,
@@ -168,6 +169,44 @@ export async function engagementWorld(
       access.agencyScope(context(userId, organizationId), ROLE_MATRIX.work),
     activeEngagement,
   };
+}
+
+export type EngagementWorld = Awaited<ReturnType<typeof engagementWorld>>;
+
+export const STUDIO_DAO = "studio-work.sputnik-dao.near";
+export const CREW_DAO = "crew-work.sputnik-dao.near";
+
+const CLIENT_WORK_MEMBERS: FakeMember[] = [
+  { userId: "studio-admin", organizationId: "studio", role: "admin" },
+  { userId: "studio-member", organizationId: "studio", role: "member" },
+  { userId: "acme-owner", organizationId: "acme", role: "owner" },
+  { userId: "acme-member", organizationId: "acme", role: "member" },
+  { userId: "globex-owner", organizationId: "globex", role: "owner" },
+  { userId: "crew-owner", organizationId: "crew", role: "owner" },
+  { userId: "rival-admin", organizationId: "rival", role: "owner" },
+];
+
+export const CLIENT_WORK_SEED: Seed = {
+  organizations: [
+    { id: "studio", name: "Studio", slug: "studio", daoAccountId: STUDIO_DAO },
+    { id: "acme", name: "Acme Corp", slug: "acme" },
+    { id: "globex", name: "Globex", slug: "globex" },
+    { id: "crew", name: "Crew", slug: "crew", daoAccountId: CREW_DAO },
+    { id: "rival", name: "Rival", slug: "rival" },
+  ],
+  members: CLIENT_WORK_MEMBERS,
+  users: CLIENT_WORK_MEMBERS.map((m) => ({ id: m.userId, email: `${m.userId}@example.com` })),
+  projects: [{ ...project("site", "studio"), slug: "site", title: "Website" }],
+};
+
+export function clientWorkWorld() {
+  const database = migratedDatabase({ perTest: true });
+  const state = {} as { db: Database; world: EngagementWorld };
+  beforeEach(async () => {
+    state.db = database.db;
+    state.world = await engagementWorld(database.db, CLIENT_WORK_SEED);
+  });
+  return state;
 }
 
 export function clientPortalOf(db: Database, world: Awaited<ReturnType<typeof engagementWorld>>) {
