@@ -55,28 +55,50 @@ function usePrepaymentMutation<TInput>(
 }
 
 function PrepaymentForm({
-  idPrefix,
+  engagementId,
   tokens,
-  initial,
-  pending,
-  submitLabel,
-  onSubmit,
+  prepayment,
+  onSaved,
 }: {
-  idPrefix: string;
+  engagementId: string;
   tokens: KnownToken[];
-  initial: { tokenId: string; amount: string; period: string; transferReference: string };
-  pending: boolean;
-  submitLabel: string;
-  onSubmit: (fields: PrepaymentFields) => void;
+  prepayment?: PrepaymentView;
+  onSaved: () => void;
 }) {
-  const known = tokens.some((t) => t.tokenId === initial.tokenId);
-  const [tokenSelection, setTokenSelection] = useState(
-    known || tokens.length === 0 ? initial.tokenId : CUSTOM_TOKEN,
+  const apiClient = useApiClient();
+  const save = usePrepaymentMutation(
+    (fields: PrepaymentFields) =>
+      prepayment
+        ? apiClient.prepayments.correct({
+            id: prepayment.id,
+            ...fields,
+            transferReference: fields.transferReference || null,
+          })
+        : apiClient.prepayments.record({
+            engagementId,
+            ...fields,
+            transferReference: fields.transferReference || undefined,
+          }),
+    prepayment ? "Prepayment corrected" : "Prepayment recorded",
   );
-  const [customTokenId, setCustomTokenId] = useState(known ? "" : initial.tokenId);
-  const [amount, setAmount] = useState(initial.amount);
-  const [period, setPeriod] = useState(initial.period);
-  const [transferReference, setTransferReference] = useState(initial.transferReference);
+  const idPrefix = prepayment ? "correct-prepayment" : "record-prepayment";
+  const initialTokenId = prepayment?.tokenId ?? "near";
+  const initialDecimals = tokens.find((t) => t.tokenId === initialTokenId)?.decimals;
+  const known = initialDecimals !== undefined;
+  const [tokenSelection, setTokenSelection] = useState(
+    known || tokens.length === 0 ? initialTokenId : CUSTOM_TOKEN,
+  );
+  const [customTokenId, setCustomTokenId] = useState(known ? "" : initialTokenId);
+  const [amount, setAmount] = useState(
+    !prepayment
+      ? ""
+      : known
+        ? baseToDecimal(prepayment.amount, initialDecimals)
+        : prepayment.amount,
+  );
+  const [period, setPeriod] = useState(prepayment?.period ?? currentPeriod());
+  const [transferReference, setTransferReference] = useState(prepayment?.transferReference ?? "");
+  const pending = save.isPending;
 
   const tokenId = tokenSelection === CUSTOM_TOKEN ? customTokenId.trim() : tokenSelection;
   const knownToken = tokens.find((t) => t.tokenId === tokenId);
@@ -90,12 +112,10 @@ function PrepaymentForm({
       onSubmit={(e) => {
         e.preventDefault();
         if (canSubmit) {
-          onSubmit({
-            tokenId,
-            amount: amountInBase,
-            period,
-            transferReference: transferReference.trim(),
-          });
+          save.mutate(
+            { tokenId, amount: amountInBase, period, transferReference: transferReference.trim() },
+            { onSuccess: onSaved },
+          );
         }
       }}
     >
@@ -138,62 +158,10 @@ function PrepaymentForm({
       )}
       <div>
         <Button type="submit" size="sm" disabled={!canSubmit || pending}>
-          {submitLabel}
+          {prepayment ? "save correction" : "record prepayment"}
         </Button>
       </div>
     </form>
-  );
-}
-
-function CorrectPrepaymentDialog({
-  prepayment,
-  tokens,
-  onOpenChange,
-}: {
-  prepayment: PrepaymentView;
-  tokens: KnownToken[];
-  onOpenChange: (open: boolean) => void;
-}) {
-  const apiClient = useApiClient();
-  const correct = usePrepaymentMutation(
-    (fields: PrepaymentFields) =>
-      apiClient.prepayments.correct({
-        id: prepayment.id,
-        ...fields,
-        transferReference: fields.transferReference || null,
-      }),
-    "Prepayment corrected",
-  );
-  const decimals = tokens.find((t) => t.tokenId === prepayment.tokenId)?.decimals;
-
-  return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Correct Prepayment</DialogTitle>
-          <DialogDescription>
-            A correction is refused if the Prepaid balance would go below zero. Budget entries
-            already made from it stay as they are.
-          </DialogDescription>
-        </DialogHeader>
-        <PrepaymentForm
-          idPrefix="correct-prepayment"
-          tokens={tokens}
-          initial={{
-            tokenId: prepayment.tokenId,
-            amount:
-              decimals === undefined
-                ? prepayment.amount
-                : baseToDecimal(prepayment.amount, decimals),
-            period: prepayment.period,
-            transferReference: prepayment.transferReference ?? "",
-          }}
-          pending={correct.isPending}
-          submitLabel="save correction"
-          onSubmit={(fields) => correct.mutate(fields, { onSuccess: () => onOpenChange(false) })}
-        />
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -209,15 +177,6 @@ export function PrepaymentsPanel({ engagement }: { engagement: EngagementView })
   const active = engagement.status === "active";
   const writable = active && canAccessAdmin && agencyDao !== null;
 
-  const record = usePrepaymentMutation(
-    (fields: PrepaymentFields) =>
-      apiClient.prepayments.record({
-        engagementId: engagement.id,
-        ...fields,
-        transferReference: fields.transferReference || undefined,
-      }),
-    "Prepayment recorded",
-  );
   const remove = usePrepaymentMutation(
     (id: string) => apiClient.prepayments.remove({ id }),
     "Prepayment removed",
@@ -241,19 +200,9 @@ export function PrepaymentsPanel({ engagement }: { engagement: EngagementView })
             <h3 className="font-display text-lg uppercase font-extrabold">Record a Prepayment</h3>
             <PrepaymentForm
               key={formKey}
-              idPrefix="record-prepayment"
+              engagementId={engagement.id}
               tokens={tokens}
-              initial={{
-                tokenId: "near",
-                amount: "",
-                period: currentPeriod(),
-                transferReference: "",
-              }}
-              pending={record.isPending}
-              submitLabel="record prepayment"
-              onSubmit={(fields) =>
-                record.mutate(fields, { onSuccess: () => setFormKey((k) => k + 1) })
-              }
+              onSaved={() => setFormKey((k) => k + 1)}
             />
           </CardContent>
         </Card>
@@ -280,15 +229,31 @@ export function PrepaymentsPanel({ engagement }: { engagement: EngagementView })
             : undefined
         }
       />
-      {correcting && (
-        <CorrectPrepaymentDialog
-          prepayment={correcting}
-          tokens={tokens}
-          onOpenChange={(open) => {
-            if (!open) setCorrecting(null);
-          }}
-        />
-      )}
+      <Dialog
+        open={correcting !== null}
+        onOpenChange={(open) => {
+          if (!open) setCorrecting(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Correct Prepayment</DialogTitle>
+            <DialogDescription>
+              A correction is refused if the Prepaid balance would go below zero. Budget entries
+              already made from it stay as they are.
+            </DialogDescription>
+          </DialogHeader>
+          {correcting && (
+            <PrepaymentForm
+              key={correcting.id}
+              engagementId={engagement.id}
+              tokens={tokens}
+              prepayment={correcting}
+              onSaved={() => setCorrecting(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(open) => {

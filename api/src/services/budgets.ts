@@ -196,63 +196,47 @@ export interface TransferBudgetInput {
   fundingDaoAccountId?: string | null;
 }
 
-type Leg = { projectId: string; amount: bigint };
-
-function transferLegs(input: { fromProjectId: string; toProjectId: string; amount: string }) {
-  const amount = BigInt(input.amount);
-  return [
-    { projectId: input.fromProjectId, amount: -amount },
-    { projectId: input.toProjectId, amount },
-  ] as const satisfies readonly Leg[];
-}
-
-async function insertTransfer(
-  tx: Database,
-  legs: readonly [Leg, Leg],
-  shared: {
-    tokenId: string;
-    note: string | null;
-    actorAccountId: string;
-    engagementId: string | null;
-    fundingDaoAccountId: string | null;
-  },
-): Promise<{ from: Budget; to: Budget }> {
-  const ids = [crypto.randomUUID(), crypto.randomUUID()] as const;
-  const createdAt = new Date();
-  const inserted = await tx
-    .insert(budgets)
-    .values(
-      legs.map((leg, i) => ({
-        ...shared,
-        id: ids[i]!,
-        projectId: leg.projectId,
-        amount: leg.amount.toString(),
-        relatedBudgetId: ids[1 - i]!,
-        createdAt,
-      })),
-    )
-    .returning();
-  const from = inserted.find((r) => r.id === ids[0]);
-  const to = inserted.find((r) => r.id === ids[1]);
-  if (!from || !to) throw new Error("budgets transfer insert returned incomplete rows");
-  return { from, to };
-}
-
 export async function transferBudget(
   db: Database,
   input: TransferBudgetInput,
 ): Promise<{ from: Budget; to: Budget }> {
-  const legs = transferLegs(input);
+  const amount = BigInt(input.amount);
+  const fromId = crypto.randomUUID();
+  const toId = crypto.randomUUID();
+  const createdAt = new Date();
   return db.transaction(async (tx) => {
     const sums = await lockedBudgetSums(tx as Database, input.fromProjectId, input.tokenId);
-    requireOwnBudget(sums, input.fromProjectId, input.tokenId, legs[0].amount);
-    return insertTransfer(tx as Database, legs, {
+    requireOwnBudget(sums, input.fromProjectId, input.tokenId, -amount);
+    const shared = {
       tokenId: input.tokenId,
       note: input.note,
       actorAccountId: input.actorAccountId,
-      engagementId: null,
       fundingDaoAccountId: input.fundingDaoAccountId ?? null,
-    });
+      createdAt,
+    };
+    const inserted = await tx
+      .insert(budgets)
+      .values([
+        {
+          ...shared,
+          id: fromId,
+          projectId: input.fromProjectId,
+          amount: (-amount).toString(),
+          relatedBudgetId: toId,
+        },
+        {
+          ...shared,
+          id: toId,
+          projectId: input.toProjectId,
+          amount: amount.toString(),
+          relatedBudgetId: fromId,
+        },
+      ])
+      .returning();
+    const from = inserted.find((r) => r.id === fromId);
+    const to = inserted.find((r) => r.id === toId);
+    if (!from || !to) throw new Error("budgets transfer insert returned incomplete rows");
+    return { from, to };
   });
 }
 
@@ -360,32 +344,6 @@ export async function writeEngagementEntries(
         })),
       )
       .returning();
-  });
-}
-
-export async function transferEngagementBudget(
-  db: Database,
-  input: Omit<TransferBudgetInput, "fundingDaoAccountId"> & { engagementId: string },
-): Promise<{ from: Budget; to: Budget }> {
-  const legs = transferLegs(input);
-  return db.transaction(async (tx) => {
-    const fundingDaoAccountId = await checkEngagementEntries(
-      tx as Database,
-      input.engagementId,
-      legs.map((leg) => ({
-        projectId: leg.projectId,
-        tokenId: input.tokenId,
-        amount: leg.amount.toString(),
-        note: input.note,
-      })),
-    );
-    return insertTransfer(tx as Database, legs, {
-      tokenId: input.tokenId,
-      note: input.note,
-      actorAccountId: input.actorAccountId,
-      engagementId: input.engagementId,
-      fundingDaoAccountId,
-    });
   });
 }
 
