@@ -1,8 +1,4 @@
-import type { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeAll, describe, expect, test } from "vitest";
 import { runEffect } from "../../src/lib/context";
 import type { PluginContext } from "../../src/lib/organizations";
 import { createAgencyService } from "../../src/services/agency";
@@ -10,7 +6,7 @@ import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
 import { inMemoryAccess, seedAgencyDaos, signedIn } from "../fakes/organizations";
 import { inMemoryProjectsPlugin, project } from "../fakes/projects";
-import { applyAllMigrations } from "./_pg";
+import { migratedDatabase } from "./_pg";
 
 const DEFAULT_DAO = "multiagency.sputnik-dao.testnet";
 const OTHER_DAO = "other.sputnik-dao.testnet";
@@ -27,22 +23,12 @@ const publicProject = (id: string, organizationId: string) => ({
 });
 
 describe("public pages", () => {
-  let pg: PGlite;
-  let db: Database;
+  const state = migratedDatabase();
 
-  beforeAll(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
-    await seedAgencyDaos(db, organizations);
-  });
-
-  afterAll(async () => {
-    await pg.close();
-  });
+  beforeAll(() => seedAgencyDaos(state.db, organizations));
 
   function setup() {
+    const { db } = state;
     const { plugins, directory } = inMemoryProjectsPlugin([
       publicProject("default-public", "multiagency"),
       project("default-private", "multiagency"),
@@ -97,31 +83,24 @@ describe("public pages", () => {
     expect(await publicProjectIds(context)).toEqual(["default-public"]);
   });
 
-  describe("treasury staff tools", () => {
-    test("stay available to staff of the default Organization", async () => {
-      const { access } = setup();
+  test.each<[string, PluginContext, Record<string, unknown>]>([
+    [
+      "stay available to staff of the default Organization",
+      signedIn("staff", "multiagency", "staff.near"),
+      { role: "admin", canSeePrivate: true },
+    ],
+    [
+      "are not granted to staff of other Organizations",
+      signedIn("other-admin", "other", "other.near"),
+      { role: null, canSeePrivate: false },
+    ],
+  ])("treasury staff tools %s", async (_, context, expected) => {
+    const { access } = setup();
 
-      expect(
-        await access.publicTreasuryScope(signedIn("staff", "multiagency", "staff.near")),
-      ).toMatchObject({
-        organizationId: "multiagency",
-        agencyDao: DEFAULT_DAO,
-        role: "admin",
-        canSeePrivate: true,
-      });
-    });
-
-    test("are not granted to staff of other Organizations", async () => {
-      const { access } = setup();
-
-      expect(
-        await access.publicTreasuryScope(signedIn("other-admin", "other", "other.near")),
-      ).toMatchObject({
-        organizationId: "multiagency",
-        agencyDao: DEFAULT_DAO,
-        role: null,
-        canSeePrivate: false,
-      });
+    expect(await access.publicTreasuryScope(context)).toMatchObject({
+      organizationId: "multiagency",
+      agencyDao: DEFAULT_DAO,
+      ...expected,
     });
   });
 });

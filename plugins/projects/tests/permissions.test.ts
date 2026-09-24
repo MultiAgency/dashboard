@@ -87,149 +87,115 @@ describe("projects plugin permissions", () => {
       ...input,
     });
 
-  describe("create", () => {
-    test("binds the Project to the caller's active Organization", async () => {
-      const created = await createAs(acmeMember);
+  type Target = { id: string };
+  type Action = (target: Target) => Promise<unknown>;
+  const create =
+    (caller: Caller, input: Record<string, unknown> = {}): Action =>
+    () =>
+      createAs(caller, input);
+  const update =
+    (caller: Caller, patch: Record<string, unknown>): Action =>
+    (t) =>
+      clientFor(caller).updateProject({ id: t.id, ...patch });
+  const remove =
+    (caller: Caller): Action =>
+    (t) =>
+      clientFor(caller).deleteProject({ id: t.id });
 
-      expect(created).toMatchObject({ organizationId: "acme", ownerId: "member.near" });
-    });
+  const personalOwnerOfAcme: Caller = {
+    ...soloOwner,
+    organization: { id: "acme", role: "owner", personal: true },
+  };
+  const rivalOwner: Caller = { ...rivalAdmin, organization: { id: "rival", role: "owner" } };
+  const publish = { visibility: "public" };
 
-    test("refuses an Organization other than the caller's active one", async () => {
-      await expect(createAs(acmeAdmin, { organizationId: "rival" })).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
-    });
+  test.each<[string, Action, Record<string, unknown>]>([
+    [
+      "binds a new Project to the caller's active Organization",
+      create(acmeMember),
+      { organizationId: "acme", ownerId: "member.near" },
+    ],
+    [
+      "never binds a Project to a personal Organization",
+      create(soloOwner),
+      { organizationId: null },
+    ],
+    [
+      "lets platform admins choose the owner on create",
+      create(platformAdmin, { ownerId: "x.near" }),
+      { ownerId: "x.near" },
+    ],
+    ["lets admins publish on create", create(acmeAdmin, publish), publish],
+    [
+      "lets admins edit any of the Organization's Projects",
+      update(acmeAdmin, { title: "New" }),
+      { title: "New" },
+    ],
+    [
+      "lets owners edit any of the Organization's Projects",
+      update(acmeOwner, { title: "New" }),
+      { title: "New" },
+    ],
+    [
+      "lets members edit the Projects they created",
+      update(acmeOtherMember, { title: "New" }),
+      { title: "New" },
+    ],
+    ["lets owners make a Project public", update(acmeOwner, publish), publish],
+    [
+      "lets platform admins edit any Project",
+      update(platformAdmin, { title: "New" }),
+      { title: "New" },
+    ],
+    [
+      "lets platform admins change the owner",
+      update(platformAdmin, { ownerId: "x.near" }),
+      { ownerId: "x.near" },
+    ],
+    ["lets platform admins delete any Project", remove(platformAdmin), { deleted: true }],
+  ])("%s", async (_, action, expected) => {
+    const target = await createAs(acmeOtherMember);
 
-    test("never binds a Project to a personal Organization", async () => {
-      expect((await createAs(soloOwner)).organizationId).toBeNull();
-      await expect(createAs(soloOwner, { organizationId: "solo-personal" })).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
-    });
+    expect(await action(target)).toMatchObject(expected);
+  });
 
-    test("lets only platform admins choose the owner", async () => {
-      await expect(createAs(acmeAdmin, { ownerId: "someone.near" })).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
-      expect((await createAs(platformAdmin, { ownerId: "someone.near" })).ownerId).toBe(
-        "someone.near",
-      );
-    });
+  test.each<[string, Action]>([
+    ["create in another Organization", create(acmeAdmin, { organizationId: "rival" })],
+    ["create in a personal Organization", create(soloOwner, { organizationId: "solo-personal" })],
+    ["let a non-platform admin choose the owner", create(acmeAdmin, { ownerId: "x.near" })],
+    ["let a plain member publish on create", create(acmeMember, publish)],
+    ["let another Organization's admin edit", update(rivalAdmin, { title: "Taken" })],
+    ["let another Organization's admin delete", remove(rivalAdmin)],
+    ["let a member edit another member's Project", update(acmeMember, { title: "Theirs" })],
+    ["let a member delete another member's Project", remove(acmeMember)],
+    ["give a personal Organization's owner rights over its Projects", remove(personalOwnerOfAcme)],
+    ["let a non-platform admin change the owner", update(acmeAdmin, { ownerId: "acme-admin" })],
+    ["let a plain member make a Project public", update(acmeMember, publish)],
+    ["let another Organization's owner make a Project public", update(rivalOwner, publish)],
+  ])("refuses to %s", async (_, action) => {
+    const target = await createAs(acmeOtherMember);
 
-    test("publishing on create needs owner or admin of the Organization", async () => {
-      await expect(createAs(acmeMember, { visibility: "public" })).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
-      expect((await createAs(acmeAdmin, { visibility: "public" })).visibility).toBe("public");
-    });
-
-    test("reports a taken slug so callers can suggest another", async () => {
-      const created = await createAs(acmeMember);
-
-      await expect(createAs(rivalAdmin, { slug: created.slug })).rejects.toMatchObject({
-        code: "BAD_REQUEST",
-        data: { validationErrors: [{ field: "slug", code: "SLUG_TAKEN" }] },
-      });
-    });
-
-    test("does not reveal a private Project through an existing id", async () => {
-      const hidden = await createAs(acmeMember);
-
-      await expect(createAs(rivalAdmin, { id: hidden.id })).rejects.toMatchObject({
-        code: "BAD_REQUEST",
-      });
+    await expect(action(target)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await clientFor(acmeOwner).getProject({ id: target.id })).data).toMatchObject({
+      title: "Project",
+      visibility: "private",
     });
   });
 
-  describe("edit and delete", () => {
-    test("owners and admins of the owning Organization can edit any of its Projects", async () => {
-      const created = await createAs(acmeMember);
+  test("reports a taken slug so callers can suggest another", async () => {
+    const created = await createAs(acmeMember);
 
-      const updated = await clientFor(acmeAdmin).updateProject({ id: created.id, title: "New" });
-      const byOwner = await clientFor(acmeOwner).updateProject({ id: created.id, title: "Newer" });
-
-      expect(updated.title).toBe("New");
-      expect(byOwner.title).toBe("Newer");
+    await expect(createAs(rivalAdmin, { slug: created.slug })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      data: { validationErrors: [{ field: "slug", code: "SLUG_TAKEN" }] },
     });
+  });
 
-    test("admins of another Organization cannot edit or delete", async () => {
-      const created = await createAs(acmeMember);
-      const rival = clientFor(rivalAdmin);
+  test("does not reveal a private Project through an existing id", async () => {
+    const hidden = await createAs(acmeMember);
 
-      await expect(rival.updateProject({ id: created.id, title: "Taken" })).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
-      await expect(rival.deleteProject({ id: created.id })).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
-      expect((await clientFor(acmeMember).getProject({ id: created.id })).data.title).toBe(
-        "Project",
-      );
-    });
-
-    test("plain members can edit only the Projects they created", async () => {
-      const own = await createAs(acmeMember);
-      const others = await createAs(acmeOtherMember);
-      const member = clientFor(acmeMember);
-
-      expect((await member.updateProject({ id: own.id, title: "Mine" })).title).toBe("Mine");
-      await expect(member.updateProject({ id: others.id, title: "Theirs" })).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
-      await expect(member.deleteProject({ id: others.id })).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
-    });
-
-    test("a personal Organization's owner gains no rights over Organization Projects", async () => {
-      const created = await createAs(acmeMember);
-
-      await expect(
-        clientFor({
-          ...soloOwner,
-          organization: { id: "acme", role: "owner", personal: true },
-        }).deleteProject({ id: created.id }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    });
-
-    test("platform admins can edit and delete any Project", async () => {
-      const created = await createAs(acmeMember);
-      const admin = clientFor(platformAdmin);
-
-      expect((await admin.updateProject({ id: created.id, title: "Moderated" })).title).toBe(
-        "Moderated",
-      );
-      expect(await admin.deleteProject({ id: created.id })).toEqual({ deleted: true });
-    });
-
-    test("only platform admins can change the owner", async () => {
-      const created = await createAs(acmeMember);
-
-      await expect(
-        clientFor(acmeAdmin).updateProject({ id: created.id, ownerId: "acme-admin" }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      expect(
-        (await clientFor(platformAdmin).updateProject({ id: created.id, ownerId: "new.near" }))
-          .ownerId,
-      ).toBe("new.near");
-    });
-
-    test("making a Project public needs owner or admin of the owning Organization", async () => {
-      const created = await createAs(acmeMember);
-
-      await expect(
-        clientFor(acmeMember).updateProject({ id: created.id, visibility: "public" }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(
-        clientFor({ ...rivalAdmin, organization: { id: "rival", role: "owner" } }).updateProject({
-          id: created.id,
-          visibility: "public",
-        }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      expect(
-        (await clientFor(acmeOwner).updateProject({ id: created.id, visibility: "public" }))
-          .visibility,
-      ).toBe("public");
+    await expect(createAs(rivalAdmin, { id: hidden.id })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
     });
   });
 
