@@ -88,5 +88,3 @@ export function createOrganizationCleanup(deps: {
     },
   };
 }
-
-export type OrganizationCleanup = ReturnType<typeof createOrganizationCleanup>;

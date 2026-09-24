@@ -57,7 +57,6 @@ describe("agency isolation", () => {
           { userId: "beta-admin", organizationId: "beta-org", role: "admin" },
         ],
       }).port,
-      directory,
     });
     alpha = await access.agencyScope(
       signedIn("alpha-admin", "alpha-org", "admin.near"),

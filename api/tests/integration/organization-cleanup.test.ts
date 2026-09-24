@@ -24,6 +24,16 @@ describe("organization cleanup", () => {
 
   beforeEach(async () => {
     await pg.query("TRUNCATE organization_daos, clients, client_projects CASCADE");
+    await db.insert(clients).values({
+      id: "nf",
+      orgId: "client-org",
+      agencyDaoAccountId: MULTIAGENCY,
+      name: "NEAR Foundation",
+    });
+    await db.insert(clientProjects).values([
+      { clientId: "nf", projectId: "alive" },
+      { clientId: "nf", projectId: "deleted" },
+    ]);
   });
 
   afterAll(async () => {
@@ -39,12 +49,12 @@ describe("organization cleanup", () => {
     { id: "personal", daoAccountId: MULTIAGENCY, isPersonal: true },
   ];
 
-  function cleanupWith(organizations: FakeOrganization[], existingProjects: string[] = []) {
-    const fake = inMemoryOrganizations({ organizations });
+  function cleanupWith() {
+    const fake = inMemoryOrganizations({ organizations: duplicated });
     const cleanup = createOrganizationCleanup({
       db,
       organizations: fake.port,
-      existingProjects: async (ids) => new Set(ids.filter((id) => existingProjects.includes(id))),
+      existingProjects: async (ids) => new Set(ids.filter((id) => id === "alive")),
     });
     return { fake, cleanup };
   }
@@ -54,24 +64,12 @@ describe("organization cleanup", () => {
     return rows.map((r) => [r.organizationId, r.daoAccountId]).sort();
   }
 
-  async function linkClientTo(projectIds: string[]) {
-    await db.insert(clients).values({
-      id: "nf",
-      orgId: "client-org",
-      agencyDaoAccountId: MULTIAGENCY,
-      name: "NEAR Foundation",
-    });
-    await db
-      .insert(clientProjects)
-      .values(projectIds.map((projectId) => ({ clientId: "nf", projectId })));
-  }
-
   async function linkedProjects() {
     return (await db.select().from(clientProjects)).map((l) => l.projectId).sort();
   }
 
-  test("keeps the oldest Organization of a duplicated Agency DAO and maps every Agency DAO", async () => {
-    const { fake, cleanup } = cleanupWith(duplicated);
+  test("keeps the oldest Organization of a duplicated Agency DAO, maps every Agency DAO and drops dangling links", async () => {
+    const { fake, cleanup } = cleanupWith();
 
     const report = await cleanup.run();
 
@@ -81,13 +79,15 @@ describe("organization cleanup", () => {
       ["multiagency", MULTIAGENCY],
       ["other", OTHER],
     ]);
+    expect(await linkedProjects()).toEqual(["alive"]);
+    expect(report.removedClientProjectLinks).toEqual([{ clientId: "nf", projectId: "deleted" }]);
   });
 
   test("keeps the Organization already mapped to the Agency DAO", async () => {
     await db
       .insert(organizationDaos)
       .values({ organizationId: "test-copy", daoAccountId: MULTIAGENCY });
-    const { fake, cleanup } = cleanupWith(duplicated);
+    const { fake, cleanup } = cleanupWith();
 
     await cleanup.run();
 
@@ -98,24 +98,11 @@ describe("organization cleanup", () => {
     ]);
   });
 
-  test("removes Client-Project links to deleted Projects and keeps the others", async () => {
-    await linkClientTo(["alive", "deleted"]);
-    const { cleanup } = cleanupWith(duplicated, ["alive"]);
-
-    const report = await cleanup.run();
-
-    expect(await linkedProjects()).toEqual(["alive"]);
-    expect(report.removedClientProjectLinks).toEqual([{ clientId: "nf", projectId: "deleted" }]);
-  });
-
   test("running it again changes nothing", async () => {
-    await linkClientTo(["alive", "deleted"]);
-    const { fake, cleanup } = cleanupWith(duplicated, ["alive"]);
+    const { fake, cleanup } = cleanupWith();
     await cleanup.run();
 
-    const second = await cleanup.run();
-
-    expect(second).toEqual({
+    expect(await cleanup.run()).toEqual({
       removedOrganizations: [],
       mappedOrganizations: [],
       removedClientProjectLinks: [],
@@ -125,8 +112,7 @@ describe("organization cleanup", () => {
   });
 
   test("a dry run reports the changes without making them", async () => {
-    await linkClientTo(["alive", "deleted"]);
-    const { fake, cleanup } = cleanupWith(duplicated, ["alive"]);
+    const { fake, cleanup } = cleanupWith();
 
     const report = await cleanup.run({ dryRun: true });
 

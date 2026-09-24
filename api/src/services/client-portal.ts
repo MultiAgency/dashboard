@@ -25,13 +25,10 @@ export function createClientPortalService(
 ) {
   const notFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
 
-  const clientScope = (context: PluginContext, agencyDaoAccountId: string) =>
-    access.clientPortal(context, agencyDaoAccountId);
-
   return {
     listProjects: (context: PluginContext, input: { agencyDaoAccountId: string }) =>
       Effect.gen(function* () {
-        const { scope, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
+        const { scope, projectIds } = yield* access.clientPortal(context, input.agencyDaoAccountId);
         if (!scope) return { data: [] };
         const linked = new Set(projectIds);
         const all = yield* Effect.promise(() => directory.forAgency(scope).list());
@@ -42,7 +39,7 @@ export function createClientPortalService(
 
     getProject: (context: PluginContext, input: { agencyDaoAccountId: string; slug: string }) =>
       Effect.gen(function* () {
-        const { scope, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
+        const { scope, projectIds } = yield* access.clientPortal(context, input.agencyDaoAccountId);
         if (!scope) return yield* Effect.fail(notFound());
         const detail = yield* agency.getProject(scope, input.slug);
         assertLinkedProject(projectIds, detail.project.id);
@@ -51,7 +48,7 @@ export function createClientPortalService(
 
     getBudget: (context: PluginContext, input: { agencyDaoAccountId: string; projectId: string }) =>
       Effect.gen(function* () {
-        const { scope, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
+        const { scope, projectIds } = yield* access.clientPortal(context, input.agencyDaoAccountId);
         if (!scope) return yield* Effect.fail(notFound());
         assertLinkedProject(projectIds, input.projectId);
         return yield* agency.getBudget(scope, input.projectId);
@@ -62,7 +59,10 @@ export function createClientPortalService(
       input: { agencyDaoAccountId: string; projectId?: string; cursor?: string; limit: number },
     ) =>
       Effect.gen(function* () {
-        const { scope, client, projectIds } = yield* clientScope(context, input.agencyDaoAccountId);
+        const { scope, client, projectIds } = yield* access.clientPortal(
+          context,
+          input.agencyDaoAccountId,
+        );
         if (!scope) return { data: [], nextCursor: null };
         if (input.projectId) assertLinkedProject(projectIds, input.projectId);
         return yield* billings.list(scope, {
@@ -79,7 +79,7 @@ export function createClientPortalService(
       input: { agencyDaoAccountId: string; note?: string; startDate?: string; endDate?: string },
     ) =>
       Effect.gen(function* () {
-        const { scope, client } = yield* clientScope(context, input.agencyDaoAccountId);
+        const { scope, client } = yield* access.clientPortal(context, input.agencyDaoAccountId);
         if (!scope) {
           return yield* Effect.fail(
             new ORPCError("NOT_FOUND", { message: "No projects linked to this client account." }),
@@ -95,7 +95,10 @@ export function createClientPortalService(
 
     dashboardSummary: (context: PluginContext, input: { agencyDaoAccountId: string }) =>
       Effect.gen(function* () {
-        const { scope, projectIds: linked } = yield* clientScope(context, input.agencyDaoAccountId);
+        const { scope, projectIds: linked } = yield* access.clientPortal(
+          context,
+          input.agencyDaoAccountId,
+        );
         if (!scope || linked.length === 0) return { projectCount: 0, remainingByToken: [] };
 
         const agencyProjectIds = new Set(

@@ -136,8 +136,6 @@ export const organizationDaos = pgTable(
   }),
 );
 
-export type OrganizationDao = typeof organizationDaos.$inferSelect;
-
 export const clientProjects = pgTable(
   "client_projects",
   {

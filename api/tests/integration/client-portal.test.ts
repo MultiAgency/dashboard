@@ -20,11 +20,7 @@ import {
   createOrganizationAccess,
   type OrganizationAccessService,
 } from "../../src/services/organization-access";
-import {
-  createProjectDirectory,
-  type ProjectDirectory,
-  type ProjectsClient,
-} from "../../src/services/project-directory";
+import { createProjectDirectory, type ProjectsClient } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
 import { inMemoryOrganizations } from "../fakes/organizations";
 import { applyAllMigrations } from "./_pg";
@@ -34,11 +30,10 @@ const AGENCY_B = "agency-b.sputnik-dao.near";
 const NEAR_ACCOUNT = "client.near";
 const CLIENT_CONTEXT = { near: { primaryAccountId: NEAR_ACCOUNT } };
 
-function organizationAccess(db: ReturnType<typeof drizzle>, directory: ProjectDirectory) {
+function organizationAccess(db: ReturnType<typeof drizzle>) {
   return createOrganizationAccess({
     db: db as never,
     organizations: inMemoryOrganizations({ organizations: [] }).port,
-    directory,
   });
 }
 
@@ -52,7 +47,7 @@ describe("client-portal — resolveClientScope (via organization access)", () =>
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg);
-    access = organizationAccess(db, {} as ProjectDirectory);
+    access = organizationAccess(db);
   });
 
   afterEach(async () => {
@@ -81,22 +76,19 @@ describe("client-portal — resolveClientScope (via organization access)", () =>
     expect(result.projectIds).toEqual([]);
   });
 
-  test("unknown NEAR account resolves to no scope", async () => {
+  test.each([
+    { case: "an unknown NEAR account", nearAccount: "stranger.near", agency: AGENCY_A },
+    {
+      case: "the right NEAR account at another Agency",
+      nearAccount: NEAR_ACCOUNT,
+      agency: AGENCY_B,
+    },
+  ])("$case resolves to no client portal", async ({ nearAccount, agency }) => {
     await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
 
     await expect(
-      Effect.runPromise(
-        access.clientPortal({ near: { primaryAccountId: "stranger.near" } }, AGENCY_A),
-      ),
+      Effect.runPromise(access.clientPortal({ near: { primaryAccountId: nearAccount } }, agency)),
     ).rejects.toThrow(/No client portal/);
-  });
-
-  test("right NEAR account but wrong agencyDaoAccountId resolves to no scope (cross-agency leak check)", async () => {
-    await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
-
-    await expect(Effect.runPromise(access.clientPortal(CLIENT_CONTEXT, AGENCY_B))).rejects.toThrow(
-      /No client portal/,
-    );
   });
 });
 
@@ -192,7 +184,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const billingsService = createBillingsService(db as never, directory);
     const reports = createReportsService(db as never, directory, plugins);
     return createClientPortalService(
-      organizationAccess(db, directory),
+      organizationAccess(db),
       agency,
       billingsService,
       reports,

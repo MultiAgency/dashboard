@@ -12,7 +12,6 @@ import type {
   Organizations,
   PluginContext,
 } from "../lib/organizations";
-import type { ProjectDirectory } from "./project-directory";
 
 export type AgencyScope = {
   organizationId: string | null;
@@ -37,18 +36,6 @@ export type Capabilities = {
   hasClientSections: boolean;
 };
 
-export type Engagement = {
-  id: string;
-  agencyOrganizationId: string;
-  clientOrganizationId: string;
-  kind: "client" | "subcontract";
-  status: "proposed" | "active" | "declined" | "ended";
-};
-
-export type Engagements = { asAgency: Engagement[]; asClient: Engagement[] };
-
-export type ProjectRelation = "owned" | "client" | "subcontractor";
-
 export type OrganizationAccess = {
   organization: Organization | null;
   role: OrganizationRole | null;
@@ -59,8 +46,6 @@ export type OrganizationAccess = {
 };
 
 export type ClientMembership = { client: Client; projectIds: string[] };
-
-const NO_ENGAGEMENTS: Engagements = { asAgency: [], asClient: [] };
 
 function hasRole(roles: readonly OrganizationRole[], role: OrganizationRole | null): boolean {
   return role !== null && roles.includes(role);
@@ -81,10 +66,9 @@ function forbidden(message: string, data?: Record<string, unknown>) {
 export function createOrganizationAccess(deps: {
   db: Database;
   organizations: Organizations;
-  directory: ProjectDirectory;
   defaultDaoAccountId?: string;
 }) {
-  const { db, organizations, directory, defaultDaoAccountId } = deps;
+  const { db, organizations, defaultDaoAccountId } = deps;
 
   async function agencyDaoOf(organization: Organization): Promise<string | null> {
     if (organization.isPersonal) return null;
@@ -110,7 +94,6 @@ export function createOrganizationAccess(deps: {
     const organization = membership?.organization ?? null;
     const role = organization && !organization.isPersonal ? (membership?.role ?? null) : null;
     const agencyDao = organization ? await agencyDaoOf(organization) : null;
-    const engagements = NO_ENGAGEMENTS;
     return {
       organization,
       role,
@@ -120,7 +103,7 @@ export function createOrganizationAccess(deps: {
         canManageMembers: hasRole(ROLE_MATRIX.manage, role),
         canUseMoney: agencyDao !== null && hasRole(ROLE_MATRIX.work, role),
         hasAgencySections: hasRole(ROLE_MATRIX.work, role),
-        hasClientSections: engagements.asClient.length > 0,
+        hasClientSections: false,
       },
       pluginContext: context,
     };
@@ -269,20 +252,6 @@ export function createOrganizationAccess(deps: {
     requireDefaultOrganization,
     middleware,
     sharedProjectsScope,
-
-    engagements: async (_access: OrganizationAccess): Promise<Engagements> => NO_ENGAGEMENTS,
-
-    projectRelation: async (
-      scope: AgencyScope,
-      projectId: string,
-    ): Promise<ProjectRelation | null> => {
-      try {
-        await directory.forAgency(scope).require(projectId);
-        return "owned";
-      } catch {
-        return null;
-      }
-    },
 
     clientMemberships: (caller: PluginContext, nearAccountId: string) =>
       Effect.gen(function* () {

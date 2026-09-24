@@ -70,7 +70,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const access = createOrganizationAccess({
         db,
         organizations: betterAuthOrganizations(() => plugins.auth()),
-        directory,
         defaultDaoAccountId: config.variables.agencyDaoAccount,
       });
       const listings = createListingsService(db, directory);
