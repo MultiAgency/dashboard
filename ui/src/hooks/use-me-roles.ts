@@ -20,6 +20,7 @@ export function useMeRoles() {
     isAuthenticated,
     orgRole,
     canAccessAdmin,
+    agencyDao: query.data?.agencyDao ?? null,
     isLoaded,
   };
 }

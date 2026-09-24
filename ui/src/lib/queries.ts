@@ -37,6 +37,16 @@ export function adminSettingsQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const agencyDaoQueryKey = ["admin", "agency-dao"] as const;
+
+export function agencyDaoQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...agencyDaoQueryKey, getNetwork()] as const,
+    queryFn: () => apiClient.agencyDao.get(),
+    retry: false,
+  });
+}
+
 export const meRolesQueryKey = ["me", "roles"] as const;
 
 export function meRolesQueryOptions(apiClient: ApiClient) {

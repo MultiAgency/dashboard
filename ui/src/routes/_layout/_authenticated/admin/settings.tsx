@@ -4,6 +4,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
+import { TreasurySettings } from "@/components/admin/treasury-settings";
 import { AdminError } from "@/components/admin-error";
 import { useApiClient } from "@/lib/api";
 import { adminSettingsQueryOptions, refreshAfter } from "@/lib/queries";
@@ -36,7 +37,18 @@ function AdminSettingsPage() {
           Settings
         </h1>
       </header>
-      <AdminSettings />
+      <section id="treasury" className="space-y-3 scroll-mt-24">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          treasury
+        </div>
+        <TreasurySettings />
+      </section>
+      <section className="space-y-3">
+        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          organization
+        </div>
+        <AdminSettings />
+      </section>
     </div>
   );
 }
@@ -167,16 +179,6 @@ function SettingsForm({
               }
             }}
           >
-            <div className="space-y-2">
-              <div className={LABEL_CLS}>sputnik dao account</div>
-              <div className="font-mono text-sm break-all px-3 py-2 border border-border bg-muted/30">
-                {data.orgAccountId ?? "—"}
-              </div>
-              <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                set when the agency workspace was created on platform — used for treasury and
-                proposals.
-              </p>
-            </div>
             <form.Field name="nearnAccountId">
               {(field) => {
                 const err = field.state.meta.errors[0];

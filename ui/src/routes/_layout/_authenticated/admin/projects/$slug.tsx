@@ -19,6 +19,8 @@ import { ProjectBudgetPanel } from "@/components/admin/project-budget-panel";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass, textareaClass } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { nearnListingHref } from "@/lib/nearn";
@@ -97,6 +99,7 @@ function AdminProjectDetail() {
 
   const projectQuery = useQuery(adminProjectDetailQueryOptions(apiClient, slug));
   const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const { agencyDao, isLoaded } = useMeRoles();
 
   const projectId = projectQuery.data?.project.id;
   const nearnSlug = projectQuery.data?.project.nearnListingId ?? null;
@@ -151,11 +154,15 @@ function AdminProjectDetail() {
         <AssignmentsSection projectId={projectId!} />
       </section>
 
-      {projectId && <ProjectBudgetPanel projectId={projectId} showAgencyBudgetLink />}
+      {projectId && isLoaded && !agencyDao && <ConnectTreasuryPrompt />}
 
-      {projectId && <BillingsSection projectId={projectId} contributors={contributors} />}
+      {projectId && agencyDao && <ProjectBudgetPanel projectId={projectId} showAgencyBudgetLink />}
 
-      {projectId && (
+      {projectId && agencyDao && (
+        <BillingsSection projectId={projectId} contributors={contributors} />
+      )}
+
+      {projectId && agencyDao && (
         <InternalListingSection projectId={projectId} hasNearnListing={!!project.nearnListingId} />
       )}
 
@@ -387,8 +394,7 @@ function BillingsSection({
   const apiClient = useApiClient();
   const [creating, setCreating] = useState(false);
 
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
-  const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
+  const { agencyDao: orgAccountId } = useMeRoles();
 
   const billingsQuery = useInfiniteQuery({
     queryKey: adminBillingsQueryKey({ projectId }),
