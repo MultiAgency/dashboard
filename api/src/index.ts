@@ -7,9 +7,10 @@ import { DatabaseLive, DatabaseTag } from "./db/layer";
 import { type AuthContext, createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
 import { getNetwork, pinnedNetwork } from "./lib/network";
-import { betterAuthOrganizations } from "./lib/organizations";
+import { betterAuthOrganizations, type PluginContext } from "./lib/organizations";
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
+import { createAgencyDaoService } from "./services/agency-dao";
 import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
 import { createBillingsService } from "./services/billings";
@@ -22,7 +23,11 @@ import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
-import { createOrganizationAccess, requireTreasury } from "./services/organization-access";
+import {
+  createOrganizationAccess,
+  ROLE_MATRIX,
+  requireTreasury,
+} from "./services/organization-access";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
 import { createReportsService } from "./services/reports";
@@ -72,6 +77,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         organizations: betterAuthOrganizations(() => plugins.auth()),
         defaultDaoAccountId: config.variables.agencyDaoAccount,
       });
+      const agencyDaos = createAgencyDaoService({ db, directory, daoRoles: getRoles });
       const listings = createListingsService(db, directory);
       const projectLedgers = createProjectLedgers(db, listings);
       const agency = createAgencyService(db, plugins, directory, listings, projectLedgers);
@@ -105,6 +111,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       return {
         db,
         access,
+        agencyDaos,
         applications,
         contactForm,
         agency,
@@ -130,6 +137,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
     const {
       db,
       access,
+      agencyDaos,
       applications,
       contactForm,
       agency,
@@ -477,9 +485,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       me: {
         roles: builder.me.roles.use(auth.requireAuth).handler(async ({ context }) => {
-          const { role, capabilities } = await access.resolve(context);
+          const { role, agencyDao, capabilities } = await access.resolve(context);
           return {
             orgRole: role === "admin" || role === "member" || role === "owner" ? role : null,
+            agencyDao,
             capabilities,
           };
         }),
@@ -493,6 +502,44 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }
           return runEffect(me.assignedProjects(context.scope, nearAccount));
         }),
+      },
+
+      agencyDao: {
+        get: builder.agencyDao.get
+          .use(manager)
+          .handler(async ({ context }) => agencyDaos.status(context.scope)),
+
+        connect: builder.agencyDao.connect
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => {
+            const network = getNetwork(context.reqHeaders);
+            if (input.organizationId) {
+              if (context.user.role !== "admin") {
+                throw new ORPCError("FORBIDDEN", {
+                  message: "Only platform admins can connect a DAO to another Organization",
+                });
+              }
+              return agencyDaos.connectAsPlatformAdmin(
+                input.organizationId,
+                input.daoAccountId,
+                network,
+              );
+            }
+            const scope = await access.agencyScope(context, ROLE_MATRIX.manage);
+            const near = (context as PluginContext).near;
+            return agencyDaos.connectForMember(scope, {
+              daoAccountId: input.daoAccountId,
+              network,
+              walletAccounts: [
+                ...(near?.primaryAccountId ? [near.primaryAccountId] : []),
+                ...(near?.linkedAccounts ?? []).map((a) => a.accountId),
+              ],
+            });
+          }),
+
+        disconnect: builder.agencyDao.disconnect
+          .use(manager)
+          .handler(async ({ context }) => agencyDaos.disconnect(context.scope)),
       },
 
       team: {

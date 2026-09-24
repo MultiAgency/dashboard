@@ -47,7 +47,7 @@ Projects of DAOs without a mapping are left alone and reported by neither step.
 
 ### Run order
 
-1. Run the Organization cleanup above, so each Agency DAO is mapped to one Organization.
+1. Run the Organization cleanup above, so each Agency DAO is mapped to one Organization. From #42 on, the API reads an Organization's Agency DAO only from `organization_daos` (connected in Settings → Treasury), not from Organization metadata.
 2. Deploy the API and the projects plugin from #42. Until step 4 runs, the API still lists Projects whose `organization_id` is the Organization's Agency DAO, but members only see private Projects of that kind that they created, and the client portal only sees public ones.
 3. `bun run db:migrate:project-ownership --dry-run` and check the report.
 4. `bun run db:migrate:project-ownership` right after the deploy.

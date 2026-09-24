@@ -1,4 +1,4 @@
-import { desc, eq, inArray, or } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { DecoratedMiddleware } from "every-plugin/orpc";
 import { ORPCError } from "every-plugin/orpc";
@@ -88,21 +88,12 @@ export function createOrganizationAccess(deps: {
 
   async function agencyDaoOf(organization: Organization): Promise<string | null> {
     if (organization.isPersonal) return null;
-    const claimed = organization.metadataDaoAccountId;
-    const rows = await db
+    const [row] = await db
       .select()
       .from(organizationDaos)
-      .where(
-        claimed
-          ? or(
-              eq(organizationDaos.organizationId, organization.id),
-              eq(organizationDaos.daoAccountId, claimed),
-            )
-          : eq(organizationDaos.organizationId, organization.id),
-      );
-    const mapped = rows.find((row) => row.organizationId === organization.id);
-    if (mapped) return mapped.daoAccountId;
-    return claimed && rows.length === 0 ? claimed : null;
+      .where(eq(organizationDaos.organizationId, organization.id))
+      .limit(1);
+    return row?.daoAccountId ?? null;
   }
 
   async function resolve(context: PluginContext): Promise<OrganizationAccess> {

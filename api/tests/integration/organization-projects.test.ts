@@ -12,7 +12,7 @@ import {
   ROLE_MATRIX,
   requireTreasury,
 } from "../../src/services/organization-access";
-import { inMemoryAccess, signedIn } from "../fakes/organizations";
+import { inMemoryAccess, seedAgencyDaos, signedIn } from "../fakes/organizations";
 import { inMemoryProjectsPlugin, project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
@@ -27,6 +27,7 @@ describe("Projects owned by Organizations", () => {
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg, { schema }) as unknown as Database;
+    await seedAgencyDaos(db, [{ id: "alpha-org", daoAccountId: ALPHA_DAO }]);
   });
 
   afterAll(async () => {
