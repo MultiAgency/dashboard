@@ -4,10 +4,11 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
 import type { OrganizationDirectory } from "../lib/organizations";
-import type {
-  AgencyScope,
-  OrganizationAccessService,
-  WorkableProject,
+import {
+  type AgencyScope,
+  type OrganizationAccessService,
+  type WorkableProject,
+  workable,
 } from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
 
@@ -23,12 +24,6 @@ export function createAssignmentsService(
   access: Pick<OrganizationAccessService, "workableProject" | "subcontractedProjects">,
   organizations: Pick<OrganizationDirectory, "get">,
 ) {
-  const workable = (scope: AgencyScope, projectId: string, write = false) =>
-    Effect.tryPromise({
-      try: () => access.workableProject(scope, projectId, { write }),
-      catch: (err) => err,
-    });
-
   const findRow = (projectId: string, nearAccount: string) =>
     Effect.promise(async () => {
       const [row] = await db
@@ -73,7 +68,7 @@ export function createAssignmentsService(
   return {
     list: (scope: AgencyScope, projectId: string) =>
       Effect.gen(function* () {
-        yield* workable(scope, projectId);
+        yield* workable(access, scope, projectId);
         const rows = yield* Effect.promise(() =>
           db
             .select()
@@ -127,7 +122,7 @@ export function createAssignmentsService(
       },
     ) =>
       Effect.gen(function* () {
-        const target = yield* workable(scope, input.projectId, true);
+        const target = yield* workable(access, scope, input.projectId, true);
         const nearAccount = input.nearAccount?.trim();
         if (!nearAccount) {
           return yield* Effect.fail(
@@ -180,7 +175,7 @@ export function createAssignmentsService(
 
     delete: (scope: AgencyScope, input: { projectId: string; nearAccount: string }) =>
       Effect.gen(function* () {
-        const target = yield* workable(scope, input.projectId, true);
+        const target = yield* workable(access, scope, input.projectId, true);
         const existing = yield* findRow(input.projectId, input.nearAccount);
         if (refuseOthers(scope, existing, target)) {
           return yield* Effect.fail(

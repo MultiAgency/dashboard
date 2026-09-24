@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
+import { Effect } from "every-plugin/effect";
 import type { DecoratedMiddleware } from "every-plugin/orpc";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
@@ -412,3 +413,15 @@ export function createOrganizationAccess(deps: {
 }
 
 export type OrganizationAccessService = ReturnType<typeof createOrganizationAccess>;
+
+export function workable(
+  access: Pick<OrganizationAccessService, "workableProject">,
+  scope: AgencyScope,
+  projectId: string,
+  write = false,
+) {
+  return Effect.tryPromise({
+    try: () => access.workableProject(scope, projectId, { write }),
+    catch: (err) => err,
+  });
+}
