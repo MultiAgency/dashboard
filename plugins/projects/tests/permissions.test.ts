@@ -123,6 +123,15 @@ describe("projects plugin permissions", () => {
       expect((await createAs(acmeAdmin, { visibility: "public" })).visibility).toBe("public");
     });
 
+    test("reports a taken slug so callers can suggest another", async () => {
+      const created = await createAs(acmeMember);
+
+      await expect(createAs(rivalAdmin, { slug: created.slug })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        data: { validationErrors: [{ field: "slug", code: "SLUG_TAKEN" }] },
+      });
+    });
+
     test("does not reveal a private Project through an existing id", async () => {
       const hidden = await createAs(acmeMember);
 
