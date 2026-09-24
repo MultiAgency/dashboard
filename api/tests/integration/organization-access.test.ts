@@ -85,13 +85,16 @@ describe("organization access", () => {
       canSeePrivate: true,
     });
     expect((await access.publicScope(signedIn("owner", "other"))).actorId).toBe("owner");
+    expect(
+      (await access.agencyScope(signedIn("member", "other"), ROLE_MATRIX.work)).canSeePrivate,
+    ).toBe(true);
   });
 
   test.each([
-    { role: "owner", manages: true, money: true, works: true, seesPrivate: true },
-    { role: "admin", manages: true, money: true, works: true, seesPrivate: true },
-    { role: "member", manages: false, money: true, works: true, seesPrivate: true },
-    { role: "contributor", manages: false, money: false, works: false, seesPrivate: true },
+    { role: "owner", manages: true, money: true, works: true },
+    { role: "admin", manages: true, money: true, works: true },
+    { role: "member", manages: false, money: true, works: true },
+    { role: "contributor", manages: false, money: false, works: false },
   ])("$role capabilities and agency routes follow the role matrix", async (row) => {
     const access = accessWith();
     const context = signedIn(row.role, "other");
@@ -102,7 +105,6 @@ describe("organization access", () => {
       hasAgencySections: row.works,
       hasClientSections: false,
     });
-    expect((await access.publicScope(context)).canSeePrivate).toBe(row.seesPrivate);
     expect(await outcome(access.agencyScope(context, ROLE_MATRIX.work))).toBe(
       row.works ? "allowed" : "FORBIDDEN",
     );
@@ -129,9 +131,9 @@ describe("organization access", () => {
       expect.objectContaining({ code: "FORBIDDEN", data: { reason: NO_AGENCY_DAO } }),
     );
     expect(await access.publicScope(context)).toMatchObject({
-      organizationId: "no-dao",
-      agencyDao: null,
-      role: "owner",
+      agencyDao: DEFAULT_DAO,
+      role: null,
+      canSeePrivate: false,
     });
   });
 
@@ -141,7 +143,7 @@ describe("organization access", () => {
       reqHeaders: new Headers({ cookie: "current_near_network=testnet" }),
     };
 
-    expect((await accessWith().publicScope(context)).network).toBe("testnet");
+    expect((await accessWith().agencyScope(context, ROLE_MATRIX.work)).network).toBe("testnet");
   });
 
   test("anonymous visitors resolve the Organization mapped to the default Agency DAO", async () => {
