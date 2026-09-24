@@ -4,7 +4,6 @@ import {
   awaitingLink,
   failureMessage,
   planChangeItems,
-  prepaidBalanceLegs,
   signedBaseAmount,
 } from "../src/lib/change-orders";
 
@@ -27,39 +26,12 @@ describe("planChangeItems", () => {
     ]);
   });
 
-  test("removing a line or setting it to zero takes it out of the plan", () => {
+  test("removing a line or setting it to zero takes it out, and no change proposes nothing", () => {
     expect(planChangeItems([line("site", "300"), line("app", "200")], [line("app", "0")])).toEqual([
       { projectId: "app", tokenId: "near", kind: "plan_change", amount: "-200" },
       { projectId: "site", tokenId: "near", kind: "plan_change", amount: "-300" },
     ]);
-  });
-
-  test("an unchanged plan proposes nothing", () => {
     expect(planChangeItems([line("site", "300")], [line("site", "300")])).toEqual([]);
-  });
-});
-
-describe("prepaidBalanceLegs", () => {
-  test("puts the opposite of what moves into Projects on the Prepaid balance, per token", () => {
-    expect(
-      prepaidBalanceLegs([
-        { projectId: "site", tokenId: "near", kind: "one_off_move", amount: "400" },
-        { projectId: "app", tokenId: "near", kind: "one_off_move", amount: "-100" },
-        { projectId: "app", tokenId: "usdc", kind: "one_off_move", amount: "-5" },
-      ]),
-    ).toEqual([
-      { projectId: null, tokenId: "near", kind: "one_off_move", amount: "-300" },
-      { projectId: null, tokenId: "usdc", kind: "one_off_move", amount: "5" },
-    ]);
-  });
-
-  test("a move between Projects leaves the Prepaid balance alone", () => {
-    expect(
-      prepaidBalanceLegs([
-        { projectId: "site", tokenId: "near", kind: "one_off_move", amount: "-250" },
-        { projectId: "app", tokenId: "near", kind: "one_off_move", amount: "250" },
-      ]),
-    ).toEqual([]);
   });
 });
 

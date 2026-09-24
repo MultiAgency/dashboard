@@ -13,6 +13,39 @@ export type KnownToken = {
 
 export const CUSTOM_TOKEN = "__custom__";
 
+export function TokenSelect({
+  id,
+  value,
+  onChange,
+  options,
+  custom,
+  disabled,
+}: {
+  id: string;
+  value: string;
+  onChange: (tokenId: string) => void;
+  options: { tokenId: string; label: string }[];
+  custom?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <select
+      id={id}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      className={selectClass}
+    >
+      {options.map((option) => (
+        <option key={option.tokenId} value={option.tokenId}>
+          {option.label}
+        </option>
+      ))}
+      {custom && <option value={CUSTOM_TOKEN}>Custom…</option>}
+    </select>
+  );
+}
+
 export function TokenAmountFields({
   idPrefix,
   tokens,
@@ -44,20 +77,14 @@ export function TokenAmountFields({
     <>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="token" htmlFor={`${idPrefix}-token`}>
-          <select
+          <TokenSelect
             id={`${idPrefix}-token`}
             value={tokenSelection}
-            onChange={(e) => setTokenSelection(e.target.value)}
+            onChange={setTokenSelection}
+            options={tokens.map((t) => ({ tokenId: t.tokenId, label: `${t.symbol} — ${t.name}` }))}
+            custom
             disabled={disabled}
-            className={selectClass}
-          >
-            {tokens.map((t) => (
-              <option key={t.tokenId} value={t.tokenId}>
-                {t.symbol} — {t.name}
-              </option>
-            ))}
-            <option value={CUSTOM_TOKEN}>Custom…</option>
-          </select>
+          />
           {knownToken?.icon && (
             <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
               <img src={knownToken.icon} alt="" width={16} height={16} className="rounded-full" />
