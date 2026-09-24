@@ -79,6 +79,15 @@ export function requireTreasury<TScope extends AgencyScope>(scope: TScope): TSco
   return scope as TScope & TreasuryScope;
 }
 
+export async function agencyDaoOf(db: Database, organizationId: string): Promise<string | null> {
+  const [row] = await db
+    .select()
+    .from(organizationDaos)
+    .where(eq(organizationDaos.organizationId, organizationId))
+    .limit(1);
+  return row?.daoAccountId ?? null;
+}
+
 export function createOrganizationAccess(deps: {
   db: Database;
   organizations: Organizations;
@@ -86,21 +95,12 @@ export function createOrganizationAccess(deps: {
 }) {
   const { db, organizations, defaultDaoAccountId } = deps;
 
-  async function agencyDaoOf(organization: Organization): Promise<string | null> {
-    if (organization.isPersonal) return null;
-    const [row] = await db
-      .select()
-      .from(organizationDaos)
-      .where(eq(organizationDaos.organizationId, organization.id))
-      .limit(1);
-    return row?.daoAccountId ?? null;
-  }
-
   async function resolve(context: PluginContext): Promise<OrganizationAccess> {
     const membership = context.userId ? await organizations.activeMembership(context) : null;
     const organization = membership?.organization ?? null;
     const role = organization && !organization.isPersonal ? (membership?.role ?? null) : null;
-    const agencyDao = organization ? await agencyDaoOf(organization) : null;
+    const agencyDao =
+      organization && !organization.isPersonal ? await agencyDaoOf(db, organization.id) : null;
     return {
       organization,
       role,
