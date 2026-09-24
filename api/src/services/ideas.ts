@@ -11,7 +11,6 @@ import {
 import { runEffect } from "../lib/context";
 import type { OrganizationDirectory, PluginContext } from "../lib/organizations";
 import type { AgencyService } from "./agency";
-import { originOf } from "./engagements";
 import type { NotificationKind, NotificationsService } from "./notifications";
 import { type AgencyScope, type OrganizationScope, SHARED_STATUSES } from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
@@ -232,7 +231,6 @@ export function createIdeasService(deps: {
           : `/admin/engagements/${row.id}?tab=ideas`,
         excludeUserId: userIdOf(scope),
         alsoNotifyUserIds: options.alsoNotifyUserIds,
-        origin: originOf(scope.pluginContext.reqHeaders),
       });
     } catch (err) {
       console.warn("[API] notification failed:", err instanceof Error ? err.message : err);

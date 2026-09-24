@@ -203,7 +203,9 @@ describe("Client ideas", () => {
       await expect(world.access.workableProject(crew, idea.id)).rejects.toMatchObject({
         code: "NOT_FOUND",
       });
-      expect(await world.access.projectRelation(globex, idea.id)).toBeNull();
+      await expect(world.access.workableProject(globex, idea.id)).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
     });
   });
 
