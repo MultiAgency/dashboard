@@ -7,7 +7,7 @@ import { Empty, Field, Loading } from "@/components/admin-form";
 import { AgentLinkAnchor, type AgentLinkView } from "@/components/agent-links";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import type { EngagementView } from "@/components/engagement-status";
-import { isAgentLinkUrl, moveLink } from "@/lib/agent-links";
+import { moveLink } from "@/lib/agent-links";
 import { useApiClient } from "@/lib/api";
 import { agentLinksListQueryOptions, refreshAfter } from "@/lib/queries";
 
@@ -45,8 +45,7 @@ function AgentLinkForm({
 }) {
   const [label, setLabel] = useState(initial.label);
   const [url, setUrl] = useState(initial.url);
-  const urlInvalid = url.trim() !== "" && !isAgentLinkUrl(url);
-  const canSubmit = label.trim() !== "" && isAgentLinkUrl(url);
+  const canSubmit = label.trim() !== "" && url.trim() !== "";
 
   return (
     <form
@@ -65,18 +64,13 @@ function AgentLinkForm({
           disabled={pending}
         />
       </Field>
-      <Field
-        label="url"
-        htmlFor={`${idPrefix}-url`}
-        helper={urlInvalid ? "Use an http:// or https:// link." : undefined}
-      >
+      <Field label="url" htmlFor={`${idPrefix}-url`} helper="Use an http:// or https:// link.">
         <Input
           id={`${idPrefix}-url`}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://"
           maxLength={500}
-          aria-invalid={urlInvalid}
           disabled={pending}
         />
       </Field>
