@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
 import { budgets } from "../../src/db/schema";
-import { engagementWorld, ORIGIN } from "../fakes/engagements";
+import { engagementWorld, ORIGIN, SPOOFED_ORIGIN } from "../fakes/engagements";
 import { project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
@@ -104,7 +104,8 @@ describe("engagements", () => {
           subject: "Studio proposed an Engagement",
         }),
       ]);
-      expect(world.emails[0]?.html).toContain(`${ORIGIN}/client`);
+      expect(world.emails[0]?.html).toContain(`href="${ORIGIN}/client"`);
+      expect(world.emails[0]?.html).not.toContain(SPOOFED_ORIGIN);
 
       await world.engagements.accept(await acme(), proposed.id);
 
@@ -353,7 +354,8 @@ describe("engagements", () => {
           subject: "Studio invited you to Newco on MultiAgency",
         }),
       ]);
-      expect(world.emails[0]?.html).toContain(`${ORIGIN}/accept-invitation/`);
+      expect(world.emails[0]?.html).toContain(`href="${ORIGIN}/accept-invitation/`);
+      expect(world.emails[0]?.html).not.toContain(SPOOFED_ORIGIN);
       expect(await inbox("studio-owner")).toEqual(["client_invite_sent"]);
     });
 

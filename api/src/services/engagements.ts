@@ -9,8 +9,7 @@ import {
   SlugTakenError,
 } from "../lib/organizations";
 import type { NotificationKind, NotificationsService } from "./notifications";
-import type { EmailSender } from "./notify";
-import { escapeHtml } from "./notify";
+import { appUrl, type EmailSender, escapeHtml } from "./notify";
 import type { OrganizationScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
@@ -55,15 +54,6 @@ function isUniqueViolation(err: unknown): boolean {
   return false;
 }
 
-export function originOf(headers: Headers | undefined): string | null {
-  const origin = headers?.get("origin");
-  if (origin) return origin;
-  const host = headers?.get("x-forwarded-host") ?? headers?.get("host");
-  if (!host) return null;
-  const proto = headers?.get("x-forwarded-proto") ?? "https";
-  return `${proto}://${host}`;
-}
-
 export function invitationLink(invitation: Pick<Invitation, "id" | "email">): string {
   return `/accept-invitation/${invitation.id}?email=${encodeURIComponent(invitation.email)}`;
 }
@@ -94,6 +84,7 @@ export function createEngagementsService(deps: {
   projects: ProjectDirectory;
   notifications: NotificationsService;
   sendEmail: EmailSender | null;
+  appOrigin: string;
   onEnded?: (engagement: EngagementRow) => Promise<void>;
   now?: () => Date;
 }) {
@@ -101,7 +92,6 @@ export function createEngagementsService(deps: {
   const now = deps.now ?? (() => new Date());
 
   const userIdOf = (scope: OrganizationScope) => scope.pluginContext.userId ?? scope.actorId;
-  const originFor = (scope: OrganizationScope) => originOf(scope.pluginContext.reqHeaders);
 
   async function load(id: string): Promise<EngagementRow | null> {
     const [row] = await db.select().from(engagements).where(eq(engagements.id, id)).limit(1);
@@ -230,22 +220,16 @@ export function createEngagementsService(deps: {
         payload: { ...(await partyNames(row)), engagementId: row.id, ...extra },
         link,
         excludeUserId: userIdOf(scope),
-        origin: originFor(scope),
       });
     } catch (err) {
       console.warn("[API] notification failed:", err instanceof Error ? err.message : err);
     }
   }
 
-  async function sendInvitation(
-    scope: OrganizationScope,
-    row: EngagementRow,
-    invitation: Invitation,
-  ) {
-    const origin = originFor(scope);
-    if (!sendEmail || !origin) return;
+  async function sendInvitation(row: EngagementRow, invitation: Invitation) {
+    const url = appUrl(deps.appOrigin, invitationLink(invitation));
+    if (!sendEmail || !url) return;
     const { agencyName, clientName } = await partyNames(row);
-    const url = new URL(invitationLink(invitation), origin).toString();
     try {
       await sendEmail({
         to: invitation.email,
@@ -300,7 +284,7 @@ export function createEngagementsService(deps: {
       invitationId: invitation.id,
       invitationEmail: invitation.email,
     });
-    await sendInvitation(scope, updated, invitation);
+    await sendInvitation(updated, invitation);
     await tell(scope, updated, "agency", "client_invite_sent", { email: invitation.email });
     return updated;
   }
@@ -536,7 +520,7 @@ export function createEngagementsService(deps: {
       const { row, invitation } = await requirePendingInvitation(scope, id);
       const expiresAt = new Date(now().getTime() + INVITATION_TTL_MS);
       await organizations.updateInvitation(invitation.id, { status: "pending", expiresAt });
-      await sendInvitation(scope, row, { ...invitation, status: "pending", expiresAt });
+      await sendInvitation(row, { ...invitation, status: "pending", expiresAt });
       return view(scope, row);
     },
 

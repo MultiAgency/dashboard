@@ -16,6 +16,7 @@ import {
 import { inMemoryProjects } from "./projects";
 
 export const ORIGIN = "https://app.example";
+export const SPOOFED_ORIGIN = "https://spoofed.example";
 
 export async function engagementWorld(
   db: Database,
@@ -39,6 +40,7 @@ export async function engagementWorld(
     db,
     directory: organizations.directory,
     sendEmail,
+    appOrigin: ORIGIN,
   });
   const ended: string[] = [];
   const engagements = createEngagementsService({
@@ -47,6 +49,7 @@ export async function engagementWorld(
     projects: directory,
     notifications,
     sendEmail,
+    appOrigin: ORIGIN,
     onEnded: async (engagement) => {
       ended.push(engagement.id);
     },
@@ -54,7 +57,7 @@ export async function engagementWorld(
 
   const context = (userId: string, organizationId: string, near?: string) => ({
     ...signedIn(userId, organizationId, near),
-    reqHeaders: new Headers({ origin: ORIGIN }),
+    reqHeaders: new Headers({ origin: SPOOFED_ORIGIN, "x-forwarded-host": "spoofed.example" }),
   });
 
   return {
