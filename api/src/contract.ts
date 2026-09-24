@@ -285,6 +285,20 @@ const reportOutput = z.object({
   generatedAt: z.string(),
 });
 
+const generatedReport = reportOutput.extend({ id: z.string() });
+
+const savedReportSummary = z.object({
+  id: z.string(),
+  engagementId: z.string().nullable(),
+  generatedByUserId: z.string(),
+  startDate: z.string().nullable(),
+  endDate: z.string().nullable(),
+  note: z.string().nullable(),
+  createdAt: z.date(),
+});
+
+const savedReport = savedReportSummary.extend({ report: reportOutput });
+
 const notification = z.object({
   id: z.string(),
   organizationId: z.string(),
@@ -734,45 +748,23 @@ export const contract = oc.router({
             engagementId: z.string().optional(),
             projectId: z.string().optional(),
             note: z.string().max(4000).optional(),
-            startDate: z
-              .string()
-              .regex(/^\d{4}-\d{2}-\d{2}$/)
-              .optional(),
-            endDate: z
-              .string()
-              .regex(/^\d{4}-\d{2}-\d{2}$/)
-              .optional(),
+            startDate: reportDate,
+            endDate: reportDate,
           }),
         )
-        .output(
-          z.object({
-            overview: z.object({
-              projectCount: z.number().int().nonnegative(),
-              budgetByToken: z.array(tokenAmount),
-              billedByToken: z.array(tokenAmount),
-              period: z.string(),
-            }),
-            contributorStats: z.array(
-              z.object({
-                nearAccount: z.string(),
-                name: z.string(),
-                billedByToken: z.array(tokenAmount),
-                billingCount: z.number().int().nonnegative(),
-              }),
-            ),
-            clientBreakdown: z.array(
-              z.object({
-                clientName: z.string(),
-                projectTitle: z.string(),
-                projectSlug: z.string(),
-                budgetByToken: z.array(tokenAmount),
-                spentByToken: z.array(tokenAmount),
-              }),
-            ),
-            notes: z.string(),
-            generatedAt: z.string(),
-          }),
-        )
+        .output(generatedReport)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      list: oc
+        .route({ method: "GET", path: "/admin/reports" })
+        .input(z.object({ engagementId: z.string().optional() }))
+        .output(z.object({ data: z.array(savedReportSummary) }))
+        .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+      get: oc
+        .route({ method: "GET", path: "/admin/reports/{id}" })
+        .input(z.object({ id: z.string().min(1) }))
+        .output(savedReport)
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
     },
   },
@@ -1149,7 +1141,19 @@ export const contract = oc.router({
             endDate: reportDate,
           }),
         )
-        .output(reportOutput)
+        .output(generatedReport)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      list: oc
+        .route({ method: "GET", path: "/client/{engagementId}/reports" })
+        .input(z.object({ engagementId: z.string().min(1) }))
+        .output(z.object({ data: z.array(savedReportSummary) }))
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      get: oc
+        .route({ method: "GET", path: "/client/{engagementId}/reports/{id}" })
+        .input(z.object({ engagementId: z.string().min(1), id: z.string().min(1) }))
+        .output(savedReport)
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
     },
   },

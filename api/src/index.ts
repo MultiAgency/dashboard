@@ -353,7 +353,24 @@ export default createPlugin.withPlugins<PluginsClient>()({
           generate: builder.agency.reports.generate
             .use(member)
             .handler(async ({ context, input }) =>
-              runEffect(reports.generate(context.scope, input)),
+              runEffect(
+                reports.generateSaved(context.scope, input, {
+                  organizationId: context.scope.organizationId,
+                  userId: context.userId ?? context.scope.actorId,
+                }),
+              ),
+            ),
+
+          list: builder.agency.reports.list
+            .use(member)
+            .handler(async ({ context, input }) =>
+              reports.listSaved(context.scope.organizationId, input),
+            ),
+
+          get: builder.agency.reports.get
+            .use(member)
+            .handler(async ({ context, input }) =>
+              reports.getSaved(context.scope.organizationId, input.id),
             ),
         },
       },
@@ -561,6 +578,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
             .handler(async ({ context, input }) =>
               runEffect(clientPortal.generateReport(context, input)),
             ),
+
+          list: builder.clientPortal.reports.list
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.listReports(context, input)),
+
+          get: builder.clientPortal.reports.get
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.getReport(context, input)),
         },
       },
 
