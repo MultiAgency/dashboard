@@ -26,3 +26,22 @@ It does three things:
 3. `bun run db:cleanup:organizations`.
 
 Until step 3 runs, Organizations keep resolving their Agency DAO from metadata, so nothing changes for users. Later migration steps from #40 (Project ownership, Engagements, dropping `clients`) run after this one.
+
+## Assign an Organization owner
+
+`bun run db:assign-owner <organization-id> <user-email-or-id> [--dry-run]` recovers an Organization that has no owner left (#41). It works directly on the auth database, because the auth API only lets members of an Organization change its members.
+
+It refuses personal Organizations and Organizations that still have an owner, so an owner is never overridden. If the user is already a member, it promotes them to owner; otherwise it adds them as owner. The user is found by id or by email (case-insensitive) in the `user` table and must already have an account.
+
+It reads the `user`, `organization` and `member` tables and detects whether `member` uses camelCase (`organizationId`, `userId`, `createdAt`, Better-Auth's default) or snake_case columns.
+
+### Environment
+
+| Variable | Meaning |
+| --- | --- |
+| `AUTH_DATABASE_URL` | The auth plugin's database |
+
+### Run
+
+1. `bun run db:assign-owner <organization-id> <email> --dry-run` and check the report (`action` is `promoted` or `added`).
+2. Run it again without `--dry-run`.

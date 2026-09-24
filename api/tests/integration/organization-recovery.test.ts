@@ -1,78 +1,88 @@
 import { describe, expect, test } from "vitest";
-import type { PluginContext } from "../../src/lib/organizations";
 import { createOrganizationRecovery } from "../../src/services/organization-recovery";
-import { type FakeMember, inMemoryOrganizations, signedIn } from "../fakes/organizations";
-
-const PLATFORM_ADMIN: PluginContext = { ...signedIn("root", null), user: { role: "admin" } };
+import { type FakeMember, inMemoryOrganizations } from "../fakes/organizations";
 
 function recoveryWith(members: FakeMember[]) {
   const fake = inMemoryOrganizations({
     organizations: [{ id: "client" }, { id: "personal", isPersonal: true }],
     members,
+    users: [
+      { id: "alice", email: "alice@example.com" },
+      { id: "staff", email: "staff@example.com" },
+    ],
   });
   return { recovery: createOrganizationRecovery({ members: fake.members }), fake };
 }
 
 describe("assigning an owner to an Organization", () => {
-  test("a platform admin makes a new person the owner of an owner-less Organization", async () => {
+  test("makes a person found by email the owner of an owner-less Organization", async () => {
     const { recovery, fake } = recoveryWith([
       { userId: "staff", organizationId: "client", role: "member" },
     ]);
 
-    await recovery.assignOwner(PLATFORM_ADMIN, { organizationId: "client", userId: "alice" });
+    const result = await recovery.assignOwner({
+      organizationId: "client",
+      user: "Alice@Example.com",
+    });
 
+    expect(result).toMatchObject({ userId: "alice", action: "added", applied: true });
     expect(fake.roleOf("alice", "client")).toBe("owner");
     expect(fake.roleOf("staff", "client")).toBe("member");
   });
 
-  test("a platform admin promotes an existing member of an owner-less Organization", async () => {
+  test("promotes an existing member found by user id", async () => {
     const { recovery, fake } = recoveryWith([
       { userId: "alice", organizationId: "client", role: "admin" },
     ]);
 
-    await recovery.assignOwner(PLATFORM_ADMIN, { organizationId: "client", userId: "alice" });
+    const result = await recovery.assignOwner({ organizationId: "client", user: "alice" });
 
+    expect(result.action).toBe("promoted");
     expect(fake.roleOf("alice", "client")).toBe("owner");
+  });
+
+  test("a dry run reports the change without making it", async () => {
+    const { recovery, fake } = recoveryWith([
+      { userId: "alice", organizationId: "client", role: "admin" },
+    ]);
+
+    const result = await recovery.assignOwner({
+      organizationId: "client",
+      user: "alice",
+      dryRun: true,
+    });
+
+    expect(result).toMatchObject({ action: "promoted", applied: false });
+    expect(fake.roleOf("alice", "client")).toBe("admin");
   });
 
   test("is refused when the Organization still has an owner", async () => {
     const { recovery, fake } = recoveryWith([
-      { userId: "boss", organizationId: "client", role: "owner" },
+      { userId: "staff", organizationId: "client", role: "owner" },
     ]);
 
     await expect(
-      recovery.assignOwner(PLATFORM_ADMIN, { organizationId: "client", userId: "alice" }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      recovery.assignOwner({ organizationId: "client", user: "alice" }),
+    ).rejects.toMatchObject({ code: "HAS_OWNER" });
     expect(fake.roleOf("alice", "client")).toBeNull();
-  });
-
-  test("is refused to anyone who is not a platform admin, even an Organization owner", async () => {
-    const { recovery, fake } = recoveryWith([
-      { userId: "boss", organizationId: "personal", role: "owner" },
-    ]);
-
-    await expect(
-      recovery.assignOwner(signedIn("boss", "personal"), {
-        organizationId: "client",
-        userId: "boss",
-      }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(fake.roleOf("boss", "client")).toBeNull();
   });
 
   test("is refused for personal Organizations", async () => {
     const { recovery } = recoveryWith([]);
 
     await expect(
-      recovery.assignOwner(PLATFORM_ADMIN, { organizationId: "personal", userId: "alice" }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      recovery.assignOwner({ organizationId: "personal", user: "alice" }),
+    ).rejects.toMatchObject({ code: "PERSONAL_ORGANIZATION" });
   });
 
-  test("answers not found for an unknown Organization", async () => {
+  test("reports an unknown Organization or user", async () => {
     const { recovery } = recoveryWith([]);
 
     await expect(
-      recovery.assignOwner(PLATFORM_ADMIN, { organizationId: "missing", userId: "alice" }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      recovery.assignOwner({ organizationId: "missing", user: "alice" }),
+    ).rejects.toMatchObject({ code: "ORGANIZATION_NOT_FOUND" });
+    await expect(
+      recovery.assignOwner({ organizationId: "client", user: "nobody@example.com" }),
+    ).rejects.toMatchObject({ code: "USER_NOT_FOUND" });
   });
 });

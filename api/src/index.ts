@@ -7,7 +7,7 @@ import { DatabaseLive, DatabaseTag } from "./db/layer";
 import { createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
 import { getNetwork, pinnedNetwork } from "./lib/network";
-import { betterAuthOrganizationMembers, betterAuthOrganizations } from "./lib/organizations";
+import { betterAuthOrganizations } from "./lib/organizations";
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
 import { createApplicationsService } from "./services/applications";
@@ -23,7 +23,6 @@ import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
 import { createOrganizationAccess } from "./services/organization-access";
-import { createOrganizationRecovery } from "./services/organization-recovery";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
 import { createReportsService } from "./services/reports";
@@ -73,9 +72,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
         organizations: betterAuthOrganizations(() => plugins.auth()),
         defaultDaoAccountId: config.variables.agencyDaoAccount,
       });
-      const recovery = createOrganizationRecovery({
-        members: betterAuthOrganizationMembers((context) => plugins.auth(context)),
-      });
       const listings = createListingsService(db, directory);
       const projectLedgers = createProjectLedgers(db, listings);
       const agency = createAgencyService(db, plugins, directory, listings, projectLedgers);
@@ -109,7 +105,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
       return {
         db,
         access,
-        recovery,
         applications,
         contactForm,
         agency,
@@ -135,7 +130,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
     const {
       db,
       access,
-      recovery,
       applications,
       contactForm,
       agency,
@@ -491,15 +485,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }
           return runEffect(me.assignedProjects(context.scope, nearAccount));
         }),
-      },
-
-      platform: {
-        assignOwner: builder.platform.assignOwner
-          .use(auth.requireAuth)
-          .handler(async ({ context, input }) => {
-            await recovery.assignOwner(context, input);
-            return { ok: true as const };
-          }),
       },
 
       team: {
