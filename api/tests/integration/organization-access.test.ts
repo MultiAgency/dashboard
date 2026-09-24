@@ -9,6 +9,7 @@ import {
   type FakeMember,
   type FakeOrganization,
   inMemoryAccess,
+  seedAgencyDaos,
   signedIn,
 } from "../fakes/organizations";
 import { migratedDatabase } from "./_pg";
@@ -54,6 +55,7 @@ describe("organization access", () => {
 
   beforeEach(async () => {
     await database.pg.query("TRUNCATE organization_daos");
+    await seedAgencyDaos(database.db, organizations);
   });
 
   const accessWith = (defaultDao: string | null = DEFAULT_DAO) =>
@@ -143,10 +145,6 @@ describe("organization access", () => {
   });
 
   test("anonymous visitors resolve the Organization mapped to the default Agency DAO", async () => {
-    await database.db
-      .insert(organizationDaos)
-      .values({ organizationId: "multiagency", daoAccountId: DEFAULT_DAO });
-
     expect(await accessWith().publicScope({})).toMatchObject({
       organizationId: "multiagency",
       agencyDao: DEFAULT_DAO,
@@ -161,7 +159,10 @@ describe("organization access", () => {
   test.each([
     "personal",
     "odd",
-  ])("a personal Organization (%s) gives its owner no role and no Agency DAO", async (organizationId) => {
+  ])("a personal Organization (%s) gives its owner no role and no Agency DAO, even when one is connected", async (organizationId) => {
+    await database.db
+      .insert(organizationDaos)
+      .values({ organizationId, daoAccountId: `${organizationId}.sputnik-dao.near` });
     const access = accessWith();
     const context = signedIn("u1", organizationId);
 
@@ -178,15 +179,13 @@ describe("organization access", () => {
     });
   });
 
-  test("a DAO mapped to another Organization is not granted from metadata", async () => {
-    await database.db
-      .insert(organizationDaos)
-      .values({ organizationId: "other", daoAccountId: DEFAULT_DAO });
+  test("Organization metadata naming a DAO grants no Agency DAO without a connection", async () => {
+    await database.pg.query("TRUNCATE organization_daos");
 
-    expect((await accessWith().resolve(signedIn("u1", "multiagency"))).agencyDao).toBeNull();
+    expect((await accessWith().resolve(signedIn("owner", "other"))).agencyDao).toBeNull();
   });
 
-  test("the mapping takes precedence over Organization metadata", async () => {
+  test("a connected DAO is the Organization's Agency DAO", async () => {
     await database.db
       .insert(organizationDaos)
       .values({ organizationId: "no-dao", daoAccountId: "mapped.sputnik-dao.near" });
