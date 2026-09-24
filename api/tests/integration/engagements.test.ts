@@ -398,6 +398,30 @@ describe("engagements", () => {
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
 
+    test.each([
+      [
+        "resend",
+        (id: string) => async () => world.engagements.resendInvitation(await studio(), id),
+      ],
+      [
+        "cancel",
+        (id: string) => async () => world.engagements.cancelInvitation(await studio(), id),
+      ],
+      [
+        "re-address",
+        (id: string) => async () =>
+          world.engagements.changeInvitationEmail(await studio(), id, "ceo@newco.example"),
+      ],
+    ])("the Agency cannot %s the invitation after the Engagement ends", async (_, action) => {
+      const engagement = await createNewco();
+      await world.engagements.end(await studio(), engagement.id);
+
+      await expect(action(engagement.id)()).rejects.toMatchObject({
+        data: { reason: "NOT_ACTIVE" },
+      });
+      expect(world.emails).toHaveLength(1);
+    });
+
     test("once the first admin accepts, the Agency is told and can no longer manage the invitation", async () => {
       const engagement = await createNewco();
       const invitationId = new URL(engagement.invitation!.link, ORIGIN).pathname.split("/").pop()!;
