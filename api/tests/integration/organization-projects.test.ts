@@ -103,15 +103,15 @@ describe("Projects owned by Organizations", () => {
     );
   });
 
-  test("an Organization with an Agency DAO still lists Projects keyed by that DAO", async () => {
+  test("Projects still keyed by the Organization's Agency DAO are not listed", async () => {
     const { agency, scopeOf } = workspace([
-      project("legacy", ALPHA_DAO),
+      project("unmigrated", ALPHA_DAO),
       project("migrated", "alpha-org"),
     ]);
     const admin = await scopeOf("alpha-admin", "alpha-org");
 
     const listed = await runEffect(agency.listProjects(admin));
 
-    expect(listed.data.map((p) => p.id).sort()).toEqual(["legacy", "migrated"]);
+    expect(listed.data.map((p) => p.id)).toEqual(["migrated"]);
   });
 });

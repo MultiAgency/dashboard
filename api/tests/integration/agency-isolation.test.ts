@@ -34,9 +34,9 @@ describe("agency isolation", () => {
   const directory = createProjectDirectory(
     () =>
       inMemoryProjects([
-        project("alpha-project", ALPHA),
-        project("alpha-other", ALPHA),
-        project("beta-project", BETA),
+        project("alpha-project", "alpha-org"),
+        project("alpha-other", "alpha-org"),
+        project("beta-project", "beta-org"),
       ]).client,
   );
 
