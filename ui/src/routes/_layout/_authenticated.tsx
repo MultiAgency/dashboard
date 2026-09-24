@@ -3,7 +3,7 @@ import { sessionQueryOptions } from "@/lib/auth";
 import { meRolesQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated")({
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     const { queryClient, apiClient } = context;
 
     const session = await queryClient.ensureQueryData(
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/_layout/_authenticated")({
     );
 
     if (!session?.user) {
-      throw redirect({ to: "/" });
+      throw redirect({ to: "/sign-in", search: { redirect: location.href } });
     }
 
     void queryClient.prefetchQuery(meRolesQueryOptions(apiClient));
