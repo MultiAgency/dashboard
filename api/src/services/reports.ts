@@ -24,6 +24,7 @@ export type ReportInput = {
   startDate?: string;
   endDate?: string;
   subcontractorDao?: string;
+  forClient?: boolean;
 };
 
 export type ReportOwner = { organizationId: string; userId: string };
@@ -140,7 +141,14 @@ export function createReportsService(
             )
           : [];
 
-      const budgetRows = budgetRowsAll.filter(inPeriod);
+      const budgetRows = budgetRowsAll
+        .filter(inPeriod)
+        .filter(
+          (b) =>
+            !input.engagementId ||
+            b.engagementId === input.engagementId ||
+            (!input.forClient && b.engagementId === null),
+        );
       const billingRowsRaw = billingRowsRawAll.filter(inPeriod);
 
       const clientNames = yield* Effect.promise(async () => {
@@ -213,7 +221,9 @@ export function createReportsService(
             clientName,
             projectTitle: project?.title ?? pid,
             projectSlug: project?.slug ?? pid,
-            budgetByToken: sumByToken(budgetRows.filter((b) => b.projectId === pid)),
+            budgetByToken: sumByToken(
+              budgetRows.filter((b) => b.projectId === pid && b.engagementId === engagement.id),
+            ),
             spentByToken: sumByToken(paidBillings.filter((b) => b.projectId === pid)),
           });
         }

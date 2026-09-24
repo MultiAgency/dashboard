@@ -114,6 +114,7 @@ export function createClientPortalService(
           engagement.scope,
           {
             engagementId: engagement.engagement.id,
+            forClient: true,
             note: input.note,
             startDate: input.startDate,
             endDate: input.endDate,
