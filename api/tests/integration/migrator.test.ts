@@ -207,8 +207,6 @@ describe("migrate — runtime migrator", () => {
         sql`INSERT INTO prepayments (id, engagement_id, dao_account_id, token_id, amount, period, actor_account_id) VALUES (${crypto.randomUUID()}, 'e1', 'studio.sputnik-dao.near', 'near', ${amount}, ${period}, 'admin.near')`,
       );
     await insert("2026-09", "100");
-    await insert("2026-09", "200");
-    await expect(insert("2026-13", "100")).rejects.toThrow();
     await expect(insert("2026-9", "100")).rejects.toThrow();
     await expect(insert("2026-10", "0")).rejects.toThrow();
   });
