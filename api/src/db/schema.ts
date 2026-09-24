@@ -524,11 +524,7 @@ export const reportSnapshots = pgTable(
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
-    organizationIdx: index("report_snapshots_organization").on(
-      t.organizationId,
-      t.createdAt,
-      t.id,
-    ),
+    organizationIdx: index("report_snapshots_organization").on(t.organizationId, t.createdAt, t.id),
   }),
 );
 
