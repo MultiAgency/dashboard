@@ -103,7 +103,7 @@ describe("Projects owned by Organizations", () => {
     });
 
     test("is refused money operations with a clear reason", async () => {
-      const { access, scopeOf } = workspace();
+      const { scopeOf } = workspace();
       const founder = await scopeOf("founder", "studio");
 
       expect(() => requireTreasury(founder)).toThrow(
@@ -113,9 +113,6 @@ describe("Projects owned by Organizations", () => {
           data: { reason: NO_AGENCY_DAO },
         }),
       );
-      await expect(
-        access.publicScope(signedIn("founder", "studio")).then(requireTreasury),
-      ).rejects.toMatchObject({ code: "FORBIDDEN", data: { reason: NO_AGENCY_DAO } });
     });
   });
 

@@ -4,7 +4,7 @@ import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 import { contract } from "./contract";
 import { DatabaseLive, DatabaseTag } from "./db/layer";
-import { type AuthContext, createAuthMiddleware } from "./lib/auth";
+import { createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
 import { getNetwork, pinnedNetwork } from "./lib/network";
 import { betterAuthOrganizations, type PluginContext } from "./lib/organizations";
@@ -23,11 +23,7 @@ import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
-import {
-  createOrganizationAccess,
-  ROLE_MATRIX,
-  requireTreasury,
-} from "./services/organization-access";
+import { createOrganizationAccess, ROLE_MATRIX } from "./services/organization-access";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
 import { createReportsService } from "./services/reports";
@@ -164,8 +160,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
       defaultOrganizationMember,
       defaultOrganizationManager,
     } = access.middleware(builder);
-    const publicTreasury = async (context: AuthContext) =>
-      requireTreasury(await access.publicScope(context));
 
     return {
       ping: builder.ping.handler(async () => ({
@@ -209,10 +203,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
             runEffect(agency.listProjects(await access.publicScope(context))),
           ),
 
+          listOwned: builder.agency.projects.listOwned
+            .use(member)
+            .handler(async ({ context }) => runEffect(agency.listProjects(context.scope))),
+
           get: builder.agency.projects.get
-            .use(auth.requireOrganization)
+            .use(member)
             .handler(async ({ context, input }) =>
-              runEffect(agency.getProject(await access.publicScope(context), input.slug)),
+              runEffect(agency.getProject(context.scope, input.slug)),
             ),
 
           getBudget: builder.agency.projects.getBudget
@@ -429,11 +427,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       proposals: {
         list: builder.proposals.list.handler(async ({ context, input }) =>
-          runEffect(proposals.list(await publicTreasury(context), input)),
+          runEffect(proposals.list(await access.publicTreasuryScope(context), input)),
         ),
 
         getPublicSummary: builder.proposals.getPublicSummary.handler(async ({ context }) =>
-          runEffect(proposals.getPublicSummary(await publicTreasury(context))),
+          runEffect(proposals.getPublicSummary(await access.publicScope(context))),
         ),
       },
 
@@ -455,17 +453,21 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       tokens: {
         list: builder.tokens.list.handler(async ({ context }) =>
-          runEffect(tokens.list(await publicTreasury(context))),
+          runEffect(tokens.list(await access.publicScope(context))),
         ),
 
+        listOwned: builder.tokens.listOwned
+          .use(treasuryMember)
+          .handler(async ({ context }) => runEffect(tokens.list(context.scope))),
+
         getStorageStatus: builder.tokens.getStorageStatus.handler(async ({ context, input }) =>
-          runEffect(tokens.getStorageStatus(await publicTreasury(context), input)),
+          runEffect(tokens.getStorageStatus(await access.publicScope(context), input)),
         ),
       },
 
       treasury: {
         getPublicBalances: builder.treasury.getPublicBalances.handler(async ({ context, input }) =>
-          runEffect(treasury.getPublicBalances(await publicTreasury(context), input)),
+          runEffect(treasury.getPublicBalances(await access.publicScope(context), input)),
         ),
 
         getBalances: builder.treasury.getBalances
@@ -479,7 +481,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context }) => runEffect(treasury.getRollups(context.scope))),
 
         getPublicSummary: builder.treasury.getPublicSummary.handler(async ({ context }) =>
-          runEffect(treasury.getPublicSummary(await publicTreasury(context))),
+          runEffect(treasury.getPublicSummary(await access.publicScope(context))),
         ),
       },
 
@@ -545,7 +547,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
       team: {
         list: builder.team.list.handler(async ({ context }) => {
           const { agencyDao } = await access.publicScope(context);
-          if (!agencyDao) return { roles: [] };
           try {
             return { roles: await getRoles(agencyDao) };
           } catch {

@@ -138,9 +138,7 @@ export function createOrganizationAccess(deps: {
     };
   }
 
-  async function publicScope(context: PluginContext): Promise<AgencyScope> {
-    const access = await resolve(context);
-    if (access.organization && access.role) return scopeOf(access);
+  async function publicScope(context: PluginContext): Promise<TreasuryScope> {
     if (!defaultDaoAccountId) {
       throw forbidden(
         "No default Organization configured. Set the deployment's default Agency DAO.",
@@ -151,10 +149,18 @@ export function createOrganizationAccess(deps: {
       agencyDao: defaultDaoAccountId,
       network: networkOf(defaultDaoAccountId),
       role: null,
-      actorId: access.actorId,
+      actorId: actorOf(context),
       canSeePrivate: false,
-      pluginContext: context,
+      pluginContext: {},
     };
+  }
+
+  async function publicTreasuryScope(context: PluginContext): Promise<TreasuryScope> {
+    const access = await resolve(context);
+    if (access.role && defaultDaoAccountId && access.agencyDao === defaultDaoAccountId) {
+      return requireTreasury(scopeOf(access));
+    }
+    return publicScope(context);
   }
 
   async function agencyScope(
@@ -275,6 +281,7 @@ export function createOrganizationAccess(deps: {
   return {
     resolve,
     publicScope,
+    publicTreasuryScope,
     agencyScope,
     requireDefaultOrganization,
     middleware,

@@ -2,6 +2,19 @@ import { BAD_REQUEST, FORBIDDEN, NOT_FOUND, UNAUTHORIZED } from "every-plugin/er
 import { oc } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 
+const tokenList = z.object({
+  tokens: z.array(
+    z.object({
+      tokenId: z.string(),
+      network: z.string(),
+      symbol: z.string(),
+      decimals: z.number().int().nonnegative(),
+      name: z.string(),
+      icon: z.string().nullable(),
+    }),
+  ),
+});
+
 const applicationKind = z.enum(["founder", "contributor", "client"]);
 
 const projectStatus = z.enum(["active", "paused", "archived"]);
@@ -374,6 +387,11 @@ export const contract = oc.router({
       list: oc
         .route({ method: "GET", path: "/projects" })
         .output(z.object({ data: z.array(projectWithNearn) })),
+
+      listOwned: oc
+        .route({ method: "GET", path: "/admin/projects" })
+        .output(z.object({ data: z.array(projectWithNearn) }))
+        .errors({ UNAUTHORIZED, FORBIDDEN }),
 
       get: oc
         .route({ method: "GET", path: "/projects/{slug}" })
@@ -963,20 +981,12 @@ export const contract = oc.router({
   },
 
   tokens: {
-    list: oc.route({ method: "GET", path: "/tokens" }).output(
-      z.object({
-        tokens: z.array(
-          z.object({
-            tokenId: z.string(),
-            network: z.string(),
-            symbol: z.string(),
-            decimals: z.number().int().nonnegative(),
-            name: z.string(),
-            icon: z.string().nullable(),
-          }),
-        ),
-      }),
-    ),
+    list: oc.route({ method: "GET", path: "/tokens" }).output(tokenList),
+
+    listOwned: oc
+      .route({ method: "GET", path: "/admin/tokens" })
+      .output(tokenList)
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
 
     getStorageStatus: oc
       .route({ method: "GET", path: "/tokens/storage-status" })
