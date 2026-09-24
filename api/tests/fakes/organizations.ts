@@ -1,13 +1,13 @@
 import type { Database } from "../../src/db";
 import {
   type Organization,
-  type OrganizationMembers,
   type OrganizationRole,
   type Organizations,
   type PluginContext,
   toOrganization,
 } from "../../src/lib/organizations";
 import { createOrganizationAccess } from "../../src/services/organization-access";
+import type { OrganizationMembersStore } from "../../src/services/organization-recovery";
 
 export type FakeOrganization = {
   id: string;
@@ -22,9 +22,12 @@ function memberIdOf(member: FakeMember): string {
   return `${member.organizationId}:${member.userId}`;
 }
 
+export type FakeUser = { id: string; email: string };
+
 export function inMemoryOrganizations(seed: {
   organizations: FakeOrganization[];
   members?: FakeMember[];
+  users?: FakeUser[];
 }) {
   const organizations = new Map<string, Organization>(
     seed.organizations.map((o) => [
@@ -57,8 +60,13 @@ export function inMemoryOrganizations(seed: {
     },
   };
 
-  const membersPort: OrganizationMembers = {
-    roster: async (_context, organizationId) => {
+  const users = seed.users ?? [];
+
+  const membersStore: OrganizationMembersStore = {
+    findUserId: async (emailOrId) =>
+      users.find((u) => u.id === emailOrId || u.email.toLowerCase() === emailOrId.toLowerCase())
+        ?.id ?? null,
+    roster: async (organizationId) => {
       const organization = organizations.get(organizationId);
       if (!organization) return null;
       return {
@@ -68,26 +76,24 @@ export function inMemoryOrganizations(seed: {
           .map((m) => ({ memberId: memberIdOf(m), userId: m.userId, role: m.role })),
       };
     },
-    addMember: async (_context, input) => {
+    addOwner: async (input) => {
       if (
         members.some((m) => m.userId === input.userId && m.organizationId === input.organizationId)
       ) {
         throw new Error("already a member");
       }
-      members.push(input);
+      members.push({ ...input, role: "owner" });
     },
-    setRole: async (_context, input) => {
-      const member = members.find(
-        (m) => m.organizationId === input.organizationId && memberIdOf(m) === input.memberId,
-      );
+    promoteToOwner: async ({ memberId }) => {
+      const member = members.find((m) => memberIdOf(m) === memberId);
       if (!member) throw new Error("member not found");
-      member.role = input.role;
+      member.role = "owner";
     },
   };
 
   return {
     port,
-    members: membersPort,
+    members: membersStore,
     ids: () => [...organizations.keys()].sort(),
     roleOf: (userId: string, organizationId: string): OrganizationRole | null =>
       members.find((m) => m.userId === userId && m.organizationId === organizationId)?.role ?? null,
