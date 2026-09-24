@@ -26,7 +26,6 @@ type Billing = Awaited<ReturnType<ApiClient["billings"]["list"]>>["data"][number
 
 type BillingsAdminSectionProps = {
   readOnly?: boolean;
-  /** Read a Client's view of the Billings shared through this Engagement. */
   engagementId?: string;
   /** Pre-filter to a single project (e.g. client project detail page). */
   fixedProjectId?: string;

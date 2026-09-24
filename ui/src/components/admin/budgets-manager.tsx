@@ -675,7 +675,6 @@ export function ProjectBudgetPanel({
   readOnly?: boolean;
   /** Link to /admin/budgets for cross-project transfers (project detail page). */
   showAgencyBudgetLink?: boolean;
-  /** Read the Client's view of the budget through this Engagement. */
   engagementId?: string;
 }) {
   const apiClient = useApiClient();
