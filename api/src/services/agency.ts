@@ -256,7 +256,9 @@ export function createAgencyService(
         }
         yield* Effect.promise(() => deleteProjectCascade(db, input.id));
         yield* Effect.promise(() =>
-          plugins.projects(scope.pluginContext).deleteProject({ id: input.id }),
+          plugins
+            .projects({ ...scope.pluginContext, trusted: true })
+            .deleteProject({ id: input.id }),
         );
         return { deleted: true as const };
       }),

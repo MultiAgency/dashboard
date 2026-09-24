@@ -36,9 +36,10 @@ describe("deleting a Project", () => {
     world = inMemoryProjectsPlugin([project("plain", AGENCY_ORG), project("used", AGENCY_ORG)]);
     deleted = [];
     const projects = world.plugins.projects;
-    world.plugins.projects = ((context: never) => ({
-      ...projects(context),
+    world.plugins.projects = ((context: { trusted?: boolean }) => ({
+      ...projects(context as never),
       deleteProject: async ({ id }: { id: string }) => {
+        if (!context.trusted) throw new Error("FORBIDDEN");
         deleted.push(id);
         return { success: true };
       },
@@ -62,7 +63,7 @@ describe("deleting a Project", () => {
 
   const remove = (id: string) => runEffect(agency().deleteProject(scope, { id }));
 
-  test("a Project without money history or sharing is deleted with its assignments and listings", async () => {
+  test("a Project without money history or sharing is deleted through the trusted plugin call, with its assignments and listings", async () => {
     await db.insert(projectContributors).values({ projectId: "plain", nearAccount: "dev.near" });
     await db.insert(listings).values({ id: "listing", projectId: "plain", source: "internal" });
 
