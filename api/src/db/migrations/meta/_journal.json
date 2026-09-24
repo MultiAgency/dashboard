@@ -87,7 +87,7 @@
       "breakpoints": true
     },
     {
-      "idx": 13,
+      "idx": 12,
       "version": "7",
       "when": 1785014400000,
       "tag": "0013_drop_clients",
