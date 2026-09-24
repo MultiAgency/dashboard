@@ -59,7 +59,7 @@ describe("Client ideas", () => {
     });
 
   describe("submitting", () => {
-    test("any Client member submits an idea that the Agency owns, privately, created by them", async () => {
+    test("any Client member submits an idea the Agency owns privately, and its admins are told", async () => {
       const idea = await submit();
 
       expect(idea).toMatchObject({ status: "new", title: "Better reports" });
@@ -72,6 +72,9 @@ describe("Client ideas", () => {
         title: "Better reports",
       });
       expect(upstream.slug).toMatch(/^better-reports-[a-z0-9]+$/);
+      expect(await inbox("studio-admin")).toContain("idea_submitted");
+      expect(await inbox("studio-member")).not.toContain("idea_submitted");
+      expect(await inbox("acme-member")).not.toContain("idea_submitted");
     });
 
     test("slugs are generated, unique, and retried when taken", async () => {
@@ -86,14 +89,6 @@ describe("Client ideas", () => {
 
       expect(first.slug).toBe("better-reports-bbbbbb");
       expect(second.slug).not.toBe(first.slug);
-    });
-
-    test("the Agency's owners and admins are told", async () => {
-      await submit();
-
-      expect(await inbox("studio-admin")).toContain("idea_submitted");
-      expect(await inbox("studio-member")).not.toContain("idea_submitted");
-      expect(await inbox("acme-member")).not.toContain("idea_submitted");
     });
 
     test.each([
@@ -123,18 +118,7 @@ describe("Client ideas", () => {
   });
 
   describe("visibility", () => {
-    test("the Client sees its own Engagement's ideas; the Agency sees them in its inbox", async () => {
-      const idea = await submit();
-
-      const inboxView = await ideas.list(await studio(), { engagementId: acmeEngagement });
-
-      expect((await clientList()).map((i) => i.id)).toEqual([idea.id]);
-      expect(inboxView.data).toEqual([
-        expect.objectContaining({ id: idea.id, status: "new", submittedByUserId: "acme-member" }),
-      ]);
-    });
-
-    test("other Clients and Subcontractors of the Agency never see it", async () => {
+    test("only the Client and its Agency see it, never other Clients or Subcontractors", async () => {
       const idea = await submit();
       const globexEngagement = (await world().activeEngagement("globex")).id;
       await world().engagements.subcontract(await studio(), {
@@ -144,7 +128,12 @@ describe("Client ideas", () => {
       });
       const globex = await world().member("globex-owner", "globex");
       const crew = await world().member("crew-owner", "crew");
+      const inboxView = await ideas.list(await studio(), { engagementId: acmeEngagement });
 
+      expect((await clientList()).map((i) => i.id)).toEqual([idea.id]);
+      expect(inboxView.data).toEqual([
+        expect.objectContaining({ id: idea.id, status: "new", submittedByUserId: "acme-member" }),
+      ]);
       expect((await ideas.list(globex, { engagementId: globexEngagement })).data).toEqual([]);
       await refused(ideas.list(globex, { engagementId: acmeEngagement }), "NOT_FOUND");
       await refused(ideas.list(crew, { engagementId: acmeEngagement }), "NOT_FOUND");
@@ -212,21 +201,17 @@ describe("Client ideas", () => {
       expect(await inbox("studio-admin")).not.toContain("idea_accepted");
     });
 
-    test("a decided idea cannot be decided again", async () => {
+    test("only the Agency decides, once, and not after the Engagement ended", async () => {
+      const decided = await submit("Decided");
       const idea = await submit();
-      await ideas.decline(await studio(), { id: idea.id });
+      await ideas.decline(await studio(), { id: decided.id });
 
-      await refused(accept(idea.id, { slug: "late" }), "IDEA_DECIDED");
+      await refused(accept(decided.id, { slug: "late" }), "IDEA_DECIDED");
       expect(world().upstreamProjects.some((p) => p.slug === "late")).toBe(false);
-    });
-
-    test("only the Agency decides, and not after the Engagement ended", async () => {
-      const idea = await submit();
-
       await refused(ideas.decline(await acmeOwner(), { id: idea.id }), "NOT_FOUND");
       await world().engagements.end(await studio(), acmeEngagement);
       await refused(ideas.decline(await studio(), { id: idea.id }), "NOT_ACTIVE");
-      expect(await clientList()).toEqual([expect.objectContaining({ id: idea.id, status: "new" })]);
+      expect((await clientList()).find((i) => i.id === idea.id)?.status).toBe("new");
     });
   });
 });
