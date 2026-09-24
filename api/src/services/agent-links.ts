@@ -1,8 +1,14 @@
 import { asc, eq, max } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { type AgentLinkRow, agentLinks, type EngagementRow, engagements } from "../db/schema";
-import { type OrganizationScope, SHARED_STATUSES } from "./organization-access";
+import { type AgentLinkRow, agentLinks, type EngagementRow } from "../db/schema";
+import {
+  badRequest,
+  engagementNotFound,
+  loadEngagement,
+  readableEngagement,
+} from "./engagement-lookup";
+import type { OrganizationScope } from "./organization-access";
 
 export type AgentLinkView = {
   id: string;
@@ -12,22 +18,12 @@ export type AgentLinkView = {
   position: number;
 };
 
-const engagementNotFound = () => new ORPCError("NOT_FOUND", { message: "Engagement not found" });
 const linkNotFound = () => new ORPCError("NOT_FOUND", { message: "Agent link not found" });
-const badRequest = (reason: string, message: string) =>
-  new ORPCError("BAD_REQUEST", { message, data: { reason } });
-
-const HTTP_URL = /^https?:\/\//i;
 
 function requireHttpUrl(url: string): string {
   const trimmed = url.trim();
-  let parsed: URL | null = null;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    parsed = null;
-  }
-  if (!parsed || !HTTP_URL.test(trimmed) || !["http:", "https:"].includes(parsed.protocol)) {
+  const protocol = URL.canParse(trimmed) ? new URL(trimmed).protocol : null;
+  if (protocol !== "http:" && protocol !== "https:") {
     throw badRequest("INVALID_URL", "An agent link must be an http:// or https:// URL.");
   }
   return trimmed;
@@ -47,23 +43,6 @@ export function createAgentLinksService(deps: { db: Database; now?: () => Date }
   const { db } = deps;
   const now = deps.now ?? (() => new Date());
 
-  async function loadEngagement(id: string): Promise<EngagementRow | null> {
-    const [row] = await db.select().from(engagements).where(eq(engagements.id, id)).limit(1);
-    return row ?? null;
-  }
-
-  async function readable(scope: OrganizationScope, engagementId: string) {
-    const row = await loadEngagement(engagementId);
-    if (row?.agencyOrganizationId === scope.organizationId) return row;
-    if (
-      row?.clientOrganizationId === scope.organizationId &&
-      SHARED_STATUSES.includes(row.status)
-    ) {
-      return row;
-    }
-    throw engagementNotFound();
-  }
-
   function requireManageable(scope: OrganizationScope, row: EngagementRow | null) {
     if (!row || row.agencyOrganizationId !== scope.organizationId) throw engagementNotFound();
     if (row.status !== "active") {
@@ -78,7 +57,7 @@ export function createAgentLinksService(deps: { db: Database; now?: () => Date }
   async function requireLink(scope: OrganizationScope, id: string) {
     const [link] = await db.select().from(agentLinks).where(eq(agentLinks.id, id)).limit(1);
     if (!link) throw linkNotFound();
-    const row = await loadEngagement(link.engagementId);
+    const row = await loadEngagement(db, link.engagementId);
     if (row?.agencyOrganizationId !== scope.organizationId) throw linkNotFound();
     requireManageable(scope, row);
     return link;
@@ -94,7 +73,7 @@ export function createAgentLinksService(deps: { db: Database; now?: () => Date }
 
   return {
     list: async (scope: OrganizationScope, input: { engagementId: string }) => {
-      const row = await readable(scope, input.engagementId);
+      const { row } = await readableEngagement(db, scope, input.engagementId);
       return { data: (await linksOf(row.id)).map(view) };
     },
 
@@ -102,7 +81,7 @@ export function createAgentLinksService(deps: { db: Database; now?: () => Date }
       scope: OrganizationScope,
       input: { engagementId: string; label: string; url: string },
     ): Promise<AgentLinkView> => {
-      const row = requireManageable(scope, await loadEngagement(input.engagementId));
+      const row = requireManageable(scope, await loadEngagement(db, input.engagementId));
       const url = requireHttpUrl(input.url);
       const [last] = await db
         .select({ position: max(agentLinks.position) })
@@ -139,7 +118,7 @@ export function createAgentLinksService(deps: { db: Database; now?: () => Date }
     },
 
     reorder: async (scope: OrganizationScope, input: { engagementId: string; ids: string[] }) => {
-      const row = requireManageable(scope, await loadEngagement(input.engagementId));
+      const row = requireManageable(scope, await loadEngagement(db, input.engagementId));
       const current = await linksOf(row.id);
       const wanted = new Set(input.ids);
       if (

@@ -1,18 +1,18 @@
 import { and, desc, eq } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import {
-  type EngagementRow,
-  engagementProjects,
-  engagements,
-  type IdeaRow,
-  ideas,
-} from "../db/schema";
+import { type EngagementRow, engagementProjects, type IdeaRow, ideas } from "../db/schema";
 import { runEffect } from "../lib/context";
 import type { OrganizationDirectory, PluginContext } from "../lib/organizations";
 import type { AgencyService } from "./agency";
+import {
+  badRequest,
+  engagementNotFound,
+  loadEngagement,
+  readableEngagement,
+} from "./engagement-lookup";
 import type { NotificationKind, NotificationsService } from "./notifications";
-import { type AgencyScope, type OrganizationScope, SHARED_STATUSES } from "./organization-access";
+import type { AgencyScope, OrganizationScope } from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
 
 export type IdeaResult = {
@@ -47,10 +47,7 @@ export type AcceptIdeaInput = {
 
 const SLUG_ATTEMPTS = 5;
 
-const engagementNotFound = () => new ORPCError("NOT_FOUND", { message: "Engagement not found" });
 const ideaNotFound = () => new ORPCError("NOT_FOUND", { message: "Idea not found" });
-const badRequest = (reason: string, message: string) =>
-  new ORPCError("BAD_REQUEST", { message, data: { reason } });
 
 function isSlugTaken(err: unknown): boolean {
   const data = (err as { data?: { validationErrors?: Array<{ code?: string }> } } | null)?.data;
@@ -93,32 +90,13 @@ export function createIdeasService(deps: {
 
   const userIdOf = (scope: OrganizationScope) => scope.pluginContext.userId ?? scope.actorId;
 
-  async function loadEngagement(id: string): Promise<EngagementRow | null> {
-    const [row] = await db.select().from(engagements).where(eq(engagements.id, id)).limit(1);
-    return row ?? null;
-  }
-
-  async function readable(scope: OrganizationScope, engagementId: string) {
-    const row = await loadEngagement(engagementId);
-    if (!row) throw engagementNotFound();
-    if (row.agencyOrganizationId === scope.organizationId) return { row, side: "agency" as const };
-    if (
-      row.clientOrganizationId === scope.organizationId &&
-      row.kind === "client" &&
-      SHARED_STATUSES.includes(row.status)
-    ) {
-      return { row, side: "client" as const };
-    }
-    throw engagementNotFound();
-  }
-
   function requireActive(row: EngagementRow, message: string) {
     if (row.status !== "active") throw badRequest("NOT_ACTIVE", message);
   }
 
   async function requireAgencyIdea(scope: OrganizationScope, id: string) {
     const [idea] = await db.select().from(ideas).where(eq(ideas.projectId, id)).limit(1);
-    const row = idea ? await loadEngagement(idea.engagementId) : null;
+    const row = idea ? await loadEngagement(db, idea.engagementId) : null;
     if (!idea || !row || row.agencyOrganizationId !== scope.organizationId) throw ideaNotFound();
     requireActive(
       row,
@@ -265,7 +243,7 @@ export function createIdeasService(deps: {
       scope: OrganizationScope,
       input: { engagementId: string; title: string; description?: string },
     ): Promise<IdeaView> => {
-      const row = await loadEngagement(input.engagementId);
+      const row = await loadEngagement(db, input.engagementId);
       if (!row || row.clientOrganizationId !== scope.organizationId || row.kind !== "client") {
         throw engagementNotFound();
       }
@@ -288,7 +266,9 @@ export function createIdeasService(deps: {
     },
 
     list: async (scope: OrganizationScope, input: { engagementId: string }) => {
-      const { row, side } = await readable(scope, input.engagementId);
+      const { row, side } = await readableEngagement(db, scope, input.engagementId, {
+        clientKind: "client",
+      });
       const rows = await db
         .select()
         .from(ideas)
