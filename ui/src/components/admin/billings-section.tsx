@@ -20,6 +20,7 @@ import {
   adminProjectsListQueryOptions,
   clientBillingsQueryKey,
   clientPortalProjectsListQueryOptions,
+  sharedWithUsQueryOptions,
 } from "@/lib/queries";
 
 type Billing = Awaited<ReturnType<ApiClient["billings"]["list"]>>["data"][number];
@@ -58,6 +59,13 @@ export function BillingsAdminSection({
     ...adminAssignmentsListQueryOptions(apiClient),
     enabled: !clientPortal,
   });
+  const sharedWithUsQuery = useQuery({
+    ...sharedWithUsQueryOptions(apiClient),
+    enabled: !clientPortal,
+  });
+  const engagementOfShared = new Map(
+    (sharedWithUsQuery.data?.data ?? []).map((s) => [s.project.id, s.engagementId]),
+  );
 
   const billingsQuery = useInfiniteQuery({
     queryKey: engagementId
@@ -84,7 +92,13 @@ export function BillingsAdminSection({
     () => billingsQuery.data?.pages.flatMap((p) => p.data) ?? [],
     [billingsQuery.data],
   );
-  const projects = projectsQuery.data?.data ?? [];
+  const projects = useMemo(
+    () => [
+      ...(projectsQuery.data?.data ?? []),
+      ...(clientPortal ? [] : (sharedWithUsQuery.data?.data ?? []).map((s) => s.project)),
+    ],
+    [projectsQuery.data, sharedWithUsQuery.data, clientPortal],
+  );
   const allContributors = contributorsQuery.data?.data ?? [];
 
   const filterGraph = useMemo(
@@ -164,11 +178,12 @@ export function BillingsAdminSection({
     if (!project) {
       return <span className="font-mono text-xs">{row.original.projectId}</span>;
     }
-    if (engagementId) {
+    const sharedThrough = engagementId ?? engagementOfShared.get(project.id);
+    if (sharedThrough) {
       return (
         <Link
           to="/client/$engagementId/projects/$slug"
-          params={{ engagementId, slug: project.slug }}
+          params={{ engagementId: sharedThrough, slug: project.slug }}
           className="underline hover:text-foreground text-sm"
         >
           {project.title}
@@ -243,6 +258,16 @@ export function BillingsAdminSection({
       header: "Status",
       accessorKey: "status",
       cell: ({ row }) => <Badge variant="outline">{row.original.status}</Badge>,
+    },
+    {
+      id: "payingDao",
+      header: "Paid from",
+      accessorKey: "payingDaoAccountId",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-muted-foreground break-all">
+          {row.original.payingDaoAccountId || "—"}
+        </span>
+      ),
     },
     {
       id: "createdAt",

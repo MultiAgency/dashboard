@@ -2,7 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Budget, Button, Card, CardContent, Input } from "@/components";
+import { Budget, Button, Card, CardContent, Input, SubcontractorSpend } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field, selectClass } from "@/components/admin-form";
 import { useBudgetActions } from "@/hooks/use-budget-actions";
@@ -673,11 +673,21 @@ export function ProjectBudgetPanel({
         </div>
         {budgetQuery.isLoading ? (
           <div className="text-sm text-muted-foreground">Loading budget...</div>
-        ) : budgetQuery.data && budgetQuery.data.budgets.length > 0 ? (
+        ) : budgetQuery.data &&
+          (budgetQuery.data.budgets.length > 0 ||
+            budgetQuery.data.subcontractorSpend.length > 0) ? (
           <div className="space-y-4">
             {budgetQuery.data.budgets.map((b) => (
               <Budget key={b.tokenId} budget={b} />
             ))}
+            <SubcontractorSpend
+              rows={budgetQuery.data.subcontractorSpend}
+              title={
+                budgetQuery.data.budgets.length > 0
+                  ? "paid by subcontractors, apart from this budget"
+                  : "paid from your agency dao"
+              }
+            />
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">No budget yet.</div>

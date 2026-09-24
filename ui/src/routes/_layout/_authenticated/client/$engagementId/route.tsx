@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { Badge } from "@/components";
-import { EngagementStatusBadge } from "@/components/engagement-status";
+import { EngagementKindBadge, EngagementStatusBadge } from "@/components/engagement-status";
 import { useApiClient } from "@/lib/api";
 import { awaitingCountFor } from "@/lib/change-orders";
 import { canReadEngagement, clientEngagementSections } from "@/lib/navigation";
@@ -55,6 +55,7 @@ function EngagementLayout() {
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <EngagementStatusBadge status={engagement.status} />
+            <EngagementKindBadge kind={engagement.kind} />
             {engagement.status === "ended" && <Badge variant="secondary">read-only</Badge>}
           </div>
           <h1 className="font-display text-2xl font-black uppercase tracking-tight">

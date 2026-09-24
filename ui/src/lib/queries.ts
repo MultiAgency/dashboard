@@ -312,6 +312,14 @@ export function engagementsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export function sharedWithUsQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...engagementsQueryKey, "shared-with-us", ...workspaceKey()] as const,
+    queryFn: () => apiClient.engagements.sharedWithUs(),
+    retry: false,
+  });
+}
+
 export function engagementDetailQueryOptions(apiClient: ApiClient, id: string) {
   return queryOptions({
     queryKey: [...engagementsQueryKey, "detail", ...workspaceKey(), id] as const,
@@ -502,7 +510,7 @@ function staleKeys(change: DataChange): QueryKey[] {
         ["client"],
       ];
     case "assignments":
-      return [["admin", "assignments"]];
+      return [["admin", "assignments"], clientPortalQueryKey];
     case "applications":
       return [["admin", "applications"]];
     case "builders":

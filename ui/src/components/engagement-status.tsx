@@ -14,6 +14,10 @@ export function EngagementStatusBadge({ status }: { status: EngagementView["stat
   return <Badge variant={VARIANT[status]}>{status}</Badge>;
 }
 
+export function EngagementKindBadge({ kind }: { kind: EngagementView["kind"] }) {
+  return kind === "subcontract" ? <Badge variant="secondary">subcontract</Badge> : null;
+}
+
 export function InvitationStatusBadge({
   invitation,
 }: {

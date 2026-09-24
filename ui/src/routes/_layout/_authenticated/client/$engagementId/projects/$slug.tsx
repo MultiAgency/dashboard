@@ -1,8 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { Badge } from "@/components";
+import { AssignmentsSection } from "@/components/admin/assignments-section";
 import { BillingsAdminSection } from "@/components/admin/billings-section";
+import { ProjectBillingsSection } from "@/components/admin/project-billings";
 import { ProjectBudgetPanel } from "@/components/admin/project-budget-panel";
+import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { clientPortalProjectDetailQueryOptions } from "@/lib/queries";
 
@@ -16,9 +20,12 @@ function SharedProjectPage() {
   const { slug } = Route.useParams();
   const { engagement } = Route.useRouteContext();
   const apiClient = useApiClient();
+  const { agencyDao, isLoaded } = useMeRoles();
   const projectQuery = useQuery(
     clientPortalProjectDetailQueryOptions(apiClient, engagement.id, slug),
   );
+  const subcontract = engagement.kind === "subcontract";
+  const working = subcontract && engagement.status === "active";
 
   if (projectQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">Loading project…</p>;
@@ -57,7 +64,13 @@ function SharedProjectPage() {
         </section>
       )}
 
-      {contributors && contributors.length > 0 && (
+      {subcontract && (
+        <section className="space-y-3">
+          <AssignmentsSection projectId={project.id} readOnly={!working} />
+        </section>
+      )}
+
+      {!subcontract && contributors && contributors.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Builders</h2>
           <ul className="space-y-1 text-sm">
@@ -73,7 +86,13 @@ function SharedProjectPage() {
 
       <ProjectBudgetPanel projectId={project.id} readOnly engagementId={engagement.id} />
 
-      <BillingsAdminSection readOnly engagementId={engagement.id} fixedProjectId={project.id} />
+      {working && isLoaded && !agencyDao && <ConnectTreasuryPrompt />}
+
+      {working && agencyDao ? (
+        <ProjectBillingsSection projectId={project.id} contributors={contributors ?? []} />
+      ) : (
+        <BillingsAdminSection readOnly engagementId={engagement.id} fixedProjectId={project.id} />
+      )}
     </div>
   );
 }

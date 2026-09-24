@@ -19,6 +19,7 @@ import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
 import { ChangeOrdersPanel, ShortfallWarnings } from "@/components/change-orders";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
+  EngagementKindBadge,
   EngagementStatusBadge,
   type EngagementView,
   InvitationStatusBadge,
@@ -87,6 +88,7 @@ function EngagementDetailPage() {
       <header className="space-y-2">
         <div className="flex flex-wrap gap-2">
           <EngagementStatusBadge status={engagement.status} />
+          <EngagementKindBadge kind={engagement.kind} />
           {engagement.invitation && <InvitationStatusBadge invitation={engagement.invitation} />}
         </div>
         <h1 className="font-display text-3xl font-black uppercase tracking-tight">
@@ -286,9 +288,9 @@ function SharedProjects({ engagement }: { engagement: EngagementView }) {
     <section className="space-y-3">
       <h2 className="font-display text-xl uppercase font-extrabold">Shared projects</h2>
       <p className="text-sm text-muted-foreground max-w-2xl">
-        The Client's members see these Projects in full, including their budget and every billing. A
-        Project with budget attributed to this Engagement, or in its Allocation plan, cannot be
-        unshared.
+        {engagement.kind === "subcontract"
+          ? "Your Subcontractor sees these Projects, assigns its own builders and bills them from its own Agency DAO. It cannot edit them, publish listings or touch your budget, and never sees your Clients' Engagements."
+          : "The Client's members see these Projects in full, including their budget and every billing. A Project with budget attributed to this Engagement, or in its Allocation plan, cannot be unshared."}
       </p>
       {engagement.projectIds.length === 0 ? (
         <Empty label="Nothing shared yet." />
