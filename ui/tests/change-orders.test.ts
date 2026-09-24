@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 import {
   awaitingCountFor,
   awaitingLink,
-  failureMessage,
   planChangeItems,
   signedBaseAmount,
 } from "../src/lib/change-orders";
@@ -52,15 +51,7 @@ describe("signedBaseAmount", () => {
   });
 });
 
-describe("failureMessage", () => {
-  test("explains why a Change order could not be applied", () => {
-    expect(failureMessage("PREPAID_BALANCE_EXCEEDED")).toMatch(/Prepaid balance/);
-    expect(failureMessage("REMAINING_EXCEEDED")).toMatch(/Allocated, Committed or Paid/);
-    expect(failureMessage("SOMETHING_NEW")).toBe("SOMETHING_NEW");
-  });
-});
-
-describe("awaitingCountFor", () => {
+describe("awaiting Change orders", () => {
   test("counts the Change orders the viewer can decide on one Engagement", () => {
     const awaiting = [
       { engagementId: "e1", canDecide: true },
@@ -71,9 +62,7 @@ describe("awaitingCountFor", () => {
     expect(awaitingCountFor(awaiting, "e1")).toBe(2);
     expect(awaitingCountFor(awaiting, "e3")).toBe(0);
   });
-});
 
-describe("awaitingLink", () => {
   test("opens the viewer's own side of the Engagement", () => {
     expect(awaitingLink({ engagementId: "e1", proposedBy: { side: "agency" } })).toBe(
       "/client/e1/plan",

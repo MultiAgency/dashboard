@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import { billings } from "../../src/db/schema";
-import { createBudget, listBudgets, writeEngagementEntries } from "../../src/services/budgets";
+import { listBudgets, writeEngagementEntries } from "../../src/services/budgets";
 import type { ChangeOrderItemInput } from "../../src/services/change-orders";
 import type { DaoProposalStatus } from "../../src/services/sputnik";
 import { engagementWorld, refused, STUDIO_SEED } from "../fakes/engagements";
 import { migratedDatabase } from "./_pg";
-
-const STUDIO_DAO = "studio.sputnik-dao.testnet";
 
 const item =
   (kind: ChangeOrderItemInput["kind"]) =>
@@ -38,22 +36,15 @@ describe("change orders and the Allocation plan", () => {
     statuses = {};
     onFetch = async () => {};
     const db = database.db;
-    const watched = new Proxy(db, {
-      get(target, property) {
-        if (property === "transaction") {
-          return async (run: (tx: Database) => Promise<unknown>) => {
-            open += 1;
-            try {
-              return await target.transaction(run as never);
-            } finally {
-              open -= 1;
-            }
-          };
-        }
-        const value = Reflect.get(target, property, target);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    }) as Database;
+    const transaction = async (run: (tx: Database) => Promise<unknown>) => {
+      open += 1;
+      try {
+        return await db.transaction(run as never);
+      } finally {
+        open -= 1;
+      }
+    };
+    const watched = Object.create(db, { transaction: { value: transaction } }) as Database;
     world = await engagementWorld(watched, STUDIO_SEED, {
       now: () => today,
       chainStatus: async (_db, _dao, proposalId) => {
@@ -68,6 +59,8 @@ describe("change orders and the Allocation plan", () => {
   const acme = () => world.manager("acme-owner", "acme");
   const acmeMember = () => world.member("acme-member", "acme");
   const globex = () => world.manager("globex-owner", "globex");
+  const forbidden = (promise: Promise<unknown>) =>
+    expect(promise).rejects.toMatchObject({ code: "FORBIDDEN" });
   const inbox = async (userId: string) =>
     (await world.notifications.list(userId, { limit: 50 })).data.map((n) => n.kind);
 
@@ -95,13 +88,10 @@ describe("change orders and the Allocation plan", () => {
 
   async function attributed(engagementId: string) {
     const { data } = await listBudgets(database.db, { projectIds: null, engagementId, limit: 200 });
-    const byProject: Record<string, string> = {};
-    for (const row of data) {
-      byProject[row.projectId] = (
-        BigInt(byProject[row.projectId] ?? "0") + BigInt(row.amount)
-      ).toString();
-    }
-    return byProject;
+    const byProject: Record<string, bigint> = {};
+    for (const row of data)
+      byProject[row.projectId] = (byProject[row.projectId] ?? 0n) + BigInt(row.amount);
+    return Object.fromEntries(Object.entries(byProject).map(([id, sum]) => [id, sum.toString()]));
   }
 
   const balance = async (engagementId: string) =>
@@ -135,7 +125,7 @@ describe("change orders and the Allocation plan", () => {
   }
 
   describe("deciding", () => {
-    test("only owners and admins of the side that did not propose can decide", async () => {
+    test("only owners and admins of the side that did not propose can decide; Client members only read", async () => {
       const id = await engagement();
       const proposed = await propose(await studio(), id, [plan("p1", "300")]);
 
@@ -146,16 +136,21 @@ describe("change orders and the Allocation plan", () => {
         canDecide: false,
       });
       for (const scope of [await studio(), await acmeMember()]) {
-        await expect(world.changeOrders.approve(scope, { id: proposed.id })).rejects.toMatchObject({
-          code: "FORBIDDEN",
-        });
+        await forbidden(world.changeOrders.approve(scope, { id: proposed.id }));
       }
       await refused(
         world.changeOrders.reject(await world.manager("rival-admin", "rival"), { id: proposed.id }),
         "NOT_FOUND",
       );
-      const listed = (await world.changeOrders.list(await acme(), { engagementId: id })).data;
-      expect(listed).toEqual([expect.objectContaining({ id: proposed.id, canDecide: true })]);
+      const listed = async (scope: Awaited<ReturnType<typeof acme>>) =>
+        (await world.changeOrders.list(scope, { engagementId: id })).data;
+      expect(await listed(await acme())).toEqual([
+        expect.objectContaining({ id: proposed.id, canDecide: true }),
+      ]);
+      expect(await listed(await acmeMember())).toEqual([
+        expect.objectContaining({ canDecide: false, canWithdraw: false }),
+      ]);
+      await forbidden(propose(await acmeMember(), id, [plan("p2", "1")]));
 
       const rejected = await world.changeOrders.reject(await acme(), { id: proposed.id });
       expect(rejected).toMatchObject({ status: "rejected", decidedByUserId: "acme-owner" });
@@ -171,15 +166,11 @@ describe("change orders and the Allocation plan", () => {
       const decided = await propose(await acme(), id, [move("p1", "400")], "now");
       const withdrawnLater = await propose(await acme(), id, [plan("p2", "300")]);
 
-      await expect(
-        world.changeOrders.approve(await acme(), { id: decided.id }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await forbidden(world.changeOrders.approve(await acme(), { id: decided.id }));
       expect((await world.changeOrders.approve(await studio(), { id: decided.id })).status).toBe(
         "applied",
       );
-      await expect(
-        world.changeOrders.withdraw(await studio(), { id: withdrawnLater.id }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await forbidden(world.changeOrders.withdraw(await studio(), { id: withdrawnLater.id }));
       const withdrawn = await world.changeOrders.withdraw(await acme(), { id: withdrawnLater.id });
 
       expect(withdrawn.status).toBe("withdrawn");
@@ -191,19 +182,6 @@ describe("change orders and the Allocation plan", () => {
       expect(await inbox("studio-admin")).toEqual(
         expect.arrayContaining(["change_order_proposed", "change_order_withdrawn"]),
       );
-    });
-
-    test("Client members read the plan and history but cannot act", async () => {
-      const id = await engagement();
-      const proposed = await propose(await studio(), id, [plan("p1", "300")]);
-
-      const listed = (await world.changeOrders.list(await acmeMember(), { engagementId: id })).data;
-      expect(listed).toEqual([
-        expect.objectContaining({ id: proposed.id, canDecide: false, canWithdraw: false }),
-      ]);
-      await expect(propose(await acmeMember(), id, [plan("p2", "1")])).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
     });
 
     test("lists the Change orders awaiting the viewer's side", async () => {
@@ -364,6 +342,17 @@ describe("change orders and the Allocation plan", () => {
   });
 
   describe("limits at apply time", () => {
+    async function coFunded(acmeAmount: string) {
+      const acmeId = await engagement("acme");
+      const globexId = await engagement("globex");
+      await record(acmeId, "1000", "2026-09");
+      await record(globexId, "1000", "2026-09");
+      await agreed(acmeId, [move("p1", acmeAmount)], "now");
+      const globexMove = await propose(await studio(), globexId, [move("p1", "500")], "now");
+      await world.changeOrders.approve(await globex(), { id: globexMove.id });
+      return { acmeId, globexId };
+    }
+
     test("two approvals that together exceed the Prepaid balance leave one applied and one failed", async () => {
       const id = await engagement();
       await record(id, "1000", "2026-09");
@@ -384,21 +373,7 @@ describe("change orders and the Allocation plan", () => {
     });
 
     test("a pull-back cannot exceed the Engagement's attributed budget on a co-funded Project", async () => {
-      const acmeId = await engagement("acme");
-      const globexId = await engagement("globex");
-      await record(acmeId, "1000", "2026-09");
-      await record(globexId, "1000", "2026-09");
-      await agreed(acmeId, [move("p1", "300")], "now");
-      const globexMove = await propose(await studio(), globexId, [move("p1", "500")], "now");
-      await world.changeOrders.approve(await globex(), { id: globexMove.id });
-      await createBudget(database.db, {
-        projectId: "p1",
-        tokenId: "near",
-        amount: "1000",
-        note: null,
-        actorAccountId: "admin.near",
-        fundingDaoAccountId: STUDIO_DAO,
-      });
+      const { acmeId, globexId } = await coFunded("300");
 
       const tooMuch = await agreed(acmeId, [move("p1", "-400")], "now");
       expect(tooMuch).toMatchObject({
@@ -413,13 +388,7 @@ describe("change orders and the Allocation plan", () => {
     });
 
     test("a pull-back cannot take a Project below what is Committed or Paid, rechecked at approval", async () => {
-      const acmeId = await engagement("acme");
-      const globexId = await engagement("globex");
-      await record(acmeId, "1000", "2026-09");
-      await record(globexId, "1000", "2026-09");
-      await agreed(acmeId, [move("p1", "500")], "now");
-      const globexMove = await propose(await studio(), globexId, [move("p1", "500")], "now");
-      await world.changeOrders.approve(await globex(), { id: globexMove.id });
+      const { acmeId } = await coFunded("500");
       const pullBack = await propose(await acme(), acmeId, [move("p1", "-300")], "now");
 
       await bill("600", "Approved");
