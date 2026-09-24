@@ -112,12 +112,19 @@ describe("reports.generate", () => {
     await db.insert(engagementProjects).values({ engagementId, projectId });
   }
 
-  async function insertBudget(id: string, projectId: string, tokenId: string, amount: string) {
+  async function insertBudget(
+    id: string,
+    projectId: string,
+    tokenId: string,
+    amount: string,
+    engagementId?: string,
+  ) {
     await db.insert(budgets).values({
       id,
       projectId,
       tokenId,
       amount,
+      engagementId,
       actorAccountId: "admin.near",
       createdAt: new Date(),
     });
@@ -243,7 +250,7 @@ describe("reports.generate", () => {
   test("generate (admin route) — agency-wide, includes clientBreakdown across multiple clients", async () => {
     await insertClient("client-a");
     await linkProject("client-a", "project-a");
-    await insertBudget("budget-a", "project-a", "near", "1000");
+    await insertBudget("budget-a", "project-a", "near", "1000", "client-a");
     await insertApprovedBilling({
       id: "billing-a",
       projectId: "project-a",
@@ -255,7 +262,7 @@ describe("reports.generate", () => {
 
     await insertClient("client-b");
     await linkProject("client-b", "project-b");
-    await insertBudget("budget-b", "project-b", "near", "2000");
+    await insertBudget("budget-b", "project-b", "near", "2000", "client-b");
     await insertApprovedBilling({
       id: "billing-b",
       projectId: "project-b",
