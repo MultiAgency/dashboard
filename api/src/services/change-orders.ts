@@ -21,7 +21,9 @@ import {
   parseShortfall,
   type ShortfallLine,
 } from "./allocation-plan";
+import { prefetchEngagementStatuses } from "./budgets";
 import type { EngagementSide } from "./engagements";
+import type { BillingStatuses, ChainStatusFetcher } from "./ledger";
 import type { NotificationKind, NotificationsService } from "./notifications";
 import { type OrganizationScope, ROLE_MATRIX, SHARED_STATUSES } from "./organization-access";
 import { lockEngagement } from "./prepaid-balance";
@@ -142,6 +144,7 @@ export function createChangeOrdersService(deps: {
   db: Database;
   organizations: OrganizationDirectory;
   notifications: NotificationsService;
+  chainStatus?: ChainStatusFetcher;
   now?: () => Date;
 }) {
   const { db, organizations, notifications } = deps;
@@ -341,10 +344,20 @@ export function createChangeOrdersService(deps: {
       tx: Database,
       engagement: EngagementRow,
       changeOrder: ChangeOrderRow,
+      statuses: BillingStatuses,
     ) => Promise<ChangeOrderRow>,
+    options: { applies: boolean },
   ) {
     requireManager(scope);
     const { changeOrder: seen } = await readableChangeOrder(scope, id);
+    const statuses: BillingStatuses = options.applies
+      ? await prefetchEngagementStatuses(
+          db,
+          seen.engagementId,
+          await itemsOf(db, seen.id),
+          deps.chainStatus,
+        )
+      : new Map();
     return db.transaction(async (tx) => {
       const engagement = await lockEngagement(tx as Database, seen.engagementId);
       const [changeOrder] = await tx
@@ -365,7 +378,10 @@ export function createChangeOrdersService(deps: {
       if (changeOrder.proposedByOrganizationId === scope.organizationId) {
         throw forbidden("A Change order is decided by the side that did not propose it.");
       }
-      return { engagement, changeOrder: await run(tx as Database, engagement, changeOrder) };
+      return {
+        engagement,
+        changeOrder: await run(tx as Database, engagement, changeOrder, statuses),
+      };
     });
   }
 
@@ -524,7 +540,7 @@ export function createChangeOrdersService(deps: {
       const { engagement, changeOrder } = await decide(
         scope,
         input.id,
-        async (tx, engagement, changeOrder) => {
+        async (tx, engagement, changeOrder, statuses) => {
           const decidedAt = now();
           const effectivePeriod = await nextPeriod(tx, engagement.id, decidedAt);
           const [approved] = await tx
@@ -547,9 +563,11 @@ export function createChangeOrdersService(deps: {
             actorAccountId: scope.actorId,
             effectivePeriod,
             now: decidedAt,
+            statuses,
           });
           return outcome.changeOrder;
         },
+        { applies: true },
       );
       await tellOutcome(
         scope,
@@ -578,6 +596,7 @@ export function createChangeOrdersService(deps: {
             .returning();
           return rejected!;
         },
+        { applies: false },
       );
       await tellOutcome(scope, engagement, changeOrder, "change_order_rejected");
       return finish(scope, engagement, changeOrder);

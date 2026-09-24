@@ -6,6 +6,7 @@ import * as schema from "../../src/db/schema";
 import { billings, proposals } from "../../src/db/schema";
 import { createBudget, listBudgets } from "../../src/services/budgets";
 import type { ChangeOrderItemInput } from "../../src/services/change-orders";
+import type { DaoProposalStatus } from "../../src/services/sputnik";
 import { engagementWorld } from "../fakes/engagements";
 import { project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
@@ -496,6 +497,103 @@ describe("change orders and the Allocation plan", () => {
       const fits = await agreed(acmeId, [move("site", "-200")], "now");
       expect(fits.status).toBe("applied");
       expect(await attributed(acmeId)).toEqual({ site: "300" });
+    });
+  });
+
+  describe("chain statuses", () => {
+    let open: number;
+    let fetches: { proposalId: string; insideLock: boolean }[];
+    let statuses: Record<string, DaoProposalStatus>;
+    let onFetch: () => Promise<void>;
+    let watched: Database;
+
+    beforeEach(async () => {
+      open = 0;
+      fetches = [];
+      statuses = {};
+      onFetch = async () => {};
+      await pg.close();
+      const { PGlite } = await import("@electric-sql/pglite");
+      pg = new PGlite("memory://");
+      await applyAllMigrations(pg);
+      db = drizzle(pg, { schema }) as unknown as Database;
+      watched = new Proxy(db, {
+        get(target, property) {
+          if (property === "transaction") {
+            return async (run: (tx: Database) => Promise<unknown>) => {
+              open += 1;
+              try {
+                return await target.transaction(run as never);
+              } finally {
+                open -= 1;
+              }
+            };
+          }
+          const value = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as Database;
+      world = await engagementWorld(
+        watched,
+        { organizations, members, users, projects },
+        {
+          now: () => today,
+          chainStatus: async (_db, _dao, proposalId) => {
+            fetches.push({ proposalId, insideLock: open > 0 });
+            await onFetch();
+            return statuses[proposalId] ?? "InProgress";
+          },
+        },
+      );
+    });
+
+    async function billing(proposalId: string, amount: string) {
+      await db.insert(billings).values({
+        id: crypto.randomUUID(),
+        projectId: "site",
+        nearAccount: "dev.near",
+        tokenId: "near",
+        amount,
+        proposalId,
+      });
+    }
+
+    test("are fetched before the Engagement is locked, on approval and on plan application", async () => {
+      const id = await engagement();
+      await record(id, "1000", "2026-09");
+      await agreed(id, [move("site", "600")], "now");
+      await billing("101", "200");
+      statuses["101"] = "Approved";
+
+      const now = await agreed(id, [move("site", "-100")], "now");
+      const later = await agreed(id, [move("site", "-100")]);
+      await record(id, "1", "2026-10");
+
+      expect(now.status).toBe("applied");
+      expect(
+        (await world.changeOrders.list(await acme(), { engagementId: id })).data.find(
+          (c) => c.id === later.id,
+        )?.status,
+      ).toBe("applied");
+      expect(fetches.length).toBeGreaterThanOrEqual(2);
+      expect(fetches.filter((f) => f.insideLock)).toEqual([]);
+    });
+
+    test("a billing created after the statuses were fetched counts as committed", async () => {
+      const id = await engagement();
+      await record(id, "1000", "2026-09");
+      await agreed(id, [move("site", "600")], "now");
+      await billing("103", "100");
+      const pullBack = await propose(await acme(), id, [move("site", "-400")], "now");
+      onFetch = async () => {
+        onFetch = async () => {};
+        await billing("104", "300");
+      };
+
+      const failed = await world.changeOrders.approve(await studio(), { id: pullBack.id });
+
+      expect(failed).toMatchObject({ status: "failed", failureReason: "REMAINING_EXCEEDED" });
+      expect(fetches.map((f) => f.proposalId)).toEqual(["103"]);
     });
   });
 

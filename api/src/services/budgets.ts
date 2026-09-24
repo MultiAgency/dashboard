@@ -10,7 +10,12 @@ import {
   engagements,
   organizationDaos,
 } from "../db/schema";
-import { projectSpend } from "./ledger";
+import {
+  type BillingStatuses,
+  type ChainStatusFetcher,
+  prefetchBillingStatuses,
+  projectSpend,
+} from "./ledger";
 import type { TreasuryScope } from "./organization-access";
 import { lockEngagement, prepaidBalances } from "./prepaid-balance";
 import type { ProjectDirectory } from "./project-directory";
@@ -249,10 +254,36 @@ export type EngagementEntryInput = {
   note: string | null;
 };
 
+export async function prefetchEngagementStatuses(
+  db: Database,
+  engagementId: string,
+  entries: { projectId: string | null; amount: string }[],
+  fetchStatus?: ChainStatusFetcher,
+): Promise<BillingStatuses> {
+  const projectIds = entries.flatMap((entry) =>
+    entry.projectId !== null && BigInt(entry.amount) < 0n ? [entry.projectId] : [],
+  );
+  if (projectIds.length === 0) return new Map();
+  const [dao] = await db
+    .select({ daoAccountId: organizationDaos.daoAccountId })
+    .from(engagements)
+    .innerJoin(
+      organizationDaos,
+      eq(organizationDaos.organizationId, engagements.agencyOrganizationId),
+    )
+    .where(eq(engagements.id, engagementId))
+    .limit(1);
+  if (!dao) return new Map();
+  return prefetchBillingStatuses(db, { daoAccountId: dao.daoAccountId, projectIds }, fetchStatus);
+}
+
+export type ChainStatusInput = { statuses?: BillingStatuses; chainStatus?: ChainStatusFetcher };
+
 async function checkEngagementEntries(
   tx: Database,
   engagementId: string,
   entries: EngagementEntryInput[],
+  statuses: BillingStatuses,
 ): Promise<string> {
   const engagement = await lockEngagement(tx, engagementId);
   if (!engagement) {
@@ -313,6 +344,7 @@ async function checkEngagementEntries(
         projectId,
         tokenId,
         payingDaoAccountId: dao.daoAccountId,
+        statuses,
       });
       if (sums.total - spent + delta < 0n) {
         throw new EngagementBudgetError(
@@ -336,14 +368,22 @@ async function checkEngagementEntries(
 
 export async function writeEngagementEntries(
   db: Database,
-  input: { engagementId: string; actorAccountId: string; entries: EngagementEntryInput[] },
+  input: {
+    engagementId: string;
+    actorAccountId: string;
+    entries: EngagementEntryInput[];
+  } & ChainStatusInput,
 ): Promise<Budget[]> {
   if (input.entries.length === 0) return [];
+  const statuses =
+    input.statuses ??
+    (await prefetchEngagementStatuses(db, input.engagementId, input.entries, input.chainStatus));
   return db.transaction(async (tx) => {
     const fundingDaoAccountId = await checkEngagementEntries(
       tx as Database,
       input.engagementId,
       input.entries,
+      statuses,
     );
     const createdAt = new Date();
     return tx

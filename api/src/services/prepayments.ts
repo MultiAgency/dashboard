@@ -3,7 +3,9 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type EngagementRow, engagements, type PrepaymentRow, prepayments } from "../db/schema";
 import type { OrganizationDirectory } from "../lib/organizations";
-import { applyPlanForPeriod, type PlanApplication } from "./allocation-plan";
+import { applyPlanForPeriod, type PlanApplication, pendingItems } from "./allocation-plan";
+import { prefetchEngagementStatuses } from "./budgets";
+import type { ChainStatusFetcher } from "./ledger";
 import type { NotificationKind, NotificationsService } from "./notifications";
 import { type OrganizationScope, requireTreasury, SHARED_STATUSES } from "./organization-access";
 import { lockEngagement, prepaidBalanceRows, prepaidBalances } from "./prepaid-balance";
@@ -78,6 +80,7 @@ export function createPrepaymentsService(deps: {
     engagement: EngagementRow,
     application: PlanApplication,
   ) => Promise<void>;
+  chainStatus?: ChainStatusFetcher;
   now?: () => Date;
 }) {
   const { db, organizations, notifications } = deps;
@@ -177,6 +180,12 @@ export function createPrepaymentsService(deps: {
     record: async (scope: OrganizationScope, input: RecordPrepaymentInput) => {
       const treasury = requireTreasury(scope);
       requireValid(input);
+      const statuses = await prefetchEngagementStatuses(
+        db,
+        input.engagementId,
+        await pendingItems(db, input.engagementId),
+        deps.chainStatus,
+      );
       const { engagement, row, application } = await db.transaction(async (tx) => {
         const engagement = requireWritable(
           scope,
@@ -200,6 +209,7 @@ export function createPrepaymentsService(deps: {
           prepaymentId: row!.id,
           actorAccountId: scope.actorId,
           now: now(),
+          statuses,
         });
         return { engagement, row: row!, application };
       });
