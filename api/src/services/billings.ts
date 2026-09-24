@@ -4,7 +4,11 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { billings } from "../db/schema";
-import type { OrganizationAccessService, TreasuryScope } from "./organization-access";
+import {
+  type OrganizationAccessService,
+  type TreasuryScope,
+  workable,
+} from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 import { enrichWithChainStatus, getProposal } from "./sputnik";
 import { NATIVE_TOKEN_ID } from "./tokens";
@@ -38,7 +42,7 @@ export async function withPayingStatus<
   return enrichWithChainStatus(db, { ...billing, payingDaoAccountId }, payingDaoAccountId);
 }
 
-const paidBy = (daoAccountId: string) =>
+export const paidBy = (daoAccountId: string) =>
   or(eq(billings.payingDaoAccountId, daoAccountId), isNull(billings.payingDaoAccountId));
 
 export function createBillingsService(
@@ -46,12 +50,6 @@ export function createBillingsService(
   directory: ProjectDirectory,
   access: Pick<OrganizationAccessService, "workableProject" | "subcontractedProjects">,
 ) {
-  const workable = (scope: TreasuryScope, projectId: string, write = false) =>
-    Effect.tryPromise({
-      try: () => access.workableProject(scope, projectId, { write }),
-      catch: (err) => err,
-    });
-
   return {
     list: (
       scope: TreasuryScope,
@@ -133,7 +131,7 @@ export function createBillingsService(
       },
     ) =>
       Effect.gen(function* () {
-        yield* workable(scope, input.projectId, true);
+        yield* workable(access, scope, input.projectId, true);
 
         const proposalIdNum = Number.parseInt(input.proposalId, 10);
         if (Number.isNaN(proposalIdNum)) {
@@ -233,7 +231,7 @@ export function createBillingsService(
         if (!row) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Billing not found" }));
         }
-        const target = yield* workable(scope, row.projectId, true);
+        const target = yield* workable(access, scope, row.projectId, true);
         const payer = payingDaoOf(row, target.relation === "owned" ? scope.agencyDao : null);
         if (payer !== scope.agencyDao) {
           return yield* Effect.fail(

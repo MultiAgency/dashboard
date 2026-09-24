@@ -1,7 +1,8 @@
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { billings, budgets, type Listing } from "../db/schema";
+import { paidBy } from "./billings";
 import { getListingsForProjects, type ListingsService } from "./listings";
 import type { TreasuryScope } from "./organization-access";
 import { type DaoProposalStatus, enrichWithChainStatus, persistedProposalStatus } from "./sputnik";
@@ -59,9 +60,6 @@ type BillingForRollup = {
   amount: string;
   status: DaoProposalStatus;
 };
-
-const paidBy = (daoAccountId: string) =>
-  or(eq(billings.payingDaoAccountId, daoAccountId), isNull(billings.payingDaoAccountId));
 
 type TokenRollup = {
   tokenId: string;
