@@ -91,6 +91,22 @@ describe.each(Object.entries(NAMINGS))("auth directory on a %s auth database", (
     ]);
   });
 
+  test("names one member of an Organization with their role and deliverable email", async () => {
+    const directory = authDatabaseDirectory(pg);
+
+    expect(await directory.member("acme", "viewer")).toEqual({
+      userId: "viewer",
+      role: "member",
+      email: "viewer@acme.example",
+    });
+    expect(await directory.member("acme", "admin")).toEqual({
+      userId: "admin",
+      role: "admin",
+      email: null,
+    });
+    expect(await directory.member("personal", "viewer")).toBeNull();
+  });
+
   test("creates an Organization with no members and invites its first admin as owner", async () => {
     const directory = authDatabaseDirectory(pg);
 

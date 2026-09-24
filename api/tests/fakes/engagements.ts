@@ -13,7 +13,6 @@ import type { EmailMessage } from "../../src/services/notify";
 import { createOrganizationAccess, ROLE_MATRIX } from "../../src/services/organization-access";
 import { createPrepaymentsService } from "../../src/services/prepayments";
 import type { PluginProject } from "../../src/services/project-directory";
-import { createProjectDirectory } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
 import {
   type FakeMember,
@@ -23,7 +22,7 @@ import {
   seedAgencyDaos,
   signedIn,
 } from "./organizations";
-import { inMemoryProjects, project } from "./projects";
+import { inMemoryProjectsPlugin, project } from "./projects";
 
 export const ORIGIN = "https://app.example";
 export const SPOOFED_ORIGIN = "https://spoofed.example";
@@ -88,8 +87,8 @@ export async function engagementWorld(
     ...seed,
     members: seed.members.map((m) => ({ ...m })),
   });
-  const projects = inMemoryProjects(seed.projects);
-  const directory = createProjectDirectory(() => projects.client);
+  const projectsPlugin = inMemoryProjectsPlugin(seed.projects);
+  const directory = projectsPlugin.directory;
   const access = createOrganizationAccess({ db, organizations: organizations.port, directory });
   const emails: EmailMessage[] = [];
   const sendEmail = async (message: EmailMessage) => {
@@ -153,6 +152,8 @@ export async function engagementWorld(
 
   return {
     organizations,
+    plugins: projectsPlugin.plugins,
+    upstreamProjects: projectsPlugin.projects,
     access,
     directory,
     notifications,
