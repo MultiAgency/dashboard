@@ -101,15 +101,17 @@ export function createPrepaymentsService(deps: {
     return row;
   }
 
-  async function requireBalancesCovered(tx: Database, engagementId: string, tokenIds: string[]) {
-    const balances = await prepaidBalances(tx, engagementId);
-    const short = tokenIds.find((tokenId) => (balances.get(tokenId) ?? 0n) < 0n);
-    if (short) {
-      throw badRequest(
-        "PREPAID_BALANCE_NEGATIVE",
-        `The Prepaid balance in ${short} would go below zero, because Budget entries already use it.`,
-      );
-    }
+  async function guardBalance(tx: Database, engagementId: string, tokenId: string) {
+    const before = (await prepaidBalances(tx, engagementId)).get(tokenId) ?? 0n;
+    return async () => {
+      const after = (await prepaidBalances(tx, engagementId)).get(tokenId) ?? 0n;
+      if (after < 0n && after < before) {
+        throw badRequest(
+          "PREPAID_BALANCE_NEGATIVE",
+          `The Prepaid balance in ${tokenId} would go below zero, because Budget entries already use it.`,
+        );
+      }
+    };
   }
 
   async function loadPrepayment(tx: Database, id: string): Promise<PrepaymentRow> {
@@ -198,6 +200,7 @@ export function createPrepaymentsService(deps: {
       requireValid(input);
       const { engagement, row } = await db.transaction(async (tx) => {
         const { current, engagement } = await lockPrepayment(scope, tx as Database, input.id);
+        const covered = await guardBalance(tx as Database, engagement.id, current.tokenId);
         const [row] = await tx
           .update(prepayments)
           .set({
@@ -212,7 +215,7 @@ export function createPrepaymentsService(deps: {
           })
           .where(eq(prepayments.id, current.id))
           .returning();
-        await requireBalancesCovered(tx as Database, engagement.id, [current.tokenId]);
+        await covered();
         return { engagement, row: row! };
       });
       await tellClient(scope, engagement, "prepayment_corrected", row);
@@ -223,8 +226,9 @@ export function createPrepaymentsService(deps: {
       requireTreasury(scope);
       const { engagement, row } = await db.transaction(async (tx) => {
         const { current, engagement } = await lockPrepayment(scope, tx as Database, input.id);
+        const covered = await guardBalance(tx as Database, engagement.id, current.tokenId);
         await tx.delete(prepayments).where(eq(prepayments.id, current.id));
-        await requireBalancesCovered(tx as Database, engagement.id, [current.tokenId]);
+        await covered();
         return { engagement, row: current };
       });
       await tellClient(scope, engagement, "prepayment_removed", row);

@@ -1,3 +1,4 @@
+import { expect } from "vitest";
 import type { Database } from "../../src/db";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createAgencyService } from "../../src/services/agency";
@@ -25,6 +26,11 @@ import { inMemoryProjects, project } from "./projects";
 
 export const ORIGIN = "https://app.example";
 export const SPOOFED_ORIGIN = "https://spoofed.example";
+
+export const refused = (promise: Promise<unknown>, reason: string) =>
+  expect(promise).rejects.toMatchObject(
+    reason === "NOT_FOUND" ? { code: reason } : { data: { reason } },
+  );
 
 type Seed = {
   organizations: FakeOrganization[];
