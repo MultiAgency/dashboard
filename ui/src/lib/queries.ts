@@ -121,7 +121,7 @@ export const adminProjectsListQueryKey = ["admin", "projects", "list"] as const;
 export function adminProjectsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...adminProjectsListQueryKey, getNetwork()] as const,
-    queryFn: () => apiClient.agency.projects.list(),
+    queryFn: () => apiClient.agency.projects.listOwned(),
     retry: false,
   });
 }
@@ -224,7 +224,7 @@ export const adminTokensQueryKey = ["admin", "tokens"] as const;
 export function adminTokensQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...adminTokensQueryKey, getNetwork()] as const,
-    queryFn: () => apiClient.tokens.list(),
+    queryFn: () => apiClient.tokens.listOwned(),
     staleTime: 60 * 60_000,
   });
 }
