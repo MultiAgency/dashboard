@@ -1,13 +1,8 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { budgets } from "../../src/db/schema";
 import type { OrganizationScope } from "../../src/services/organization-access";
-import { engagementWorld, ORIGIN, SPOOFED_ORIGIN } from "../fakes/engagements";
+import { engagementWorld, ORIGIN, refused, SPOOFED_ORIGIN } from "../fakes/engagements";
 import { migratedDatabase } from "./_pg";
-
-const refused = (promise: Promise<unknown>, reason: string) =>
-  expect(promise).rejects.toMatchObject(
-    reason === "NOT_FOUND" ? { code: reason } : { data: { reason } },
-  );
 
 describe("engagements", () => {
   const database = migratedDatabase({ perTest: true });
