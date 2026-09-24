@@ -4,7 +4,9 @@ import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Badge, Button, Card, CardContent } from "@/components";
+import { LoadingCard } from "@/components/loading-card";
 import { useInvitationActions } from "@/components/pending-invitations";
+import { ResendVerificationButton } from "@/components/resend-verification-button";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
 import { classifyInvitation, type InvitationState } from "@/lib/invitations";
 import { realEmail } from "@/lib/membership";
@@ -24,9 +26,9 @@ export const Route = createFileRoute("/_layout/accept-invitation/$id")({
   component: AcceptInvitationPage,
 });
 
+type PageState = InvitationState | "declined";
+
 type InvitationDetails = {
-  status: string;
-  expiresAt: Date | string;
   role: string | null;
   organizationName: string;
   inviterEmail: string;
@@ -65,13 +67,12 @@ function AcceptInvitationPage() {
     return <Page state={null} />;
   }
 
-  const state: InvitationState = declined
+  const state: PageState = declined
     ? "declined"
     : classifyInvitation({
         signedIn,
         invitation: invitationQuery.data?.invitation,
         error: invitationQuery.data?.error,
-        now: new Date(),
       });
   const invitation = invitationQuery.data?.invitation ?? null;
   const userEmail = session?.user?.email ?? null;
@@ -108,14 +109,7 @@ function AcceptInvitationPage() {
           </CardContent>
         </Card>
       )}
-      {state === "expired" && (
-        <Message>
-          This invitation has expired. Ask{" "}
-          {invitation?.inviterEmail ?? "the person who invited you"} to send a new one.
-        </Message>
-      )}
       {state === "declined" && <Message>You declined this invitation.</Message>}
-      {state === "accepted" && <Message>You already accepted this invitation.</Message>}
       {state === "unavailable" && (
         <Message>
           This invitation is no longer valid. It may have expired, been declined or canceled, or
@@ -126,18 +120,16 @@ function AcceptInvitationPage() {
   );
 }
 
-const TITLES: Record<InvitationState, string> = {
+const TITLES: Record<PageState, string> = {
   "signed-out": "You're invited",
   "verify-email": "Verify your email",
   "wrong-email": "Different account",
   pending: "Join Organization",
-  expired: "Invitation expired",
-  accepted: "Already joined",
   declined: "Invitation declined",
   unavailable: "Invitation unavailable",
 };
 
-function Page({ state, children }: { state: InvitationState | null; children?: ReactNode }) {
+function Page({ state, children }: { state: PageState | null; children?: ReactNode }) {
   return (
     <div className="mx-auto max-w-xl space-y-8 animate-fade-in">
       <header className="space-y-2">
@@ -148,15 +140,7 @@ function Page({ state, children }: { state: InvitationState | null; children?: R
           {state ? TITLES[state] : "Invitation"}
         </h1>
       </header>
-      {state ? (
-        children
-      ) : (
-        <Card>
-          <CardContent className="font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">
-            loading invitation...
-          </CardContent>
-        </Card>
-      )}
+      {state ? children : <LoadingCard label="invitation" />}
     </div>
   );
 }
@@ -201,17 +185,6 @@ function SignedOut({ redirect, email }: { redirect: string; email?: string }) {
 }
 
 function VerifyEmail({ email, callbackURL }: { email: string | null; callbackURL: string }) {
-  const authClient = useAuthClient();
-  const resend = useMutation({
-    mutationFn: async () => {
-      if (!email) throw new Error("Your account has no email to verify");
-      const { error } = await authClient.sendVerificationEmail({ email, callbackURL });
-      if (error) throw new Error(error.message ?? "Could not send the email");
-    },
-    onSuccess: () => toast.success(`Verification email sent to ${email}`),
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   return (
     <Card variant="hi-vis">
       <CardContent className="space-y-4">
@@ -219,9 +192,11 @@ function VerifyEmail({ email, callbackURL }: { email: string | null; callbackURL
           Verify <span className="font-mono">{email}</span> before answering this invitation. The
           link in the verification email brings you back here.
         </p>
-        <Button variant="outline" onClick={() => resend.mutate()} disabled={resend.isPending}>
-          {resend.isPending ? "sending..." : "send verification email"}
-        </Button>
+        <ResendVerificationButton
+          email={email}
+          callbackURL={callbackURL}
+          label="send verification email"
+        />
       </CardContent>
     </Card>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { canChangeRole, isLastOwner, memberDisplayName, realEmail } from "../src/lib/membership";
+import { isLastOwner, memberDisplayName, realEmail } from "../src/lib/membership";
 
 describe("memberDisplayName", () => {
   test("prefers the member's name", () => {
@@ -56,15 +56,5 @@ describe("last owner guard", () => {
 
   test("no owner is the last owner while another owner remains", () => {
     expect(isLastOwner(twoOwners, "m1")).toBe(false);
-  });
-
-  test("the last owner cannot be demoted but can keep the owner role", () => {
-    expect(canChangeRole(soleOwner, "m1", "admin")).toBe(false);
-    expect(canChangeRole(soleOwner, "m1", "owner")).toBe(true);
-  });
-
-  test("other members can move to any role", () => {
-    expect(canChangeRole(soleOwner, "m2", "member")).toBe(true);
-    expect(canChangeRole(twoOwners, "m1", "member")).toBe(true);
   });
 });

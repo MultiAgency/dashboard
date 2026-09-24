@@ -5,8 +5,14 @@ import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Button, Card, CardContent, Input } from "@/components";
 import { Field } from "@/components/admin-form";
+import { ResendVerificationButton } from "@/components/resend-verification-button";
 import { useNearSignIn } from "@/hooks/use-near-sign-in";
-import { landingDestination, refreshAccountQueries, WELCOME_PATH } from "@/lib/account";
+import {
+  landingDestination,
+  refreshAccountQueries,
+  requestPasswordReset,
+  WELCOME_PATH,
+} from "@/lib/account";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import { safeRedirect } from "@/lib/landing";
@@ -336,17 +342,6 @@ function VerificationPending({
   callbackURL: string;
   onBack: () => void;
 }) {
-  const authClient = useAuthClient();
-
-  const resend = useMutation({
-    mutationFn: async () => {
-      const { error } = await authClient.sendVerificationEmail({ email, callbackURL });
-      if (error) throw new Error(error.message ?? "Could not send the email");
-    },
-    onSuccess: () => toast.success(`Verification email sent to ${email}`),
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   return (
     <Card variant="hi-vis">
       <CardContent className="space-y-4">
@@ -355,9 +350,7 @@ function VerificationPending({
           confirm your address; it brings you straight back here to continue.
         </p>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => resend.mutate()} disabled={resend.isPending}>
-            {resend.isPending ? "sending..." : "resend email"}
-          </Button>
+          <ResendVerificationButton email={email} callbackURL={callbackURL} label="resend email" />
           <Button variant="ghost" onClick={onBack}>
             back to sign in
           </Button>
@@ -373,13 +366,7 @@ function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) {
   const [sent, setSent] = useState(false);
 
   const request = useMutation({
-    mutationFn: async () => {
-      const { error } = await authClient.requestPasswordReset({
-        email: email.trim(),
-        redirectTo: "/reset-password",
-      });
-      if (error) throw new Error(error.message ?? "Could not send the reset email");
-    },
+    mutationFn: () => requestPasswordReset(authClient, email.trim()),
     onSuccess: () => setSent(true),
     onError: (e: Error) => toast.error(e.message),
   });

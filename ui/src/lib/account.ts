@@ -46,6 +46,11 @@ export function organizationsQueryOptions(authClient: AuthClient) {
   });
 }
 
+export async function requestPasswordReset(authClient: AuthClient, email: string) {
+  const { error } = await authClient.requestPasswordReset({ email, redirectTo: "/reset-password" });
+  if (error) throw new Error(error.message ?? "Could not send the reset email");
+}
+
 export async function refreshAccountQueries(queryClient: QueryClient) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: sessionQueryKey }),
