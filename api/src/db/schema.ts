@@ -465,3 +465,71 @@ export const settings = pgTable("settings", {
 
 export type Settings = typeof settings.$inferSelect;
 export type NewSettings = typeof settings.$inferInsert;
+
+export const IDEA_STATUSES = ["new", "accepted", "declined"] as const;
+
+export const ideas = pgTable(
+  "ideas",
+  {
+    projectId: text("project_id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    submittedByUserId: text("submitted_by_user_id").notNull(),
+    status: text("status", { enum: IDEA_STATUSES }).notNull().default("new"),
+    resultProjectId: text("result_project_id"),
+    decidedByUserId: text("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: false }),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("ideas_engagement").on(t.engagementId, t.createdAt),
+  }),
+);
+
+export type IdeaRow = typeof ideas.$inferSelect;
+
+export const agentLinks = pgTable(
+  "agent_links",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    label: text("label").notNull(),
+    url: text("url").notNull(),
+    position: integer("position").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("agent_links_engagement").on(t.engagementId, t.position),
+  }),
+);
+
+export type AgentLinkRow = typeof agentLinks.$inferSelect;
+
+export const reportSnapshots = pgTable(
+  "report_snapshots",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    engagementId: text("engagement_id").references(() => engagements.id),
+    generatedByUserId: text("generated_by_user_id").notNull(),
+    startDate: text("start_date"),
+    endDate: text("end_date"),
+    note: text("note"),
+    payload: text("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    organizationIdx: index("report_snapshots_organization").on(
+      t.organizationId,
+      t.createdAt,
+      t.id,
+    ),
+  }),
+);
+
+export type ReportSnapshotRow = typeof reportSnapshots.$inferSelect;

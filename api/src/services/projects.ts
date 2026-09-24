@@ -5,6 +5,7 @@ import {
   budgets,
   clientProjects,
   engagementProjects,
+  ideas,
   listings,
   projectContributors,
 } from "../db/schema";
@@ -36,5 +37,6 @@ export async function deleteProjectCascade(db: Database, projectId: string): Pro
     await tx.delete(projectContributors).where(eq(projectContributors.projectId, projectId));
     await tx.delete(listings).where(eq(listings.projectId, projectId));
     await tx.delete(clientProjects).where(eq(clientProjects.projectId, projectId));
+    await tx.delete(ideas).where(eq(ideas.projectId, projectId));
   });
 }

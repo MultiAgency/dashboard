@@ -27,6 +27,7 @@ import { createClientPortalService } from "./services/client-portal";
 import { createContactFormService } from "./services/contact-form";
 import { createContributorsService } from "./services/contributors";
 import { createEngagementsService } from "./services/engagements";
+import { createIdeasService } from "./services/ideas";
 import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
@@ -139,6 +140,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
         notifications,
         onPlanApplied: changeOrders.notifyPlanApplied,
       });
+      const ideas = createIdeasService({
+        db,
+        agency,
+        directory,
+        readScopeOfAgency: access.readScopeOfAgency,
+        engagements,
+        notifications,
+        organizations: organizationDirectory,
+      });
       const clientPortal = createClientPortalService(
         access,
         agency,
@@ -172,6 +182,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         engagements,
         prepayments,
         changeOrders,
+        ideas,
         notifications,
         organizationDirectory,
         authPool,
@@ -207,6 +218,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       engagements,
       prepayments,
       changeOrders,
+      ideas,
       notifications,
       organizationDirectory,
       assignments,
@@ -460,6 +472,24 @@ export default createPlugin.withPlugins<PluginsClient>()({
         reject: builder.changeOrders.reject
           .use(manager)
           .handler(async ({ context, input }) => changeOrders.reject(context.scope, input)),
+      },
+
+      ideas: {
+        list: builder.ideas.list
+          .use(member)
+          .handler(async ({ context, input }) => ideas.list(context.scope, input)),
+
+        submit: builder.ideas.submit
+          .use(member)
+          .handler(async ({ context, input }) => ideas.submit(context.scope, input)),
+
+        accept: builder.ideas.accept
+          .use(manager)
+          .handler(async ({ context, input }) => ideas.accept(context.scope, input)),
+
+        decline: builder.ideas.decline
+          .use(manager)
+          .handler(async ({ context, input }) => ideas.decline(context.scope, input)),
       },
 
       clientPortal: {

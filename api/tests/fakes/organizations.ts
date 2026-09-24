@@ -125,6 +125,16 @@ export function inMemoryOrganizations(seed: {
           role: m.role,
           email: deliverableEmail(users.find((u) => u.id === m.userId)?.email),
         })),
+    member: async (organizationId, userId) => {
+      const found = members.find((m) => m.organizationId === organizationId && m.userId === userId);
+      return found
+        ? {
+            userId,
+            role: found.role,
+            email: deliverableEmail(users.find((u) => u.id === userId)?.email),
+          }
+        : null;
+    },
     memberships: async (userId) =>
       members.flatMap((m) => {
         const organization = organizations.get(m.organizationId);

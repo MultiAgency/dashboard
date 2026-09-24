@@ -1,3 +1,4 @@
+import { ORPCError } from "every-plugin/orpc";
 import type { PluginContext } from "../../src/lib/organizations";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import type { AgencyScope, TreasuryScope } from "../../src/services/organization-access";
@@ -79,6 +80,12 @@ export function inMemoryProjectsPlugin(seed: PluginProject[]) {
   const forContext = (context: PluginContext) => ({
     ...client,
     createProject: async (input: CreateInput): Promise<PluginProject> => {
+      if (projects.some((p) => p.slug === input.slug)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "A project with this slug already exists",
+          data: { validationErrors: [{ field: "slug", code: "SLUG_TAKEN" }] },
+        });
+      }
       const created: PluginProject = {
         ...project(input.id ?? `created-${projects.length + 1}`, ""),
         organizationId: context.organization?.activeOrganizationId ?? null,
@@ -86,6 +93,7 @@ export function inMemoryProjectsPlugin(seed: PluginProject[]) {
         kind: input.kind,
         slug: input.slug,
         title: input.title,
+        description: input.description ?? null,
         content: input.content ?? null,
         visibility: input.visibility ?? "private",
         repository: input.repository ?? null,

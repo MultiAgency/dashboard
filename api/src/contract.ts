@@ -432,6 +432,29 @@ const allocationPlan = z.object({
 
 const changeOrderIdInput = z.object({ id: z.string().min(1) });
 
+const idea = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  slug: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  status: z.enum(["new", "accepted", "declined"]),
+  submittedByUserId: z.string(),
+  result: z
+    .object({
+      id: z.string(),
+      slug: z.string(),
+      title: z.string(),
+      kind: projectKind,
+      shared: z.boolean(),
+    })
+    .nullable(),
+  createdAt: z.date(),
+  decidedAt: z.date().nullable(),
+});
+
+const ideaIdInput = z.object({ id: z.string().min(1) });
+
 const assignment = z.object({
   projectId: z.string(),
   nearAccount: z.string(),
@@ -955,6 +978,46 @@ export const contract = oc.router({
       .route({ method: "POST", path: "/change-orders/{id}/reject" })
       .input(changeOrderIdInput)
       .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  ideas: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/ideas" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(idea) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    submit: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/ideas" })
+      .input(
+        z.object({
+          engagementId: z.string().min(1),
+          title: z.string().trim().min(1).max(200),
+          description: z.string().trim().max(4000).optional(),
+        }),
+      )
+      .output(idea)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    accept: oc
+      .route({ method: "POST", path: "/ideas/{id}/accept" })
+      .input(
+        ideaIdInput.extend({
+          kind: z.enum(["project", "scope"]),
+          title: z.string().trim().min(1).max(200),
+          slug,
+          parentSlug: slug.optional(),
+          share: z.boolean().default(true),
+        }),
+      )
+      .output(idea)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    decline: oc
+      .route({ method: "POST", path: "/ideas/{id}/decline" })
+      .input(ideaIdInput)
+      .output(idea)
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
