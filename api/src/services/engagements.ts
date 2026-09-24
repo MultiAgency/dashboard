@@ -343,17 +343,13 @@ export function createEngagementsService(deps: {
           ),
         )
         .orderBy(desc(engagements.updatedAt));
-      const synced = await Promise.all(
-        rows.map((row) =>
-          row.agencyOrganizationId === scope.organizationId ? syncInvitation(scope, row) : row,
-        ),
-      );
+      const synced = await Promise.all(rows.map((row) => syncInvitation(scope, row)));
       return { data: await views(scope, synced) };
     },
 
     get: async (scope: OrganizationScope, id: string) => {
-      const { row, side } = await requireSide(scope, id);
-      return view(scope, side === "agency" ? await syncInvitation(scope, row) : row);
+      const { row } = await requireSide(scope, id);
+      return view(scope, await syncInvitation(scope, row));
     },
 
     createWithClient: async (

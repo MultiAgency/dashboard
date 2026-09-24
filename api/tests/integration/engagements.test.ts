@@ -401,6 +401,12 @@ describe("engagements", () => {
       const invitationId = new URL(engagement.invitation!.link, ORIGIN).pathname.split("/").pop()!;
       world.organizations.acceptInvitation(invitationId, "newco-boss");
 
+      const clientView = await world.engagements.list(
+        await world.manager("newco-boss", engagement.client.id),
+      );
+      expect(clientView.data.map((e) => [e.agency.name, e.status, e.invitation])).toEqual([
+        ["Studio", "active", null],
+      ]);
       const view = await world.engagements.get(await studio(), engagement.id);
 
       expect(view.invitation?.status).toBe("accepted");
