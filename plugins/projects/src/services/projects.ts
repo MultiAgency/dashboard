@@ -452,6 +452,12 @@ export const ProjectServiceLive = Layer.effect(
             return yield* Effect.fail(
               new ORPCError("BAD_REQUEST", {
                 message: "A project with this slug already exists",
+                data: {
+                  invalidFields: ["slug"],
+                  validationErrors: [
+                    { field: "slug", message: "This slug is already taken", code: "SLUG_TAKEN" },
+                  ],
+                },
               }),
             );
           }
