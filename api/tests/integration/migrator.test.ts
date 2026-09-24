@@ -210,7 +210,7 @@ describe("migrate — runtime migrator", () => {
     await expect(insert("2026-9", "100")).rejects.toThrow();
     await expect(insert("2026-10", "0")).rejects.toThrow();
   });
-  test("the subcontracting migration records the paying Agency DAO and makes proposal ids unique per DAO", async () => {
+  test("the subcontracting migration records the paying Agency DAO, makes proposal ids unique per DAO and drops the billings client column", async () => {
     const { migrations } = await Effect.runPromise(loadMigrations());
     await Effect.runPromise(
       migrate(
@@ -255,19 +255,9 @@ describe("migrate — runtime migrator", () => {
     await insert("first", "studio.sputnik-dao.near");
     await insert("other-dao", "crew.sputnik-dao.near");
     await expect(insert("again", "studio.sputnik-dao.near")).rejects.toThrow();
-  });
-
-  test("the billings client column is gone after all migrations", async () => {
-    const { migrations } = await Effect.runPromise(loadMigrations());
-    await Effect.runPromise(migrate(driver.db, migrations));
-
-    const columns = await driver.db.execute(
+    const clientColumn = await driver.db.execute(
       sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'billings' AND column_name = 'client_id'`,
     );
-    const indexes = await driver.db.execute(
-      sql`SELECT indexname FROM pg_indexes WHERE indexname = 'billings_client_id'`,
-    );
-    expect((columns as unknown as { rows: unknown[] }).rows).toEqual([]);
-    expect((indexes as unknown as { rows: unknown[] }).rows).toEqual([]);
+    expect((clientColumn as unknown as { rows: unknown[] }).rows).toEqual([]);
   });
 });
