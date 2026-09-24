@@ -3,9 +3,6 @@ export type InvitationState =
   | "verify-email"
   | "wrong-email"
   | "pending"
-  | "expired"
-  | "accepted"
-  | "declined"
   | "unavailable";
 
 type InvitationLike = { status: string; expiresAt: Date | string };
@@ -19,9 +16,8 @@ function isExpired(invitation: InvitationLike, now: Date): boolean {
 
 export function classifyInvitation(input: {
   signedIn: boolean;
-  invitation?: InvitationLike | null;
+  invitation?: unknown;
   error?: InvitationError | null;
-  now: Date;
 }): InvitationState {
   if (!input.signedIn || input.error?.status === 401) return "signed-out";
   if (input.error) {
@@ -29,12 +25,7 @@ export function classifyInvitation(input: {
     if (input.error.code?.startsWith("EMAIL_VERIFICATION_REQUIRED")) return "verify-email";
     return "unavailable";
   }
-  const invitation = input.invitation;
-  if (!invitation) return "unavailable";
-  if (invitation.status === "accepted") return "accepted";
-  if (invitation.status === "rejected") return "declined";
-  if (invitation.status !== "pending") return "unavailable";
-  return isExpired(invitation, input.now) ? "expired" : "pending";
+  return input.invitation ? "pending" : "unavailable";
 }
 
 export function pendingInvitations<T extends InvitationLike>(invitations: T[], now: Date): T[] {

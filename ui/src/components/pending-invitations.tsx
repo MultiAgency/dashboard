@@ -2,12 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Badge, Button, Card, CardContent } from "@/components";
+import { Button } from "@/components";
 import { Empty } from "@/components/admin-form";
+import { LoadingCard } from "@/components/loading-card";
+import { OrganizationRowCard } from "@/components/organization-row-card";
 import {
   landingDestination,
   refreshAccountQueries,
-  type UserInvitation,
   userInvitationsQueryOptions,
 } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
@@ -65,13 +66,7 @@ export function PendingInvitationsList() {
   const invitations = invitationsQuery.data ?? [];
 
   if (invitationsQuery.isLoading) {
-    return (
-      <Card>
-        <CardContent className="font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">
-          loading invitations...
-        </CardContent>
-      </Card>
-    );
+    return <LoadingCard label="invitations" />;
   }
 
   if (invitations.length === 0) {
@@ -81,54 +76,31 @@ export function PendingInvitationsList() {
   return (
     <div className="grid gap-3">
       {invitations.map((invitation) => (
-        <InvitationRow
+        <OrganizationRowCard
           key={invitation.id}
-          invitation={invitation}
-          busy={busy}
-          onAccept={() => accept.mutate(invitation.id)}
-          onDecline={() => decline.mutate(invitation.id)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function InvitationRow({
-  invitation,
-  busy,
-  onAccept,
-  onDecline,
-}: {
-  invitation: UserInvitation;
-  busy: boolean;
-  onAccept: () => void;
-  onDecline: () => void;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1 min-w-0">
-          <div className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
-            {invitation.organizationName}
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono text-[10px] uppercase">
-              {invitation.role ?? "member"}
-            </Badge>
+          name={invitation.organizationName}
+          role={invitation.role}
+          details={
             <span className="font-mono text-[11px] text-muted-foreground">
               expires {new Date(invitation.expiresAt).toISOString().slice(0, 10)}
             </span>
+          }
+        >
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => accept.mutate(invitation.id)} disabled={busy}>
+              accept →
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => decline.mutate(invitation.id)}
+              disabled={busy}
+            >
+              decline
+            </Button>
           </div>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={onAccept} disabled={busy}>
-            accept →
-          </Button>
-          <Button size="sm" variant="outline" onClick={onDecline} disabled={busy}>
-            decline
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+        </OrganizationRowCard>
+      ))}
+    </div>
   );
 }

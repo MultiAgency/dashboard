@@ -1,9 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useQuery } from "@tanstack/react-query";
 import { useAuthClient } from "@/app";
-import { Badge, Button, Card, CardContent } from "@/components";
+import { Button } from "@/components";
 import { Empty } from "@/components/admin-form";
-import { organizationsQueryOptions, refreshAccountQueries } from "@/lib/account";
+import { LoadingCard } from "@/components/loading-card";
+import { OrganizationRowCard } from "@/components/organization-row-card";
+import { useLeaveOrganization } from "@/hooks/use-leave-organization";
+import { organizationsQueryOptions } from "@/lib/account";
 import { sessionQueryOptions } from "@/lib/auth";
 import { nonPersonalOrganizations } from "@/lib/landing";
 import { isLastOwner } from "@/lib/membership";
@@ -17,7 +19,6 @@ type MyMembership = {
 
 export function MyOrganizations() {
   const authClient = useAuthClient();
-  const queryClient = useQueryClient();
   const { data: session } = useQuery(sessionQueryOptions(authClient));
   const userId = session?.user?.id;
   const organizationsQuery = useQuery(organizationsQueryOptions(authClient));
@@ -44,26 +45,10 @@ export function MyOrganizations() {
     enabled: !!userId && organizationsQuery.isSuccess,
   });
 
-  const leave = useMutation({
-    mutationFn: async (organizationId: string) => {
-      const { error } = await authClient.organization.leave({ organizationId });
-      if (error) throw new Error(error.message ?? "Could not leave the Organization");
-    },
-    onSuccess: async () => {
-      toast.success("You left the Organization");
-      await refreshAccountQueries(queryClient);
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+  const leave = useLeaveOrganization();
 
   if (organizationsQuery.isLoading || membershipsQuery.isLoading) {
-    return (
-      <Card>
-        <CardContent className="font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">
-          loading organizations...
-        </CardContent>
-      </Card>
-    );
+    return <LoadingCard label="organizations" />;
   }
 
   const memberships = membershipsQuery.data ?? [];
@@ -74,33 +59,27 @@ export function MyOrganizations() {
   return (
     <div className="grid gap-3">
       {memberships.map((membership) => (
-        <Card key={membership.organizationId}>
-          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1 min-w-0">
-              <div className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
-                {membership.name}
-              </div>
-              <Badge variant="outline" className="font-mono text-[10px] uppercase">
-                {membership.role ?? "member"}
-              </Badge>
-            </div>
-            <div className="space-y-1 sm:text-right">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => leave.mutate(membership.organizationId)}
-                disabled={membership.lastOwner || leave.isPending}
-              >
-                leave
-              </Button>
-              {membership.lastOwner && (
-                <p className="text-xs text-muted-foreground">
-                  You are the only owner. Make someone else owner before leaving.
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <OrganizationRowCard
+          key={membership.organizationId}
+          name={membership.name}
+          role={membership.role}
+        >
+          <div className="space-y-1 sm:text-right">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => leave.mutate(membership.organizationId)}
+              disabled={membership.lastOwner || leave.isPending}
+            >
+              leave
+            </Button>
+            {membership.lastOwner && (
+              <p className="text-xs text-muted-foreground">
+                You are the only owner. Make someone else owner before leaving.
+              </p>
+            )}
+          </div>
+        </OrganizationRowCard>
       ))}
     </div>
   );

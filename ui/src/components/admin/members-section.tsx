@@ -6,10 +6,9 @@ import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, DataTable, Spinner } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Input } from "@/components/ui/input";
-import { refreshAccountQueries } from "@/lib/account";
+import { useLeaveOrganization } from "@/hooks/use-leave-organization";
 import { type AuthClient, useAuthClient } from "@/lib/auth";
 import {
-  canChangeRole,
   isLastOwner,
   memberDisplayName,
   ORGANIZATION_ROLES,
@@ -349,7 +348,6 @@ function MembersTable({
   authClient: AuthClient;
   orgId?: string;
 }) {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [pendingRoles, setPendingRoles] = useState<Record<string, string>>({});
 
@@ -391,19 +389,7 @@ function MembersTable({
     onError: (e: Error) => toast.error(e.message || "Failed to remove member"),
   });
 
-  const leaveMutation = useMutation({
-    mutationFn: async () => {
-      if (!orgId) throw new Error("No active Organization");
-      const { error } = await authClient.organization.leave({ organizationId: orgId });
-      if (error) throw new Error(error.message ?? "Failed to leave the Organization");
-    },
-    onSuccess: async () => {
-      toast.success("You left the Organization");
-      await refreshAccountQueries(queryClient);
-      navigate({ to: "/welcome", replace: true });
-    },
-    onError: (e: Error) => toast.error(e.message || "Failed to leave the Organization"),
-  });
+  const leaveMutation = useLeaveOrganization(() => navigate({ to: "/welcome", replace: true }));
 
   const busy = updateMutation.isPending || removeMutation.isPending || leaveMutation.isPending;
 
@@ -438,10 +424,6 @@ function MembersTable({
             value={pendingRoles[member.id] ?? member.role}
             onChange={(e) => {
               const newRole = e.target.value as OrganizationRole;
-              if (!canChangeRole(members, member.id, newRole)) {
-                toast.error(LAST_OWNER_HINT);
-                return;
-              }
               setPendingRoles((prev) => ({ ...prev, [member.id]: newRole }));
               updateMutation.mutate({ memberId: member.id, role: newRole });
             }}
@@ -471,7 +453,9 @@ function MembersTable({
               size="sm"
               variant="destructive"
               title={lastOwner ? LAST_OWNER_HINT : undefined}
-              onClick={() => (isSelf ? leaveMutation.mutate() : removeMutation.mutate(member.id))}
+              onClick={() =>
+                isSelf && orgId ? leaveMutation.mutate(orgId) : removeMutation.mutate(member.id)
+              }
               disabled={busy || lastOwner}
             >
               {isSelf ? "leave" : "remove"}

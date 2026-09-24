@@ -3,7 +3,8 @@ import { type FormEvent, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
-import { refreshAccountQueries } from "@/lib/account";
+import { ResendVerificationButton } from "@/components/resend-verification-button";
+import { refreshAccountQueries, requestPasswordReset } from "@/lib/account";
 import { sessionQueryOptions } from "@/lib/auth";
 import { realEmail } from "@/lib/membership";
 
@@ -53,26 +54,9 @@ export function SignInMethods() {
   const setPassword = useMutation({
     mutationFn: async () => {
       if (!email) throw new Error("Add an email first");
-      const { error } = await authClient.requestPasswordReset({
-        email,
-        redirectTo: "/reset-password",
-      });
-      if (error) throw new Error(error.message ?? "Could not send the email");
+      await requestPasswordReset(authClient, email);
     },
     onSuccess: () => toast.success(`We emailed ${email} a link to set your password`),
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const verify = useMutation({
-    mutationFn: async () => {
-      if (!email) throw new Error("Add an email first");
-      const { error } = await authClient.sendVerificationEmail({
-        email,
-        callbackURL: "/profile",
-      });
-      if (error) throw new Error(error.message ?? "Could not send the email");
-    },
-    onSuccess: () => toast.success(`Verification email sent to ${email}`),
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -93,14 +77,12 @@ export function SignInMethods() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-mono text-xs break-all">{email}</span>
               {!verified && (
-                <Button
+                <ResendVerificationButton
+                  email={email}
+                  callbackURL="/profile"
+                  label="send verification"
                   size="sm"
-                  variant="outline"
-                  onClick={() => verify.mutate()}
-                  disabled={verify.isPending}
-                >
-                  {verify.isPending ? "sending..." : "send verification"}
-                </Button>
+                />
               )}
             </div>
           ) : (

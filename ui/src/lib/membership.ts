@@ -44,11 +44,3 @@ export function isLastOwner(members: RoleHolder[], memberId: string): boolean {
   if (!member || !isOwner(member)) return false;
   return members.filter(isOwner).length <= 1;
 }
-
-export function canChangeRole(
-  members: RoleHolder[],
-  memberId: string,
-  nextRole: OrganizationRole,
-): boolean {
-  return nextRole === "owner" || !isLastOwner(members, memberId);
-}
