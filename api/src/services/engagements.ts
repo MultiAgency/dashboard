@@ -257,6 +257,12 @@ export function createEngagementsService(deps: {
 
   async function requirePendingInvitation(scope: OrganizationScope, id: string) {
     const { row } = await requireSide(scope, id, "agency");
+    if (row.status !== "active") {
+      throw badRequest(
+        "NOT_ACTIVE",
+        "The invitation can only change while the Engagement is active.",
+      );
+    }
     const synced = await syncInvitation(scope, row);
     if (!synced.invitationId) {
       throw badRequest("NO_INVITATION", "This Engagement has no first-admin invitation.");
