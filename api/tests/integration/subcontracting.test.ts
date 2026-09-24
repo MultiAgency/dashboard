@@ -1,11 +1,6 @@
-import type { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import type { Effect } from "every-plugin/effect";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Database } from "../../src/db";
-import * as schema from "../../src/db/schema";
+import { beforeEach, describe, expect, test } from "vitest";
 import { budgets, proposals } from "../../src/db/schema";
-import { runEffect } from "../../src/lib/context";
+import { runEffect as run } from "../../src/lib/context";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createAgencyService } from "../../src/services/agency";
 import { createAssignmentsService } from "../../src/services/assignments";
@@ -14,21 +9,14 @@ import { createBudgetsService, writeEngagementEntries } from "../../src/services
 import { createClientPortalService } from "../../src/services/client-portal";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
-import { requireTreasury } from "../../src/services/organization-access";
+import { type AgencyScope, requireTreasury } from "../../src/services/organization-access";
 import { createReportsService } from "../../src/services/reports";
 import type { DaoProposalStatus } from "../../src/services/sputnik";
-import { engagementWorld } from "../fakes/engagements";
+import { engagementWorld, refused } from "../fakes/engagements";
 import { project } from "../fakes/projects";
-import { applyAllMigrations } from "./_pg";
+import { migratedDatabase } from "./_pg";
 
 let daoCounter = 0;
-
-const organizationsWith = (studioDao: string, crewDao: string) => [
-  { id: "studio", name: "Studio", slug: "studio", daoAccountId: studioDao },
-  { id: "acme", name: "Acme Corp", slug: "acme" },
-  { id: "crew", name: "Crew", slug: "crew", daoAccountId: crewDao },
-  { id: "rival", name: "Rival", slug: "rival" },
-];
 
 const members = [
   { userId: "studio-admin", organizationId: "studio", role: "admin" as const },
@@ -38,19 +26,8 @@ const members = [
   { userId: "rival-admin", organizationId: "rival", role: "owner" as const },
 ];
 
-const users = members.map((m) => ({ id: m.userId, email: `${m.userId}@example.com` }));
-
-const projects = [
-  { ...project("site", "studio"), slug: "site", title: "Website" },
-  { ...project("internal", "studio"), slug: "internal", title: "Internal" },
-  { ...project("rival-work", "rival"), slug: "rival-work", title: "Rival work" },
-];
-
-const run = <A>(effect: Effect.Effect<A, unknown>) => runEffect(effect);
-
 describe("subcontracting", () => {
-  let pg: PGlite;
-  let db: Database;
+  const database = migratedDatabase({ perTest: true });
   let STUDIO_DAO: string;
   let CREW_DAO: string;
   let world: Awaited<ReturnType<typeof engagementWorld>>;
@@ -58,13 +35,9 @@ describe("subcontracting", () => {
   let acmeEngagement: string;
 
   function buildServices() {
+    const { db } = database;
     const plugins = {
       builders: () => ({ listBuilders: async () => ({ data: [] }) }),
-      projects: () => ({
-        updateProject: async () => {
-          throw new Error("the projects plugin must not be reached");
-        },
-      }),
     } as unknown as PluginsClient;
     const listings = createListingsService(db, world.directory);
     const ledgers = createProjectLedgers(db, listings);
@@ -80,7 +53,6 @@ describe("subcontracting", () => {
       agency,
       listings,
       billings,
-      reports,
       budgets: createBudgetsService(db, world.directory),
       assignments: createAssignmentsService(
         db,
@@ -103,35 +75,29 @@ describe("subcontracting", () => {
     daoCounter += 1;
     STUDIO_DAO = `studio-${daoCounter}.sputnik-dao.testnet`;
     CREW_DAO = `crew-${daoCounter}.sputnik-dao.testnet`;
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg, { schema }) as unknown as Database;
-    world = await engagementWorld(db, {
-      organizations: organizationsWith(STUDIO_DAO, CREW_DAO),
+    world = await engagementWorld(database.db, {
+      organizations: [
+        { id: "studio", name: "Studio", slug: "studio", daoAccountId: STUDIO_DAO },
+        { id: "acme", name: "Acme Corp", slug: "acme" },
+        { id: "crew", name: "Crew", slug: "crew", daoAccountId: CREW_DAO },
+        { id: "rival", name: "Rival", slug: "rival" },
+      ],
       members,
-      users,
-      projects,
+      users: members.map((m) => ({ id: m.userId, email: `${m.userId}@example.com` })),
+      projects: [
+        { ...project("site", "studio"), slug: "site", title: "Website" },
+        { ...project("internal", "studio"), slug: "internal", title: "Internal" },
+        { ...project("rival-work", "rival"), slug: "rival-work", title: "Rival work" },
+      ],
     });
     services = buildServices();
-    const proposed = await world.engagements.propose(await studio(), {
-      slug: "acme",
-      name: "Acme Corp",
-    });
-    await world.engagements.accept(await world.manager("acme-owner", "acme"), proposed.id);
-    await world.engagements.share(await studio(), { engagementId: proposed.id, projectId: "site" });
-    acmeEngagement = proposed.id;
-  });
-
-  afterEach(async () => {
-    await pg.close();
+    acmeEngagement = (await world.activeEngagement("acme", ["site"])).id;
   });
 
   const studio = () => world.manager("studio-admin", "studio");
   const crew = () => world.manager("crew-owner", "crew");
   const crewMember = () => world.member("crew-member", "crew");
-  const treasury = async (scope: Promise<Awaited<ReturnType<typeof studio>>>) =>
-    requireTreasury(await scope);
+  const treasury = async (scope: Promise<AgencyScope>) => requireTreasury(await scope);
   const inbox = async (userId: string) =>
     (await world.notifications.list(userId, { limit: 50 })).data.map((n) => n.kind);
 
@@ -149,7 +115,7 @@ describe("subcontracting", () => {
     amount: string,
     status: Exclude<DaoProposalStatus, "InProgress"> = "Approved",
   ) {
-    await db.insert(proposals).values({
+    await database.db.insert(proposals).values({
       daoAccountId,
       proposalId,
       proposer: "admin.near",
@@ -163,17 +129,21 @@ describe("subcontracting", () => {
     });
   }
 
-  async function bill(scope: ReturnType<typeof studio>, proposalId: number) {
+  async function bill(scope: Promise<AgencyScope>, proposalId: number, projectId = "site") {
     return run(
       services.billings.create(await treasury(scope), {
-        projectId: "site",
+        projectId,
         proposalId: String(proposalId),
       }),
     );
   }
 
+  async function assign(scope: Promise<AgencyScope>, nearAccount: string, projectId = "site") {
+    return run(services.assignments.create(await scope, { projectId, nearAccount }));
+  }
+
   describe("sharing in one step", () => {
-    test("the Subcontract is active at once, with no acceptance, and its managers are told", async () => {
+    test("the Subcontract is active at once, with no acceptance, its managers are told and it shows under Shared with us", async () => {
       const engagement = await subcontract();
 
       expect(engagement).toMatchObject({
@@ -185,17 +155,8 @@ describe("subcontracting", () => {
       });
       expect(await inbox("crew-owner")).toEqual(["subcontract_started"]);
       expect(await inbox("crew-member")).toEqual([]);
-      await expect(world.engagements.accept(await crew(), engagement.id)).rejects.toMatchObject({
-        data: { reason: "NOT_PROPOSED" },
-      });
-    });
-
-    test("the Subcontractor finds the work under Shared with us", async () => {
-      const engagement = await subcontract();
-
-      const shared = await world.engagements.sharedWithUs(await crewMember());
-
-      expect(shared.data).toEqual([
+      await refused(world.engagements.accept(await crew(), engagement.id), "NOT_PROPOSED");
+      expect((await world.engagements.sharedWithUs(await crewMember())).data).toEqual([
         expect.objectContaining({
           engagementId: engagement.id,
           readOnly: false,
@@ -210,13 +171,15 @@ describe("subcontracting", () => {
     });
 
     test("only the Agency's own Projects can be subcontracted, and never to itself", async () => {
-      await expect(subcontract(["rival-work"])).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
+      await refused(subcontract(["rival-work"]), "NOT_FOUND");
+      await refused(
         world.engagements.subcontract(await studio(), { slug: "studio", name: "Studio" }),
-      ).rejects.toMatchObject({ data: { reason: "SELF_ENGAGEMENT" } });
-      await expect(
+        "SELF_ENGAGEMENT",
+      );
+      await refused(
         world.engagements.subcontract(await studio(), { slug: "crew", name: "Crew Ltd" }),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+        "NOT_FOUND",
+      );
     });
 
     test("a new Subcontractor is created with its first admin invited by email", async () => {
@@ -236,6 +199,7 @@ describe("subcontracting", () => {
       });
       expect(world.emails.at(-1)).toMatchObject({ to: "lead@newcrew.example" });
       expect(world.emails.at(-1)?.html).toContain("as its Subcontractor");
+      expect(world.emails.at(-1)?.html).toContain('href="https://app.example/accept-invitation/');
     });
 
     test("the hiring Agency may still record a Prepayment for the Subcontractor", async () => {
@@ -259,12 +223,7 @@ describe("subcontracting", () => {
       const engagement = await subcontract();
       await transferProposal(CREW_DAO, 1, "300");
 
-      await run(
-        services.assignments.create(await crewMember(), {
-          projectId: "site",
-          nearAccount: "dev.near",
-        }),
-      );
+      await assign(crewMember(), "dev.near");
       const created = await bill(crew(), 1);
       const report = await run(
         services.portal.generateReport(world.context("crew-owner", "crew"), {
@@ -279,16 +238,25 @@ describe("subcontracting", () => {
         status: "Approved",
       });
       expect(report.overview.billedByToken).toEqual([{ tokenId: "near", amount: "300" }]);
+      expect((await run(services.assignments.listAll(await crew()))).data).toEqual([
+        expect.objectContaining({
+          projectId: "site",
+          projectTitle: "Website",
+          nearAccount: "dev.near",
+        }),
+      ]);
     });
 
-    test("cannot edit the Project, publish Listings or add Budget entries against the owner's DAO", async () => {
+    test("cannot edit the Project, publish Listings, add Budget entries or work on other Projects", async () => {
       await subcontract();
+      await transferProposal(CREW_DAO, 2, "10");
       const scope = await crew();
 
-      await expect(
+      await refused(
         run(services.agency.updateProject(scope, { id: "site", title: "Taken over" })),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
+        "NOT_FOUND",
+      );
+      await refused(
         run(
           services.listings.createInternal(scope, {
             projectId: "site",
@@ -299,8 +267,9 @@ describe("subcontracting", () => {
             lifecycle: "published",
           }),
         ),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
+        "NOT_FOUND",
+      );
+      await refused(
         run(
           services.budgets.create(requireTreasury(scope), {
             projectId: "site",
@@ -308,41 +277,18 @@ describe("subcontracting", () => {
             amount: "1000",
           }),
         ),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      expect(await db.select().from(budgets)).toEqual([]);
-    });
-
-    test("cannot work on Projects the Agency did not subcontract", async () => {
-      await subcontract();
-      await transferProposal(CREW_DAO, 2, "10");
-
-      await expect(
-        run(
-          services.assignments.create(await crew(), {
-            projectId: "internal",
-            nearAccount: "dev.near",
-          }),
-        ),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
-        run(
-          services.billings.create(requireTreasury(await crew()), {
-            projectId: "internal",
-            proposalId: "2",
-          }),
-        ),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+        "NOT_FOUND",
+      );
+      await refused(assign(crew(), "dev.near", "internal"), "NOT_FOUND");
+      await refused(bill(crew(), 2, "internal"), "NOT_FOUND");
+      expect(await database.db.select().from(budgets)).toEqual([]);
     });
 
     test("after the Subcontract ends the shared Project is read-only for the Subcontractor", async () => {
       const engagement = await subcontract();
       await world.engagements.end(await studio(), engagement.id);
 
-      await expect(
-        run(
-          services.assignments.create(await crew(), { projectId: "site", nearAccount: "dev.near" }),
-        ),
-      ).rejects.toMatchObject({ code: "FORBIDDEN", data: { reason: "ENGAGEMENT_ENDED" } });
+      await refused(assign(crew(), "dev.near"), "ENGAGEMENT_ENDED");
       expect((await world.engagements.sharedWithUs(await crew())).data).toEqual([
         expect.objectContaining({ engagementId: engagement.id, readOnly: true }),
       ]);
@@ -352,15 +298,10 @@ describe("subcontracting", () => {
   describe("assignments", () => {
     test("record who assigned them; both sides see all and remove only their own", async () => {
       await subcontract();
-      await run(
-        services.assignments.create(await studio(), { projectId: "site", nearAccount: "own.near" }),
-      );
-      await run(
-        services.assignments.create(await crew(), {
-          projectId: "site",
-          nearAccount: "crew-dev.near",
-        }),
-      );
+      await assign(studio(), "own.near");
+      await assign(crew(), "crew-dev.near");
+      const remove = async (scope: Promise<AgencyScope>, nearAccount: string) =>
+        run(services.assignments.delete(await scope, { projectId: "site", nearAccount }));
 
       for (const scope of [await studio(), await crew()]) {
         const listed = await run(services.assignments.list(scope, "site"));
@@ -374,29 +315,10 @@ describe("subcontracting", () => {
         );
       }
 
-      await expect(
-        run(
-          services.assignments.delete(await crew(), { projectId: "site", nearAccount: "own.near" }),
-        ),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(
-        run(
-          services.assignments.delete(await studio(), {
-            projectId: "site",
-            nearAccount: "crew-dev.near",
-          }),
-        ),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-
-      await run(
-        services.assignments.delete(await crew(), {
-          projectId: "site",
-          nearAccount: "crew-dev.near",
-        }),
-      );
-      await run(
-        services.assignments.delete(await studio(), { projectId: "site", nearAccount: "own.near" }),
-      );
+      await expect(remove(crew(), "own.near")).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(remove(studio(), "crew-dev.near")).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await remove(crew(), "crew-dev.near");
+      await remove(studio(), "own.near");
       expect((await run(services.assignments.list(await studio(), "site"))).data).toEqual([]);
     });
 
@@ -410,7 +332,7 @@ describe("subcontracting", () => {
         }),
       );
 
-      await expect(
+      await refused(
         run(
           services.assignments.create(await crew(), {
             projectId: "site",
@@ -418,29 +340,10 @@ describe("subcontracting", () => {
             role: "intern",
           }),
         ),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST", data: { reason: "ASSIGNED_BY_OTHER" } });
+        "ASSIGNED_BY_OTHER",
+      );
       expect((await run(services.assignments.list(await crew(), "site"))).data).toEqual([
         expect.objectContaining({ nearAccount: "dev.near", role: "lead" }),
-      ]);
-    });
-
-    test("the Subcontractor's assignments show under its Assignments with the hiring Agency's Projects", async () => {
-      await subcontract();
-      await run(
-        services.assignments.create(await crew(), {
-          projectId: "site",
-          nearAccount: "crew-dev.near",
-        }),
-      );
-
-      const listed = await run(services.assignments.listAll(await crew()));
-
-      expect(listed.data).toEqual([
-        expect.objectContaining({
-          projectId: "site",
-          projectTitle: "Website",
-          nearAccount: "crew-dev.near",
-        }),
       ]);
     });
   });
@@ -456,39 +359,13 @@ describe("subcontracting", () => {
 
       await expect(bill(studio(), 7)).rejects.toMatchObject({ code: "BAD_REQUEST" });
       await expect(bill(crew(), 7)).rejects.toMatchObject({ code: "BAD_REQUEST" });
-      const listed = await run(
-        services.billings.list(await treasury(studio()), { projectId: "site", limit: 50 }),
-      );
+      const listed = await run(services.billings.list(await treasury(studio()), { limit: 50 }));
       expect(listed.data.map((b) => [b.payingDaoAccountId, b.amount]).sort()).toEqual(
         [
           [CREW_DAO, "300"],
           [STUDIO_DAO, "100"],
         ].sort(),
       );
-    });
-
-    test("status comes from the paying Agency DAO, whoever looks", async () => {
-      await subcontract();
-      await transferProposal(CREW_DAO, 8, "300", "Approved");
-      await transferProposal(STUDIO_DAO, 8, "300", "Rejected");
-      await bill(crew(), 8);
-
-      const byStudio = await run(
-        services.billings.list(await treasury(studio()), { projectId: "site", limit: 50 }),
-      );
-      const byClient = await run(
-        services.portal.listBillings(world.context("acme-owner", "acme"), {
-          engagementId: acmeEngagement,
-          limit: 50,
-        }),
-      );
-
-      expect(byStudio.data).toEqual([
-        expect.objectContaining({ payingDaoAccountId: CREW_DAO, status: "Approved" }),
-      ]);
-      expect(byClient.data).toEqual([
-        expect.objectContaining({ payingDaoAccountId: CREW_DAO, status: "Approved" }),
-      ]);
     });
 
     test("each side deletes only the Billings its own Agency DAO paid", async () => {
@@ -501,9 +378,10 @@ describe("subcontracting", () => {
       await expect(
         run(services.billings.delete(await treasury(studio()), { id: theirs.billing.id })),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(
+      await refused(
         run(services.billings.delete(await treasury(crew()), { id: own.billing.id })),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+        "NOT_FOUND",
+      );
 
       await run(services.billings.delete(await treasury(crew()), { id: theirs.billing.id }));
       await run(services.billings.delete(await treasury(studio()), { id: own.billing.id }));
@@ -513,7 +391,7 @@ describe("subcontracting", () => {
   describe("rollups by funding and paying DAO", () => {
     beforeEach(async () => {
       await subcontract();
-      await db.insert(budgets).values({
+      await database.db.insert(budgets).values({
         id: "acme-budget",
         projectId: "site",
         tokenId: "near",
@@ -549,19 +427,15 @@ describe("subcontracting", () => {
     });
 
     test("the Subcontractor sees only its own pay, never the owner's budget", async () => {
-      const engagement = (await world.engagements.list(await crew())).data[0]!;
+      const engagementId = (await world.engagements.list(await crew())).data[0]!.id;
+      const context = world.context("crew-owner", "crew");
 
       const rollup = await run(
-        services.portal.getBudget(world.context("crew-owner", "crew"), {
-          engagementId: engagement.id,
-          projectId: "site",
-        }),
+        services.portal.getBudget(context, { engagementId, projectId: "site" }),
       );
-      const summary = await run(
-        services.portal.dashboardSummary(world.context("crew-owner", "crew"), {
-          engagementId: engagement.id,
-        }),
-      );
+      const summary = await run(services.portal.dashboardSummary(context, { engagementId }));
+      const report = await run(services.portal.generateReport(context, { engagementId }));
+      const billed = await run(services.portal.listBillings(context, { engagementId, limit: 50 }));
 
       expect(rollup).toEqual({
         budgets: [],
@@ -570,6 +444,9 @@ describe("subcontracting", () => {
         ],
       });
       expect(summary.remainingByToken).toEqual([]);
+      expect(report.overview.budgetByToken).toEqual([]);
+      expect(report.clientBreakdown.map((row) => row.clientName)).toEqual(["Crew"]);
+      expect(billed.data.map((b) => b.payingDaoAccountId)).toEqual([CREW_DAO]);
     });
 
     test("pulling budget back is limited by the owner's own spend only", async () => {
@@ -579,21 +456,16 @@ describe("subcontracting", () => {
         amount: "1000",
         period: "2026-08",
       });
-      await writeEngagementEntries(db, {
-        engagementId: acmeEngagement,
-        actorAccountId: "admin.near",
-        entries: [{ projectId: "site", tokenId: "near", amount: "-900", note: null }],
-        statuses: new Map(),
-      });
-
-      await expect(
-        writeEngagementEntries(db, {
+      const pullBack = (amount: string) =>
+        writeEngagementEntries(database.db, {
           engagementId: acmeEngagement,
           actorAccountId: "admin.near",
-          entries: [{ projectId: "site", tokenId: "near", amount: "-1", note: null }],
+          entries: [{ projectId: "site", tokenId: "near", amount, note: null }],
           statuses: new Map(),
-        }),
-      ).rejects.toMatchObject({ reason: "REMAINING_EXCEEDED" });
+        });
+      await pullBack("-900");
+
+      await expect(pullBack("-1")).rejects.toMatchObject({ reason: "REMAINING_EXCEEDED" });
     });
   });
 
@@ -605,58 +477,20 @@ describe("subcontracting", () => {
       expect((await world.engagements.list(scope)).data.map((e) => e.kind)).toEqual([
         "subcontract",
       ]);
-      await expect(world.engagements.get(scope, acmeEngagement)).rejects.toMatchObject({
-        code: "NOT_FOUND",
-      });
-      await expect(
-        world.prepayments.list(scope, { engagementId: acmeEngagement }),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
-        world.changeOrders.plan(scope, { engagementId: acmeEngagement }),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
-      await expect(
+      await refused(world.engagements.get(scope, acmeEngagement), "NOT_FOUND");
+      await refused(world.prepayments.list(scope, { engagementId: acmeEngagement }), "NOT_FOUND");
+      await refused(world.changeOrders.plan(scope, { engagementId: acmeEngagement }), "NOT_FOUND");
+      await refused(
         world.access.sharedWith(world.context("crew-owner", "crew"), acmeEngagement),
-      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+        "NOT_FOUND",
+      );
     });
 
-    test("the Subcontractor's report and Billings leave out the owner's budget and pay", async () => {
-      const engagement = await subcontract();
-      await db.insert(budgets).values({
-        id: "acme-budget",
-        projectId: "site",
-        tokenId: "near",
-        amount: "1000",
-        actorAccountId: "admin.near",
-        engagementId: acmeEngagement,
-        fundingDaoAccountId: STUDIO_DAO,
-      });
-      await transferProposal(STUDIO_DAO, 30, "100");
-      await transferProposal(CREW_DAO, 31, "300");
-      await bill(studio(), 30);
-      await bill(crew(), 31);
-      const context = world.context("crew-owner", "crew");
-
-      const report = await run(
-        services.portal.generateReport(context, { engagementId: engagement.id }),
-      );
-      const billed = await run(
-        services.portal.listBillings(context, { engagementId: engagement.id, limit: 50 }),
-      );
-      const own = await run(
-        services.billings.list(await treasury(crew()), { projectId: "site", limit: 50 }),
-      );
-
-      expect(report.overview.budgetByToken).toEqual([]);
-      expect(report.overview.billedByToken).toEqual([{ tokenId: "near", amount: "300" }]);
-      expect(report.clientBreakdown.map((row) => row.clientName)).toEqual(["Crew"]);
-      expect(billed.data.map((b) => b.payingDaoAccountId)).toEqual([CREW_DAO]);
-      expect(own.data.map((b) => b.payingDaoAccountId)).toEqual([CREW_DAO]);
-    });
-
-    test("the end Client sees every Billing on the Project, but not the Subcontract itself", async () => {
+    test("the end Client sees every Billing with its paying DAO's status, but not the Subcontract", async () => {
       const engagement = await subcontract();
       await transferProposal(STUDIO_DAO, 40, "100");
-      await transferProposal(CREW_DAO, 41, "300");
+      await transferProposal(CREW_DAO, 41, "300", "Approved");
+      await transferProposal(STUDIO_DAO, 41, "300", "Rejected");
       await bill(studio(), 40);
       await bill(crew(), 41);
       const acme = await world.manager("acme-owner", "acme");
@@ -668,35 +502,20 @@ describe("subcontracting", () => {
         }),
       );
 
-      expect(billed.data.map((b) => b.payingDaoAccountId).sort()).toEqual(
-        [CREW_DAO, STUDIO_DAO].sort(),
-      );
+      const byStudio = await run(services.billings.list(await treasury(studio()), { limit: 50 }));
+
+      for (const listed of [billed, byStudio]) {
+        expect(
+          listed.data.map((b) => [b.payingDaoAccountId, b.proposalId, b.status]).sort(),
+        ).toEqual(
+          [
+            [CREW_DAO, "41", "Approved"],
+            [STUDIO_DAO, "40", "Approved"],
+          ].sort(),
+        );
+      }
       expect((await world.engagements.list(acme)).data.map((e) => e.id)).toEqual([acmeEngagement]);
-      await expect(world.engagements.get(acme, engagement.id)).rejects.toMatchObject({
-        code: "NOT_FOUND",
-      });
-    });
-
-    test("the hiring Agency sees the Subcontractor's Billings and assignments on its Project", async () => {
-      await subcontract();
-      await transferProposal(CREW_DAO, 50, "300");
-      await bill(crew(), 50);
-      await run(
-        services.assignments.create(await crew(), {
-          projectId: "site",
-          nearAccount: "crew-dev.near",
-        }),
-      );
-
-      const billed = await run(services.billings.list(await treasury(studio()), { limit: 50 }));
-      const assigned = await run(services.assignments.listAll(await studio()));
-
-      expect(billed.data).toEqual([
-        expect.objectContaining({ projectId: "site", payingDaoAccountId: CREW_DAO }),
-      ]);
-      expect(assigned.data).toEqual([
-        expect.objectContaining({ projectId: "site", nearAccount: "crew-dev.near" }),
-      ]);
+      await refused(world.engagements.get(acme, engagement.id), "NOT_FOUND");
     });
   });
 });

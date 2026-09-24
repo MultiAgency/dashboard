@@ -45,48 +45,56 @@ describe("builders plugin permissions", () => {
     await runtime.shutdown();
   });
 
+  const nameOf = async (nearAccount: string) =>
+    (await anonymousClient().getBuilder({ nearAccount })).data.name;
+
+  async function created() {
+    const nearAccount = nextAccount();
+    await clientFor(agencyAdmin).createBuilder({ nearAccount, name: "Ada" });
+    return nearAccount;
+  }
+
   test("any signed-in Agency admin can create a profile that does not exist yet", async () => {
-    const nearAccount = nextAccount();
+    const nearAccount = await created();
 
-    const created = await clientFor(agencyAdmin).createBuilder({ nearAccount, name: "Ada" });
-
-    expect(created.data).toMatchObject({ nearAccount, name: "Ada" });
-    expect((await anonymousClient().getBuilder({ nearAccount })).data.name).toBe("Ada");
+    expect(await nameOf(nearAccount)).toBe("Ada");
   });
 
-  test("anonymous callers cannot create profiles", async () => {
-    await expect(
-      anonymousClient().createBuilder({ nearAccount: nextAccount(), name: "Nobody" }),
-    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  test.each([
+    [
+      "anonymous callers cannot create profiles",
+      "UNAUTHORIZED",
+      () => anonymousClient().createBuilder({ nearAccount: nextAccount(), name: "Nobody" }),
+    ],
+    [
+      "a profile cannot be linked to someone else's user",
+      "FORBIDDEN",
+      () => clientFor(agencyAdmin).createBuilder({ nearAccount: nextAccount(), userId: "victim" }),
+    ],
+  ])("%s", async (_name, code, call) => {
+    await expect(call()).rejects.toMatchObject({ code });
   });
 
-  test("creating a profile that exists does not overwrite it", async () => {
-    const nearAccount = nextAccount();
-    await clientFor(agencyAdmin).createBuilder({ nearAccount, name: "Ada" });
+  test.each([
+    ["another Agency creates it again", otherAgencyAdmin, "createBuilder"],
+    ["another Agency edits it", otherAgencyAdmin, "updateBuilderProfile"],
+    ["the Agency that created it edits it", agencyAdmin, "updateBuilderProfile"],
+  ] as const)("an existing profile is kept when %s", async (_name, caller, method) => {
+    const nearAccount = await created();
 
-    await expect(
-      clientFor(otherAgencyAdmin).createBuilder({ nearAccount, name: "Hijacked" }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect((await anonymousClient().getBuilder({ nearAccount })).data.name).toBe("Ada");
+    await expect(clientFor(caller)[method]({ nearAccount, name: "Renamed" })).rejects.toMatchObject(
+      { code: "FORBIDDEN" },
+    );
+    expect(await nameOf(nearAccount)).toBe("Ada");
   });
 
-  test("another Agency cannot edit an existing profile, even the one that created it", async () => {
-    const nearAccount = nextAccount();
-    await clientFor(agencyAdmin).createBuilder({ nearAccount, name: "Ada" });
+  test.each([
+    ["the builder", (nearAccount: string): Caller => ({ userId: "ada", near: nearAccount })],
+    ["a platform admin", (): Caller => platformAdmin],
+  ])("%s can edit an existing profile", async (_name, caller) => {
+    const nearAccount = await created();
 
-    for (const caller of [agencyAdmin, otherAgencyAdmin]) {
-      await expect(
-        clientFor(caller).updateBuilderProfile({ nearAccount, name: "Renamed" }),
-      ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    }
-    expect((await anonymousClient().getBuilder({ nearAccount })).data.name).toBe("Ada");
-  });
-
-  test("the builder can edit their own profile", async () => {
-    const nearAccount = nextAccount();
-    await clientFor(agencyAdmin).createBuilder({ nearAccount, name: "Ada" });
-
-    const updated = await clientFor({ userId: "ada", near: nearAccount }).updateBuilderProfile({
+    const updated = await clientFor(caller(nearAccount)).updateBuilderProfile({
       nearAccount,
       name: "Ada Lovelace",
     });
@@ -95,8 +103,7 @@ describe("builders plugin permissions", () => {
   });
 
   test("the builder can fill in a profile an Agency created for them", async () => {
-    const nearAccount = nextAccount();
-    await clientFor(agencyAdmin).createBuilder({ nearAccount, name: "Ada" });
+    const nearAccount = await created();
 
     const own = await clientFor({ userId: "ada", near: nearAccount }).createBuilder({
       nearAccount,
@@ -104,23 +111,5 @@ describe("builders plugin permissions", () => {
     });
 
     expect(own.data).toMatchObject({ name: "Ada", bio: "Mathematician" });
-  });
-
-  test("platform admins can edit any profile", async () => {
-    const nearAccount = nextAccount();
-    await clientFor(agencyAdmin).createBuilder({ nearAccount, name: "Ada" });
-
-    const updated = await clientFor(platformAdmin).updateBuilderProfile({
-      nearAccount,
-      name: "Moderated",
-    });
-
-    expect(updated.data.name).toBe("Moderated");
-  });
-
-  test("a profile cannot be linked to someone else's user", async () => {
-    await expect(
-      clientFor(agencyAdmin).createBuilder({ nearAccount: nextAccount(), userId: "victim" }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
