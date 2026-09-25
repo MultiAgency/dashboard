@@ -1,10 +1,12 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { Effect, Either } from "every-plugin/effect";
+import { ORPCError } from "every-plugin/orpc";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
 import { projectContributors } from "../../src/db/schema";
+import { runEffect } from "../../src/lib/context";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createContributorsService } from "../../src/services/contributors";
 import { createProjectLedgers } from "../../src/services/ledger";
@@ -126,7 +128,7 @@ describe("when upstream services fail", () => {
       const created: string[] = [];
       const contributors = contributorsWith({
         updateBuilderProfile: async () => {
-          throw new Error("Builder not found");
+          throw new ORPCError("NOT_FOUND", { message: "Builder not found" });
         },
         createBuilder: async (input: { nearAccount: string; name?: string }) => {
           created.push(input.nearAccount);
@@ -151,6 +153,24 @@ describe("when upstream services fail", () => {
 
       expect(created).toEqual(["new.near"]);
       expect(contributor).toMatchObject({ nearAccount: "new.near", name: "New", registered: true });
+    });
+
+    test("a refused edit of someone else's builder profile is not turned into a create", async () => {
+      const created: string[] = [];
+      const contributors = contributorsWith({
+        updateBuilderProfile: async () => {
+          throw new ORPCError("FORBIDDEN", { message: "Only the builder can edit this profile" });
+        },
+        createBuilder: async (input: { nearAccount: string }) => {
+          created.push(input.nearAccount);
+          throw new Error("must not be called");
+        },
+      });
+
+      await expect(
+        runEffect(contributors.update({}, { nearAccount: "taken.near", name: "Hijack" })),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(created).toEqual([]);
     });
   });
 });

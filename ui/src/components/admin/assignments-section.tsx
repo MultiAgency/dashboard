@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Input } from "@/components";
-import { selectClass } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import {
   adminAssignmentsForProjectQueryKey,
@@ -64,6 +63,7 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
   const allContributors = contributorsQuery.data?.data ?? [];
   const assignedAccounts = new Set(assigned.map((a) => a.nearAccount));
   const available = allContributors.filter((c) => !assignedAccounts.has(c.nearAccount));
+  const builderOptions = `builders-${projectId}`;
   const contributorByNear = new Map(allContributors.map((c) => [c.nearAccount, c]));
 
   const otherProjectsByContributor = useMemo(() => {
@@ -104,6 +104,9 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
                   <div className="text-xs text-muted-foreground">
                     {a.role ?? "—"}
                     <span className="ml-2 font-mono">{a.nearAccount}</span>
+                    {a.assignedBy && (
+                      <span className="ml-2">· assigned by {a.assignedBy.name}</span>
+                    )}
                   </div>
                   {(otherProjectsByContributor.get(a.nearAccount) ?? []).length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-1">
@@ -115,7 +118,7 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
                     </div>
                   )}
                 </div>
-                {!readOnly && (
+                {!readOnly && a.canRemove && (
                   <Button
                     onClick={() => removeMutation.mutate(a.nearAccount)}
                     disabled={removeMutation.isPending}
@@ -131,16 +134,18 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
         </div>
       )}
 
-      {!readOnly && available.length > 0 ? (
+      {!readOnly && (
         <div className="rounded-sm border border-border bg-muted/10 p-3 space-y-2">
           <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-            <select
+            <Input
               value={nearAccount}
-              onChange={(e) => setNearAccount(e.target.value)}
+              onChange={(e) => setNearAccount(e.target.value.trim())}
+              placeholder="builder's NEAR account"
+              list={builderOptions}
+              aria-label="builder's NEAR account"
               disabled={addMutation.isPending}
-              className={selectClass}
-            >
-              <option value="">— pick builder —</option>
+            />
+            <datalist id={builderOptions}>
               {available.map((c) => {
                 const others = otherProjectsByContributor.get(c.nearAccount) ?? [];
                 const suffix =
@@ -152,7 +157,7 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
                   </option>
                 );
               })}
-            </select>
+            </datalist>
             <Input
               value={role}
               onChange={(e) => setRole(e.target.value)}
@@ -167,18 +172,15 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
               {addMutation.isPending ? "adding..." : "assign"}
             </Button>
           </div>
-        </div>
-      ) : (
-        !readOnly &&
-        allContributors.length === 0 && (
           <p className="text-xs text-muted-foreground">
-            No builders yet. Add them on{" "}
+            Any builder can be assigned by NEAR account. Profiles are shared across Agencies; add a
+            missing one on{" "}
             <Link to="/admin/contributors" className="underline">
               the builders page
             </Link>
             .
           </p>
-        )
+        </div>
       )}
     </div>
   );

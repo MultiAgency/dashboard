@@ -5,7 +5,11 @@ import { Button, Card, CardContent } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Loading } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { EngagementStatusBadge, type EngagementView } from "@/components/engagement-status";
+import {
+  EngagementKindBadge,
+  EngagementStatusBadge,
+  type EngagementView,
+} from "@/components/engagement-status";
 import { useEngagementAction } from "@/hooks/use-engagement-action";
 import { useApiClient } from "@/lib/api";
 import { canReadEngagement, isManager } from "@/lib/navigation";
@@ -87,11 +91,14 @@ function EngagementCard({
               {engagement.agency.name}
             </span>
             <EngagementStatusBadge status={engagement.status} />
+            <EngagementKindBadge kind={engagement.kind} />
           </div>
           <p className="text-xs text-muted-foreground">
             {engagement.status === "proposed"
               ? `${engagement.agency.name} proposes to work for your Organization.`
-              : `${engagement.projectIds.length} shared project${engagement.projectIds.length === 1 ? "" : "s"}`}
+              : engagement.kind === "subcontract"
+                ? `${engagement.agency.name} hired you on ${engagement.projectIds.length} project${engagement.projectIds.length === 1 ? "" : "s"}`
+                : `${engagement.projectIds.length} shared project${engagement.projectIds.length === 1 ? "" : "s"}`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

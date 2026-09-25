@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { billings, budgets, type Listing } from "../db/schema";
+import { paidBy } from "./billings";
 import { getListingsForProjects, type ListingsService } from "./listings";
 import type { TreasuryScope } from "./organization-access";
 import { type DaoProposalStatus, enrichWithChainStatus, persistedProposalStatus } from "./sputnik";
@@ -14,6 +15,13 @@ export type ProjectRollup = {
   committed: string;
   paid: string;
   remaining: string;
+};
+
+export type PayingDaoSpend = {
+  daoAccountId: string;
+  tokenId: string;
+  committed: string;
+  paid: string;
 };
 
 export type AgencyRollup = {
@@ -30,6 +38,7 @@ export type AgencyRollup = {
 export type ProjectLedger = {
   tokenIds: string[];
   rollupsFor(projectId: string): ProjectRollup[];
+  subcontractorSpendFor(projectId: string): PayingDaoSpend[];
   agencyRollups(balances: Record<string, string>, tokenIds?: string[]): AgencyRollup[];
 };
 
@@ -117,6 +126,40 @@ function computeAvailable(balance: bigint, budgeted: bigint, paid: bigint): bigi
   return balance - (budgeted - paid);
 }
 
+function spendByPayingDao(
+  bills: Array<{
+    payingDaoAccountId: string;
+    tokenId: string;
+    amount: string;
+    status: DaoProposalStatus;
+  }>,
+): PayingDaoSpend[] {
+  const byKey = new Map<
+    string,
+    { daoAccountId: string; tokenId: string; committed: bigint; paid: bigint }
+  >();
+  for (const bill of bills) {
+    if (PROPOSAL_TERMINAL_FAIL.has(bill.status)) continue;
+    const key = `${bill.payingDaoAccountId}/${bill.tokenId}`;
+    const entry = byKey.get(key) ?? {
+      daoAccountId: bill.payingDaoAccountId,
+      tokenId: bill.tokenId,
+      committed: 0n,
+      paid: 0n,
+    };
+    if (bill.status === "Approved") entry.paid += BigInt(bill.amount);
+    else entry.committed += BigInt(bill.amount);
+    byKey.set(key, entry);
+  }
+  return [...byKey.values()]
+    .sort((a, b) =>
+      a.daoAccountId === b.daoAccountId
+        ? a.tokenId.localeCompare(b.tokenId)
+        : a.daoAccountId.localeCompare(b.daoAccountId),
+    )
+    .map((e) => ({ ...e, committed: e.committed.toString(), paid: e.paid.toString() }));
+}
+
 function toProjectRollup(r: TokenRollup): ProjectRollup {
   return {
     tokenId: r.tokenId,
@@ -148,6 +191,7 @@ async function loadRows(
         tokenId: billings.tokenId,
         amount: billings.amount,
         proposalId: billings.proposalId,
+        payingDaoAccountId: billings.payingDaoAccountId,
       })
       .from(billings)
       .where(inArray(billings.projectId, projectIds)),
@@ -155,7 +199,10 @@ async function loadRows(
     Effect.runPromise(listings.forProjects(scope, projectIds, "internal")),
   ]);
   const bills = await Promise.all(
-    billingRows.map((b) => enrichWithChainStatus(db, b, scope.agencyDao)),
+    billingRows.map((b) => {
+      const payingDaoAccountId = b.payingDaoAccountId ?? scope.agencyDao;
+      return enrichWithChainStatus(db, { ...b, payingDaoAccountId }, payingDaoAccountId);
+    }),
   );
   return { budgetRows, bills, nearnListings, internalListings };
 }
@@ -181,7 +228,9 @@ export async function prefetchBillingStatuses(
   const rows = await db
     .select({ proposalId: billings.proposalId })
     .from(billings)
-    .where(inArray(billings.projectId, [...new Set(input.projectIds)]));
+    .where(
+      and(inArray(billings.projectId, [...new Set(input.projectIds)]), paidBy(input.daoAccountId)),
+    );
   for (const { proposalId } of rows) {
     statuses.set(proposalId, await fetchStatus(db, input.daoAccountId, proposalId));
   }
@@ -201,7 +250,13 @@ export async function projectSpend(
   const billingRows = await db
     .select({ amount: billings.amount, proposalId: billings.proposalId })
     .from(billings)
-    .where(and(eq(billings.projectId, input.projectId), eq(billings.tokenId, input.tokenId)));
+    .where(
+      and(
+        eq(billings.projectId, input.projectId),
+        eq(billings.tokenId, input.tokenId),
+        paidBy(input.payingDaoAccountId),
+      ),
+    );
   const bills: BillingForRollup[] = [];
   for (const row of billingRows) {
     const persisted = await persistedProposalStatus(db, input.payingDaoAccountId, row.proposalId);
@@ -243,9 +298,15 @@ export function createProjectLedgers(db: Database, listings: ListingsService) {
       );
 
       const rollupsByProject = new Map<string, TokenRollup[]>();
+      const otherSpendByProject = new Map<string, PayingDaoSpend[]>();
       for (const projectId of new Set(projectIds)) {
         const projectBudgets = budgetRows.filter((b) => b.projectId === projectId);
-        const projectBills = bills.filter((b) => b.projectId === projectId);
+        const onProject = bills.filter((b) => b.projectId === projectId);
+        const projectBills = onProject.filter((b) => b.payingDaoAccountId === scope.agencyDao);
+        otherSpendByProject.set(
+          projectId,
+          spendByPayingDao(onProject.filter((b) => b.payingDaoAccountId !== scope.agencyDao)),
+        );
         const listing = resolveActiveListing(
           nearnListings.get(projectId) ?? null,
           internalListings.get(projectId) ?? null,
@@ -299,6 +360,8 @@ export function createProjectLedgers(db: Database, listings: ListingsService) {
         tokenIds: ledgerTokenIds,
 
         rollupsFor: (projectId) => (rollupsByProject.get(projectId) ?? []).map(toProjectRollup),
+
+        subcontractorSpendFor: (projectId) => otherSpendByProject.get(projectId) ?? [],
 
         agencyRollups: (balances, tokenIds = ledgerTokenIds) =>
           tokenIds.map((tokenId) => {

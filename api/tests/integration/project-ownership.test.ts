@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
-import { budgets, settings } from "../../src/db/schema";
+import { billings, budgets, settings } from "../../src/db/schema";
 import type { SqlClient } from "../../src/lib/auth-database";
 import { createProjectOwnershipMigration } from "../../src/services/project-ownership";
 import { seedAgencyDaos } from "../fakes/organizations";
@@ -69,6 +69,7 @@ describe("project ownership migration", () => {
       ],
       rekeyedSettings: [{ daoAccountId: MULTIAGENCY_DAO, organizationId: "multiagency" }],
       fundedBudgets: [],
+      paidBillings: [],
     });
     expect(await owners()).toEqual([
       { id: "p1", owner_id: "creator.near", organization_id: "multiagency" },
@@ -97,7 +98,12 @@ describe("project ownership migration", () => {
 
     const report = await migration().run();
 
-    expect(report).toEqual({ movedProjects: [], rekeyedSettings: [], fundedBudgets: [] });
+    expect(report).toEqual({
+      movedProjects: [],
+      rekeyedSettings: [],
+      fundedBudgets: [],
+      paidBillings: [],
+    });
     expect(await owners()).toEqual(after);
   });
 
@@ -138,5 +144,40 @@ describe("project ownership migration", () => {
       b4: null,
     });
     expect((await migration().run()).fundedBudgets).toEqual([]);
+  });
+  test("records the paying Agency DAO of the DAO's legacy Billings, before or after the move", async () => {
+    const billing = (id: string, projectId: string, payingDaoAccountId: string | null = null) => ({
+      id,
+      projectId,
+      tokenId: "near",
+      amount: "10",
+      proposalId: id,
+      payingDaoAccountId,
+    });
+    await db
+      .insert(billings)
+      .values([
+        billing("11", "p1"),
+        billing("12", "p2"),
+        billing("13", "p2", "crew.sputnik-dao.near"),
+        billing("14", "p3"),
+      ]);
+    await projectsPg.query("UPDATE projects SET organization_id = 'multiagency' WHERE id = 'p2'");
+
+    const dry = await migration().run({ dryRun: true });
+    expect(dry.paidBillings).toEqual([{ daoAccountId: MULTIAGENCY_DAO, billingIds: ["11", "12"] }]);
+
+    await migration().run();
+
+    const paying = Object.fromEntries(
+      (await db.select().from(billings)).map((b) => [b.id, b.payingDaoAccountId]),
+    );
+    expect(paying).toEqual({
+      "11": MULTIAGENCY_DAO,
+      "12": MULTIAGENCY_DAO,
+      "13": "crew.sputnik-dao.near",
+      "14": null,
+    });
+    expect((await migration().run()).paidBillings).toEqual([]);
   });
 });

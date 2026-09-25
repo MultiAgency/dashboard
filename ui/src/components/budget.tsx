@@ -2,9 +2,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { ApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 
-type TokenBudget = Awaited<
-  ReturnType<ApiClient["agency"]["projects"]["getBudget"]>
->["budgets"][number];
+type ProjectBudget = Awaited<ReturnType<ApiClient["agency"]["projects"]["getBudget"]>>;
+type TokenBudget = ProjectBudget["budgets"][number];
+type PayingDaoSpend = ProjectBudget["subcontractorSpend"][number];
 
 export function Budget({ budget }: { budget: TokenBudget }) {
   return (
@@ -18,6 +18,32 @@ export function Budget({ budget }: { budget: TokenBudget }) {
         <Tile label="committed" value={formatTokenAmount(budget.committed, budget.tokenId)} />
         <Tile label="paid" value={formatTokenAmount(budget.paid, budget.tokenId)} />
         <Tile label="remaining" value={formatTokenAmount(budget.remaining, budget.tokenId)} />
+      </div>
+    </div>
+  );
+}
+
+export function SubcontractorSpend({ rows, title }: { rows: PayingDaoSpend[]; title: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground font-mono">{title}</div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {rows.map((row) => (
+          <Card key={`${row.daoAccountId}/${row.tokenId}`}>
+            <CardContent className="p-4 space-y-1">
+              <div className="font-mono text-xs text-muted-foreground break-all">
+                {row.daoAccountId}
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm tabular-nums">
+                <span>paid {formatTokenAmount(row.paid, row.tokenId)}</span>
+                <span className="text-muted-foreground">
+                  committed {formatTokenAmount(row.committed, row.tokenId)}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
     </div>
   );

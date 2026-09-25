@@ -90,7 +90,7 @@ export async function engagementWorld(
   });
   const projects = inMemoryProjects(seed.projects);
   const directory = createProjectDirectory(() => projects.client);
-  const access = createOrganizationAccess({ db, organizations: organizations.port });
+  const access = createOrganizationAccess({ db, organizations: organizations.port, directory });
   const emails: EmailMessage[] = [];
   const sendEmail = async (message: EmailMessage) => {
     emails.push(message);
@@ -116,6 +116,7 @@ export async function engagementWorld(
     notifications,
     sendEmail,
     appOrigin: ORIGIN,
+    subcontracted: access.subcontractedProjects,
     onEnded: async (engagement) => {
       ended.push(engagement.id);
       await changeOrders.withdrawPending(engagement);
@@ -179,7 +180,7 @@ export function clientPortalOf(db: Database, world: Awaited<ReturnType<typeof en
   return createClientPortalService(
     world.access,
     createAgencyService(db, plugins, world.directory, listings, ledgers),
-    createBillingsService(db, world.directory),
+    createBillingsService(db, world.directory, world.access),
     createReportsService(db, world.directory, plugins, world.organizations.directory),
     world.directory,
     ledgers,

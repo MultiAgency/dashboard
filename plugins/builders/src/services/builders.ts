@@ -66,6 +66,25 @@ function rowToBuilder(row: any): Builder {
   };
 }
 
+export type BuilderCaller = { userId: string; walletAddress?: string; userRole?: string };
+
+function isPlatformAdmin(caller: BuilderCaller): boolean {
+  return caller.userRole === "admin";
+}
+
+function isBuilder(row: { nearAccount: string; userId: string | null }, caller: BuilderCaller) {
+  return (
+    row.nearAccount === caller.walletAddress ||
+    row.nearAccount === caller.userId ||
+    row.userId === caller.userId
+  );
+}
+
+const cannotEdit = () =>
+  new ORPCError("FORBIDDEN", {
+    message: "Only the builder or a platform admin can edit this profile",
+  });
+
 function generateId(): string {
   return `bld_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
@@ -93,15 +112,18 @@ export class BuilderService extends Context.Tag("builders/BuilderService")<
       walletAddress?: string,
     ) => Effect.Effect<Builder | null, ORPCError<string, unknown>>;
 
-    createBuilder: (input: {
-      nearAccount: string;
-      userId?: string;
-      name?: string;
-      bio?: string;
-      skills?: string[];
-      location?: string;
-      links?: Record<string, string>;
-    }) => Effect.Effect<Builder, ORPCError<string, unknown>>;
+    createBuilder: (
+      input: {
+        nearAccount: string;
+        userId?: string;
+        name?: string;
+        bio?: string;
+        skills?: string[];
+        location?: string;
+        links?: Record<string, string>;
+      },
+      caller: BuilderCaller,
+    ) => Effect.Effect<Builder, ORPCError<string, unknown>>;
 
     updateBuilderProfile: (
       nearAccount: string,
@@ -112,9 +134,7 @@ export class BuilderService extends Context.Tag("builders/BuilderService")<
         location?: string;
         links?: Record<string, string>;
       },
-      userId: string,
-      walletAddress?: string,
-      userRole?: string,
+      caller: BuilderCaller,
     ) => Effect.Effect<Builder, ORPCError<string, unknown>>;
 
     deleteBuilder: (
@@ -207,13 +227,23 @@ export const BuilderServiceLive = Layer.effect(
           return row ? rowToBuilder(row) : null;
         }),
 
-      createBuilder: (input) =>
+      createBuilder: (input, caller) =>
         Effect.gen(function* () {
+          if (input.userId && input.userId !== caller.userId && !isPlatformAdmin(caller)) {
+            return yield* Effect.fail(
+              new ORPCError("FORBIDDEN", {
+                message: "A profile can only be linked to your own user",
+              }),
+            );
+          }
           const [existing] = yield* Effect.promise(() =>
             db.select().from(builders).where(eq(builders.nearAccount, input.nearAccount)).limit(1),
           );
 
           if (existing) {
+            if (!isPlatformAdmin(caller) && !isBuilder(existing, caller)) {
+              return yield* Effect.fail(cannotEdit());
+            }
             const now = new Date();
             yield* Effect.promise(() =>
               db
@@ -274,7 +304,7 @@ export const BuilderServiceLive = Layer.effect(
           };
         }),
 
-      updateBuilderProfile: (nearAccount, input, userId, walletAddress, userRole) =>
+      updateBuilderProfile: (nearAccount, input, caller) =>
         Effect.gen(function* () {
           const [existing] = yield* Effect.promise(() =>
             db.select().from(builders).where(eq(builders.nearAccount, nearAccount)).limit(1),
@@ -286,17 +316,8 @@ export const BuilderServiceLive = Layer.effect(
             );
           }
 
-          const isOwner =
-            existing.nearAccount === walletAddress ||
-            existing.nearAccount === userId ||
-            existing.userId === userId;
-
-          if (userRole !== "admin" && !isOwner) {
-            return yield* Effect.fail(
-              new ORPCError("FORBIDDEN", {
-                message: "You do not have permission to edit this profile",
-              }),
-            );
+          if (!isPlatformAdmin(caller) && !isBuilder(existing, caller)) {
+            return yield* Effect.fail(cannotEdit());
           }
 
           const now = new Date();

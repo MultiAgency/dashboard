@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ProjectsAdminSection } from "@/components/admin/projects-section";
+import { SharedWithUsSection } from "@/components/admin/shared-with-us-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
 import { adminAssignmentsListQueryOptions, adminProjectsListQueryOptions } from "@/lib/queries";
 
@@ -34,6 +35,7 @@ function AdminProjectsPage() {
         </p>
       </header>
       <ProjectsAdminSection />
+      <SharedWithUsSection />
     </div>
   );
 }

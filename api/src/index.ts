@@ -101,6 +101,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const access = createOrganizationAccess({
         db,
         organizations: betterAuthOrganizations(() => plugins.auth()),
+        directory,
         defaultDaoAccountId: config.variables.agencyDaoAccount,
       });
       const agencyDaos = createAgencyDaoService({ db, directory, daoRoles: getRoles });
@@ -113,9 +114,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
         webhookUrl: config.secrets.CONTACT_FORM_WEBHOOK_URL,
         webhookSecret: config.secrets.CONTACT_FORM_WEBHOOK_SECRET,
       });
-      const assignments = createAssignmentsService(db, directory);
+      const assignments = createAssignmentsService(db, directory, access, organizationDirectory);
       const budgets = createBudgetsService(db, directory);
-      const billings = createBillingsService(db, directory);
+      const billings = createBillingsService(db, directory, access);
       const reports = createReportsService(db, directory, plugins, organizationDirectory);
       const changeOrders = createChangeOrdersService({
         db,
@@ -129,6 +130,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         notifications,
         sendEmail,
         appOrigin,
+        subcontracted: access.subcontractedProjects,
         onEnded: changeOrders.withdrawPending,
       });
       const prepayments = createPrepaymentsService({
@@ -354,6 +356,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context, input }) =>
             engagements.createWithClient(context.scope, input),
           ),
+
+        subcontract: builder.engagements.subcontract
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.subcontract(context.scope, input)),
+
+        sharedWithUs: builder.engagements.sharedWithUs
+          .use(member)
+          .handler(async ({ context }) => engagements.sharedWithUs(context.scope)),
 
         propose: builder.engagements.propose
           .use(manager)

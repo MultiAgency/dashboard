@@ -1,4 +1,4 @@
-import { and, desc, inArray } from "drizzle-orm";
+import { and, desc, inArray, or } from "drizzle-orm";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { billings, organizationDaos, projectContributors } from "../db/schema";
@@ -7,9 +7,9 @@ import {
   type OrganizationDirectory,
   type PluginContext,
 } from "../lib/organizations";
+import { withPayingStatus } from "./billings";
 import type { AgencyScope } from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
-import { enrichWithChainStatus } from "./sputnik";
 
 export function createMeService(deps: {
   db: Database;
@@ -55,18 +55,23 @@ export function createMeService(deps: {
     assignedProjects: async (context: PluginContext) => {
       const rows = await assignments(context);
       const projects = await projectsByOrganization(context, rows);
-      const names = await agencyNames(rows.flatMap((r) => r.organizationId ?? []));
+      const names = await agencyNames(
+        rows.flatMap((r) =>
+          [r.organizationId, r.assignedByOrganizationId].flatMap((id) => id ?? []),
+        ),
+      );
       return {
         data: rows.flatMap((r) => {
           const project = projects.get(r.projectId);
           if (!project || !r.organizationId) return [];
+          const assigner = r.assignedByOrganizationId ?? r.organizationId;
           return [
             {
               projectId: r.projectId,
               projectSlug: project.slug,
               projectTitle: project.title,
               organizationId: r.organizationId,
-              agencyName: names.get(r.organizationId) ?? r.organizationId,
+              agencyName: names.get(assigner) ?? assigner,
               role: r.role,
               onboardingStatus: r.onboardingStatus,
               createdAt: r.createdAt,
@@ -87,6 +92,7 @@ export function createMeService(deps: {
           tokenId: billings.tokenId,
           amount: billings.amount,
           proposalId: billings.proposalId,
+          payingDaoAccountId: billings.payingDaoAccountId,
           note: billings.note,
           createdAt: billings.createdAt,
         })
@@ -110,28 +116,32 @@ export function createMeService(deps: {
           organizationId: organizationOf.get(r.projectId) ?? null,
         })),
       );
-      const organizationIds = [...new Set(organizationOf.values())];
+      const owners = [...new Set(organizationOf.values())];
+      const payers = [...new Set(rows.flatMap((r) => r.payingDaoAccountId ?? []))];
       const daos =
-        organizationIds.length > 0
+        owners.length > 0 || payers.length > 0
           ? await db
               .select()
               .from(organizationDaos)
-              .where(inArray(organizationDaos.organizationId, organizationIds))
+              .where(
+                or(
+                  owners.length > 0 ? inArray(organizationDaos.organizationId, owners) : undefined,
+                  payers.length > 0 ? inArray(organizationDaos.daoAccountId, payers) : undefined,
+                ),
+              )
           : [];
       const daoOf = new Map(daos.map((d) => [d.organizationId, d.daoAccountId]));
-      const names = await agencyNames(organizationIds);
+      const organizationOfDao = new Map(daos.map((d) => [d.daoAccountId, d.organizationId]));
+      const names = await agencyNames(daos.map((d) => d.organizationId));
       const data = await Promise.all(
         rows.map(async (row) => {
-          const organizationId = organizationOf.get(row.projectId) ?? null;
-          const dao = organizationId ? daoOf.get(organizationId) : undefined;
-          const project = projects.get(row.projectId);
-          const enriched = dao
-            ? await enrichWithChainStatus(db, row, dao)
-            : { ...row, status: "InProgress" as const };
+          const owner = organizationOf.get(row.projectId);
+          const enriched = await withPayingStatus(db, row, (owner && daoOf.get(owner)) ?? null);
+          const payer = organizationOfDao.get(enriched.payingDaoAccountId) ?? owner ?? null;
           return {
             ...enriched,
-            projectTitle: project?.title ?? null,
-            agencyName: organizationId ? (names.get(organizationId) ?? organizationId) : null,
+            projectTitle: projects.get(row.projectId)?.title ?? null,
+            agencyName: payer ? (names.get(payer) ?? payer) : null,
           };
         }),
       );
