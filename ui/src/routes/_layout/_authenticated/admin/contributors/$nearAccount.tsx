@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -31,8 +32,12 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/contributors
           <p className="text-sm text-muted-foreground">
             No builder or assignment exists for this NEAR account.
           </p>
-          <Link to="/admin/contributors" className="text-sm underline">
-            ← all builders
+          <Link
+            to="/admin/contributors"
+            className="inline-flex items-center gap-1 text-sm underline"
+          >
+            <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+            all builders
           </Link>
         </div>
       );
@@ -126,9 +131,10 @@ function ContributorDetailPage() {
       <div>
         <Link
           to="/admin/contributors"
-          className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
         >
-          ← all builders
+          <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+          all builders
         </Link>
       </div>
 

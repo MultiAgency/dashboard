@@ -174,7 +174,7 @@ function BillingRow({
               rel="noopener noreferrer"
               className="text-xs font-mono text-muted-foreground hover:text-foreground underline"
             >
-              proposal #{billing.proposalId} ↗
+              proposal #{billing.proposalId} <ArrowUpRightIcon aria-hidden className="inline" />
             </a>
           )}
           {!ownBilling && (
@@ -395,7 +395,7 @@ function BillingCreateForm({
                 params={{ slug: "contributors" }}
                 className="underline underline-offset-2"
               >
-                contributor flow ↗
+                contributor flow <ArrowUpRightIcon aria-hidden className="inline" />
               </Link>
             </AlertDescription>
           </Alert>

@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useEffect, useRef, useState } from "react";
@@ -247,7 +248,8 @@ function SignInForm({
               forgot password?
             </button>
             <Button type="submit" disabled={signIn.isPending}>
-              {signIn.isPending ? "signing in..." : "sign in →"}
+              {signIn.isPending ? "signing in..." : "sign in"}
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Button>
           </div>
         </form>
@@ -329,7 +331,8 @@ function SignUpForm({
           </Field>
           <div className="flex justify-end">
             <Button type="submit" disabled={signUp.isPending}>
-              {signUp.isPending ? "creating..." : "create account →"}
+              {signUp.isPending ? "creating..." : "create account"}
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Button>
           </div>
         </form>
@@ -408,7 +411,8 @@ function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) {
           </Field>
           <div className="flex justify-end">
             <Button type="submit" disabled={request.isPending}>
-              {request.isPending ? "sending..." : "send reset link →"}
+              {request.isPending ? "sending..." : "send reset link"}
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Button>
           </div>
         </form>

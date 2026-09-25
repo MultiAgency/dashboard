@@ -1,4 +1,4 @@
-import { WarningIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, WarningIcon } from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -401,8 +401,10 @@ function InternalListingForm({
 
           <p className="text-xs text-muted-foreground">
             Lifecycle drives the rollup column the listing contributes to: <code>published</code> +
-            no winners → <em>allocated</em>; <code>winners announced</code> → <em>committed</em>{" "}
-            (until a billing exists); <code>archived</code> or unpublished → excluded.
+            no winners <CaretRightIcon aria-hidden className="inline" /> <em>allocated</em>;{" "}
+            <code>winners announced</code> <CaretRightIcon aria-hidden className="inline" />{" "}
+            <em>committed</em> (until a billing exists); <code>archived</code> or unpublished{" "}
+            <CaretRightIcon aria-hidden className="inline" /> excluded.
           </p>
 
           <div className="flex gap-2">

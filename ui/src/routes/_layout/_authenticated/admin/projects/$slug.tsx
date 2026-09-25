@@ -1,4 +1,4 @@
-import { ArrowUpRightIcon, WarningIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, ArrowUpRightIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -88,9 +88,10 @@ function AdminProjectDetail() {
       <div>
         <Link
           to="/admin/projects"
-          className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
         >
-          ← all projects
+          <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+          all projects
         </Link>
       </div>
 

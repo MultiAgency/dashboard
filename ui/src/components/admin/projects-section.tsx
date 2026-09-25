@@ -1,3 +1,4 @@
+import { ArrowUpRightIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -241,7 +242,7 @@ function NearnSnapshot({ slug, nearnSponsor }: { slug: string; nearnSponsor: str
           rel="noopener noreferrer"
           className="text-muted-foreground hover:text-foreground underline break-all"
         >
-          {href} ↗
+          {href} <ArrowUpRightIcon aria-hidden className="inline" />
         </a>
       )}
     </div>

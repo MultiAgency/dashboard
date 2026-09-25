@@ -1,3 +1,4 @@
+import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -88,13 +89,17 @@ function RegisterPage() {
             <Link
               to="/docs/$slug"
               params={{ slug: "entity" }}
-              className="inline-block font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
             >
-              how this agency works →
+              how this agency works
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Link>
             <div className="pt-2">
               <Button asChild variant="outline" size="sm">
-                <Link to="/">← back to home</Link>
+                <Link to="/">
+                  <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+                  back to home
+                </Link>
               </Button>
             </div>
           </CardContent>
@@ -229,16 +234,18 @@ function RegisterPage() {
             </form.Field>
             <Button type="submit" disabled={isPending} className="w-full">
               {isPending && <Spinner />}
-              {isPending ? "submitting..." : "send →"}
+              {isPending ? "submitting..." : "send"}
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Button>
           </form>
           <a
             href={getRepoUrl()}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
           >
-            if you'd rather browse the template directly →
+            if you'd rather browse the template directly
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
           </a>
         </CardContent>
       </Card>

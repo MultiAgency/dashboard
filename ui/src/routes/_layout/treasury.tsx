@@ -1,4 +1,4 @@
-import { ArrowUpRightIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, ArrowUpRightIcon, DownloadSimpleIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
@@ -374,9 +374,10 @@ function BalancesViewToggle({
         onClick={onExport}
         disabled={!canExport}
         aria-label="download visible balances as CSV"
-        className="ml-auto font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
+        className="ml-auto inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
       >
-        export csv ↓
+        export csv
+        <DownloadSimpleIcon aria-hidden />
       </button>
     </div>
   );
@@ -895,7 +896,8 @@ function ProposalsList({
       {hasNext && (
         <div className="flex justify-center pt-2">
           <Button onClick={fetchNextPage} disabled={isFetchingNext} variant="outline">
-            {isFetchingNext ? "loading..." : "load more →"}
+            {isFetchingNext ? "loading..." : "load more"}
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
           </Button>
         </div>
       )}
@@ -1007,7 +1009,7 @@ function ProposalsFilterBar({
             <button
               type="button"
               onClick={onClear}
-              className="font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer underline-offset-2 hover:underline"
+              className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer underline-offset-2 hover:underline"
             >
               clear ✕
             </button>
@@ -1017,9 +1019,10 @@ function ProposalsFilterBar({
             onClick={onExport}
             disabled={!canExport}
             aria-label="download visible rows as CSV"
-            className="font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
+            className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
           >
-            export csv ↓
+            export csv
+            <DownloadSimpleIcon aria-hidden />
           </button>
         </div>
       </div>

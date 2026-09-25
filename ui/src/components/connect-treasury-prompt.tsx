@@ -13,8 +13,8 @@ export function ConnectTreasuryPrompt() {
           Budgets, Billings and treasury views need an Agency DAO, such as a single-member Trezu
           treasury.{" "}
           {canAccessAdmin
-            ? "Connect one in Settings → Treasury."
-            : "Ask an owner or admin of your Organization to connect one in Settings → Treasury."}
+            ? "Connect one in the Treasury section of Settings."
+            : "Ask an owner or admin of your Organization to connect one in the Treasury section of Settings."}
         </p>
         {canAccessAdmin && (
           <Button asChild size="sm">

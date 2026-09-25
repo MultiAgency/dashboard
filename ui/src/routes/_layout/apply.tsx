@@ -1,3 +1,4 @@
+import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -94,13 +95,17 @@ function ApplyPage() {
             <Link
               to="/docs/$slug"
               params={{ slug: "contributors" }}
-              className="inline-block font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
             >
-              how to get involved →
+              how to get involved
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Link>
             <div className="pt-2">
               <Button asChild variant="outline" size="sm">
-                <Link to="/">← back to home</Link>
+                <Link to="/">
+                  <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+                  back to home
+                </Link>
               </Button>
             </div>
           </CardContent>
@@ -234,7 +239,8 @@ function ApplyPage() {
             </form.Field>
             <Button type="submit" disabled={isPending} className="w-full">
               {isPending && <Spinner />}
-              {isPending ? "submitting..." : "send →"}
+              {isPending ? "submitting..." : "send"}
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Button>
           </form>
           {nearnUrl && (
@@ -242,9 +248,10 @@ function ApplyPage() {
               href={nearnUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-block font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
             >
-              if you'd rather browse open work directly →
+              if you'd rather browse open work directly
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </a>
           )}
         </CardContent>

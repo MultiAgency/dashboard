@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -89,7 +90,8 @@ export function PendingInvitationsList() {
         >
           <div className="flex gap-2">
             <Button size="sm" onClick={() => accept.mutate(invitation.id)} disabled={busy}>
-              accept →
+              accept
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Button>
             <Button
               size="sm"

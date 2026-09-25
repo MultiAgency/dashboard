@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -545,7 +546,8 @@ function AddMemberForm({
             disabled={!email.trim() || addMutation.isPending}
             size="sm"
           >
-            {addMutation.isPending ? "inviting\u2026" : "invite \u2192"}
+            {addMutation.isPending ? "inviting\u2026" : "invite"}
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
           </Button>
         </div>
       </CardContent>

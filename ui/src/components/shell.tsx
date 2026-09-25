@@ -1,4 +1,4 @@
-import { ListIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, ListIcon } from "@phosphor-icons/react";
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import type * as React from "react";
 import type { ReactNode } from "react";
@@ -155,12 +155,12 @@ function SignText({ eyebrow, headline, body, ctaLabel, ctaTo = "/" }: SignTextPr
         </h1>
         <p className="text-base leading-relaxed text-muted-foreground">{body}</p>
         <div className="pt-2">
-          <Link
-            to={ctaTo}
-            className="inline-flex items-center justify-center uppercase tracking-wide border-2 border-foreground bg-card text-foreground hover:bg-foreground hover:text-background transition-colors duration-150 h-10 px-4 text-sm"
-          >
-            {ctaLabel}
-          </Link>
+          <Button asChild variant="outline">
+            <Link to={ctaTo}>
+              <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+              {ctaLabel}
+            </Link>
+          </Button>
         </div>
       </div>
     </div>
@@ -173,7 +173,7 @@ export function AppNotFound() {
       eyebrow="agency · 404"
       headline="no record"
       body="That route isn't wired. Head back to home."
-      ctaLabel="← back to home"
+      ctaLabel="back to home"
     />
   );
 }
@@ -184,7 +184,7 @@ export function AppRouteError() {
       eyebrow="agency · error"
       headline="off the rails"
       body="Something went wrong loading this page. Head back to home and try again."
-      ctaLabel="← back to home"
+      ctaLabel="back to home"
     />
   );
 }
@@ -195,7 +195,7 @@ export function UnknownDoc() {
       eyebrow="agency · 404"
       headline="unknown doc"
       body="That entry isn't in the docs. Browse the index."
-      ctaLabel="← all docs"
+      ctaLabel="all docs"
       ctaTo="/docs"
     />
   );

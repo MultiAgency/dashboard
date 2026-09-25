@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { DOCS, type DocSection } from "@/lib/docs-registry";
 
@@ -69,8 +70,9 @@ function DocsIndex() {
                     {d.title}
                   </h3>
                   <p className="text-sm text-muted-foreground leading-relaxed">{d.desc}</p>
-                  <div className="mt-auto pt-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
-                    read →
+                  <div className="mt-auto flex items-center gap-1 pt-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
+                    read
+                    <ArrowRightIcon data-icon="inline-end" aria-hidden />
                   </div>
                 </div>
               </Link>

@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { toast } from "sonner";
@@ -204,7 +205,8 @@ function AddEmailForm({ onAdded }: { onAdded: () => Promise<void> }) {
         disabled={change.isPending}
       />
       <Button type="submit" size="sm" disabled={change.isPending || !newEmail.trim()}>
-        {change.isPending ? "adding..." : "add email →"}
+        {change.isPending ? "adding..." : "add email"}
+        <ArrowRightIcon data-icon="inline-end" aria-hidden />
       </Button>
     </form>
   );

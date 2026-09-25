@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -103,7 +104,8 @@ function EngagementCard({
           {canReadEngagement(engagement.status) && (
             <Button asChild size="sm" variant="outline">
               <Link to="/client/$engagementId" params={{ engagementId: engagement.id }}>
-                open →
+                open
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
               </Link>
             </Button>
           )}

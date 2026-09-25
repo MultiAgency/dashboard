@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -91,9 +92,10 @@ function EngagementDetailPage() {
       <div>
         <Link
           to="/admin/engagements"
-          className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
         >
-          ← engagements
+          <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+          engagements
         </Link>
       </div>
       <header className="space-y-2">

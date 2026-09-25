@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
@@ -283,7 +284,8 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
             </p>
           </div>
           <Button type="submit" disabled={!canSubmit || isPending} className="w-full">
-            {isPending ? "creating…" : "create organization →"}
+            {isPending ? "creating…" : "create organization"}
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
           </Button>
         </form>
       </CardContent>

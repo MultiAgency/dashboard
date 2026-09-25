@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -104,7 +105,8 @@ function AcceptInvitationPage() {
             )}
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => accept.mutate(id)} disabled={busy}>
-                {accept.isPending ? "joining..." : "accept →"}
+                {accept.isPending ? "joining..." : "accept"}
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
               </Button>
               <Button
                 variant="outline"
@@ -159,7 +161,10 @@ function Message({ children }: { children: ReactNode }) {
       <CardContent className="space-y-4">
         <p className="text-sm leading-relaxed">{children}</p>
         <Button asChild variant="outline">
-          <Link to="/welcome">continue →</Link>
+          <Link to="/welcome">
+            continue
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
+          </Link>
         </Button>
       </CardContent>
     </Card>
@@ -178,7 +183,8 @@ function SignedOut({ redirect, email }: { redirect: string; email?: string }) {
         <div className="flex flex-wrap gap-2">
           <Button asChild>
             <Link to="/sign-in" search={{ mode: "sign-up", redirect, email }}>
-              create account →
+              create account
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Link>
           </Button>
           <Button asChild variant="outline">
@@ -246,7 +252,8 @@ function WrongEmail({ email, redirect }: { email: string | null; redirect: strin
         </p>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => switchAccount.mutate()} disabled={switchAccount.isPending}>
-            {switchAccount.isPending ? "signing out..." : "sign out and switch →"}
+            {switchAccount.isPending ? "signing out..." : "sign out and switch"}
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
           </Button>
           <Button asChild variant="outline">
             <Link to="/profile">open profile</Link>
