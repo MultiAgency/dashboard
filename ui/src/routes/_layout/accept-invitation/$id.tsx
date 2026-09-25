@@ -128,7 +128,9 @@ function AcceptInvitationPage() {
 
 function Page({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto flex w-full max-w-md animate-fade-in flex-col gap-6 sm:py-8">{children}</div>
+    <div className="mx-auto flex w-full max-w-md animate-fade-in flex-col gap-6 sm:py-8">
+      {children}
+    </div>
   );
 }
 
