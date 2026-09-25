@@ -1,9 +1,26 @@
-import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Button, Card, CardContent, DataTable, Input } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  DataTable,
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  Input,
+} from "@/components";
+import { LoadError } from "@/components/load-error";
+import { PageHeader } from "@/components/page-header";
 import type { ColumnDef } from "@/components/ui/data-table";
 import { useApiClient } from "@/lib/api";
 import type { Organization } from "@/lib/auth";
@@ -18,8 +35,6 @@ export const Route = createFileRoute("/_layout/_authenticated/platform/")({
 });
 
 type PlatformOrg = Organization;
-
-const LABEL_CLS = "font-mono text-xs uppercase tracking-widest text-muted-foreground block";
 
 function PlatformOrgs() {
   const authClient = useAuthClient();
@@ -46,18 +61,20 @@ function PlatformOrgs() {
       id: "name",
       header: "Name",
       accessorKey: "name",
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
     },
     {
       id: "slug",
       header: "Slug",
       accessorKey: "slug",
+      cell: ({ row }) => <span className="text-muted-foreground">{row.original.slug}</span>,
     },
     {
       id: "createdAt",
       header: "Created",
       accessorKey: "createdAt",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="text-muted-foreground tabular-nums">
           {row.original.createdAt.toISOString().slice(0, 10)}
         </span>
       ),
@@ -65,47 +82,42 @@ function PlatformOrgs() {
   ];
 
   return (
-    <div className="space-y-8">
-      <div className="space-y-2">
-        <h2 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Workspaces
-        </h2>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Create Organizations, optionally with an Agency DAO. You become the owner; the admin email
-          receives a separate invite. Owners can also connect an Agency DAO later in Settings.
-        </p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Workspaces"
+        description="Create Organizations, optionally with an Agency DAO. You become the owner; the admin email receives a separate invite."
+      />
 
-      <section className="space-y-3">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          create organization
-        </div>
-        <CreateAgencyForm onCreated={invalidate} />
-      </section>
+      <CreateAgencyForm onCreated={invalidate} />
 
-      <section className="space-y-3">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          all workspaces ({orgs.length})
-        </div>
-        {orgsQuery.isError ? (
-          <div className="space-y-2">
-            <p className="text-sm text-destructive">
-              {orgsQuery.error?.message || "Failed to load workspaces"}
-            </p>
-            <Button variant="outline" size="sm" onClick={invalidate}>
-              retry
-            </Button>
-          </div>
-        ) : (
-          <DataTable
-            columns={columns}
-            data={orgs}
-            isLoading={orgsQuery.isLoading}
-            emptyMessage="No workspaces yet."
-            csvFilename="workspaces"
-          />
-        )}
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>All workspaces</h2>
+          </CardTitle>
+          <CardDescription>Every Organization on this platform.</CardDescription>
+          <CardAction>
+            <Badge variant="secondary">{orgs.length}</Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {orgsQuery.isError ? (
+            <LoadError
+              title="Could not load workspaces"
+              description={orgsQuery.error?.message || "Check your connection and try again."}
+              onRetry={invalidate}
+            />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={orgs}
+              isLoading={orgsQuery.isLoading}
+              emptyMessage="No workspaces yet"
+              csvFilename="workspaces"
+            />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -205,90 +217,89 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <Card key={formKey}>
-      <CardContent className="p-4 space-y-4">
-        <form
-          autoComplete="off"
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (canSubmit && !isPending) createMutation.mutate();
-          }}
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label htmlFor="workspace-name" className={LABEL_CLS}>
-                name
-              </label>
-              <Input
-                id="workspace-name"
-                name="workspace-name"
-                autoComplete="off"
-                value={name}
-                onChange={(e) => handleNameChange(e.target.value)}
-                placeholder="Acme Agency"
-                disabled={isPending}
-              />
+      <CardHeader>
+        <CardTitle>
+          <h2>Create an Organization</h2>
+        </CardTitle>
+        <CardDescription>Owners can also connect an Agency DAO later in Settings.</CardDescription>
+      </CardHeader>
+      <form
+        autoComplete="off"
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSubmit && !isPending) createMutation.mutate();
+        }}
+      >
+        <CardContent>
+          <FieldGroup>
+            <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+              <Field>
+                <FieldLabel htmlFor="workspace-name">Name</FieldLabel>
+                <Input
+                  id="workspace-name"
+                  name="workspace-name"
+                  autoComplete="off"
+                  value={name}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  placeholder="Acme Agency"
+                  disabled={isPending}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="workspace-slug">Slug</FieldLabel>
+                <Input
+                  id="workspace-slug"
+                  name="workspace-slug"
+                  autoComplete="off"
+                  value={slug}
+                  onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
+                  placeholder="acme-agency"
+                  disabled={isPending}
+                />
+                <FieldDescription>Generated from the name; you can override it.</FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="workspace-dao">Agency DAO</FieldLabel>
+                <Input
+                  id="workspace-dao"
+                  name="workspace-dao"
+                  autoComplete="off"
+                  value={daoAccountId}
+                  onChange={(e) => setDaoAccountId(e.target.value)}
+                  placeholder="Optional, e.g. your-org.sputnik-dao.near"
+                  disabled={isPending}
+                />
+                <FieldDescription>
+                  A Sputnik DAO for money features. It must exist on the current network.
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="workspace-admin-email">Agency admin email</FieldLabel>
+                <Input
+                  id="workspace-admin-email"
+                  name="workspace-admin-email"
+                  type="email"
+                  autoComplete="off"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="admin@example.com"
+                  disabled={isPending}
+                />
+                <FieldDescription>
+                  Invited as admin, for the person who runs the Agency day to day. You're added as
+                  owner automatically.
+                </FieldDescription>
+              </Field>
             </div>
-            <div className="space-y-1">
-              <label htmlFor="workspace-slug" className={LABEL_CLS}>
-                slug
-              </label>
-              <Input
-                id="workspace-slug"
-                name="workspace-slug"
-                autoComplete="off"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
-                placeholder="acme-agency"
-                disabled={isPending}
-              />
-              <p className="font-mono text-xs text-muted-foreground">
-                auto-generated from name, but you can override.
-              </p>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="workspace-dao" className={LABEL_CLS}>
-              agency dao (optional)
-            </label>
-            <Input
-              id="workspace-dao"
-              name="workspace-dao"
-              autoComplete="off"
-              value={daoAccountId}
-              onChange={(e) => setDaoAccountId(e.target.value)}
-              placeholder="your-org.sputnik-dao.near"
-              disabled={isPending}
-            />
-            <p className="font-mono text-xs text-muted-foreground">
-              connects a Sputnik DAO for money features. It must exist on the current network.
-            </p>
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="workspace-admin-email" className={LABEL_CLS}>
-              agency admin email
-            </label>
-            <Input
-              id="workspace-admin-email"
-              name="workspace-admin-email"
-              type="email"
-              autoComplete="off"
-              value={adminEmail}
-              onChange={(e) => setAdminEmail(e.target.value)}
-              placeholder="admin@example.com"
-              disabled={isPending}
-            />
-            <p className="font-mono text-xs text-muted-foreground">
-              invited as admin. You (the creator) are added as owner automatically — this email is
-              for the person who will run the agency day-to-day.
-            </p>
-          </div>
-          <Button type="submit" disabled={!canSubmit || isPending} className="w-full">
-            {isPending ? "creating…" : "create organization"}
-            <ArrowRightIcon data-icon="inline-end" aria-hidden />
+          </FieldGroup>
+        </CardContent>
+        <CardFooter className="justify-end">
+          <Button type="submit" disabled={!canSubmit || isPending}>
+            {isPending ? "Creating…" : "Create Organization"}
           </Button>
-        </form>
-      </CardContent>
+        </CardFooter>
+      </form>
     </Card>
   );
 }
