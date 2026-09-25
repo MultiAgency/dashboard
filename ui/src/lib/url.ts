@@ -13,3 +13,12 @@ export function safeHttpHref(url: string | null | undefined): string | null {
     return null;
   }
 }
+
+export function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}

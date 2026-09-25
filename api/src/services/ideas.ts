@@ -42,6 +42,7 @@ export type AcceptIdeaInput = {
   title: string;
   slug: string;
   parentSlug?: string;
+  repository?: string;
   share: boolean;
 };
 
@@ -283,6 +284,9 @@ export function createIdeasService(deps: {
 
     accept: async (scope: OrganizationScope, input: AcceptIdeaInput): Promise<IdeaView> => {
       const { idea, row } = await requireAgencyIdea(scope, input.id);
+      if (input.kind === "project" && !input.repository) {
+        throw badRequest("REPOSITORY_REQUIRED", "Projects require a repository URL");
+      }
       const [claimed] = await db
         .update(ideas)
         .set({
@@ -304,6 +308,7 @@ export function createIdeasService(deps: {
               title: input.title,
               slug: input.slug,
               parentSlug: input.parentSlug,
+              repository: input.kind === "project" ? input.repository : undefined,
               description: source.description ?? undefined,
               visibility: "private",
             }),

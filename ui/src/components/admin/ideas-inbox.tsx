@@ -11,12 +11,14 @@ import { IdeaStatusBadge, type IdeaView } from "@/components/idea-status";
 import { useApiClient } from "@/lib/api";
 import { adminProjectsListQueryOptions, ideasListQueryOptions, refreshAfter } from "@/lib/queries";
 import { isSlugTakenError, isValidSlug, slugify } from "@/lib/slugify";
+import { isHttpUrl } from "@/lib/url";
 
 type AcceptFields = {
   kind: "project" | "scope";
   title: string;
   slug: string;
   parentSlug?: string;
+  repository?: string;
   share: boolean;
 };
 
@@ -54,9 +56,14 @@ function AcceptIdeaForm({
   const [title, setTitle] = useState(idea.title);
   const [slug, setSlug] = useState(slugify(idea.title));
   const [parentSlug, setParentSlug] = useState("");
+  const [repository, setRepository] = useState("");
   const [share, setShare] = useState(true);
+  const repositoryTrimmed = repository.trim();
+  const repositoryOk = isHttpUrl(repositoryTrimmed);
   const canSubmit =
-    title.trim() !== "" && isValidSlug(slug) && (kind === "project" || parentSlug !== "");
+    title.trim() !== "" &&
+    isValidSlug(slug) &&
+    (kind === "project" ? repositoryOk : parentSlug !== "");
   const prefix = `accept-${idea.id}`;
 
   return (
@@ -70,6 +77,7 @@ function AcceptIdeaForm({
           title: title.trim(),
           slug,
           parentSlug: kind === "scope" ? parentSlug : undefined,
+          repository: kind === "project" ? repositoryTrimmed : undefined,
           share,
         });
       }}
@@ -100,6 +108,26 @@ function AcceptIdeaForm({
               </option>
             ))}
           </select>
+        </Field>
+      )}
+      {kind === "project" && (
+        <Field
+          label="repository url"
+          htmlFor={`${prefix}-repository`}
+          helper="Required. Must start with http:// or https://."
+        >
+          <Input
+            id={`${prefix}-repository`}
+            value={repository}
+            onChange={(e) => setRepository(e.target.value)}
+            placeholder="https://github.com/org/repo"
+            aria-invalid={repositoryTrimmed !== "" && !repositoryOk}
+            disabled={pending}
+            required
+          />
+          {repositoryTrimmed && !repositoryOk && (
+            <p className="text-xs text-destructive">Enter a full http(s) URL</p>
+          )}
         </Field>
       )}
       <Field label="title" htmlFor={`${prefix}-title`}>

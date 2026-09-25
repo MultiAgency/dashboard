@@ -54,6 +54,7 @@ describe("Client ideas", () => {
       kind: "project",
       title: "Reports v2",
       slug: "reports-v2",
+      repository: "https://github.com/studio/reports-v2",
       share: true,
       ...input,
     });
@@ -156,7 +157,10 @@ describe("Client ideas", () => {
         result: { slug: "reports-v2", title: "Reports v2", kind: "project", shared: true },
       });
       const created = world().upstreamProjects.find((p) => p.slug === "reports-v2")!;
-      expect(created.organizationId).toBe("studio");
+      expect(created).toMatchObject({
+        organizationId: "studio",
+        repository: "https://github.com/studio/reports-v2",
+      });
       expect((await clientList())[0]).toMatchObject({
         status: "accepted",
         result: { id: created.id, slug: "reports-v2", shared: true },
@@ -173,6 +177,7 @@ describe("Client ideas", () => {
         title: "Reports scope",
         slug: "reports-scope",
         parentSlug: "site",
+        repository: undefined,
         share: false,
       });
 
@@ -183,6 +188,18 @@ describe("Client ideas", () => {
         slug: "reports-scope",
         shared: false,
       });
+    });
+
+    test("accepting as a Project without a repository is refused and leaves the idea open", async () => {
+      const idea = await submit();
+
+      await expect(accept(idea.id, { repository: undefined })).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "Projects require a repository URL",
+        data: { reason: "REPOSITORY_REQUIRED" },
+      });
+      expect(world().upstreamProjects.some((p) => p.slug === "reports-v2")).toBe(false);
+      expect((await clientList())[0]?.status).toBe("new");
     });
 
     test("the submitter and the Client's owners and admins hear about the decision", async () => {
