@@ -1,16 +1,40 @@
+import { MonitorIcon, MoonIcon, SignOutIcon, SunIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useTheme } from "next-themes";
+import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Avatar, AvatarFallback, AvatarImage, Button, Card, CardContent } from "@/components";
-import { Field } from "@/components/admin-form";
-import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Skeleton,
+  Spinner,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components";
+import { LoadingCard } from "@/components/loading-card";
+import { MyOrganizations } from "@/components/my-organizations";
+import { PageHeader } from "@/components/page-header";
+import { PendingInvitationsList } from "@/components/pending-invitations";
+import { SignInMethods } from "@/components/sign-in-methods";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { realEmail } from "@/lib/membership";
 import { type NearProfile, nearProfileQueryOptions } from "@/lib/near-profile";
 
 export const Route = createFileRoute("/_layout/_authenticated/profile")({
   head: () => ({
-    meta: [{ title: "Profile" }, { name: "description", content: "Your account and session." }],
+    meta: [
+      { title: "Profile" },
+      { name: "description", content: "Your account, sign-in methods and invitations." },
+    ],
   }),
   component: ProfilePage,
 });
@@ -34,12 +58,9 @@ function ProfilePage() {
   const profileQuery = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
 
   const profile = profileQuery.data;
+  const email = realEmail(user?.email);
   const displayName =
-    profile?.name?.trim() ||
-    user?.name?.trim() ||
-    user?.email?.trim() ||
-    nearAccountId ||
-    "anonymous";
+    profile?.name?.trim() || user?.name?.trim() || email || nearAccountId || "Anonymous";
   const avatarUrl = resolveAvatarUrl(profile);
 
   const signOutMutation = useMutation({
@@ -49,112 +70,148 @@ function ProfilePage() {
       await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
       navigate({ to: "/", replace: true });
     },
-    onError: (err: Error) => toast.error(err.message || "sign out failed"),
+    onError: (err: Error) => toast.error(err.message || "Sign out failed"),
   });
 
   if (!user) {
     return (
-      <Card>
-        <CardContent className="text-center font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">
-          loading profile...
-        </CardContent>
-      </Card>
+      <ProfileLayout>
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-6 w-32" />
+          <Skeleton className="h-3 w-2/3" />
+        </div>
+        <LoadingCard label="profile" rows={3} />
+      </ProfileLayout>
     );
   }
 
   const fallbackInitial = (displayName[0] ?? "?").toUpperCase();
+  const subtitle = profile?.description?.trim() || email || nearAccountId;
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          your · account
-        </div>
-        <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-          Profile
-        </h1>
-      </header>
-
-      <Card variant="hi-vis">
-        <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <Avatar className="size-16 rounded-full shrink-0">
-            {avatarUrl && <AvatarImage src={avatarUrl} alt={displayName} />}
-            <AvatarFallback className="bg-muted text-foreground text-2xl font-display">
-              {fallbackInitial}
-            </AvatarFallback>
-          </Avatar>
-          <div className="space-y-1 min-w-0">
-            <div className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight break-words">
-              {displayName}
-            </div>
-            {profile?.description && (
-              <p className="text-sm text-muted-foreground leading-relaxed break-words">
-                {profile.description}
-              </p>
+    <ProfileLayout>
+      <PageHeader
+        title="Profile"
+        description="Your account, how you sign in, and the Organizations you belong to."
+        actions={
+          <Button
+            variant="outline"
+            onClick={() => signOutMutation.mutate()}
+            disabled={signOutMutation.isPending}
+          >
+            {signOutMutation.isPending ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <SignOutIcon data-icon="inline-start" aria-hidden />
             )}
+            Sign out
+          </Button>
+        }
+      />
+
+      <Card>
+        <CardContent className="flex items-center gap-4">
+          <Avatar className="size-12 shrink-0">
+            {avatarUrl && <AvatarImage src={avatarUrl} alt={displayName} />}
+            <AvatarFallback>{fallbackInitial}</AvatarFallback>
+          </Avatar>
+          <div className="flex min-w-0 flex-col gap-1">
+            <h2 className="font-heading text-base font-medium break-words">{displayName}</h2>
+            {subtitle && (
+              <p className="text-xs text-pretty break-words text-muted-foreground">{subtitle}</p>
+            )}
+            <p className="text-xs break-all text-muted-foreground">User ID: {user.id}</p>
           </div>
         </CardContent>
       </Card>
 
-      <section className="space-y-3">
-        <div className="space-y-1">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            session
-          </div>
-          <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-[0.95]">
-            Account
-          </h2>
-        </div>
-        <Card>
-          <CardContent className="grid gap-4">
-            <Field label="email">
-              <div className="border-2 border-border bg-muted/10 p-3 font-mono text-xs break-all">
-                {user.email || "—"}
-              </div>
-            </Field>
-            <Field label="near account">
-              <div className="border-2 border-border bg-muted/10 p-3 font-mono text-xs break-all">
-                {nearAccountId || "not linked"}
-              </div>
-            </Field>
-            <Field label="user id">
-              <div className="border-2 border-border bg-muted/10 p-3 font-mono text-xs break-all">
-                {user.id}
-              </div>
-            </Field>
-          </CardContent>
-        </Card>
-      </section>
+      <ProfileSection
+        title="Sign-in methods"
+        description="Ways you can sign in to this account. Add more so you never lose access."
+      >
+        <SignInMethods />
+      </ProfileSection>
 
-      <section className="space-y-3">
-        <div className="space-y-1">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            display
-          </div>
-          <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-[0.95]">
-            Theme
-          </h2>
-        </div>
-        <Card>
-          <CardContent className="flex items-center gap-3">
-            <ThemeToggle />
-            <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-              toggle light · dark
-            </span>
-          </CardContent>
-        </Card>
-      </section>
+      <ProfileSection
+        title="Organizations"
+        description="Organizations you are a member of, and your role in each."
+      >
+        <MyOrganizations />
+      </ProfileSection>
 
-      <section className="space-y-3">
-        <Button
-          onClick={() => signOutMutation.mutate()}
-          disabled={signOutMutation.isPending}
-          variant="outline"
-          className="font-display uppercase tracking-wide"
-        >
-          {signOutMutation.isPending ? "signing out..." : "sign out →"}
-        </Button>
-      </section>
-    </div>
+      <ProfileSection
+        id="invitations"
+        title="Invitations"
+        description="Invitations to join an Organization, sent to your email."
+      >
+        <PendingInvitationsList />
+      </ProfileSection>
+
+      <ProfileSection title="Theme" description="Choose how MultiAgency looks on this device.">
+        <ThemeChoice />
+      </ProfileSection>
+    </ProfileLayout>
+  );
+}
+
+function ProfileLayout({ children }: { children: ReactNode }) {
+  return (
+    <div className="mx-auto flex w-full max-w-3xl animate-fade-in flex-col gap-6">{children}</div>
+  );
+}
+
+function ProfileSection({
+  id,
+  title,
+  description,
+  children,
+}: {
+  id?: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card id={id} className="scroll-mt-24">
+      <CardHeader>
+        <CardTitle>
+          <h2>{title}</h2>
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+function ThemeChoice() {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  return (
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      spacing={0}
+      value={mounted ? (theme ?? "system") : undefined}
+      onValueChange={(value) => {
+        if (value) setTheme(value);
+      }}
+      aria-label="Theme"
+    >
+      <ToggleGroupItem value="light">
+        <SunIcon aria-hidden />
+        Light
+      </ToggleGroupItem>
+      <ToggleGroupItem value="dark">
+        <MoonIcon aria-hidden />
+        Dark
+      </ToggleGroupItem>
+      <ToggleGroupItem value="system">
+        <MonitorIcon aria-hidden />
+        System
+      </ToggleGroupItem>
+    </ToggleGroup>
   );
 }

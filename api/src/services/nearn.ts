@@ -1,7 +1,8 @@
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { Network } from "../lib/network";
 import { fetchWithTimeout } from "./fetch";
+import type { AgencyScope } from "./organization-access";
 import { defaultNearnAccountId } from "./settings-admin";
 
 const NEARN_BASE_URL = "https://nearn.io";
@@ -16,9 +17,8 @@ export class NearnNotFoundError extends Error {
   }
 }
 
-// NEARN mainnet-only; testnet orgAccounts → unavailable.
-export function isNearnAvailable(agencyDao: string): boolean {
-  return !agencyDao.endsWith(".testnet");
+export function isNearnAvailable(network: Network): boolean {
+  return network === "mainnet";
 }
 
 // `compensationType` values per NEARN's Prisma model — defensively typed as nullable string at
@@ -343,7 +343,7 @@ export function createNearnService() {
   return {
     getListing: (scope: AgencyScope, input: { slug: string }) =>
       Effect.gen(function* () {
-        if (!isNearnAvailable(scope.agencyDao)) {
+        if (!isNearnAvailable(scope.network)) {
           return yield* Effect.fail(
             new ORPCError("NOT_FOUND", {
               message: "NEARN not available on this network",
@@ -356,7 +356,7 @@ export function createNearnService() {
 
     listSponsorBounties: (scope: AgencyScope) =>
       Effect.gen(function* () {
-        if (!isNearnAvailable(scope.agencyDao)) {
+        if (!isNearnAvailable(scope.network)) {
           return { sponsorSlug: null, bounties: [] };
         }
         const sponsorSlug = yield* Effect.sync(() => defaultNearnAccountId());
@@ -369,7 +369,7 @@ export function createNearnService() {
 
     listSubmissions: (scope: AgencyScope, input: { slug: string }) =>
       Effect.gen(function* () {
-        if (!isNearnAvailable(scope.agencyDao)) {
+        if (!isNearnAvailable(scope.network)) {
           return yield* Effect.fail(
             new ORPCError("NOT_FOUND", {
               message: "NEARN not available on this network",

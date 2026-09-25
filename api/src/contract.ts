@@ -2,6 +2,19 @@ import { BAD_REQUEST, FORBIDDEN, NOT_FOUND, UNAUTHORIZED } from "every-plugin/er
 import { oc } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 
+const tokenList = z.object({
+  tokens: z.array(
+    z.object({
+      tokenId: z.string(),
+      network: z.string(),
+      symbol: z.string(),
+      decimals: z.number().int().nonnegative(),
+      name: z.string(),
+      icon: z.string().nullable(),
+    }),
+  ),
+});
+
 const applicationKind = z.enum(["founder", "contributor", "client"]);
 
 const projectStatus = z.enum(["active", "paused", "archived"]);
@@ -206,18 +219,95 @@ const contributor = z.object({
   updatedAt: z.string(),
 });
 
-const client = z.object({
+const engagementParty = z.object({ id: z.string(), name: z.string(), slug: z.string() });
+
+const engagementStatus = z.enum(["proposed", "active", "declined", "ended"]);
+
+const engagement = z.object({
   id: z.string(),
-  orgId: z.string(),
-  agencyDaoAccountId: z.string().nullable(),
-  name: z.string(),
-  nearAccountId: z.string().nullable(),
+  kind: z.enum(["client", "subcontract"]),
+  status: engagementStatus,
+  side: z.enum(["agency", "client"]),
+  agency: engagementParty,
+  client: engagementParty,
+  projectIds: z.array(z.string()),
+  invitation: z
+    .object({
+      email: z.string(),
+      status: z.enum(["pending", "expired", "accepted", "rejected", "canceled"]),
+      expiresAt: z.date(),
+      link: z.string(),
+    })
+    .nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
+  decidedAt: z.date().nullable(),
+  endedAt: z.date().nullable(),
 });
 
-const clientListItem = client.extend({
-  projectIds: z.array(z.string()),
+const engagementIdInput = z.object({ id: z.string().min(1) });
+
+const engagementProjectInput = z.object({
+  engagementId: z.string().min(1),
+  projectId: z.string().min(1),
+});
+
+const reportDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .optional();
+
+const reportOutput = z.object({
+  overview: z.object({
+    projectCount: z.number().int().nonnegative(),
+    budgetByToken: z.array(tokenAmount),
+    billedByToken: z.array(tokenAmount),
+    period: z.string(),
+  }),
+  contributorStats: z.array(
+    z.object({
+      nearAccount: z.string(),
+      name: z.string(),
+      billedByToken: z.array(tokenAmount),
+      billingCount: z.number().int().nonnegative(),
+    }),
+  ),
+  clientBreakdown: z.array(
+    z.object({
+      clientName: z.string(),
+      projectTitle: z.string(),
+      projectSlug: z.string(),
+      budgetByToken: z.array(tokenAmount),
+      spentByToken: z.array(tokenAmount),
+    }),
+  ),
+  notes: z.string(),
+  generatedAt: z.string(),
+});
+
+const generatedReport = reportOutput.extend({ id: z.string() });
+
+const savedReportSummary = z.object({
+  id: z.string(),
+  engagementId: z.string().nullable(),
+  generatedByUserId: z.string(),
+  startDate: z.string().nullable(),
+  endDate: z.string().nullable(),
+  note: z.string().nullable(),
+  createdAt: z.date(),
+});
+
+const savedReport = savedReportSummary.extend({ report: reportOutput });
+
+const notification = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  kind: z.string(),
+  title: z.string(),
+  body: z.string(),
+  link: z.string().nullable(),
+  readAt: z.date().nullable(),
+  createdAt: z.date(),
 });
 
 const tokenBudget = z.object({
@@ -229,6 +319,18 @@ const tokenBudget = z.object({
   remaining: z.string(),
 });
 
+const projectBudget = z.object({
+  budgets: z.array(tokenBudget),
+  subcontractorSpend: z.array(
+    z.object({
+      daoAccountId: z.string(),
+      tokenId: z.string(),
+      committed: z.string(),
+      paid: z.string(),
+    }),
+  ),
+});
+
 const budget = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -237,7 +339,153 @@ const budget = z.object({
   note: z.string().nullable(),
   actorAccountId: z.string(),
   relatedBudgetId: z.string().nullable(),
-  clientId: z.string().nullable(),
+  engagementId: z.string().nullable(),
+  fundingDaoAccountId: z.string().nullable(),
+  createdAt: z.date(),
+});
+
+const prepaymentPeriod = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "a calendar month written as YYYY-MM");
+
+const positiveBaseAmount = z
+  .string()
+  .regex(/^[1-9]\d*$/, "positive integer string in the token's smallest unit")
+  .max(80);
+
+const transferReference = z.string().trim().max(500);
+
+const prepayment = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  daoAccountId: z.string(),
+  tokenId: z.string(),
+  amount: z.string(),
+  period: z.string(),
+  transferReference: z.string().nullable(),
+  actorAccountId: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+const prepaidBalance = z.object({
+  tokenId: z.string(),
+  prepaid: z.string(),
+  budgeted: z.string(),
+  balance: z.string(),
+});
+
+const changeOrderStatus = z.enum([
+  "proposed",
+  "approved",
+  "applied",
+  "rejected",
+  "withdrawn",
+  "failed",
+]);
+
+const changeOrderItem = z.object({
+  projectId: z.string().min(1).nullable(),
+  tokenId,
+  kind: z.enum(["plan_change", "one_off_move"]),
+  amount: z
+    .string()
+    .regex(/^-?[1-9]\d*$/, "non-zero integer string in the token's smallest unit")
+    .max(81),
+});
+
+const changeOrder = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  proposedBy: z.object({
+    side: z.enum(["agency", "client"]),
+    organizationId: z.string(),
+    userId: z.string(),
+  }),
+  status: changeOrderStatus,
+  effective: z.enum(["next_period", "now"]),
+  effectivePeriod: z.string().nullable(),
+  note: z.string().nullable(),
+  items: z.array(changeOrderItem),
+  decidedByUserId: z.string().nullable(),
+  decidedAt: z.date().nullable(),
+  appliedAt: z.date().nullable(),
+  failureReason: z.string().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+  canDecide: z.boolean(),
+  canWithdraw: z.boolean(),
+});
+
+const allocationPlan = z.object({
+  engagementId: z.string(),
+  nextPeriod: z.string(),
+  lines: z.array(
+    z.object({
+      projectId: z.string(),
+      tokenId: z.string(),
+      amount: z.string(),
+      effectiveFrom: z.string(),
+    }),
+  ),
+  applications: z.array(
+    z.object({
+      period: z.string(),
+      appliedAt: z.date(),
+      shortfall: z.array(
+        z.object({
+          projectId: z.string(),
+          tokenId: z.string(),
+          amount: z.string(),
+          reason: z.string(),
+        }),
+      ),
+    }),
+  ),
+});
+
+const changeOrderIdInput = z.object({ id: z.string().min(1) });
+
+const idea = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  slug: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  status: z.enum(["new", "accepted", "declined"]),
+  submittedByUserId: z.string(),
+  result: z
+    .object({
+      id: z.string(),
+      slug: z.string(),
+      title: z.string(),
+      kind: projectKind,
+      shared: z.boolean(),
+    })
+    .nullable(),
+  createdAt: z.date(),
+  decidedAt: z.date().nullable(),
+});
+
+const ideaIdInput = z.object({ id: z.string().min(1) });
+
+const agentLink = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  label: z.string(),
+  url: z.string(),
+  position: z.number().int().nonnegative(),
+});
+
+const agentLinkLabel = z.string().trim().min(1).max(120);
+
+const assignment = z.object({
+  projectId: z.string(),
+  nearAccount: z.string(),
+  role: z.string().nullable(),
+  onboardingStatus: z.string(),
+  assignedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
+  canRemove: z.boolean(),
   createdAt: z.date(),
 });
 
@@ -245,10 +493,10 @@ const billing = z.object({
   id: z.string(),
   projectId: z.string(),
   nearAccount: z.string().nullable(),
-  clientId: z.string().nullable(),
   tokenId: z.string(),
   amount: z.string(),
   proposalId: z.string(),
+  payingDaoAccountId: z.string(),
   status: proposalStatus,
   note: z.string().nullable(),
   createdAt: z.date(),
@@ -375,6 +623,11 @@ export const contract = oc.router({
         .route({ method: "GET", path: "/projects" })
         .output(z.object({ data: z.array(projectWithNearn) })),
 
+      listOwned: oc
+        .route({ method: "GET", path: "/admin/projects" })
+        .output(z.object({ data: z.array(projectWithNearn) }))
+        .errors({ UNAUTHORIZED, FORBIDDEN }),
+
       get: oc
         .route({ method: "GET", path: "/projects/{slug}" })
         .input(z.object({ slug }))
@@ -397,7 +650,7 @@ export const contract = oc.router({
       getBudget: oc
         .route({ method: "GET", path: "/admin/projects/{projectId}/budget" })
         .input(z.object({ projectId: z.string() }))
-        .output(z.object({ budgets: z.array(tokenBudget) }))
+        .output(projectBudget)
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
       create: oc
@@ -458,7 +711,7 @@ export const contract = oc.router({
         .route({ method: "DELETE", path: "/admin/projects/{id}" })
         .input(z.object({ id: z.string() }))
         .output(z.object({ deleted: z.literal(true) }))
-        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
     },
 
     listings: {
@@ -492,136 +745,351 @@ export const contract = oc.router({
         .route({ method: "POST", path: "/admin/reports/generate" })
         .input(
           z.object({
-            clientId: z.string().optional(),
+            engagementId: z.string().optional(),
             projectId: z.string().optional(),
             note: z.string().max(4000).optional(),
-            startDate: z
-              .string()
-              .regex(/^\d{4}-\d{2}-\d{2}$/)
-              .optional(),
-            endDate: z
-              .string()
-              .regex(/^\d{4}-\d{2}-\d{2}$/)
-              .optional(),
+            startDate: reportDate,
+            endDate: reportDate,
           }),
         )
-        .output(
-          z.object({
-            overview: z.object({
-              projectCount: z.number().int().nonnegative(),
-              budgetByToken: z.array(tokenAmount),
-              billedByToken: z.array(tokenAmount),
-              period: z.string(),
-            }),
-            contributorStats: z.array(
-              z.object({
-                nearAccount: z.string(),
-                name: z.string(),
-                billedByToken: z.array(tokenAmount),
-                billingCount: z.number().int().nonnegative(),
-              }),
-            ),
-            clientBreakdown: z.array(
-              z.object({
-                clientName: z.string(),
-                projectTitle: z.string(),
-                projectSlug: z.string(),
-                budgetByToken: z.array(tokenAmount),
-                spentByToken: z.array(tokenAmount),
-              }),
-            ),
-            notes: z.string(),
-            generatedAt: z.string(),
-          }),
-        )
+        .output(generatedReport)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      list: oc
+        .route({ method: "GET", path: "/admin/reports" })
+        .input(z.object({ engagementId: z.string().optional() }))
+        .output(z.object({ data: z.array(savedReportSummary) }))
+        .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+      get: oc
+        .route({ method: "GET", path: "/admin/reports/{id}" })
+        .input(z.object({ id: z.string().min(1) }))
+        .output(savedReport)
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
     },
   },
 
-  clients: {
+  engagements: {
     list: oc
-      .route({ method: "GET", path: "/admin/clients" })
-      .output(z.object({ data: z.array(clientListItem) }))
+      .route({ method: "GET", path: "/engagements" })
+      .output(z.object({ data: z.array(engagement) }))
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
     get: oc
-      .route({ method: "GET", path: "/admin/clients/{id}" })
-      .input(z.object({ id: z.string() }))
-      .output(z.object({ client, projectIds: z.array(z.string()) }))
+      .route({ method: "GET", path: "/engagements/{id}" })
+      .input(engagementIdInput)
+      .output(engagement)
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
-    lookupByNearAccount: oc
-      .route({ method: "GET", path: "/clients/lookup" })
-      .input(z.object({ nearAccountId: nearAccountId }))
+    createWithClient: oc
+      .route({ method: "POST", path: "/engagements/new-client" })
+      .input(
+        z.object({
+          name: z.string().trim().min(1).max(200),
+          slug,
+          adminEmail: z.string().trim().email().max(320),
+          projectIds: z.array(z.string()).max(100).optional(),
+          kind: z.enum(["client", "subcontract"]).default("client"),
+        }),
+      )
+      .output(engagement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    subcontract: oc
+      .route({ method: "POST", path: "/engagements/subcontract" })
+      .input(
+        z.object({
+          slug: z.string().trim().min(1).max(100),
+          name: z.string().trim().min(1).max(200),
+          projectIds: z.array(z.string()).max(100).optional(),
+        }),
+      )
+      .output(engagement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    sharedWithUs: oc
+      .route({ method: "GET", path: "/engagements/shared-with-us" })
       .output(
         z.object({
-          memberships: z.array(
+          data: z.array(
             z.object({
-              client,
-              projectIds: z.array(z.string()),
+              engagementId: z.string(),
+              readOnly: z.boolean(),
+              agency: engagementParty,
+              project,
             }),
           ),
         }),
       )
-      .errors({ UNAUTHORIZED }),
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    propose: oc
+      .route({ method: "POST", path: "/engagements" })
+      .input(
+        z.object({
+          slug: z.string().trim().min(1).max(100),
+          name: z.string().trim().min(1).max(200),
+        }),
+      )
+      .output(engagement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    accept: oc
+      .route({ method: "POST", path: "/engagements/{id}/accept" })
+      .input(engagementIdInput)
+      .output(engagement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    decline: oc
+      .route({ method: "POST", path: "/engagements/{id}/decline" })
+      .input(engagementIdInput)
+      .output(engagement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    end: oc
+      .route({ method: "POST", path: "/engagements/{id}/end" })
+      .input(engagementIdInput)
+      .output(engagement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    share: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/projects" })
+      .input(engagementProjectInput)
+      .output(engagement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    unshare: oc
+      .route({ method: "DELETE", path: "/engagements/{engagementId}/projects/{projectId}" })
+      .input(engagementProjectInput)
+      .output(engagement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    invitation: {
+      resend: oc
+        .route({ method: "POST", path: "/engagements/{id}/invitation/resend" })
+        .input(engagementIdInput)
+        .output(engagement)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+      cancel: oc
+        .route({ method: "POST", path: "/engagements/{id}/invitation/cancel" })
+        .input(engagementIdInput)
+        .output(engagement)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+      changeEmail: oc
+        .route({ method: "POST", path: "/engagements/{id}/invitation/email" })
+        .input(engagementIdInput.extend({ email: z.string().trim().email().max(320) }))
+        .output(engagement)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+    },
+  },
+
+  prepayments: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/prepayments" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(prepayment) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    balance: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/prepaid-balance" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(prepaidBalance) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    record: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/prepayments" })
+      .input(
+        z.object({
+          engagementId: z.string().min(1),
+          tokenId,
+          amount: positiveBaseAmount,
+          period: prepaymentPeriod,
+          transferReference: transferReference.optional(),
+        }),
+      )
+      .output(prepayment)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    correct: oc
+      .route({ method: "PATCH", path: "/prepayments/{id}" })
+      .input(
+        z.object({
+          id: z.string().min(1),
+          tokenId: tokenId.optional(),
+          amount: positiveBaseAmount.optional(),
+          period: prepaymentPeriod.optional(),
+          transferReference: transferReference.nullable().optional(),
+        }),
+      )
+      .output(prepayment)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    remove: oc
+      .route({ method: "DELETE", path: "/prepayments/{id}" })
+      .input(z.object({ id: z.string().min(1) }))
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  changeOrders: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/change-orders" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(changeOrder) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    awaiting: oc
+      .route({ method: "GET", path: "/change-orders/awaiting" })
+      .output(z.object({ data: z.array(changeOrder) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    plan: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/allocation-plan" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(allocationPlan)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    propose: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/change-orders" })
+      .input(
+        z.object({
+          engagementId: z.string().min(1),
+          effective: z.enum(["next_period", "now"]).default("next_period"),
+          note: z.string().trim().max(500).optional(),
+          items: z.array(changeOrderItem).min(1).max(100),
+        }),
+      )
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    withdraw: oc
+      .route({ method: "POST", path: "/change-orders/{id}/withdraw" })
+      .input(changeOrderIdInput)
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    approve: oc
+      .route({ method: "POST", path: "/change-orders/{id}/approve" })
+      .input(changeOrderIdInput)
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    reject: oc
+      .route({ method: "POST", path: "/change-orders/{id}/reject" })
+      .input(changeOrderIdInput)
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  ideas: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/ideas" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(idea) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    submit: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/ideas" })
+      .input(
+        z.object({
+          engagementId: z.string().min(1),
+          title: z.string().trim().min(1).max(200),
+          description: z.string().trim().max(4000).optional(),
+        }),
+      )
+      .output(idea)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    accept: oc
+      .route({ method: "POST", path: "/ideas/{id}/accept" })
+      .input(
+        ideaIdInput.extend({
+          kind: z.enum(["project", "scope"]),
+          title: z.string().trim().min(1).max(200),
+          slug,
+          parentSlug: slug.optional(),
+          repository: httpUrl.optional(),
+          share: z.boolean().default(true),
+        }),
+      )
+      .output(idea)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    decline: oc
+      .route({ method: "POST", path: "/ideas/{id}/decline" })
+      .input(ideaIdInput)
+      .output(idea)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  agentLinks: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/agent-links" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(agentLink) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
     create: oc
-      .route({ method: "POST", path: "/admin/clients" })
-      .input(
-        z.object({
-          orgId: z.string().min(1),
-          name: z.string().min(1).max(200),
-          nearAccountId: nearAccountId.optional(),
-          projectIds: z.array(z.string()).optional(),
-        }),
-      )
-      .output(z.object({ client, projectIds: z.array(z.string()) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+      .route({ method: "POST", path: "/engagements/{engagementId}/agent-links" })
+      .input(z.object({ engagementId: z.string().min(1), label: agentLinkLabel, url: httpUrl }))
+      .output(agentLink)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
     update: oc
-      .route({ method: "PATCH", path: "/admin/clients/{id}" })
+      .route({ method: "PATCH", path: "/agent-links/{id}" })
       .input(
         z.object({
-          id: z.string(),
-          name: z.string().min(1).max(200).optional(),
-          nearAccountId: nearAccountId.nullable().optional(),
-          projectIds: z.array(z.string()).optional(),
+          id: z.string().min(1),
+          label: agentLinkLabel.optional(),
+          url: httpUrl.optional(),
         }),
       )
-      .output(z.object({ client, projectIds: z.array(z.string()) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+      .output(agentLink)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
-    delete: oc
-      .route({ method: "DELETE", path: "/admin/clients/{id}" })
-      .input(z.object({ id: z.string() }))
-      .output(z.object({ deleted: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+    reorder: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/agent-links/order" })
+      .input(
+        z.object({ engagementId: z.string().min(1), ids: z.array(z.string().min(1)).max(100) }),
+      )
+      .output(z.object({ data: z.array(agentLink) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    remove: oc
+      .route({ method: "DELETE", path: "/agent-links/{id}" })
+      .input(z.object({ id: z.string().min(1) }))
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
   clientPortal: {
     dashboard: {
       summary: oc
-        .route({ method: "GET", path: "/client/dashboard/summary" })
-        .input(z.object({ agencyDaoAccountId: z.string().min(1) }))
+        .route({ method: "GET", path: "/client/{engagementId}/summary" })
+        .input(z.object({ engagementId: z.string().min(1) }))
         .output(
           z.object({
+            status: engagementStatus,
+            readOnly: z.boolean(),
             projectCount: z.number().int().nonnegative(),
             remainingByToken: z.array(tokenAmount),
           }),
         )
-        .errors({ UNAUTHORIZED, FORBIDDEN }),
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
     },
 
     projects: {
       list: oc
-        .route({ method: "GET", path: "/client/projects" })
-        .input(z.object({ agencyDaoAccountId: z.string().min(1) }))
+        .route({ method: "GET", path: "/client/{engagementId}/projects" })
+        .input(z.object({ engagementId: z.string().min(1) }))
         .output(z.object({ data: z.array(project) }))
-        .errors({ UNAUTHORIZED, FORBIDDEN }),
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
       get: oc
-        .route({ method: "GET", path: "/client/projects/{slug}" })
-        .input(z.object({ slug, agencyDaoAccountId: z.string().min(1) }))
+        .route({ method: "GET", path: "/client/{engagementId}/projects/{slug}" })
+        .input(z.object({ slug, engagementId: z.string().min(1) }))
         .output(
           z.object({
             project,
@@ -639,19 +1107,19 @@ export const contract = oc.router({
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
       getBudget: oc
-        .route({ method: "GET", path: "/client/projects/{projectId}/budget" })
-        .input(z.object({ projectId: z.string(), agencyDaoAccountId: z.string().min(1) }))
-        .output(z.object({ budgets: z.array(tokenBudget) }))
+        .route({ method: "GET", path: "/client/{engagementId}/projects/{projectId}/budget" })
+        .input(z.object({ projectId: z.string(), engagementId: z.string().min(1) }))
+        .output(projectBudget)
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
     },
 
     billings: {
       list: oc
-        .route({ method: "GET", path: "/client/billings" })
+        .route({ method: "GET", path: "/client/{engagementId}/billings" })
         .input(
           paginationInput.extend({
             projectId: z.string().optional(),
-            agencyDaoAccountId: z.string().min(1),
+            engagementId: z.string().min(1),
           }),
         )
         .output(
@@ -660,57 +1128,54 @@ export const contract = oc.router({
             nextCursor: z.string().nullable(),
           }),
         )
-        .errors({ UNAUTHORIZED, FORBIDDEN }),
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
     },
 
     reports: {
       generate: oc
-        .route({ method: "POST", path: "/client/reports/generate" })
+        .route({ method: "POST", path: "/client/{engagementId}/reports/generate" })
         .input(
           z.object({
-            agencyDaoAccountId: z.string().min(1),
+            engagementId: z.string().min(1),
             note: z.string().max(4000).optional(),
-            startDate: z
-              .string()
-              .regex(/^\d{4}-\d{2}-\d{2}$/)
-              .optional(),
-            endDate: z
-              .string()
-              .regex(/^\d{4}-\d{2}-\d{2}$/)
-              .optional(),
+            startDate: reportDate,
+            endDate: reportDate,
           }),
         )
-        .output(
-          z.object({
-            overview: z.object({
-              projectCount: z.number().int().nonnegative(),
-              budgetByToken: z.array(tokenAmount),
-              billedByToken: z.array(tokenAmount),
-              period: z.string(),
-            }),
-            contributorStats: z.array(
-              z.object({
-                nearAccount: z.string(),
-                name: z.string(),
-                billedByToken: z.array(tokenAmount),
-                billingCount: z.number().int().nonnegative(),
-              }),
-            ),
-            clientBreakdown: z.array(
-              z.object({
-                clientName: z.string(),
-                projectTitle: z.string(),
-                projectSlug: z.string(),
-                budgetByToken: z.array(tokenAmount),
-                spentByToken: z.array(tokenAmount),
-              }),
-            ),
-            notes: z.string(),
-            generatedAt: z.string(),
-          }),
-        )
+        .output(generatedReport)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      list: oc
+        .route({ method: "GET", path: "/client/{engagementId}/reports" })
+        .input(z.object({ engagementId: z.string().min(1) }))
+        .output(z.object({ data: z.array(savedReportSummary) }))
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      get: oc
+        .route({ method: "GET", path: "/client/{engagementId}/reports/{id}" })
+        .input(z.object({ engagementId: z.string().min(1), id: z.string().min(1) }))
+        .output(savedReport)
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
     },
+  },
+
+  notifications: {
+    list: oc
+      .route({ method: "GET", path: "/notifications" })
+      .input(paginationInput)
+      .output(z.object({ data: z.array(notification), nextCursor: z.string().nullable() }))
+      .errors({ UNAUTHORIZED }),
+
+    unreadCount: oc
+      .route({ method: "GET", path: "/notifications/unread-count" })
+      .output(z.object({ count: z.number().int().nonnegative() }))
+      .errors({ UNAUTHORIZED }),
+
+    markRead: oc
+      .route({ method: "POST", path: "/notifications/read" })
+      .input(z.object({ ids: z.array(z.string()).max(200).optional() }))
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED }),
   },
 
   contributors: {
@@ -722,7 +1187,7 @@ export const contract = oc.router({
     get: oc
       .route({ method: "GET", path: "/admin/contributors/{nearAccount}" })
       .input(z.object({ nearAccount: nearAccountId }))
-      .output(z.object({ contributor }))
+      .output(z.object({ contributor, canEdit: z.boolean() }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
     create: oc
@@ -762,15 +1227,7 @@ export const contract = oc.router({
       .input(z.object({ projectId: z.string() }))
       .output(
         z.object({
-          data: z.array(
-            z.object({
-              projectId: z.string(),
-              nearAccount: z.string(),
-              role: z.string().nullable(),
-              onboardingStatus: z.string(),
-              createdAt: z.date(),
-            }),
-          ),
+          data: z.array(assignment),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
@@ -780,14 +1237,9 @@ export const contract = oc.router({
       .output(
         z.object({
           data: z.array(
-            z.object({
-              projectId: z.string(),
+            assignment.extend({
               projectSlug: z.string(),
               projectTitle: z.string(),
-              nearAccount: z.string(),
-              role: z.string().nullable(),
-              onboardingStatus: z.string(),
-              createdAt: z.date(),
             }),
           ),
         }),
@@ -812,7 +1264,7 @@ export const contract = oc.router({
           onboardingStatus: z.string(),
         }),
       )
-      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
     delete: oc
       .route({
@@ -826,7 +1278,7 @@ export const contract = oc.router({
         }),
       )
       .output(z.object({ ok: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
   },
 
   budgets: {
@@ -836,7 +1288,7 @@ export const contract = oc.router({
         paginationInput.extend({
           projectId: z.string().optional(),
           tokenId: z.string().optional(),
-          clientId: z.string().optional(),
+          engagementId: z.string().optional(),
         }),
       )
       .output(
@@ -855,11 +1307,10 @@ export const contract = oc.router({
           tokenId,
           amount: baseAmount,
           note: z.string().max(2000).optional(),
-          clientId: z.string().optional(),
         }),
       )
       .output(z.object({ budget }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
     deallocate: oc
       .route({ method: "POST", path: "/admin/projects/{projectId}/budgets/deallocate" })
@@ -869,7 +1320,6 @@ export const contract = oc.router({
           tokenId,
           amount: baseAmount,
           note: z.string().max(2000).optional(),
-          clientId: z.string().optional(),
         }),
       )
       .output(z.object({ budget }))
@@ -905,7 +1355,6 @@ export const contract = oc.router({
         paginationInput.extend({
           projectId: z.string().optional(),
           nearAccount: nearAccountId.optional(),
-          clientId: z.string().optional(),
         }),
       )
       .output(
@@ -922,7 +1371,6 @@ export const contract = oc.router({
         z.object({
           projectId: z.string(),
           nearAccount: nearAccountId.optional(),
-          clientId: z.string().optional(),
           proposalId: z.string().min(1).max(200),
           note: z.string().max(2000).optional(),
         }),
@@ -963,20 +1411,12 @@ export const contract = oc.router({
   },
 
   tokens: {
-    list: oc.route({ method: "GET", path: "/tokens" }).output(
-      z.object({
-        tokens: z.array(
-          z.object({
-            tokenId: z.string(),
-            network: z.string(),
-            symbol: z.string(),
-            decimals: z.number().int().nonnegative(),
-            name: z.string(),
-            icon: z.string().nullable(),
-          }),
-        ),
-      }),
-    ),
+    list: oc.route({ method: "GET", path: "/tokens" }).output(tokenList),
+
+    listOwned: oc
+      .route({ method: "GET", path: "/admin/tokens" })
+      .output(tokenList)
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
 
     getStorageStatus: oc
       .route({ method: "GET", path: "/tokens/storage-status" })
@@ -1120,6 +1560,13 @@ export const contract = oc.router({
       .output(
         z.object({
           orgRole: z.enum(["admin", "member", "owner"]).nullable(),
+          agencyDao: z.string().nullable(),
+          capabilities: z.object({
+            canManageMembers: z.boolean(),
+            canUseMoney: z.boolean(),
+            hasAgencySections: z.boolean(),
+            hasClientSections: z.boolean(),
+          }),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
@@ -1133,6 +1580,8 @@ export const contract = oc.router({
               projectId: z.string(),
               projectSlug: z.string(),
               projectTitle: z.string(),
+              organizationId: z.string(),
+              agencyName: z.string(),
               role: z.string().nullable(),
               onboardingStatus: z.string(),
               createdAt: z.date(),
@@ -1140,6 +1589,67 @@ export const contract = oc.router({
           ),
         }),
       )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    billings: oc
+      .route({ method: "GET", path: "/me/billings" })
+      .input(paginationInput)
+      .output(
+        z.object({
+          data: z.array(
+            billing.extend({
+              projectTitle: z.string().nullable(),
+              agencyName: z.string().nullable(),
+            }),
+          ),
+          nextCursor: z.string().nullable(),
+        }),
+      )
+      .errors({ UNAUTHORIZED }),
+
+    organizations: oc
+      .route({ method: "GET", path: "/me/organizations" })
+      .output(
+        z.object({
+          data: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              slug: z.string(),
+              role: z.enum(["owner", "admin", "member"]).nullable(),
+            }),
+          ),
+        }),
+      )
+      .errors({ UNAUTHORIZED }),
+  },
+
+  agencyDao: {
+    get: oc
+      .route({ method: "GET", path: "/admin/agency-dao" })
+      .output(
+        z.object({
+          daoAccountId: z.string().nullable(),
+          network: z.enum(["mainnet", "testnet"]),
+          inUse: z.boolean(),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    connect: oc
+      .route({ method: "POST", path: "/admin/agency-dao" })
+      .input(
+        z.object({
+          daoAccountId: z.string().trim().min(1).max(64),
+          organizationId: z.string().min(1).optional(),
+        }),
+      )
+      .output(z.object({ daoAccountId: z.string() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+
+    disconnect: oc
+      .route({ method: "DELETE", path: "/admin/agency-dao" })
+      .output(z.object({ daoAccountId: z.null() }))
       .errors({ UNAUTHORIZED, FORBIDDEN }),
   },
 

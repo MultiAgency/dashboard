@@ -1,149 +1,120 @@
-// Cascade SPEC commitment (SPEC §"Billings cascade on project delete"): deleting a project
-// deletes its billings, budgets, projectContributors, and listings rows; the on-chain audit
-// trail survives via the Sputnik proposal ids that billings used to point to.
-import type { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import {
   billings,
   budgets,
-  clientProjects,
-  clients,
+  engagementProjects,
+  engagements,
   listings,
   projectContributors,
 } from "../../src/db/schema";
-import { deleteProjectCascade } from "../../src/services/projects";
-import { applyAllMigrations } from "./_pg";
+import { runEffect } from "../../src/lib/context";
+import { createAgencyService } from "../../src/services/agency";
+import { createProjectLedgers } from "../../src/services/ledger";
+import { createListingsService } from "../../src/services/listings";
+import { agencyScope, inMemoryProjectsPlugin, project } from "../fakes/projects";
+import { migratedDatabase } from "./_pg";
 
-const PROJECT_A = "00000000-0000-0000-0000-00000000000a";
-const PROJECT_B = "00000000-0000-0000-0000-00000000000b";
-const NEAR_X = "contributor-x.near";
-const NEAR_Y = "contributor-y.near";
+const AGENCY_ORG = "agency-org";
+const scope = agencyScope("agency.sputnik-dao.testnet", { organizationId: AGENCY_ORG });
 
-describe("agency.projects.adminDelete — cascade transaction", () => {
-  let pg: PGlite;
-  let db: ReturnType<typeof drizzle>;
+describe("deleting a Project", () => {
+  const database = migratedDatabase({ perTest: true });
+  let db: typeof database.db;
+  let world: ReturnType<typeof inMemoryProjectsPlugin>;
+  let deleted: string[];
 
   beforeEach(async () => {
-    const { PGlite } = await import("@electric-sql/pglite");
-    pg = new PGlite("memory://");
-    await applyAllMigrations(pg);
-    db = drizzle(pg);
+    db = database.db;
+    world = inMemoryProjectsPlugin([project("plain", AGENCY_ORG), project("used", AGENCY_ORG)]);
+    deleted = [];
+    const projects = world.plugins.projects;
+    world.plugins.projects = ((context: { trusted?: boolean }) => ({
+      ...projects(context as never),
+      deleteProject: async ({ id }: { id: string }) => {
+        if (!context.trusted) throw new Error("FORBIDDEN");
+        deleted.push(id);
+        return { success: true };
+      },
+    })) as never;
   });
 
-  afterEach(async () => {
-    await pg.close();
-  });
-
-  async function seedProject(projectId: string, nearAccount: string) {
-    await db.insert(budgets).values({
-      id: crypto.randomUUID(),
-      projectId,
-      tokenId: "near",
-      amount: "1000",
-      actorAccountId: "alice.near",
-    });
-    await db.insert(billings).values({
-      id: crypto.randomUUID(),
-      projectId,
-      nearAccount,
-      tokenId: "near",
-      amount: "500",
-      proposalId: `proposal-${projectId.slice(-4)}`,
-    });
-    await db.insert(projectContributors).values({ projectId, nearAccount, role: "lead" });
-    await db.insert(listings).values({
-      id: crypto.randomUUID(),
-      projectId,
-      source: "internal",
-    });
+  function agency() {
+    const listings = createListingsService(db, world.directory);
+    return createAgencyService(
+      db,
+      world.plugins,
+      world.directory,
+      listings,
+      createProjectLedgers(db, listings),
+    );
   }
 
-  const cascade = (projectId: string) => deleteProjectCascade(db as never, projectId);
+  const remove = (id: string) => runEffect(agency().deleteProject(scope, { id }));
 
-  test("removes all four cascade-table rows scoped to the project", async () => {
-    await seedProject(PROJECT_A, NEAR_X);
+  test("a Project without money history or sharing is deleted through the trusted plugin call, with its assignments and listings", async () => {
+    await db.insert(projectContributors).values({ projectId: "plain", nearAccount: "dev.near" });
+    await db.insert(listings).values({ id: "listing", projectId: "plain", source: "internal" });
 
-    await cascade(PROJECT_A);
+    await expect(remove("plain")).resolves.toEqual({ deleted: true });
 
-    expect(await db.select().from(billings).where(eq(billings.projectId, PROJECT_A))).toHaveLength(
-      0,
-    );
-    expect(await db.select().from(budgets).where(eq(budgets.projectId, PROJECT_A))).toHaveLength(0);
+    expect(deleted).toEqual(["plain"]);
     expect(
-      await db
-        .select()
-        .from(projectContributors)
-        .where(eq(projectContributors.projectId, PROJECT_A)),
-    ).toHaveLength(0);
-    expect(await db.select().from(listings).where(eq(listings.projectId, PROJECT_A))).toHaveLength(
-      0,
+      await db.select().from(projectContributors).where(eq(projectContributors.projectId, "plain")),
+    ).toEqual([]);
+    expect(await db.select().from(listings)).toEqual([]);
+  });
+
+  test.each([
+    [
+      "shared through an Engagement",
+      async () => {
+        await db.insert(engagements).values({
+          id: "ended",
+          agencyOrganizationId: AGENCY_ORG,
+          clientOrganizationId: "client-org",
+          status: "ended",
+          proposedBy: "admin",
+        });
+        await db.insert(engagementProjects).values({ engagementId: "ended", projectId: "used" });
+      },
+    ],
+    [
+      "holding Budget entries",
+      async () => {
+        await db.insert(budgets).values({
+          id: "b1",
+          projectId: "used",
+          tokenId: "near",
+          amount: "0",
+          actorAccountId: "admin.near",
+        });
+      },
+    ],
+    [
+      "holding Billings",
+      async () => {
+        await db.insert(billings).values({
+          id: "bill",
+          projectId: "used",
+          tokenId: "near",
+          amount: "1",
+          proposalId: "7",
+        });
+      },
+    ],
+  ])("a Project %s can only be archived", async (_, seed) => {
+    await seed();
+
+    await expect(remove("used")).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      data: { reason: "ARCHIVE_ONLY" },
+    });
+    expect(deleted).toEqual([]);
+
+    const archived = await runEffect(
+      agency().updateProject(scope, { id: "used", status: "archived" }),
     );
-  });
-
-  test("unlinks the project from its clients but keeps the clients", async () => {
-    await db
-      .insert(clients)
-      .values({ id: "client-1", orgId: "org", agencyDaoAccountId: "agency.near", name: "Acme" });
-    await db.insert(clientProjects).values([
-      { clientId: "client-1", projectId: PROJECT_A },
-      { clientId: "client-1", projectId: PROJECT_B },
-    ]);
-
-    await cascade(PROJECT_A);
-
-    const links = await db.select().from(clientProjects);
-    expect(links.map((l) => l.projectId)).toEqual([PROJECT_B]);
-    expect(await db.select().from(clients)).toHaveLength(1);
-  });
-
-  test("leaves rows for OTHER projects untouched", async () => {
-    await seedProject(PROJECT_A, NEAR_X);
-    await seedProject(PROJECT_B, NEAR_Y);
-
-    await cascade(PROJECT_A);
-
-    expect(await db.select().from(billings).where(eq(billings.projectId, PROJECT_B))).toHaveLength(
-      1,
-    );
-    expect(await db.select().from(budgets).where(eq(budgets.projectId, PROJECT_B))).toHaveLength(1);
-    expect(
-      await db
-        .select()
-        .from(projectContributors)
-        .where(eq(projectContributors.projectId, PROJECT_B)),
-    ).toHaveLength(1);
-    expect(await db.select().from(listings).where(eq(listings.projectId, PROJECT_B))).toHaveLength(
-      1,
-    );
-  });
-
-  test("removes assignment row only (builder profiles live in builders plugin)", async () => {
-    await seedProject(PROJECT_A, NEAR_X);
-
-    await cascade(PROJECT_A);
-
-    const assignments = await db
-      .select()
-      .from(projectContributors)
-      .where(eq(projectContributors.nearAccount, NEAR_X));
-    expect(assignments).toHaveLength(0);
-  });
-
-  test("cascade is idempotent: re-running on an already-deleted project is a no-op", async () => {
-    await seedProject(PROJECT_A, NEAR_X);
-
-    await cascade(PROJECT_A);
-    await cascade(PROJECT_A);
-
-    expect(await db.select().from(billings).where(eq(billings.projectId, PROJECT_A))).toHaveLength(
-      0,
-    );
-  });
-
-  test("transaction atomicity: a project with zero cascade rows still completes cleanly", async () => {
-    await cascade(PROJECT_A);
-    expect(true).toBe(true);
+    expect(archived.project.status).toBe("archived");
   });
 });

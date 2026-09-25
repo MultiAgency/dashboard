@@ -1,8 +1,10 @@
+import { EnvelopeIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { toast } from "sonner";
 import { useAuthClient } from "@/app";
+import { usePendingInvitations } from "@/components/pending-invitations";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,26 +14,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useNearSignIn } from "@/hooks/use-near-sign-in";
 import { useApiClient } from "@/lib/api";
-import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { sessionQueryOptions } from "@/lib/auth";
+import { formatCount } from "@/lib/format-count";
 import { nearProfileQueryOptions } from "@/lib/near-profile";
-import { getNetwork, setNetwork } from "@/lib/network";
-import { clientLookupQueryOptions, meRolesQueryKey, meRolesQueryOptions } from "@/lib/queries";
-
-type Network = "mainnet" | "testnet";
-
-class NetworkMismatchError extends Error {
-  readonly account: string;
-  readonly walletNetwork: Network;
-  readonly dashboardNetwork: Network;
-  constructor(account: string, walletNetwork: Network, dashboardNetwork: Network) {
-    super(`Wallet ${account} is on ${walletNetwork}, dashboard is on ${dashboardNetwork}`);
-    this.name = "NetworkMismatchError";
-    this.account = account;
-    this.walletNetwork = walletNetwork;
-    this.dashboardNetwork = dashboardNetwork;
-  }
-}
+import { meRolesQueryOptions } from "@/lib/queries";
 
 export function UserNav() {
   const queryClient = useQueryClient();
@@ -48,72 +36,16 @@ export function UserNav() {
   const nearAccountId = authClient.near.getAccountId();
   const { data: profile } = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
   const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
-  const { data: clientLookup } = useQuery({
-    ...clientLookupQueryOptions(apiClient, nearAccountId ?? ""),
-    enabled: !!user && !!nearAccountId,
-  });
   const orgRole = roles?.orgRole ?? null;
+  const hasClientSections = roles?.capabilities.hasClientSections ?? false;
   const isSuperAdmin = session?.user?.role === "admin";
   const avatarUrl =
     profile?.image?.url ??
     (profile?.image?.ipfs_cid ? `https://ipfs.io/ipfs/${profile.image.ipfs_cid}` : null);
 
-  const connectMutation = useMutation({
-    mutationFn: () =>
-      new Promise<void>((resolve, reject) => {
-        authClient.signIn.near({
-          onSuccess: () => {
-            const state = authClient.near.getState();
-            if (!state?.accountId) {
-              reject(
-                new Error(
-                  "Sign-in completed but the NEAR wallet did not report the linked account. Try again — if the issue persists, reconnect your wallet extension.",
-                ),
-              );
-              return;
-            }
-            const dashboardNetwork = getNetwork();
-            const walletNetwork = state.networkId as Network;
-            if (walletNetwork !== dashboardNetwork) {
-              void authClient.signOut().catch(() => {});
-              reject(new NetworkMismatchError(state.accountId, walletNetwork, dashboardNetwork));
-              return;
-            }
-            resolve();
-          },
-          onError: (error) => {
-            reject(error);
-          },
-        });
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey }),
-        queryClient.invalidateQueries({ queryKey: meRolesQueryKey }),
-      ]);
-      navigate({ to: "/treasury" });
-    },
-    onError: (error: Error) => {
-      if (error instanceof NetworkMismatchError) {
-        queryClient.setQueryData(sessionQueryKey, null);
-        void queryClient.invalidateQueries({ queryKey: meRolesQueryKey });
-        toast.error(
-          `wallet ${error.account} is on ${error.walletNetwork} — dashboard is on ${error.dashboardNetwork}`,
-          {
-            action: {
-              label: `switch to ${error.walletNetwork}`,
-              onClick: () => {
-                void setNetwork(error.walletNetwork);
-              },
-            },
-            duration: 15_000,
-          },
-        );
-        return;
-      }
-      toast.error(error.message || "Failed to connect NEAR wallet");
-    },
-  });
+  const connectMutation = useNearSignIn(() => navigate({ to: "/treasury" }));
+  const invitationsQuery = usePendingInvitations();
+  const invitationCount = invitationsQuery.data?.length ?? 0;
 
   const signOutMutation = useMutation({
     mutationFn: async () => {
@@ -131,60 +63,78 @@ export function UserNav() {
   });
 
   if (!user) {
-    return <ConnectButton connect={connectMutation} />;
+    return (
+      <div className="flex items-center gap-1 sm:gap-2">
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/sign-in">Sign in</Link>
+        </Button>
+        <ConnectButton connect={connectMutation} />
+      </div>
+    );
   }
 
   const identifier = user.name || user.email || user.id;
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1 sm:gap-2">
+      {invitationCount > 0 && (
+        <Button asChild variant="ghost" size="icon-sm" className="relative">
+          <Link
+            to="/profile"
+            hash="invitations"
+            aria-label={`${invitationCount} pending invitation${invitationCount === 1 ? "" : "s"}`}
+            title="Pending invitations"
+          >
+            <EnvelopeIcon aria-hidden />
+            <Badge size="counter" className="absolute -top-1 -right-1" aria-hidden>
+              {formatCount(invitationCount)}
+            </Badge>
+          </Link>
+        </Button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="cursor-pointer rounded-sm hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             title={identifier}
             aria-label={`Signed in as ${identifier}`}
           >
-            <Avatar className="size-8 rounded-full ring-1 ring-accent/60">
+            <Avatar size="sm">
               {avatarUrl && <AvatarImage src={avatarUrl} alt={identifier} />}
-              <AvatarFallback className="bg-muted text-foreground border-0 text-xs font-medium">
-                {identifier.charAt(0).toUpperCase()}
-              </AvatarFallback>
+              <AvatarFallback>{identifier.charAt(0).toUpperCase()}</AvatarFallback>
             </Avatar>
-          </button>
+          </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel>
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground">signed in as</p>
-              <p className="truncate text-sm font-medium">{identifier}</p>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-normal text-muted-foreground">Signed in as</span>
+              <span className="truncate text-sm font-medium text-foreground">{identifier}</span>
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link to="/profile" className="font-mono text-xs uppercase tracking-wide">
-              profile
-            </Link>
+            <Link to="/profile">Profile</Link>
           </DropdownMenuItem>
-          {(orgRole === "admin" || orgRole === "member" || orgRole === "owner") && (
+          {orgRole && (
             <DropdownMenuItem asChild>
-              <Link to="/admin/projects" className="font-mono text-xs uppercase tracking-wide">
-                agency dashboard
-              </Link>
+              <Link to="/admin/projects">Organization dashboard</Link>
             </DropdownMenuItem>
           )}
-          {clientLookup && clientLookup.memberships.length > 0 && (
+          {orgRole && hasClientSections && (
             <DropdownMenuItem asChild>
-              <Link to="/client" className="font-mono text-xs uppercase tracking-wide">
-                client portal
-              </Link>
+              <Link to="/client">Agencies</Link>
             </DropdownMenuItem>
           )}
+          <DropdownMenuItem asChild>
+            <Link to="/dashboard">My work</Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/notifications">Notifications</Link>
+          </DropdownMenuItem>
           {isSuperAdmin && (
             <DropdownMenuItem asChild>
-              <Link to="/platform" className="font-mono text-xs uppercase tracking-wide">
-                platform
-              </Link>
+              <Link to="/platform">Platform</Link>
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
@@ -195,9 +145,8 @@ export function UserNav() {
               signOutMutation.mutate();
             }}
             disabled={signOutMutation.isPending}
-            className="font-mono text-xs uppercase tracking-wide"
           >
-            {signOutMutation.isPending ? "signing out..." : "sign out"}
+            {signOutMutation.isPending ? "Signing out…" : "Sign out"}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -206,11 +155,11 @@ export function UserNav() {
 }
 
 function ConnectButton({ connect }: { connect: { mutate: () => void; isPending: boolean } }) {
-  const label = connect.isPending ? "connecting..." : "connect";
+  const label = connect.isPending ? "Connecting…" : "Connect";
   return (
     <Button
       variant="outline"
-      className="px-3 py-1.5 text-xs font-medium rounded-md"
+      size="sm"
       onClick={() => connect.mutate()}
       disabled={connect.isPending}
     >

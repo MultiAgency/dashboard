@@ -1,10 +1,11 @@
-import { inArray } from "drizzle-orm";
+import { and, inArray } from "drizzle-orm";
 import { Effect, Either } from "every-plugin/effect";
 import type { z } from "every-plugin/zod";
 import type { proposalPublicItem } from "../contract";
 import type { Database } from "../db";
 import { billings } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import { paidBy } from "./billings";
+import type { TreasuryScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 import { type DaoProposal, getLastProposalId, getProposals } from "./sputnik";
 import { summarizeProposals } from "./summaries";
@@ -66,7 +67,7 @@ function toProposalPublicItem(p: DaoProposal): z.infer<typeof proposalPublicItem
 
 export function createProposalsService(db: Database, directory: ProjectDirectory) {
   return {
-    list: (scope: AgencyScope, input: { fromIndex?: number; limit: number }) =>
+    list: (scope: TreasuryScope, input: { fromIndex?: number; limit: number }) =>
       Effect.gen(function* () {
         const isContributor = scope.canSeePrivate;
 
@@ -105,7 +106,9 @@ export function createProposalsService(db: Database, directory: ProjectDirectory
                     projectId: billings.projectId,
                   })
                   .from(billings)
-                  .where(inArray(billings.proposalId, proposalIdStrs)),
+                  .where(
+                    and(inArray(billings.proposalId, proposalIdStrs), paidBy(scope.agencyDao)),
+                  ),
               )
             : [];
 
@@ -134,7 +137,7 @@ export function createProposalsService(db: Database, directory: ProjectDirectory
         return { data, lastProposalId, nextFromIndex };
       }),
 
-    getPublicSummary: (scope: AgencyScope) =>
+    getPublicSummary: (scope: TreasuryScope) =>
       Effect.gen(function* () {
         return yield* Effect.tryPromise(async () => {
           const lastProposalId = await getLastProposalId(scope.agencyDao);

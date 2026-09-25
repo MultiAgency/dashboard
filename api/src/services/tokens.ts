@@ -182,6 +182,15 @@ export function getTokenMetadataBySymbol(
   return REGISTRY_BY_SYMBOL[network].get(symbol) ?? null;
 }
 
+export function baseUnitsToDisplay(amount: string, tokenId: string): string {
+  const token = getTokenMetadata(tokenId);
+  if (!token) return `${amount} ${tokenId}`;
+  const value = BigInt(amount);
+  const factor = 10n ** BigInt(token.decimals);
+  const fraction = (value % factor).toString().padStart(token.decimals, "0").replace(/0+$/, "");
+  return `${value / factor}${fraction ? `.${fraction}` : ""} ${token.symbol}`;
+}
+
 export function displayToBaseUnits(decimalString: string, decimals: number): bigint {
   if (!/^\d+(\.\d+)?$/.test(decimalString)) {
     throw new Error(`displayToBaseUnits: not a non-negative decimal: ${decimalString}`);
@@ -193,12 +202,12 @@ export function displayToBaseUnits(decimalString: string, decimals: number): big
 
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { TreasuryScope } from "./organization-access";
 import { getDaoTokenIds, getFtMetadata, getStorageBalance } from "./sputnik";
 
 export function createTokensService(_db: Database) {
   return {
-    list: (scope: AgencyScope) =>
+    list: (scope: TreasuryScope) =>
       Effect.gen(function* () {
         const ids = yield* Effect.promise(() => getDaoTokenIds(scope.agencyDao));
         const resolved = yield* Effect.promise(() =>
@@ -231,7 +240,7 @@ export function createTokensService(_db: Database) {
         };
       }),
 
-    getStorageStatus: (scope: AgencyScope, input: { tokenId: string }) =>
+    getStorageStatus: (scope: TreasuryScope, input: { tokenId: string }) =>
       Effect.gen(function* () {
         if (input.tokenId === NATIVE_TOKEN_ID) {
           return { tokenId: input.tokenId, status: null };

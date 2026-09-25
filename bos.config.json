@@ -22,15 +22,18 @@
       "name": "api",
       "development": "local:api",
       "variables": {
-        "agencyDaoAccount": "multiagency.sputnik-dao.near"
+        "agencyDaoAccount": "multiagency.sputnik-dao.near",
+        "appOrigin": "https://dev.multiagency.ai"
       },
       "secrets": [
         "API_DATABASE_URL",
+        "AUTH_DATABASE_URL",
         "APPLICATIONS_WEBHOOK_URL",
         "CONTACT_FORM_WEBHOOK_URL",
         "CONTACT_FORM_WEBHOOK_SECRET",
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",
+        "APP_ORIGIN",
         "FASTNEAR_API_KEY"
       ],
       "production": "https://multiagentic-139-api-dashboard-multiagency-78ed460bb-ze.zephyrcloud.app",

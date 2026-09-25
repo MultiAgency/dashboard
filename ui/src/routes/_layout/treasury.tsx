@@ -1,14 +1,24 @@
+import {
+  ArrowUpRightIcon,
+  CoinsIcon,
+  DownloadSimpleIcon,
+  MagnifyingGlassIcon,
+  ReceiptIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowUpRight } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { type KeyboardEvent, useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import {
   Badge,
   Button,
   Card,
+  CardAction,
   CardContent,
+  CardDescription,
+  CardHeader,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -16,7 +26,13 @@ import {
   DialogHeader,
   DialogTitle,
   Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
+  Field,
+  FieldGroup,
+  FieldLabel,
   Input,
   Select,
   SelectContent,
@@ -24,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
   Skeleton,
+  Spinner,
   Table,
   TableBody,
   TableCell,
@@ -32,11 +49,16 @@ import {
   TableRow,
   Tabs,
   TabsContent,
-  TabsList,
   TabsTrigger,
+  ToggleGroup,
+  ToggleGroupItem,
 } from "@/components";
-import { Field } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { LoadError } from "@/components/load-error";
+import { PageHeader } from "@/components/page-header";
+import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Separator } from "@/components/ui/separator";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { csvTimestamp, downloadCsv } from "@/lib/csv";
@@ -51,6 +73,7 @@ import {
   tokensListQueryOptions,
   treasuryPublicBalancesQueryOptions,
 } from "@/lib/queries";
+import { isDefaultOrganizationStaff } from "@/lib/treasury";
 import { trezuProposalUrl } from "@/lib/trezu";
 
 const TREASURY_TABS = ["balances", "payouts"] as const;
@@ -67,7 +90,6 @@ const searchSchema = z.object({
 type TreasurySearch = z.infer<typeof searchSchema>;
 
 export const Route = createFileRoute("/_layout/treasury")({
-  // Tolerant: unknown/legacy ?tab values fall back to defaults rather than throwing.
   validateSearch: (raw: Record<string, unknown>) => searchSchema.safeParse(raw).data ?? {},
   head: () => ({
     meta: [
@@ -105,7 +127,10 @@ type Token = {
 function TreasuryPage() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
-  const { canAccessAdmin } = useMeRoles();
+  const { canAccessAdmin, agencyDao } = useMeRoles();
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
+  const isDefaultStaff = isDefaultOrganizationStaff(canAccessAdmin, agencyDao, orgAccountId);
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
@@ -145,7 +170,6 @@ function TreasuryPage() {
     initialData: loaderData.balances ?? undefined,
   });
 
-  // Empty tokenIds = loader caught an RPC error; don't render the balances skeleton then.
   const isLoading = tokensQuery.isLoading || (tokenIds.length > 0 && balancesQuery.isLoading);
   const balanceByToken = new Map(
     (balancesQuery.data?.balances ?? []).map((b) => [b.tokenId, b.balance]),
@@ -157,23 +181,18 @@ function TreasuryPage() {
       return false;
     }
   };
-  const visibleTokens = canAccessAdmin
+  const visibleTokens = isDefaultStaff
     ? tokens
     : tokens.filter((t) => isNonZero(balanceByToken.get(t.tokenId) ?? "0"));
 
   const proposalsQuery = useInfiniteQuery({
     queryKey: proposalsQueryKey(),
-    queryFn: ({ pageParam }) =>
-      canAccessAdmin
-        ? apiClient.proposals.list({ limit: 50, fromIndex: pageParam })
-        : apiClient.proposals.list({ limit: 50, fromIndex: pageParam }),
+    queryFn: ({ pageParam }) => apiClient.proposals.list({ limit: 50, fromIndex: pageParam }),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (last) => last.nextFromIndex ?? undefined,
     staleTime: 30_000,
     retry: false,
   });
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
-  const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
   const proposals = useMemo(
     () => proposalsQuery.data?.pages.flatMap((p) => p.data) ?? [],
     [proposalsQuery.data],
@@ -181,14 +200,14 @@ function TreasuryPage() {
 
   const adminProjectsQuery = useQuery({
     ...adminProjectsListQueryOptions(apiClient),
-    enabled: canAccessAdmin,
+    enabled: isDefaultStaff,
   });
   const adminContributorsQuery = useQuery({
     ...adminContributorsListQueryOptions(apiClient),
-    enabled: canAccessAdmin,
+    enabled: isDefaultStaff,
   });
   const operatorContext: OperatorContext | undefined = useMemo(() => {
-    if (!canAccessAdmin) return undefined;
+    if (!isDefaultStaff) return undefined;
     return {
       projects: (adminProjectsQuery.data?.data ?? []).map((p) => ({
         id: p.id,
@@ -200,12 +219,13 @@ function TreasuryPage() {
         name: c.name ?? c.nearAccount,
       })),
     };
-  }, [canAccessAdmin, adminProjectsQuery.data, adminContributorsQuery.data]);
+  }, [isDefaultStaff, adminProjectsQuery.data, adminContributorsQuery.data]);
 
   const proposalsListProps = {
     proposals,
     isLoading: proposalsQuery.isLoading,
     isError: proposalsQuery.isError,
+    onRetry: () => proposalsQuery.refetch(),
     hasNext: !!proposalsQuery.hasNextPage,
     isFetchingNext: proposalsQuery.isFetchingNextPage,
     fetchNextPage: () => proposalsQuery.fetchNextPage(),
@@ -216,25 +236,18 @@ function TreasuryPage() {
   };
 
   return (
-    <div className="space-y-12 pb-12 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          agency · treasury
-        </div>
-        <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-          Treasury
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Liquid balances and payouts on the agency's Sputnik DAO contract — live from chain.
-        </p>
-      </header>
+    <div className="flex animate-fade-in flex-col gap-8">
+      <PageHeader
+        title="Treasury"
+        description="Liquid balances and payouts on the Agency DAO contract, live from chain. Every Billing is one of these payouts."
+      />
 
       <Tabs value={activeTab} onValueChange={(t) => setActiveTab(t as TreasuryTab)}>
-        <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.22em]">
-          <TabsTrigger value="balances">balances</TabsTrigger>
-          <TabsTrigger value="payouts">payouts</TabsTrigger>
-        </TabsList>
-        <TabsContent value="balances" className="mt-6">
+        <ScrollableTabsList>
+          <TabsTrigger value="balances">Balances</TabsTrigger>
+          <TabsTrigger value="payouts">Payouts</TabsTrigger>
+        </ScrollableTabsList>
+        <TabsContent value="balances" className="mt-4">
           <BalancesSection
             isLoading={isLoading}
             tokens={tokens}
@@ -245,7 +258,7 @@ function TreasuryPage() {
             onViewChange={setBalancesView}
           />
         </TabsContent>
-        <TabsContent value="payouts" className="mt-6">
+        <TabsContent value="payouts" className="mt-4">
           <ProposalsList {...proposalsListProps} />
         </TabsContent>
       </Tabs>
@@ -281,28 +294,27 @@ function BalancesSection({
 }) {
   if (isLoading) {
     return (
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {[0, 1, 2].map((i) => (
           <TokenCardSkeleton key={i} />
         ))}
       </div>
     );
   }
-  if (tokens.length === 0) {
+  if (tokens.length === 0 || visibleTokens.length === 0) {
     return (
-      <Empty className="border-2 border-dashed border-border/40">
-        <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
-          no tokens configured
-        </EmptyTitle>
-      </Empty>
-    );
-  }
-  if (visibleTokens.length === 0) {
-    return (
-      <Empty className="border-2 border-dashed border-border/40">
-        <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
-          empty treasury
-        </EmptyTitle>
+      <Empty variant="outline">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <CoinsIcon aria-hidden />
+          </EmptyMedia>
+          <EmptyTitle>{tokens.length === 0 ? "No tokens configured" : "Empty treasury"}</EmptyTitle>
+          <EmptyDescription>
+            {tokens.length === 0
+              ? "No tokens are tracked for this treasury yet."
+              : "The DAO holds no balance in any tracked token."}
+          </EmptyDescription>
+        </EmptyHeader>
       </Empty>
     );
   }
@@ -311,15 +323,29 @@ function BalancesSection({
     balance: balanceByToken.get(t.tokenId) ?? "0",
   }));
   return (
-    <div className="space-y-3">
-      <BalancesViewToggle
-        view={view}
-        onViewChange={onViewChange}
-        onExport={() => exportBalancesCsv(exportRows)}
-        canExport={visibleTokens.length > 0}
-      />
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          spacing={0}
+          value={view}
+          onValueChange={(v) => {
+            if (v) onViewChange(v as "grid" | "table");
+          }}
+          aria-label="Balances view"
+        >
+          <ToggleGroupItem value="grid">Grid</ToggleGroupItem>
+          <ToggleGroupItem value="table">Table</ToggleGroupItem>
+        </ToggleGroup>
+        <ExportButton
+          onExport={() => exportBalancesCsv(exportRows)}
+          label="Download visible balances as CSV"
+        />
+      </div>
       {view === "grid" ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {visibleTokens.map((token) => (
             <TokenCard
               key={token.tokenId}
@@ -340,50 +366,27 @@ function BalancesSection({
   );
 }
 
-function BalancesViewToggle({
-  view,
-  onViewChange,
+function ExportButton({
   onExport,
-  canExport,
+  label,
+  disabled,
 }: {
-  view: "grid" | "table";
-  onViewChange: (v: "grid" | "table") => void;
   onExport: () => void;
-  canExport: boolean;
+  label: string;
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground mr-1">
-        view
-      </span>
-      {(["grid", "table"] as const).map((v) => {
-        const active = view === v;
-        return (
-          <button
-            key={v}
-            type="button"
-            onClick={() => onViewChange(v)}
-            aria-pressed={active}
-            className={`font-mono text-[10px] uppercase tracking-[0.18em] px-2 py-1 border transition-colors duration-150 cursor-pointer ${
-              active
-                ? "bg-foreground text-background border-foreground"
-                : "bg-transparent text-muted-foreground border-foreground/40 hover:text-foreground hover:border-foreground/70"
-            }`}
-          >
-            {v}
-          </button>
-        );
-      })}
-      <button
-        type="button"
-        onClick={onExport}
-        disabled={!canExport}
-        aria-label="download visible balances as CSV"
-        className="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
-      >
-        export csv ↓
-      </button>
-    </div>
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={onExport}
+      disabled={disabled}
+      aria-label={label}
+    >
+      <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+      Export CSV
+    </Button>
   );
 }
 
@@ -410,6 +413,15 @@ function safeBigInt(raw: string): bigint {
   }
 }
 
+function activateOnKey(action: () => void) {
+  return (e: KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      action();
+    }
+  };
+}
+
 function BalancesTable({
   tokens,
   balanceByToken,
@@ -427,22 +439,14 @@ function BalancesTable({
     return bb > ba ? 1 : -1;
   });
   return (
-    <div className="border border-border">
+    <div className="border">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[100px]">
-              symbol
-            </TableHead>
-            <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[100px]">
-              network
-            </TableHead>
-            <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] text-right">
-              balance
-            </TableHead>
-            <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em]">
-              contract
-            </TableHead>
+            <TableHead>Token</TableHead>
+            <TableHead>Network</TableHead>
+            <TableHead className="text-right">Balance</TableHead>
+            <TableHead className="hidden sm:table-cell">Contract</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -450,27 +454,18 @@ function BalancesTable({
             <TableRow
               key={token.tokenId}
               onClick={() => onSelectToken(token)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onSelectToken(token);
-                }
-              }}
+              onKeyDown={activateOnKey(() => onSelectToken(token))}
               tabIndex={0}
               role="button"
               aria-label={`Open ${token.symbol} details`}
-              className="cursor-pointer hover:bg-muted/50 focus:bg-muted/50 focus:outline-none"
+              className="cursor-pointer"
             >
-              <TableCell className="font-mono text-xs uppercase tracking-wide">
-                {token.symbol}
-              </TableCell>
-              <TableCell className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                {token.network}
-              </TableCell>
-              <TableCell className="font-mono tabular-nums text-right whitespace-nowrap">
+              <TableCell className="font-medium">{token.symbol}</TableCell>
+              <TableCell className="text-muted-foreground">{token.network}</TableCell>
+              <TableCell className="text-right tabular-nums whitespace-nowrap">
                 {formatTokenAmount(balanceByToken.get(token.tokenId) ?? "0", token.tokenId)}
               </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground break-all max-w-[16rem]">
+              <TableCell className="hidden max-w-64 truncate font-mono text-muted-foreground sm:table-cell">
                 {token.tokenId}
               </TableCell>
             </TableRow>
@@ -484,12 +479,11 @@ function BalancesTable({
 function TokenCardSkeleton() {
   return (
     <Card>
-      <CardContent className="p-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-3 w-16" />
-          <Skeleton className="h-3 w-12" />
-        </div>
-        <Skeleton className="h-8 w-3/4" />
+      <CardHeader>
+        <Skeleton className="h-3 w-16" />
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        <Skeleton className="h-7 w-3/4" />
         <Skeleton className="h-3 w-2/3" />
       </CardContent>
     </Card>
@@ -508,28 +502,24 @@ function TokenCard({
   return (
     <Card
       onClick={() => onSelect(token)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect(token);
-        }
-      }}
+      onKeyDown={activateOnKey(() => onSelect(token))}
       tabIndex={0}
       role="button"
       aria-label={`Open ${token.symbol} details`}
-      className="cursor-pointer hover:bg-muted/40 focus:bg-muted/40 focus:outline-none transition-colors duration-150"
+      variant="interactive"
     >
-      <CardContent className="p-4 space-y-2">
-        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <span className="truncate">{token.symbol}</span>
-          <span>{token.network}</span>
-        </div>
-        <div className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight tabular-nums break-words">
+      <CardHeader>
+        <CardDescription>
+          <span className="block truncate">{token.name}</span>
+        </CardDescription>
+        <CardAction>
+          <Badge variant="outline">{token.network}</Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        <p className="font-heading text-2xl font-semibold tracking-tight tabular-nums break-words">
           {formatTokenAmount(balance, token.tokenId)}
-        </div>
-        <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground break-all">
-          {token.name}
-        </div>
+        </p>
       </CardContent>
     </Card>
   );
@@ -557,25 +547,16 @@ function TokenDetailDialog({
         {token && (
           <>
             <DialogHeader>
-              <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]">
-                <span className="text-muted-foreground">token</span>
-                <span>{tokenSymbol(token.tokenId)}</span>
-                <Badge variant="outline">{token.network}</Badge>
-              </div>
-              <DialogTitle className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight tabular-nums">
-                {formatTokenAmount(balance, token.tokenId)}
-              </DialogTitle>
-              <DialogDescription className="sr-only">
-                {token.symbol} token details and recent treasury transfers
+              <DialogTitle>{formatTokenAmount(balance, token.tokenId)}</DialogTitle>
+              <DialogDescription>
+                {token.name} on {token.network}
               </DialogDescription>
             </DialogHeader>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <TokenMetaField label="name" value={token.name} />
-              <TokenMetaField label="symbol" value={token.symbol} />
-              <TokenMetaField label="decimals" value={String(token.decimals)} />
-              <TokenMetaField label="network" value={token.network} />
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <DetailField label="Symbol" value={tokenSymbol(token.tokenId)} />
+              <DetailField label="Decimals" value={String(token.decimals)} />
               <div className="sm:col-span-2">
-                <TokenMetaField label="contract" value={token.tokenId} mono />
+                <DetailField label="Contract" value={token.tokenId} mono />
               </div>
               <div className="sm:col-span-2">
                 <StorageStatusField
@@ -585,56 +566,42 @@ function TokenDetailDialog({
                 />
               </div>
             </dl>
-            <div className="space-y-2">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                recent transfers
-              </div>
+            <Separator />
+            <section className="flex flex-col gap-2">
+              <h3 className="text-xs font-medium">Recent transfers</h3>
               {tokenTransfers.length === 0 ? (
-                <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground py-2">
-                  no transfers loaded yet
+                <p className="text-xs text-muted-foreground">
+                  No transfers loaded yet. Open the Payouts tab to load more.
                 </p>
               ) : (
-                <div className="border border-border">
-                  <table className="w-full text-xs">
-                    <tbody>
+                <div className="border">
+                  <Table>
+                    <TableBody>
                       {tokenTransfers.map((p) => (
-                        <tr key={p.proposalId} className="border-b border-border last:border-b-0">
-                          <td className="font-mono text-xs text-muted-foreground px-2 py-2 whitespace-nowrap">
-                            #{p.proposalId}
-                          </td>
-                          <td className="px-2 py-2">
-                            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                        <TableRow key={p.proposalId}>
+                          <TableCell className="text-muted-foreground">#{p.proposalId}</TableCell>
+                          <TableCell>
+                            <Badge variant={STATUS_VARIANT[p.status] ?? "outline"}>
                               {STATUS_LABEL[p.status] ?? p.status}
-                            </span>
-                          </td>
-                          <td className="font-mono tabular-nums text-right px-2 py-2 whitespace-nowrap">
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">
                             {formatTokenAmount(p.amount, p.tokenId)}
-                          </td>
-                          <td className="font-mono text-xs text-muted-foreground px-2 py-2 break-all max-w-[12rem]">
+                          </TableCell>
+                          <TableCell className="max-w-48 truncate font-mono text-muted-foreground">
                             {p.receiverId}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
-            </div>
+            </section>
           </>
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function TokenMetaField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </div>
-      <div className={`${mono ? "font-mono text-xs" : "text-sm"} break-all`}>{value}</div>
-    </div>
   );
 }
 
@@ -651,36 +618,30 @@ function StorageStatusField({
 }) {
   const isNative = tokenId === NATIVE_NEAR_TOKEN_ID;
   return (
-    <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        nep-145 storage
-      </div>
-      {isNative ? (
-        <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-          n/a — native NEAR
-        </p>
-      ) : isLoading ? (
-        <Skeleton className="h-4 w-32" />
-      ) : status ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary" className="font-mono text-[10px] uppercase tracking-wide">
-            registered
-          </Badge>
-          <span className="font-mono text-xs text-muted-foreground tabular-nums">
-            total {formatTokenAmount(status.total, "near")} · available{" "}
-            {formatTokenAmount(status.available, "near")}
+    <div className="flex flex-col gap-1">
+      <dt className="text-xs text-muted-foreground">NEP-145 storage</dt>
+      <dd className="text-xs">
+        {isNative ? (
+          <span className="text-muted-foreground">Not applicable to native NEAR.</span>
+        ) : isLoading ? (
+          <Skeleton className="h-4 w-32" />
+        ) : status ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">Registered</Badge>
+            <span className="text-muted-foreground tabular-nums">
+              Total {formatTokenAmount(status.total, "near")} · available{" "}
+              {formatTokenAmount(status.available, "near")}
+            </span>
           </span>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="destructive" className="font-mono text-[10px] uppercase tracking-wide">
-            not registered
-          </Badge>
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            DAO has not registered for this token
+        ) : (
+          <span className="flex flex-wrap items-center gap-2">
+            <Badge variant="destructive">Not registered</Badge>
+            <span className="text-muted-foreground">
+              The DAO has not registered for this token.
+            </span>
           </span>
-        </div>
-      )}
+        )}
+      </dd>
     </div>
   );
 }
@@ -715,8 +676,6 @@ function normalizeSearch(s: TreasurySearch): TreasurySearch {
   return out;
 }
 
-// ── ProposalsList (absorbed from proposals-list.tsx) ──
-
 type ProposalStatus =
   | "InProgress"
   | "Approved"
@@ -741,10 +700,10 @@ const STATUS_TO_BUCKET: Record<ProposalStatus, StatusBucket> = {
 };
 
 const STATUS_BUCKETS: { key: StatusBucket; label: string }[] = [
-  { key: "open", label: "open" },
-  { key: "approved", label: "approved" },
-  { key: "failed", label: "failed" },
-  { key: "closed", label: "closed" },
+  { key: "open", label: "Open" },
+  { key: "approved", label: "Approved" },
+  { key: "failed", label: "Failed" },
+  { key: "closed", label: "Closed" },
 ];
 
 type ProposalsFilter = {
@@ -793,6 +752,7 @@ type ProposalsListProps = {
   proposals: Proposal[];
   isLoading: boolean;
   isError: boolean;
+  onRetry: () => void;
   hasNext: boolean;
   isFetchingNext: boolean;
   fetchNextPage: () => void;
@@ -806,6 +766,7 @@ function ProposalsList({
   proposals,
   isLoading,
   isError,
+  onRetry,
   hasNext,
   isFetchingNext,
   fetchNextPage,
@@ -832,19 +793,12 @@ function ProposalsList({
     });
   }, [proposals, filter]);
 
-  const toggleBucket = (bucket: StatusBucket) => {
-    const next = new Set(filter.status);
-    if (next.has(bucket)) next.delete(bucket);
-    else next.add(bucket);
-    onFilterChange({ ...filter, status: next });
-  };
-
   const hasActiveFilter = filter.status.size > 0 || !!filter.token || filter.receiver.trim() !== "";
   const clearFilters = () => onFilterChange(EMPTY_PROPOSALS_FILTER);
 
   if (isLoading) {
     return (
-      <div className="border border-border">
+      <div className="border">
         <Table>
           <ProposalsTableHeader />
           <TableBody>
@@ -857,26 +811,26 @@ function ProposalsList({
     );
   }
   if (isError) {
-    return (
-      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-        could not load — try again
-      </p>
-    );
+    return <LoadError title="Could not load payouts" onRetry={onRetry} />;
   }
   if (proposals.length === 0) {
     return (
-      <Empty className="border-2 border-dashed border-border/40">
-        <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
-          no payouts yet
-        </EmptyTitle>
+      <Empty variant="outline">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <ReceiptIcon aria-hidden />
+          </EmptyMedia>
+          <EmptyTitle>No payouts yet</EmptyTitle>
+          <EmptyDescription>Transfer proposals from the DAO show up here.</EmptyDescription>
+        </EmptyHeader>
       </Empty>
     );
   }
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <ProposalsFilterBar
         statusFilter={filter.status}
-        onToggleBucket={toggleBucket}
+        onStatusChange={(status) => onFilterChange({ ...filter, status })}
         tokenFilter={filter.token}
         onTokenChange={(t) => onFilterChange({ ...filter, token: t })}
         distinctTokens={distinctTokens}
@@ -889,17 +843,14 @@ function ProposalsList({
         onExport={() => exportProposalsCsv(filtered)}
         canExport={filtered.length > 0}
       />
-      <div className="border border-border">
+      <div className="border">
         <Table>
           <ProposalsTableHeader />
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground text-center py-8"
-                >
-                  no matches — clear filters to see all
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                  No payouts match these filters.
                 </TableCell>
               </TableRow>
             ) : (
@@ -916,14 +867,10 @@ function ProposalsList({
         </Table>
       </div>
       {hasNext && (
-        <div className="flex justify-center pt-2">
-          <Button
-            onClick={fetchNextPage}
-            disabled={isFetchingNext}
-            variant="outline"
-            className="font-display uppercase tracking-wide"
-          >
-            {isFetchingNext ? "loading..." : "load more →"}
+        <div className="flex justify-center">
+          <Button onClick={fetchNextPage} disabled={isFetchingNext} variant="outline">
+            {isFetchingNext && <Spinner data-icon="inline-start" />}
+            {isFetchingNext ? "Loading…" : "Load more"}
           </Button>
         </div>
       )}
@@ -941,7 +888,7 @@ function ProposalsList({
 
 function ProposalsFilterBar({
   statusFilter,
-  onToggleBucket,
+  onStatusChange,
   tokenFilter,
   onTokenChange,
   distinctTokens,
@@ -955,7 +902,7 @@ function ProposalsFilterBar({
   canExport,
 }: {
   statusFilter: ReadonlySet<StatusBucket>;
-  onToggleBucket: (b: StatusBucket) => void;
+  onStatusChange: (next: ReadonlySet<StatusBucket>) => void;
   tokenFilter: string;
   onTokenChange: (t: string) => void;
   distinctTokens: string[];
@@ -969,89 +916,66 @@ function ProposalsFilterBar({
   canExport: boolean;
 }) {
   return (
-    <div className="space-y-3 border border-border bg-card/40 p-3">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground mr-1">
-          status
-        </span>
-        {STATUS_BUCKETS.map((b) => {
-          const active = statusFilter.has(b.key);
-          return (
-            <button
-              key={b.key}
-              type="button"
-              onClick={() => onToggleBucket(b.key)}
-              aria-pressed={active}
-              className={`font-mono text-[10px] uppercase tracking-[0.18em] px-2 py-1 border transition-colors duration-150 cursor-pointer ${
-                active
-                  ? "bg-foreground text-background border-foreground"
-                  : "bg-transparent text-muted-foreground border-foreground/40 hover:text-foreground hover:border-foreground/70"
-              }`}
-            >
-              {b.label}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            token
-          </div>
-          <Select
-            value={tokenFilter || ALL_TOKENS_SENTINEL}
-            onValueChange={(v) => onTokenChange(v === ALL_TOKENS_SENTINEL ? "" : v)}
-          >
-            <SelectTrigger
-              aria-label="filter by token"
-              className="font-mono text-xs uppercase tracking-wide h-8"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_TOKENS_SENTINEL}>all tokens</SelectItem>
-              {distinctTokens.map((tid) => (
-                <SelectItem key={tid} value={tid}>
-                  {tokenSymbol(tid)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1 flex-1 min-w-[12rem]">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            receiver
-          </div>
-          <Input
+        <InputGroup className="w-full sm:w-64">
+          <InputGroupAddon>
+            <MagnifyingGlassIcon aria-hidden />
+          </InputGroupAddon>
+          <InputGroupInput
             value={receiverQuery}
             onChange={(e) => onReceiverChange(e.target.value)}
-            placeholder="search account…"
-            aria-label="filter by receiver account"
-            className="font-mono text-xs h-8"
+            placeholder="Search receiver…"
+            aria-label="Filter by receiver account"
           />
-        </div>
-        <div className="ml-auto flex items-center gap-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground tabular-nums">
-            {shown === total ? `${total}` : `${shown} of ${total}`}
-          </div>
+        </InputGroup>
+        <Select
+          value={tokenFilter || ALL_TOKENS_SENTINEL}
+          onValueChange={(v) => onTokenChange(v === ALL_TOKENS_SENTINEL ? "" : v)}
+        >
+          <SelectTrigger aria-label="Filter by token" className="w-36">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_TOKENS_SENTINEL}>All tokens</SelectItem>
+            {distinctTokens.map((tid) => (
+              <SelectItem key={tid} value={tid}>
+                {tokenSymbol(tid)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <ToggleGroup
+          type="multiple"
+          variant="outline"
+          spacing={0}
+          value={Array.from(statusFilter)}
+          onValueChange={(values) => onStatusChange(new Set(values as StatusBucket[]))}
+          aria-label="Filter by status"
+        >
+          {STATUS_BUCKETS.map((b) => (
+            <ToggleGroupItem key={b.key} value={b.key}>
+              {b.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
+          {shown === total ? `${total} payouts` : `${shown} of ${total} payouts`}
+        </p>
+        <div className="flex items-center gap-2">
           {hasActiveFilter && (
-            <button
-              type="button"
-              onClick={onClear}
-              className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground cursor-pointer underline-offset-2 hover:underline"
-            >
-              clear ✕
-            </button>
+            <Button type="button" variant="ghost" size="sm" onClick={onClear}>
+              <XIcon data-icon="inline-start" aria-hidden />
+              Clear filters
+            </Button>
           )}
-          <button
-            type="button"
-            onClick={onExport}
+          <ExportButton
+            onExport={onExport}
             disabled={!canExport}
-            aria-label="download visible rows as CSV"
-            className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
-          >
-            export csv ↓
-          </button>
+            label="Download visible rows as CSV"
+          />
         </div>
       </div>
     </div>
@@ -1062,40 +986,30 @@ function ProposalsTableHeader() {
   return (
     <TableHeader>
       <TableRow>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[80px]">
-          id
-        </TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[110px]">
-          status
-        </TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em]">
-          description
-        </TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] text-right">
-          amount
-        </TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em]">to</TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[120px]">
-          submitted
-        </TableHead>
+        <TableHead className="w-16">ID</TableHead>
+        <TableHead className="w-28">Status</TableHead>
+        <TableHead className="hidden md:table-cell">Description</TableHead>
+        <TableHead className="text-right">Amount</TableHead>
+        <TableHead>To</TableHead>
+        <TableHead className="w-28">Submitted</TableHead>
       </TableRow>
     </TableHeader>
   );
 }
 
 const STATUS_LABEL: Record<ProposalStatus, string> = {
-  InProgress: "open",
-  Approved: "approved",
-  Rejected: "rejected",
-  Removed: "removed",
-  Expired: "expired",
-  Moved: "moved",
-  Failed: "failed",
+  InProgress: "Open",
+  Approved: "Approved",
+  Rejected: "Rejected",
+  Removed: "Removed",
+  Expired: "Expired",
+  Moved: "Moved",
+  Failed: "Failed",
 };
 
-type BadgeVariantLocal = "default" | "secondary" | "accent" | "destructive" | "outline";
+type BadgeVariantLocal = "default" | "secondary" | "destructive" | "outline";
 const STATUS_VARIANT: Record<ProposalStatus, BadgeVariantLocal> = {
-  InProgress: "default",
+  InProgress: "outline",
   Approved: "secondary",
   Rejected: "outline",
   Removed: "outline",
@@ -1108,16 +1022,16 @@ function ProposalRowSkeleton() {
   return (
     <TableRow>
       <TableCell>
-        <Skeleton className="h-3 w-12" />
+        <Skeleton className="h-3 w-10" />
       </TableCell>
       <TableCell>
         <Skeleton className="h-5 w-16" />
       </TableCell>
-      <TableCell>
+      <TableCell className="hidden md:table-cell">
         <Skeleton className="h-3 w-full" />
       </TableCell>
       <TableCell className="text-right">
-        <Skeleton className="h-3 w-16 ml-auto" />
+        <Skeleton className="ml-auto h-3 w-16" />
       </TableCell>
       <TableCell>
         <Skeleton className="h-3 w-24" />
@@ -1129,14 +1043,14 @@ function ProposalRowSkeleton() {
   );
 }
 
-const STATUS_ROW_TINT: Record<ProposalStatus, string> = {
-  InProgress: "",
-  Approved: "",
-  Failed: "bg-destructive/5",
-  Rejected: "bg-muted/40",
-  Removed: "bg-muted/40",
-  Expired: "bg-muted/40",
-  Moved: "bg-muted/40",
+const STATUS_ROW_VARIANT: Record<ProposalStatus, "default" | "muted" | "destructive"> = {
+  InProgress: "default",
+  Approved: "default",
+  Failed: "destructive",
+  Rejected: "muted",
+  Removed: "muted",
+  Expired: "muted",
+  Moved: "muted",
 };
 
 function ProposalRow({
@@ -1149,51 +1063,40 @@ function ProposalRow({
   showAttribution: boolean;
 }) {
   const submitted = formatSubmitted(proposal.submissionTime, "date");
-  const tint = STATUS_ROW_TINT[proposal.status] ?? "";
   return (
     <TableRow
       onClick={() => onSelect(proposal)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect(proposal);
-        }
-      }}
+      onKeyDown={activateOnKey(() => onSelect(proposal))}
       tabIndex={0}
       role="button"
       aria-label={`Open proposal ${proposal.proposalId} details`}
-      className={`cursor-pointer hover:bg-muted/50 focus:bg-muted/50 focus:outline-none ${tint}`}
+      variant={STATUS_ROW_VARIANT[proposal.status]}
+      className="cursor-pointer"
     >
-      <TableCell className="font-mono text-xs text-muted-foreground">
-        #{proposal.proposalId}
-      </TableCell>
+      <TableCell className="text-muted-foreground tabular-nums">#{proposal.proposalId}</TableCell>
       <TableCell>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1">
           <Badge variant={STATUS_VARIANT[proposal.status] ?? "outline"}>
             {STATUS_LABEL[proposal.status] ?? proposal.status}
           </Badge>
           {showAttribution && proposal.mapping && (
-            <Badge variant="outline" className="font-mono text-[10px]">
-              @{proposal.mapping.projectSlug}
-            </Badge>
+            <Badge variant="outline">@{proposal.mapping.projectSlug}</Badge>
           )}
           {showAttribution && !proposal.mapping && proposal.status === "Approved" && (
-            <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">
-              unrecorded
-            </Badge>
+            <Badge variant="outline">Unrecorded</Badge>
           )}
         </div>
       </TableCell>
-      <TableCell className="text-sm max-w-[24rem]">
-        <span className="line-clamp-2 break-words">{proposal.description}</span>
+      <TableCell className="hidden max-w-72 min-w-40 whitespace-normal md:table-cell">
+        <span className="line-clamp-2 break-words">{proposal.description || "—"}</span>
       </TableCell>
-      <TableCell className="font-mono tabular-nums text-right whitespace-nowrap">
+      <TableCell className="text-right tabular-nums whitespace-nowrap">
         {formatTokenAmount(proposal.amount, proposal.tokenId)}
       </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground break-all max-w-[14rem]">
+      <TableCell className="max-w-44 truncate font-mono text-muted-foreground">
         {proposal.receiverId}
       </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+      <TableCell className="text-muted-foreground tabular-nums whitespace-nowrap">
         {submitted}
       </TableCell>
     </TableRow>
@@ -1219,37 +1122,31 @@ function ProposalDetailDialog({
         {proposal && (
           <>
             <DialogHeader>
-              <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]">
-                <span className="text-muted-foreground">proposal</span>
-                <span>#{proposal.proposalId}</span>
-                <Badge variant={STATUS_VARIANT[proposal.status] ?? "outline"}>
-                  {STATUS_LABEL[proposal.status] ?? proposal.status}
-                </Badge>
-              </div>
-              <DialogTitle className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-                {formatTokenAmount(proposal.amount, proposal.tokenId)}
-              </DialogTitle>
-              <DialogDescription className="sr-only">
-                Transfer proposal #{proposal.proposalId} details
-              </DialogDescription>
+              <DialogTitle>{formatTokenAmount(proposal.amount, proposal.tokenId)}</DialogTitle>
+              <DialogDescription>Transfer proposal #{proposal.proposalId}</DialogDescription>
             </DialogHeader>
-            <dl className="grid gap-3 text-sm">
-              <DetailField label="receiver" value={proposal.receiverId} mono />
-              <DetailField label="proposer" value={proposal.proposer} mono />
-              <DetailField
-                label="submitted"
-                value={formatSubmitted(proposal.submissionTime, "minute")}
-                mono
-              />
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1">
+                <dt className="text-xs text-muted-foreground">Status</dt>
+                <dd>
+                  <Badge variant={STATUS_VARIANT[proposal.status] ?? "outline"}>
+                    {STATUS_LABEL[proposal.status] ?? proposal.status}
+                  </Badge>
+                </dd>
+              </div>
               <VoteTally votes={proposal.votes} />
+              <DetailField label="Receiver" value={proposal.receiverId} mono />
+              <DetailField label="Proposer" value={proposal.proposer} mono />
+              <DetailField
+                label="Submitted"
+                value={formatSubmitted(proposal.submissionTime, "minute")}
+              />
               {proposal.description && (
-                <div className="space-y-1">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                    description
-                  </div>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                <div className="flex flex-col gap-1 sm:col-span-2">
+                  <dt className="text-xs text-muted-foreground">Description</dt>
+                  <dd className="text-xs/relaxed break-words whitespace-pre-wrap">
                     {proposal.description}
-                  </p>
+                  </dd>
                 </div>
               )}
             </dl>
@@ -1260,15 +1157,16 @@ function ProposalDetailDialog({
                 onAfterChange={() => onOpenChange(false)}
               />
             )}
-            <DialogFooter>
-              {trezuUrl && (
-                <Button asChild variant="outline" className="font-display uppercase tracking-wide">
+            {trezuUrl && (
+              <DialogFooter>
+                <Button asChild variant="outline">
                   <a href={trezuUrl} target="_blank" rel="noopener noreferrer">
-                    view on trezu <ArrowUpRight className="ml-1 size-3" />
+                    View on Trezu
+                    <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
                   </a>
                 </Button>
-              )}
-            </DialogFooter>
+              </DialogFooter>
+            )}
           </>
         )}
       </DialogContent>
@@ -1328,35 +1226,33 @@ function ProposalBillingSection({
   if (proposal.mapping) {
     return (
       <>
-        <div className="space-y-2 border-t pt-4">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            billing
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+        <Separator />
+        <section className="flex flex-col gap-3">
+          <h3 className="text-xs font-medium">Billing</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Link
               to="/admin/projects/$slug"
               params={{ slug: proposal.mapping.projectSlug }}
-              className="font-mono text-xs underline-offset-2 hover:underline"
+              className="text-xs underline underline-offset-4 hover:text-muted-foreground"
             >
-              @{proposal.mapping.projectSlug}
+              {proposal.mapping.projectTitle || `@${proposal.mapping.projectSlug}`}
             </Link>
             <Button
-              variant="ghost"
+              variant="destructive"
               size="sm"
-              className="ml-auto text-xs"
               onClick={() => setConfirmOpen(true)}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "deleting..." : "delete"}
+              {deleteMutation.isPending ? "Deleting…" : "Delete billing"}
             </Button>
           </div>
-        </div>
+        </section>
         <ConfirmDialog
           open={confirmOpen}
           onOpenChange={setConfirmOpen}
           title={`Delete billing for proposal #${proposal.proposalId}?`}
           description="You can re-record it afterwards. Chain status remains the source of truth."
-          confirmLabel="delete"
+          confirmLabel="Delete"
           destructive
           onConfirm={async () => {
             await deleteMutation.mutateAsync();
@@ -1368,75 +1264,95 @@ function ProposalBillingSection({
 
   if (projects.length === 0) {
     return (
-      <div className="space-y-1 border-t pt-4">
-        <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-          billing
-        </div>
-        <p className="text-xs text-muted-foreground">Create a project before recording billings.</p>
-      </div>
+      <>
+        <Separator />
+        <section className="flex flex-col gap-1">
+          <h3 className="text-xs font-medium">Billing</h3>
+          <p className="text-xs text-muted-foreground">
+            Create a Project before recording Billings.
+          </p>
+        </section>
+      </>
     );
   }
 
+  const projectFieldId = `record-project-${proposal.proposalId}`;
+  const contributorFieldId = `record-contributor-${proposal.proposalId}`;
+  const noteFieldId = `record-note-${proposal.proposalId}`;
   const canRecord = projectId !== "" && !recordMutation.isPending;
   return (
-    <div className="space-y-3 border-t pt-4">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        record billing
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Field label="project" htmlFor={`record-project-${proposal.proposalId}`}>
-          <Select
-            value={projectId}
-            onValueChange={setProjectId}
-            disabled={recordMutation.isPending}
-          >
-            <SelectTrigger id={`record-project-${proposal.proposalId}`} className="w-full">
-              <SelectValue placeholder="select project…" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="contributor" htmlFor={`record-contributor-${proposal.proposalId}`}>
-          <Select
-            value={nearAccount || NO_CONTRIBUTOR_SENTINEL}
-            onValueChange={(v) => setNearAccount(v === NO_CONTRIBUTOR_SENTINEL ? "" : v)}
-            disabled={recordMutation.isPending}
-          >
-            <SelectTrigger id={`record-contributor-${proposal.proposalId}`} className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_CONTRIBUTOR_SENTINEL}>none</SelectItem>
-              {contributors.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-      <Field label="note" htmlFor={`record-note-${proposal.proposalId}`}>
-        <Input
-          id={`record-note-${proposal.proposalId}`}
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          disabled={recordMutation.isPending}
-          maxLength={2000}
-        />
-      </Field>
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => recordMutation.mutate()} disabled={!canRecord}>
-          {recordMutation.isPending ? "recording..." : "record"}
-        </Button>
-      </div>
-    </div>
+    <>
+      <Separator />
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <h3 className="text-xs font-medium">Record billing</h3>
+          <p className="text-xs text-muted-foreground">
+            Attribute this payout to a Project so its Clients see it.
+          </p>
+        </div>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={projectFieldId}>Project</FieldLabel>
+            <Select
+              value={projectId}
+              onValueChange={setProjectId}
+              disabled={recordMutation.isPending}
+            >
+              <SelectTrigger id={projectFieldId} className="w-full">
+                <SelectValue placeholder="Select a Project" />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={contributorFieldId}>Contributor</FieldLabel>
+            <Select
+              value={nearAccount || NO_CONTRIBUTOR_SENTINEL}
+              onValueChange={(v) => setNearAccount(v === NO_CONTRIBUTOR_SENTINEL ? "" : v)}
+              disabled={recordMutation.isPending}
+            >
+              <SelectTrigger id={contributorFieldId} className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_CONTRIBUTOR_SENTINEL}>None</SelectItem>
+                {contributors.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={noteFieldId}>Note</FieldLabel>
+            <Input
+              id={noteFieldId}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              disabled={recordMutation.isPending}
+              maxLength={2000}
+              placeholder="Optional"
+            />
+          </Field>
+        </FieldGroup>
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {projectId === "" && (
+            <p className="text-xs text-muted-foreground">Select a Project to record.</p>
+          )}
+          <Button onClick={() => recordMutation.mutate()} disabled={!canRecord}>
+            {recordMutation.isPending && <Spinner data-icon="inline-start" />}
+            {recordMutation.isPending ? "Recording…" : "Record billing"}
+          </Button>
+        </div>
+      </section>
+    </>
   );
 }
 
@@ -1445,28 +1361,24 @@ function VoteTally({ votes }: { votes: Record<string, VoteAction> }) {
   const counts = { Approve: 0, Reject: 0, Remove: 0 };
   for (const v of entries) counts[v]++;
   return (
-    <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        votes
-      </div>
+    <div className="flex flex-col gap-1">
+      <dt className="text-xs text-muted-foreground">Votes</dt>
       {entries.length === 0 ? (
-        <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-          no tally available
-        </p>
+        <dd className="text-xs text-muted-foreground">No tally available</dd>
       ) : (
-        <div className="flex flex-wrap items-center gap-3 font-mono text-xs tabular-nums">
+        <dd className="flex flex-wrap items-center gap-3 text-xs tabular-nums">
           <span>
-            <span className="text-muted-foreground">approve</span> {counts.Approve}
+            <span className="text-muted-foreground">Approve</span> {counts.Approve}
           </span>
           <span>
-            <span className="text-muted-foreground">reject</span> {counts.Reject}
+            <span className="text-muted-foreground">Reject</span> {counts.Reject}
           </span>
           {counts.Remove > 0 && (
             <span>
-              <span className="text-muted-foreground">remove</span> {counts.Remove}
+              <span className="text-muted-foreground">Remove</span> {counts.Remove}
             </span>
           )}
-        </div>
+        </dd>
       )}
     </div>
   );
@@ -1474,11 +1386,9 @@ function VoteTally({ votes }: { votes: Record<string, VoteAction> }) {
 
 function DetailField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </div>
-      <div className={`${mono ? "font-mono text-xs" : "text-sm"} break-all`}>{value}</div>
+    <div className="flex min-w-0 flex-col gap-1">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className={mono ? "font-mono text-xs break-all" : "text-xs break-words"}>{value}</dd>
     </div>
   );
 }

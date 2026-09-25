@@ -1,10 +1,11 @@
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { billings, budgets, type Listing } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
-import type { ListingsService } from "./listings";
-import { type DaoProposalStatus, enrichWithChainStatus } from "./sputnik";
+import { paidBy } from "./billings";
+import { getListingsForProjects, type ListingsService } from "./listings";
+import type { TreasuryScope } from "./organization-access";
+import { type DaoProposalStatus, enrichWithChainStatus, persistedProposalStatus } from "./sputnik";
 import { displayToBaseUnits, getTokenMetadataBySymbol } from "./tokens";
 
 export type ProjectRollup = {
@@ -14,6 +15,13 @@ export type ProjectRollup = {
   committed: string;
   paid: string;
   remaining: string;
+};
+
+export type PayingDaoSpend = {
+  daoAccountId: string;
+  tokenId: string;
+  committed: string;
+  paid: string;
 };
 
 export type AgencyRollup = {
@@ -30,6 +38,7 @@ export type AgencyRollup = {
 export type ProjectLedger = {
   tokenIds: string[];
   rollupsFor(projectId: string): ProjectRollup[];
+  subcontractorSpendFor(projectId: string): PayingDaoSpend[];
   agencyRollups(balances: Record<string, string>, tokenIds?: string[]): AgencyRollup[];
 };
 
@@ -117,6 +126,40 @@ function computeAvailable(balance: bigint, budgeted: bigint, paid: bigint): bigi
   return balance - (budgeted - paid);
 }
 
+function spendByPayingDao(
+  bills: Array<{
+    payingDaoAccountId: string;
+    tokenId: string;
+    amount: string;
+    status: DaoProposalStatus;
+  }>,
+): PayingDaoSpend[] {
+  const byKey = new Map<
+    string,
+    { daoAccountId: string; tokenId: string; committed: bigint; paid: bigint }
+  >();
+  for (const bill of bills) {
+    if (PROPOSAL_TERMINAL_FAIL.has(bill.status)) continue;
+    const key = `${bill.payingDaoAccountId}/${bill.tokenId}`;
+    const entry = byKey.get(key) ?? {
+      daoAccountId: bill.payingDaoAccountId,
+      tokenId: bill.tokenId,
+      committed: 0n,
+      paid: 0n,
+    };
+    if (bill.status === "Approved") entry.paid += BigInt(bill.amount);
+    else entry.committed += BigInt(bill.amount);
+    byKey.set(key, entry);
+  }
+  return [...byKey.values()]
+    .sort((a, b) =>
+      a.daoAccountId === b.daoAccountId
+        ? a.tokenId.localeCompare(b.tokenId)
+        : a.daoAccountId.localeCompare(b.daoAccountId),
+    )
+    .map((e) => ({ ...e, committed: e.committed.toString(), paid: e.paid.toString() }));
+}
+
 function toProjectRollup(r: TokenRollup): ProjectRollup {
   return {
     tokenId: r.tokenId,
@@ -131,7 +174,7 @@ function toProjectRollup(r: TokenRollup): ProjectRollup {
 async function loadRows(
   db: Database,
   listings: ListingsService,
-  scope: AgencyScope,
+  scope: TreasuryScope,
   projectIds: string[],
 ) {
   if (projectIds.length === 0) {
@@ -148,6 +191,7 @@ async function loadRows(
         tokenId: billings.tokenId,
         amount: billings.amount,
         proposalId: billings.proposalId,
+        payingDaoAccountId: billings.payingDaoAccountId,
       })
       .from(billings)
       .where(inArray(billings.projectId, projectIds)),
@@ -155,14 +199,97 @@ async function loadRows(
     Effect.runPromise(listings.forProjects(scope, projectIds, "internal")),
   ]);
   const bills = await Promise.all(
-    billingRows.map((b) => enrichWithChainStatus(db, b, scope.agencyDao)),
+    billingRows.map((b) => {
+      const payingDaoAccountId = b.payingDaoAccountId ?? scope.agencyDao;
+      return enrichWithChainStatus(db, { ...b, payingDaoAccountId }, payingDaoAccountId);
+    }),
   );
   return { budgetRows, bills, nearnListings, internalListings };
 }
 
+export type BillingStatuses = ReadonlyMap<string, DaoProposalStatus>;
+
+export type ChainStatusFetcher = (
+  db: Database,
+  daoAccountId: string,
+  proposalId: string,
+) => Promise<DaoProposalStatus>;
+
+export const fetchChainStatus: ChainStatusFetcher = async (db, daoAccountId, proposalId) =>
+  (await enrichWithChainStatus(db, { proposalId }, daoAccountId)).status;
+
+export async function prefetchBillingStatuses(
+  db: Database,
+  input: { daoAccountId: string; projectIds: string[] },
+  fetchStatus: ChainStatusFetcher = fetchChainStatus,
+): Promise<BillingStatuses> {
+  const statuses = new Map<string, DaoProposalStatus>();
+  if (input.projectIds.length === 0) return statuses;
+  const rows = await db
+    .select({ proposalId: billings.proposalId })
+    .from(billings)
+    .where(
+      and(inArray(billings.projectId, [...new Set(input.projectIds)]), paidBy(input.daoAccountId)),
+    );
+  for (const { proposalId } of rows) {
+    statuses.set(proposalId, await fetchStatus(db, input.daoAccountId, proposalId));
+  }
+  return statuses;
+}
+
+export async function projectSpend(
+  db: Database,
+  input: {
+    projectId: string;
+    tokenId: string;
+    payingDaoAccountId: string;
+    statuses: BillingStatuses;
+  },
+): Promise<bigint> {
+  const network = input.payingDaoAccountId.endsWith(".testnet") ? "testnet" : "mainnet";
+  const billingRows = await db
+    .select({ amount: billings.amount, proposalId: billings.proposalId })
+    .from(billings)
+    .where(
+      and(
+        eq(billings.projectId, input.projectId),
+        eq(billings.tokenId, input.tokenId),
+        paidBy(input.payingDaoAccountId),
+      ),
+    );
+  const bills: BillingForRollup[] = [];
+  for (const row of billingRows) {
+    const persisted = await persistedProposalStatus(db, input.payingDaoAccountId, row.proposalId);
+    bills.push({
+      amount: row.amount,
+      status: persisted ?? input.statuses.get(row.proposalId) ?? "InProgress",
+    });
+  }
+  const skipRefresh = { skipRefresh: true };
+  const nearn = await getListingsForProjects([input.projectId], "nearn", network, db, skipRefresh);
+  const internal = await getListingsForProjects(
+    [input.projectId],
+    "internal",
+    network,
+    db,
+    skipRefresh,
+  );
+  const rollup = rollupForToken({
+    tokenId: input.tokenId,
+    budgetAmounts: [],
+    billings: bills,
+    listing: resolveActiveListing(
+      nearn.get(input.projectId) ?? null,
+      internal.get(input.projectId) ?? null,
+      network,
+    ),
+  });
+  return rollup.allocated + rollup.committed + rollup.paid;
+}
+
 export function createProjectLedgers(db: Database, listings: ListingsService) {
   return {
-    load: async (scope: AgencyScope, projectIds: string[]): Promise<ProjectLedger> => {
+    load: async (scope: TreasuryScope, projectIds: string[]): Promise<ProjectLedger> => {
       const { budgetRows, bills, nearnListings, internalListings } = await loadRows(
         db,
         listings,
@@ -171,9 +298,15 @@ export function createProjectLedgers(db: Database, listings: ListingsService) {
       );
 
       const rollupsByProject = new Map<string, TokenRollup[]>();
+      const otherSpendByProject = new Map<string, PayingDaoSpend[]>();
       for (const projectId of new Set(projectIds)) {
         const projectBudgets = budgetRows.filter((b) => b.projectId === projectId);
-        const projectBills = bills.filter((b) => b.projectId === projectId);
+        const onProject = bills.filter((b) => b.projectId === projectId);
+        const projectBills = onProject.filter((b) => b.payingDaoAccountId === scope.agencyDao);
+        otherSpendByProject.set(
+          projectId,
+          spendByPayingDao(onProject.filter((b) => b.payingDaoAccountId !== scope.agencyDao)),
+        );
         const listing = resolveActiveListing(
           nearnListings.get(projectId) ?? null,
           internalListings.get(projectId) ?? null,
@@ -227,6 +360,8 @@ export function createProjectLedgers(db: Database, listings: ListingsService) {
         tokenIds: ledgerTokenIds,
 
         rollupsFor: (projectId) => (rollupsByProject.get(projectId) ?? []).map(toProjectRollup),
+
+        subcontractorSpendFor: (projectId) => otherSpendByProject.get(projectId) ?? [],
 
         agencyRollups: (balances, tokenIds = ledgerTokenIds) =>
           tokenIds.map((tokenId) => {

@@ -1,28 +1,53 @@
+import { ArrowRightIcon, ListBulletsIcon, WarningIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Budget, Button, Card, CardContent, Input } from "@/components";
+import {
+  Alert,
+  AlertDescription,
+  Badge,
+  Budget,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  FieldGroup,
+  Input,
+  Skeleton,
+  SubcontractorSpend,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Field, selectClass } from "@/components/admin-form";
+import { ChoiceSelect, Empty, Field } from "@/components/admin-form";
 import { useBudgetActions } from "@/hooks/use-budget-actions";
 import {
   reconcileBudgetAuditFilters,
   resolveBudgetAuditDropdownOptions,
 } from "@/lib/admin-filter-graph";
 import { useApiClient } from "@/lib/api";
-import { formatTokenAmount, parseDecimalToBase } from "@/lib/format-amount";
+import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminBudgetsLogQueryKey,
-  adminClientsListQueryOptions,
   adminProjectBudgetQueryOptions,
   adminProjectBudgetsLogQueryKey,
   adminProjectsForTokenQueryKey,
   adminProjectsListQueryOptions,
   adminTokensQueryOptions,
   clientPortalProjectBudgetQueryOptions,
+  engagementsListQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
+import { CUSTOM_TOKEN, deriveBaseAmount, TokenAmountFields } from "./token-amount-fields";
 
 function budgetVerb(amount: string, relatedBudgetId: string | null): string {
   const negative = amount.startsWith("-");
@@ -32,127 +57,43 @@ function budgetVerb(amount: string, relatedBudgetId: string | null): string {
 
 function VerbTag({ verb }: { verb: string }) {
   return (
-    <span className="inline-block text-[10px] uppercase tracking-[0.14em] font-mono text-muted-foreground border border-border bg-background px-1.5 py-0.5">
+    <Badge variant={verb === "deallocate" || verb === "transfer out" ? "outline" : "secondary"}>
       {verb}
-    </span>
+    </Badge>
   );
 }
 
-type KnownToken = {
-  tokenId: string;
-  network: string;
-  symbol: string;
-  decimals: number;
-  name: string;
-  icon: string | null;
-};
+function formatTimestamp(value: string | Date): string {
+  return new Date(value).toISOString().slice(0, 16).replace("T", " ");
+}
 
-const CUSTOM_TOKEN = "__custom__";
-
-function TokenAmountFields({
-  idPrefix,
-  tokens,
-  tokenSelection,
-  setTokenSelection,
-  customTokenId,
-  setCustomTokenId,
-  amount,
-  setAmount,
-  amountError,
-  disabled,
-}: {
-  idPrefix: string;
-  tokens: KnownToken[];
-  tokenSelection: string;
-  setTokenSelection: (v: string) => void;
-  customTokenId: string;
-  setCustomTokenId: (v: string) => void;
-  amount: string;
-  setAmount: (v: string) => void;
-  amountError?: string;
-  disabled?: boolean;
-}) {
-  const isCustom = tokenSelection === CUSTOM_TOKEN;
-  const effectiveTokenId = isCustom ? customTokenId.trim() : tokenSelection;
-  const knownToken = tokens.find((t) => t.tokenId === effectiveTokenId);
-
+function ListSkeleton() {
   return (
-    <>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="token" htmlFor={`${idPrefix}-token`}>
-          <select
-            id={`${idPrefix}-token`}
-            value={tokenSelection}
-            onChange={(e) => setTokenSelection(e.target.value)}
-            disabled={disabled}
-            className={selectClass}
-          >
-            {tokens.map((t) => (
-              <option key={t.tokenId} value={t.tokenId}>
-                {t.symbol} — {t.name}
-              </option>
-            ))}
-            <option value={CUSTOM_TOKEN}>Custom…</option>
-          </select>
-          {knownToken?.icon && (
-            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <img src={knownToken.icon} alt="" width={16} height={16} className="rounded-full" />
-              <span className="font-mono">{knownToken.tokenId}</span>
-            </div>
-          )}
-        </Field>
-        <Field
-          label={knownToken ? `amount (${knownToken.symbol})` : "amount (smallest unit)"}
-          htmlFor={`${idPrefix}-amount`}
-        >
-          <Input
-            id={`${idPrefix}-amount`}
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={knownToken ? "1.5" : "1000000000000000000000000"}
-            disabled={disabled}
-          />
-        </Field>
-      </div>
-      {isCustom && (
-        <Field label="custom token id" htmlFor={`${idPrefix}-custom-token`}>
-          <Input
-            id={`${idPrefix}-custom-token`}
-            value={customTokenId}
-            onChange={(e) => setCustomTokenId(e.target.value)}
-            placeholder="e.g. usdc.token.near"
-            disabled={disabled}
-          />
-        </Field>
-      )}
-      {isCustom && customTokenId.trim().length > 0 && !knownToken && (
-        <p className="text-xs text-muted-foreground">
-          ⚠ Decimals unknown for "{effectiveTokenId}". Enter the amount in the token's smallest
-          integer unit.
-        </p>
-      )}
-      {amountError && <p className="text-xs text-destructive">{amountError}</p>}
-    </>
+    <div className="flex flex-col gap-2">
+      {[0, 1, 2].map((i) => (
+        <Skeleton key={i} className="h-9 w-full" />
+      ))}
+    </div>
   );
 }
 
-function deriveBaseAmount(
-  amount: string,
-  knownToken: KnownToken | undefined,
-): { value: string; error: string } {
-  const trimmed = amount.trim();
-  if (trimmed === "") return { value: "", error: "" };
-  if (knownToken) {
-    try {
-      return { value: parseDecimalToBase(trimmed, knownToken.decimals), error: "" };
-    } catch (e) {
-      return { value: "", error: (e as Error).message };
-    }
-  }
-  return /^\d+$/.test(trimmed)
-    ? { value: trimmed, error: "" }
-    : { value: "", error: "Amount must be a positive integer (smallest unit)" };
+function LoadMore({
+  hasNextPage,
+  isFetching,
+  onLoad,
+}: {
+  hasNextPage: boolean;
+  isFetching: boolean;
+  onLoad: () => void;
+}) {
+  if (!hasNextPage) return null;
+  return (
+    <div className="flex justify-center">
+      <Button variant="outline" size="sm" onClick={onLoad} disabled={isFetching}>
+        {isFetching ? "Loading…" : "Load more"}
+      </Button>
+    </div>
+  );
 }
 
 export function BudgetsManager() {
@@ -169,36 +110,36 @@ export function BudgetsManager() {
   const selectedProject = projects.find((p) => p.id === projectId);
 
   return (
-    <div className="space-y-6">
-      {projects.length > 0 && <AgencyAuditLogPanel projects={projects} />}
-
+    <div className="flex flex-col gap-6">
       <Card>
-        <CardContent className="p-5">
+        <CardHeader>
+          <CardTitle>
+            <h2>Project budget</h2>
+          </CardTitle>
+          <CardDescription>
+            Pick a project to see its budget per token and record entries.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
           {projectsQuery.isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading projects...</div>
+            <Skeleton className="h-8 w-full" />
           ) : projects.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               No projects yet. Create one on{" "}
-              <Link to="/admin/projects" className="underline">
+              <Link to="/admin/projects" className="underline underline-offset-2">
                 the projects page
               </Link>
               .
-            </div>
+            </p>
           ) : (
-            <Field label="project" htmlFor="budget-project">
-              <select
+            <Field label="Project" htmlFor="budget-project">
+              <ChoiceSelect
                 id="budget-project"
                 value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                className={selectClass}
-              >
-                <option value="">— pick a project —</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title} (@{p.slug})
-                  </option>
-                ))}
-              </select>
+                onValueChange={setProjectId}
+                placeholder="Pick a project"
+                options={projects.map((p) => ({ value: p.id, label: `${p.title} (@${p.slug})` }))}
+              />
             </Field>
           )}
         </CardContent>
@@ -207,6 +148,8 @@ export function BudgetsManager() {
       {selectedProject && <ProjectBudgetPanel projectId={projectId} />}
 
       {projects.length >= 2 && <TransferPanel projects={projects} />}
+
+      {projects.length > 0 && <AgencyAuditLogPanel projects={projects} />}
     </div>
   );
 }
@@ -224,16 +167,22 @@ function AgencyAuditLogPanel({
 
   const [filterProject, setFilterProject] = useState<string>("");
   const [filterToken, setFilterToken] = useState<string>("");
-  const [filterClient, setFilterClient] = useState<string>("");
+  const [filterEngagement, setFilterEngagement] = useState<string>("");
 
-  const clientsQuery = useQuery(adminClientsListQueryOptions(apiClient));
-  const clients = clientsQuery.data?.data ?? [];
-  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+  const engagementsQuery = useQuery(engagementsListQueryOptions(apiClient));
+  const engagements = useMemo(
+    () =>
+      (engagementsQuery.data?.data ?? []).filter(
+        (e) => e.side === "agency" && (e.status === "active" || e.status === "ended"),
+      ),
+    [engagementsQuery.data],
+  );
+  const engagementById = useMemo(() => new Map(engagements.map((e) => [e.id, e])), [engagements]);
 
-  const clientProjectIds = useMemo(() => {
-    if (!filterClient) return null;
-    return new Set(clients.find((c) => c.id === filterClient)?.projectIds ?? []);
-  }, [filterClient, clients]);
+  const engagementProjectIds = useMemo(() => {
+    if (!filterEngagement) return null;
+    return new Set(engagementById.get(filterEngagement)?.projectIds ?? []);
+  }, [filterEngagement, engagementById]);
 
   const projectBudgetQuery = useQuery({
     ...adminProjectBudgetQueryOptions(apiClient, filterProject),
@@ -276,9 +225,10 @@ function AgencyAuditLogPanel({
     () =>
       projects.filter(
         (p) =>
-          dropdownOptions.projects.has(p.id) && (!clientProjectIds || clientProjectIds.has(p.id)),
+          dropdownOptions.projects.has(p.id) &&
+          (!engagementProjectIds || engagementProjectIds.has(p.id)),
       ),
-    [projects, dropdownOptions.projects, clientProjectIds],
+    [projects, dropdownOptions.projects, engagementProjectIds],
   );
   const filterTokens = useMemo(
     () => tokens.filter((t) => dropdownOptions.tokens.has(t.tokenId)),
@@ -302,13 +252,13 @@ function AgencyAuditLogPanel({
     queryKey: adminBudgetsLogQueryKey({
       projectId: filterProject || null,
       tokenId: filterToken || null,
-      clientId: filterClient || null,
+      engagementId: filterEngagement || null,
     }),
     queryFn: ({ pageParam }) =>
       apiClient.budgets.list({
         projectId: filterProject || undefined,
         tokenId: filterToken || undefined,
-        clientId: filterClient || undefined,
+        engagementId: filterEngagement || undefined,
         cursor: pageParam,
       }),
     initialPageParam: undefined as string | undefined,
@@ -316,146 +266,134 @@ function AgencyAuditLogPanel({
   });
 
   const rows = logQuery.data?.pages.flatMap((p) => p.data) ?? [];
-  const filtersActive = filterProject !== "" || filterToken !== "" || filterClient !== "";
+  const filtersActive = filterProject !== "" || filterToken !== "" || filterEngagement !== "";
 
   return (
-    <section className="space-y-3">
-      <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-        Agency audit log
-      </h2>
-      <p className="text-sm text-muted-foreground max-w-2xl">
-        All budget events across projects, newest first. Transfers between projects appear as two
-        linked rows.
-      </p>
-      <Card>
-        <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_1fr_auto]">
-          <Field label="client" htmlFor="audit-filter-client">
-            <select
-              id="audit-filter-client"
-              value={filterClient}
-              onChange={(e) => {
-                setFilterClient(e.target.value);
-                if (e.target.value && filterProject) {
-                  const allowed = clients.find((c) => c.id === e.target.value)?.projectIds ?? [];
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>Agency audit log</h2>
+        </CardTitle>
+        <CardDescription>
+          All budget events across projects, newest first. Transfers appear as two linked rows.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-full sm:w-44">
+            <ChoiceSelect
+              id="audit-filter-engagement"
+              ariaLabel="Client"
+              size="sm"
+              value={filterEngagement}
+              onValueChange={(value) => {
+                setFilterEngagement(value);
+                if (value && filterProject) {
+                  const allowed = engagementById.get(value)?.projectIds ?? [];
                   if (!allowed.includes(filterProject)) setFilterProject("");
                 }
               }}
-              className={selectClass}
-            >
-              <option value="">all clients</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="project" htmlFor="audit-filter-project">
-            <select
+              emptyLabel="All clients"
+              options={engagements.map((e) => ({ value: e.id, label: e.client.name }))}
+            />
+          </div>
+          <div className="w-full sm:w-44">
+            <ChoiceSelect
               id="audit-filter-project"
-              value={filterProject}
-              onChange={(e) => applyAuditFilters({ projectId: e.target.value })}
-              className={selectClass}
-            >
-              <option value="">all projects</option>
-              {filterProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="token" htmlFor="audit-filter-token">
-            <select
-              id="audit-filter-token"
-              value={filterToken}
-              onChange={(e) => applyAuditFilters({ tokenId: e.target.value })}
-              className={selectClass}
-            >
-              <option value="">all tokens</option>
-              {filterTokens.map((t) => (
-                <option key={t.tokenId} value={t.tokenId}>
-                  {t.symbol} ({t.tokenId})
-                </option>
-              ))}
-            </select>
-          </Field>
-          <div className="flex items-end">
-            <Button
-              variant="outline"
+              ariaLabel="Project"
               size="sm"
-              disabled={!filtersActive}
+              value={filterProject}
+              onValueChange={(value) => applyAuditFilters({ projectId: value })}
+              emptyLabel="All projects"
+              options={filterProjects.map((p) => ({ value: p.id, label: p.title }))}
+            />
+          </div>
+          <div className="w-full sm:w-44">
+            <ChoiceSelect
+              id="audit-filter-token"
+              ariaLabel="Token"
+              size="sm"
+              value={filterToken}
+              onValueChange={(value) => applyAuditFilters({ tokenId: value })}
+              emptyLabel="All tokens"
+              options={filterTokens.map((t) => ({ value: t.tokenId, label: t.symbol }))}
+            />
+          </div>
+          {filtersActive && (
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
-                setFilterClient("");
+                setFilterEngagement("");
                 applyAuditFilters({ projectId: "", tokenId: "" });
               }}
             >
-              clear
+              Clear filters
             </Button>
-          </div>
-        </CardContent>
-      </Card>
-      {logQuery.isLoading ? (
-        <div className="text-sm text-muted-foreground">Loading...</div>
-      ) : rows.length > 0 ? (
-        <>
-          <div className="space-y-2">
-            {rows.map((a) => {
-              const project = projectById.get(a.projectId);
-              return (
-                <div
-                  key={a.id}
-                  className="rounded-sm border border-border bg-muted/10 p-3 grid gap-1 sm:grid-cols-[140px_1fr] sm:gap-4"
-                >
-                  <div className="text-xs font-mono text-muted-foreground">
-                    {new Date(a.createdAt).toISOString().slice(0, 19).replace("T", " ")}
-                  </div>
-                  <div className="text-sm break-all space-y-1">
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
-                      <span className="font-mono tabular-nums">
-                        {formatTokenAmount(a.amount, a.tokenId)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground font-mono">
-                      project: {project ? `${project.title} (@${project.slug})` : a.projectId}
-                      {a.clientId && (
-                        <>
-                          {" · client: "}
-                          {clientById.get(a.clientId)?.name ?? a.clientId}
-                        </>
-                      )}
-                    </div>
-                    {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
-                    <div className="text-xs text-muted-foreground font-mono">
-                      by {a.actorAccountId}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {logQuery.hasNextPage && (
-            <div className="flex justify-center pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => logQuery.fetchNextPage()}
-                disabled={logQuery.isFetchingNextPage}
-              >
-                {logQuery.isFetchingNextPage ? "loading..." : "load more"}
-              </Button>
-            </div>
           )}
-        </>
-      ) : (
-        <Card>
-          <CardContent className="p-6 text-center text-sm text-muted-foreground">
-            No budget events yet.
-          </CardContent>
-        </Card>
-      )}
-    </section>
+        </div>
+        {logQuery.isLoading ? (
+          <ListSkeleton />
+        ) : rows.length > 0 ? (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">When</TableHead>
+                  <TableHead scope="col">Event</TableHead>
+                  <TableHead scope="col">Amount</TableHead>
+                  <TableHead scope="col">Project</TableHead>
+                  <TableHead scope="col">Details</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((a) => {
+                  const project = projectById.get(a.projectId);
+                  return (
+                    <TableRow key={a.id}>
+                      <TableCell className="text-muted-foreground tabular-nums">
+                        {formatTimestamp(a.createdAt)}
+                      </TableCell>
+                      <TableCell>
+                        <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
+                      </TableCell>
+                      <TableCell className="font-medium tabular-nums">
+                        {formatTokenAmount(a.amount, a.tokenId)}
+                      </TableCell>
+                      <TableCell>
+                        {project ? project.title : a.projectId}
+                        {a.engagementId && (
+                          <span className="block text-muted-foreground">
+                            {engagementById.get(a.engagementId)?.client.name ?? a.engagementId}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="whitespace-normal text-muted-foreground">
+                        {a.note && <span className="block text-foreground">{a.note}</span>}
+                        <span className="block">by {a.actorAccountId}</span>
+                        {a.fundingDaoAccountId && (
+                          <span className="block">from {a.fundingDaoAccountId}</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            <LoadMore
+              hasNextPage={!!logQuery.hasNextPage}
+              isFetching={logQuery.isFetchingNextPage}
+              onLoad={() => logQuery.fetchNextPage()}
+            />
+          </>
+        ) : (
+          <Empty
+            icon={<ListBulletsIcon aria-hidden />}
+            label={filtersActive ? "No events match these filters" : "No budget events yet"}
+          />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -532,129 +470,115 @@ function TransferPanel({
     !amountError &&
     !isPending;
 
+  const fromTitle = projects.find((p) => p.id === fromProjectId)?.title ?? "Source";
+  const toTitle = projects.find((p) => p.id === toProjectId)?.title ?? "Destination";
+
   return (
-    <section className="space-y-3">
-      <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-        Transfer between projects
-      </h2>
-      <Card>
-        <CardContent className="p-5 grid gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="from project" htmlFor="transfer-from">
-              <select
-                id="transfer-from"
-                value={fromProjectId}
-                onChange={(e) => setFromProjectId(e.target.value)}
-                disabled={isPending}
-                className={selectClass}
-              >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title} (@{p.slug})
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="to project" htmlFor="transfer-to">
-              <select
-                id="transfer-to"
-                value={toProjectId}
-                onChange={(e) => setToProjectId(e.target.value)}
-                disabled={isPending}
-                className={selectClass}
-              >
-                {projects
-                  .filter((p) => p.id !== fromProjectId)
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title} (@{p.slug})
-                    </option>
-                  ))}
-              </select>
-            </Field>
-          </div>
-          <TokenAmountFields
-            idPrefix="transfer"
-            tokens={tokens}
-            tokenSelection={tokenSelection}
-            setTokenSelection={setTokenSelection}
-            customTokenId={customTokenId}
-            setCustomTokenId={setCustomTokenId}
-            amount={amount}
-            setAmount={setAmount}
-            amountError={amountError}
-            disabled={isPending}
-          />
-          {showPreview && (
-            <div className="rounded-sm border border-border bg-muted/10 p-3 grid gap-2 text-xs">
-              <div className="text-muted-foreground uppercase tracking-wide">Preview</div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <div className="text-muted-foreground">
-                    {projects.find((p) => p.id === fromProjectId)?.title ?? "source"}
-                  </div>
-                  <div className="space-x-2">
-                    <span className="font-mono tabular-nums">
-                      {formatTokenAmount(fromCurrent.toString(), effectiveTokenId)}
-                    </span>
-                    <span>→</span>
-                    <span
-                      className={`font-mono tabular-nums ${fromAfter < 0n ? "text-destructive" : ""}`}
-                    >
-                      {formatTokenAmount(fromAfter.toString(), effectiveTokenId)}
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-muted-foreground">
-                    {projects.find((p) => p.id === toProjectId)?.title ?? "destination"}
-                  </div>
-                  <div className="space-x-2">
-                    <span className="font-mono tabular-nums">
-                      {formatTokenAmount(toCurrent.toString(), effectiveTokenId)}
-                    </span>
-                    <span>→</span>
-                    <span className="font-mono tabular-nums">
-                      {formatTokenAmount(toAfter.toString(), effectiveTokenId)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              {knownToken && (
-                <div className="text-muted-foreground font-mono">
-                  {amount.trim()} {knownToken.symbol} = {amountInBase}
-                </div>
-              )}
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>Transfer between projects</h2>
+        </CardTitle>
+        <CardDescription>
+          Moves your own budget atomically, as two linked audit rows. Budget attributed to a
+          Client's Engagement moves only through Change orders.
+        </CardDescription>
+      </CardHeader>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSubmit) transferMutation.mutate();
+        }}
+      >
+        <CardContent>
+          <FieldGroup>
+            <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+              <Field label="From project" htmlFor="transfer-from">
+                <ChoiceSelect
+                  id="transfer-from"
+                  value={fromProjectId}
+                  onValueChange={setFromProjectId}
+                  disabled={isPending}
+                  options={projects.map((p) => ({ value: p.id, label: `${p.title} (@${p.slug})` }))}
+                />
+              </Field>
+              <Field label="To project" htmlFor="transfer-to">
+                <ChoiceSelect
+                  id="transfer-to"
+                  value={toProjectId}
+                  onValueChange={setToProjectId}
+                  disabled={isPending}
+                  placeholder="Pick a project"
+                  options={projects
+                    .filter((p) => p.id !== fromProjectId)
+                    .map((p) => ({ value: p.id, label: `${p.title} (@${p.slug})` }))}
+                />
+              </Field>
             </div>
-          )}
-          <Field label="note (optional)" htmlFor="transfer-note">
-            <Input
-              id="transfer-note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
+            <TokenAmountFields
+              idPrefix="transfer"
+              tokens={tokens}
+              tokenSelection={tokenSelection}
+              setTokenSelection={setTokenSelection}
+              customTokenId={customTokenId}
+              setCustomTokenId={setCustomTokenId}
+              amount={amount}
+              setAmount={setAmount}
+              amountError={amountError}
               disabled={isPending}
             />
-          </Field>
-          {sourceWillGoNegative && (
-            <p className="text-xs text-destructive">
-              ⚠ Source budget will go negative after this transfer. The transfer is allowed and
-              flagged in the audit log.
-            </p>
-          )}
-          <div>
-            <Button onClick={() => transferMutation.mutate()} disabled={!canSubmit}>
-              {isPending ? "transferring..." : "transfer budget"}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Moves budget from one project to another atomically. Two linked rows are appended to
-            both projects' audit logs (a negative on source, a positive on target). The source
-            project's remaining budget is allowed to go negative; over-budget is shown visually, not
-            blocked.
-          </p>
+            {showPreview && (
+              <dl className="grid gap-3 text-xs sm:grid-cols-2">
+                {[
+                  { title: fromTitle, before: fromCurrent, after: fromAfter },
+                  { title: toTitle, before: toCurrent, after: toAfter },
+                ].map((side) => (
+                  <div key={side.title} className="flex min-w-0 flex-col gap-1 bg-muted p-3">
+                    <dt className="truncate text-muted-foreground">{side.title}</dt>
+                    <dd className="flex flex-wrap items-center gap-2 tabular-nums">
+                      <span>{formatTokenAmount(side.before.toString(), effectiveTokenId)}</span>
+                      <ArrowRightIcon aria-hidden className="text-muted-foreground" />
+                      <span className={side.after < 0n ? "text-destructive" : "font-medium"}>
+                        {formatTokenAmount(side.after.toString(), effectiveTokenId)}
+                      </span>
+                    </dd>
+                  </div>
+                ))}
+                {knownToken && (
+                  <p className="text-muted-foreground tabular-nums sm:col-span-2">
+                    {amount.trim()} {knownToken.symbol} = {amountInBase} base units
+                  </p>
+                )}
+              </dl>
+            )}
+            <Field label="Note" htmlFor="transfer-note">
+              <Input
+                id="transfer-note"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Optional"
+                disabled={isPending}
+              />
+            </Field>
+            {sourceWillGoNegative && (
+              <Alert variant="destructive">
+                <WarningIcon aria-hidden />
+                <AlertDescription>
+                  The source budget goes negative after this transfer. It's allowed, and flagged in
+                  the audit log.
+                </AlertDescription>
+              </Alert>
+            )}
+          </FieldGroup>
         </CardContent>
-      </Card>
-    </section>
+        <CardFooter className="justify-end">
+          <Button type="submit" disabled={!canSubmit}>
+            {isPending ? "Transferring…" : "Transfer budget"}
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
   );
 }
 
@@ -662,18 +586,15 @@ export function ProjectBudgetPanel({
   projectId,
   readOnly = false,
   showAgencyBudgetLink = false,
-  clientPortal = false,
-  agencyDaoAccountId,
+  engagementId,
 }: {
   projectId: string;
   readOnly?: boolean;
-  /** Link to /admin/budgets for cross-project transfers (project detail page). */
   showAgencyBudgetLink?: boolean;
-  /** Use client-portal API (read-only client access). */
-  clientPortal?: boolean;
-  agencyDaoAccountId?: string;
+  engagementId?: string;
 }) {
   const apiClient = useApiClient();
+  const clientPortal = engagementId !== undefined;
   const { allocate, deallocate } = useBudgetActions(projectId);
 
   const adminBudgetQuery = useQuery({
@@ -681,8 +602,8 @@ export function ProjectBudgetPanel({
     enabled: !clientPortal,
   });
   const clientBudgetQuery = useQuery({
-    ...clientPortalProjectBudgetQueryOptions(apiClient, agencyDaoAccountId ?? "", projectId),
-    enabled: clientPortal && !!agencyDaoAccountId,
+    ...clientPortalProjectBudgetQueryOptions(apiClient, engagementId ?? "", projectId),
+    enabled: clientPortal,
   });
   const budgetQuery = clientPortal ? clientBudgetQuery : adminBudgetQuery;
   const budgetsQuery = useInfiniteQuery({
@@ -764,156 +685,196 @@ export function ProjectBudgetPanel({
     return <AdminError error={budgetQuery.error} />;
   }
 
+  const hasBudget =
+    !!budgetQuery.data &&
+    (budgetQuery.data.budgets.length > 0 || budgetQuery.data.subcontractorSpend.length > 0);
+
   return (
-    <div className="space-y-6">
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-            Budget
-          </h2>
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Budget</h2>
+          </CardTitle>
+          <CardDescription>
+            Budgeted, allocated, committed and paid amounts per token.
+          </CardDescription>
           {showAgencyBudgetLink && (
-            <Link
-              to="/admin/budgets"
-              className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground underline underline-offset-2 hover:text-foreground"
-            >
-              cross-project transfers →
-            </Link>
+            <CardAction>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/admin/budgets">
+                  Transfers
+                  <ArrowRightIcon data-icon="inline-end" aria-hidden />
+                </Link>
+              </Button>
+            </CardAction>
           )}
-        </div>
-        {budgetQuery.isLoading ? (
-          <div className="text-sm text-muted-foreground">Loading budget...</div>
-        ) : budgetQuery.data && budgetQuery.data.budgets.length > 0 ? (
-          <div className="space-y-4">
-            {budgetQuery.data.budgets.map((b) => (
-              <Budget key={b.tokenId} budget={b} />
-            ))}
-          </div>
-        ) : (
-          <div className="text-sm text-muted-foreground">No budget yet.</div>
-        )}
-      </section>
+        </CardHeader>
+        <CardContent>
+          {budgetQuery.isLoading ? (
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </div>
+          ) : hasBudget && budgetQuery.data ? (
+            <div className="flex flex-col gap-4">
+              {budgetQuery.data.budgets.map((b) => (
+                <Budget key={b.tokenId} budget={b} />
+              ))}
+              <SubcontractorSpend
+                rows={budgetQuery.data.subcontractorSpend}
+                title={
+                  budgetQuery.data.budgets.length > 0
+                    ? "Paid by subcontractors, apart from this budget"
+                    : "Paid from your Agency DAO"
+                }
+              />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No budget recorded yet.</p>
+          )}
+        </CardContent>
+      </Card>
 
       {!readOnly && !clientPortal && (
-        <section className="space-y-3">
-          <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-            New budget
-          </h2>
-          <Card>
-            <CardContent className="p-5 grid gap-4">
-              <TokenAmountFields
-                idPrefix="budget"
-                tokens={tokens}
-                tokenSelection={tokenSelection}
-                setTokenSelection={setTokenSelection}
-                customTokenId={customTokenId}
-                setCustomTokenId={setCustomTokenId}
-                amount={amount}
-                setAmount={setAmount}
-                amountError={amountError}
-                disabled={isPending}
-              />
-              {showPreview && (
-                <div className="text-xs text-muted-foreground space-x-2">
-                  <span>{effectiveTokenId} budget:</span>
-                  <span className="font-mono tabular-nums">
-                    {formatTokenAmount(currentBudgetBigInt.toString(), effectiveTokenId)}
-                  </span>
-                  <span>→</span>
-                  <span
-                    className={`font-mono ${previewBudgetBigInt < 0n ? "text-destructive" : ""}`}
-                  >
-                    {formatTokenAmount(previewBudgetBigInt.toString(), effectiveTokenId)}
-                  </span>
-                  {knownToken && (
-                    <span className="font-mono tabular-nums">
-                      ({amount.trim()} {knownToken.symbol} = {amountInBase})
-                    </span>
-                  )}
-                </div>
-              )}
-              <Field label="note (optional)" htmlFor="budget-note">
-                <Input
-                  id="budget-note"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Record a budget entry</h2>
+            </CardTitle>
+            <CardDescription>
+              Recorded to the audit log; nothing is executed on-chain. Budgets may go negative.
+            </CardDescription>
+          </CardHeader>
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (canSubmit) createMutation.mutate();
+            }}
+          >
+            <CardContent>
+              <FieldGroup>
+                <TokenAmountFields
+                  idPrefix="budget"
+                  tokens={tokens}
+                  tokenSelection={tokenSelection}
+                  setTokenSelection={setTokenSelection}
+                  customTokenId={customTokenId}
+                  setCustomTokenId={setCustomTokenId}
+                  amount={amount}
+                  setAmount={setAmount}
+                  amountError={amountError}
                   disabled={isPending}
                 />
-              </Field>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => createMutation.mutate()} disabled={!canSubmit}>
-                  {createMutation.isPending ? "recording..." : "record budget"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => deallocateMutation.mutate()}
-                  disabled={!canSubmit}
-                >
-                  {deallocateMutation.isPending ? "recording..." : "record deallocation"}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Recorded to the audit log; nothing is executed on-chain. Project budgets are allowed
-                to go negative — over-budget is shown visually, not blocked.
-              </p>
+                {showPreview && (
+                  <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground tabular-nums">
+                    <span>{effectiveTokenId} budget</span>
+                    <span>
+                      {formatTokenAmount(currentBudgetBigInt.toString(), effectiveTokenId)}
+                    </span>
+                    <ArrowRightIcon aria-hidden />
+                    <span
+                      className={
+                        previewBudgetBigInt < 0n
+                          ? "text-destructive"
+                          : "font-medium text-foreground"
+                      }
+                    >
+                      {formatTokenAmount(previewBudgetBigInt.toString(), effectiveTokenId)}
+                    </span>
+                    {knownToken && (
+                      <span>
+                        ({amount.trim()} {knownToken.symbol} = {amountInBase})
+                      </span>
+                    )}
+                  </p>
+                )}
+                <Field label="Note" htmlFor="budget-note">
+                  <Input
+                    id="budget-note"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Optional"
+                    disabled={isPending}
+                  />
+                </Field>
+              </FieldGroup>
             </CardContent>
-          </Card>
-        </section>
+            <CardFooter className="justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => deallocateMutation.mutate()}
+                disabled={!canSubmit}
+              >
+                {deallocateMutation.isPending ? "Recording…" : "Record deallocation"}
+              </Button>
+              <Button type="submit" disabled={!canSubmit}>
+                {createMutation.isPending ? "Recording…" : "Record budget"}
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
       )}
 
-      {!clientPortal && (
-        <section className="space-y-3">
-          <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-            Audit log
-          </h2>
-          {budgetsQuery.isLoading ? (
-            <div className="text-sm text-muted-foreground">Loading budget events...</div>
-          ) : budgetRows.length > 0 ? (
-            <>
-              <div className="space-y-2">
-                {budgetRows.map((a) => (
-                  <div
-                    key={a.id}
-                    className="rounded-sm border border-border bg-muted/10 p-3 grid gap-1 sm:grid-cols-[140px_1fr] sm:gap-4"
-                  >
-                    <div className="text-xs font-mono text-muted-foreground">
-                      {new Date(a.createdAt).toISOString().slice(0, 19).replace("T", " ")}
-                    </div>
-                    <div className="text-sm break-all space-y-1">
-                      <div className="flex flex-wrap items-baseline gap-2">
-                        <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
-                        <span className="font-mono tabular-nums">
+      {!clientPortal && !readOnly && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Audit log</h2>
+            </CardTitle>
+            <CardDescription>Every budget event on this project, newest first.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {budgetsQuery.isLoading ? (
+              <ListSkeleton />
+            ) : budgetRows.length > 0 ? (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead scope="col">When</TableHead>
+                      <TableHead scope="col">Event</TableHead>
+                      <TableHead scope="col">Amount</TableHead>
+                      <TableHead scope="col">Details</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {budgetRows.map((a) => (
+                      <TableRow key={a.id}>
+                        <TableCell className="text-muted-foreground tabular-nums">
+                          {formatTimestamp(a.createdAt)}
+                        </TableCell>
+                        <TableCell>
+                          <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
+                        </TableCell>
+                        <TableCell className="font-medium tabular-nums">
                           {formatTokenAmount(a.amount, a.tokenId)}
-                        </span>
-                      </div>
-                      {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
-                      <div className="text-xs text-muted-foreground font-mono">
-                        by {a.actorAccountId}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {budgetsQuery.hasNextPage && (
-                <div className="flex justify-center pt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => budgetsQuery.fetchNextPage()}
-                    disabled={budgetsQuery.isFetchingNextPage}
-                  >
-                    {budgetsQuery.isFetchingNextPage ? "loading..." : "load more"}
-                  </Button>
-                </div>
-              )}
-            </>
-          ) : (
-            <Card>
-              <CardContent className="p-6 text-center text-sm text-muted-foreground">
-                No budget events recorded yet.
-              </CardContent>
-            </Card>
-          )}
-        </section>
+                        </TableCell>
+                        <TableCell className="whitespace-normal text-muted-foreground">
+                          {a.note && <span className="block text-foreground">{a.note}</span>}
+                          <span className="block">by {a.actorAccountId}</span>
+                          {a.fundingDaoAccountId && (
+                            <span className="block">from {a.fundingDaoAccountId}</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <LoadMore
+                  hasNextPage={!!budgetsQuery.hasNextPage}
+                  isFetching={budgetsQuery.isFetchingNextPage}
+                  onLoad={() => budgetsQuery.fetchNextPage()}
+                />
+              </>
+            ) : (
+              <Empty icon={<ListBulletsIcon aria-hidden />} label="No budget events yet" />
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

@@ -1,61 +1,45 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
-
-type NavItem = { to: string; label: string; match?: string };
-
-type NavGroup = { title: string; items: NavItem[] };
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    title: "work",
-    items: [{ to: "/admin/projects", label: "projects" }],
-  },
-  {
-    title: "people",
-    items: [
-      { to: "/admin/clients", label: "clients" },
-      { to: "/admin/contributors", label: "builders", match: "/admin/contributors" },
-      { to: "/admin/members", label: "team" },
-    ],
-  },
-  {
-    title: "money",
-    items: [
-      { to: "/admin/billings", label: "billings" },
-      { to: "/admin/reports", label: "reports" },
-    ],
-  },
-  {
-    title: "setup",
-    items: [{ to: "/admin/settings", label: "settings" }],
-  },
-];
-
-const LINK_BASE =
-  "font-mono text-[11px] uppercase tracking-[0.18em] px-3 py-2 rounded-sm transition-colors block";
-const LINK_ACTIVE = "bg-foreground text-background";
-const LINK_INACTIVE = "text-muted-foreground hover:text-foreground hover:bg-muted/40";
-const GROUP_LABEL =
-  "font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70 px-3 pt-3 pb-1 first:pt-0";
+import { Button } from "@/components/ui/button";
+import { useMeRoles } from "@/hooks/use-me-roles";
+import { type NavItem, workspaceNavigation } from "@/lib/navigation";
 
 export function AdminSidebar() {
   const matchRoute = useMatchRoute();
+  const { orgRole, agencyDao, hasClientSections } = useMeRoles();
+  const groups = workspaceNavigation({
+    role: orgRole,
+    hasAgencyDao: agencyDao !== null,
+    hasClientSections,
+  });
 
   const isActive = (item: NavItem) => !!matchRoute({ to: item.match ?? item.to, fuzzy: true });
 
   return (
-    <nav className="flex flex-row gap-4 overflow-x-auto border-b border-border pb-px lg:flex-col lg:overflow-visible lg:border-b-0 lg:border-r lg:pr-4 lg:pb-0 lg:w-44 lg:shrink-0">
-      {NAV_GROUPS.map((group) => (
-        <div key={group.title} className="flex flex-row gap-1 lg:flex-col lg:gap-0 shrink-0">
-          <div className={GROUP_LABEL}>{group.title}</div>
-          {group.items.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className={`${LINK_BASE} ${isActive(item) ? LINK_ACTIVE : LINK_INACTIVE}`}
-            >
-              {item.label}
-            </Link>
-          ))}
+    <nav
+      aria-label="Organization"
+      className="-mx-4 flex gap-1 overflow-x-auto border-b px-4 pb-3 lg:mx-0 lg:w-48 lg:shrink-0 lg:flex-col lg:gap-5 lg:overflow-visible lg:border-b-0 lg:px-0 lg:pb-0"
+    >
+      {groups.map((group) => (
+        <div key={group.title} className="flex shrink-0 gap-1 lg:flex-col">
+          <p className="hidden px-2 pb-1 text-xs font-medium text-muted-foreground lg:block">
+            {group.title}
+          </p>
+          {group.items.map((item) => {
+            const active = isActive(item);
+            return (
+              <Button
+                key={item.to}
+                asChild
+                variant={active ? "secondary" : "ghost"}
+                size="sm"
+                className="justify-start lg:w-full"
+              >
+                <Link to={item.to} aria-current={active ? "page" : undefined}>
+                  {item.label}
+                </Link>
+              </Button>
+            );
+          })}
         </div>
       ))}
     </nav>

@@ -1,6 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BudgetsManager } from "@/components/admin/budgets-manager";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
+import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
+import { PageHeader } from "@/components/page-header";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { adminProjectsListQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/budgets/")({
@@ -15,25 +18,22 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/budgets/")({
 });
 
 function AdminBudgetsPage() {
+  const { agencyDao, isLoaded } = useMeRoles();
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          money · advanced budgets
-        </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Advanced budgets
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Cross-project budget transfers and treasury-style views. Day-to-day allocate and
-          deallocate on each{" "}
-          <Link to="/admin/projects" className="underline underline-offset-2 hover:text-foreground">
-            project page
-          </Link>
-          .
-        </p>
-      </header>
-      <BudgetsManager />
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Budgets"
+        description={
+          <>
+            Cross-project budget transfers and treasury views. Day-to-day allocations happen on each{" "}
+            <Link to="/admin/projects" className="underline underline-offset-2">
+              project page
+            </Link>
+            .
+          </>
+        }
+      />
+      {isLoaded && !agencyDao ? <ConnectTreasuryPrompt /> : <BudgetsManager />}
     </div>
   );
 }

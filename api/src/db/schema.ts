@@ -102,42 +102,88 @@ export const listings = pgTable(
 export type Listing = typeof listings.$inferSelect;
 export type NewListing = typeof listings.$inferInsert;
 
-export const clients = pgTable(
-  "clients",
+export const organizationDaos = pgTable(
+  "organization_daos",
   {
-    id: text("id").primaryKey(),
-    orgId: text("org_id").notNull(),
-    agencyDaoAccountId: text("agency_dao_account_id").notNull(),
-    name: text("name").notNull(),
-    nearAccountId: text("near_account_id"),
+    organizationId: text("organization_id").primaryKey(),
+    daoAccountId: text("dao_account_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
-    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
-    orgIdx: index("clients_org_id").on(t.orgId),
-    agencyNearIdx: uniqueIndex("clients_agency_near_unique")
-      .on(t.agencyDaoAccountId, t.nearAccountId)
-      .where(sql`${t.nearAccountId} IS NOT NULL`),
+    daoUnique: uniqueIndex("organization_daos_dao_unique").on(t.daoAccountId),
   }),
 );
 
-export type Client = typeof clients.$inferSelect;
-export type NewClient = typeof clients.$inferInsert;
+export const ENGAGEMENT_STATUSES = ["proposed", "active", "declined", "ended"] as const;
+export const ENGAGEMENT_KINDS = ["client", "subcontract"] as const;
 
-export const clientProjects = pgTable(
-  "client_projects",
+export const engagements = pgTable(
+  "engagements",
   {
-    clientId: text("client_id")
+    id: text("id").primaryKey(),
+    agencyOrganizationId: text("agency_organization_id").notNull(),
+    clientOrganizationId: text("client_organization_id").notNull(),
+    kind: text("kind", { enum: ENGAGEMENT_KINDS }).notNull().default("client"),
+    status: text("status", { enum: ENGAGEMENT_STATUSES }).notNull(),
+    proposedBy: text("proposed_by").notNull(),
+    invitationId: text("invitation_id"),
+    invitationAcceptedAt: timestamp("invitation_accepted_at", { withTimezone: false }),
+    legacyClientId: text("legacy_client_id"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+    decidedAt: timestamp("decided_at", { withTimezone: false }),
+    endedAt: timestamp("ended_at", { withTimezone: false }),
+  },
+  (t) => ({
+    activePair: uniqueIndex("engagements_active_pair")
+      .on(t.agencyOrganizationId, t.clientOrganizationId)
+      .where(sql`${t.status} = 'active'`),
+    proposedPair: uniqueIndex("engagements_proposed_pair")
+      .on(t.agencyOrganizationId, t.clientOrganizationId)
+      .where(sql`${t.status} = 'proposed'`),
+    legacyClient: uniqueIndex("engagements_legacy_client")
+      .on(t.legacyClientId)
+      .where(sql`${t.legacyClientId} IS NOT NULL`),
+    agencyIdx: index("engagements_agency").on(t.agencyOrganizationId),
+    clientIdx: index("engagements_client").on(t.clientOrganizationId),
+  }),
+);
+
+export type EngagementRow = typeof engagements.$inferSelect;
+
+export const engagementProjects = pgTable(
+  "engagement_projects",
+  {
+    engagementId: text("engagement_id")
       .notNull()
-      .references(() => clients.id, { onDelete: "cascade" }),
+      .references(() => engagements.id, { onDelete: "cascade" }),
     projectId: text("project_id").notNull(),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
-    pk: primaryKey({ columns: [t.clientId, t.projectId] }),
-    projectIdx: index("client_projects_project_id").on(t.projectId),
+    pk: primaryKey({ columns: [t.engagementId, t.projectId] }),
+    projectIdx: index("engagement_projects_project_id").on(t.projectId),
   }),
 );
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    recipientUserId: text("recipient_user_id").notNull(),
+    organizationId: text("organization_id").notNull(),
+    kind: text("kind").notNull(),
+    payload: text("payload").notNull(),
+    link: text("link"),
+    readAt: timestamp("read_at", { withTimezone: false }),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    recipientIdx: index("notifications_recipient").on(t.recipientUserId, t.createdAt, t.id),
+  }),
+);
+
+export type NotificationRow = typeof notifications.$inferSelect;
 
 export const projectContributors = pgTable(
   "project_contributors",
@@ -146,6 +192,8 @@ export const projectContributors = pgTable(
     nearAccount: text("near_account").notNull(),
     role: text("role"),
     onboardingStatus: text("onboarding_status").notNull().default("pending"),
+    organizationId: text("organization_id"),
+    assignedByOrganizationId: text("assigned_by_organization_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
@@ -164,18 +212,150 @@ export const budgets = pgTable(
     note: text("note"),
     actorAccountId: text("actor_account_id").notNull(),
     relatedBudgetId: text("related_budget_id"),
-    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    engagementId: text("engagement_id").references(() => engagements.id, {
+      onDelete: "set null",
+    }),
+    fundingDaoAccountId: text("funding_dao_account_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     cursor: index("budgets_cursor").on(t.createdAt, t.id),
     projectIdx: index("budgets_project_id").on(t.projectId),
-    clientIdx: index("budgets_client_id").on(t.clientId),
+    engagementIdx: index("budgets_engagement_id").on(t.engagementId),
+    fundingDaoIdx: index("budgets_funding_dao").on(t.fundingDaoAccountId),
   }),
 );
 
 export type Budget = typeof budgets.$inferSelect;
 export type NewBudget = typeof budgets.$inferInsert;
+
+export const prepayments = pgTable(
+  "prepayments",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    daoAccountId: text("dao_account_id").notNull(),
+    tokenId: text("token_id").notNull(),
+    amount: text("amount").notNull(),
+    period: text("period").notNull(),
+    transferReference: text("transfer_reference"),
+    actorAccountId: text("actor_account_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("prepayments_engagement").on(t.engagementId, t.period),
+    daoIdx: index("prepayments_dao").on(t.daoAccountId),
+  }),
+);
+
+export type PrepaymentRow = typeof prepayments.$inferSelect;
+
+export const CHANGE_ORDER_STATUSES = [
+  "proposed",
+  "approved",
+  "applied",
+  "rejected",
+  "withdrawn",
+  "failed",
+] as const;
+export const CHANGE_ORDER_EFFECTS = ["next_period", "now"] as const;
+export const CHANGE_ORDER_ITEM_KINDS = ["plan_change", "one_off_move"] as const;
+
+export const changeOrders = pgTable(
+  "change_orders",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    proposedByOrganizationId: text("proposed_by_organization_id").notNull(),
+    proposedByUserId: text("proposed_by_user_id").notNull(),
+    status: text("status", { enum: CHANGE_ORDER_STATUSES }).notNull(),
+    effective: text("effective", { enum: CHANGE_ORDER_EFFECTS }).notNull(),
+    effectivePeriod: text("effective_period"),
+    note: text("note"),
+    decidedByUserId: text("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: false }),
+    appliedAt: timestamp("applied_at", { withTimezone: false }),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("change_orders_engagement").on(t.engagementId, t.createdAt),
+  }),
+);
+
+export type ChangeOrderRow = typeof changeOrders.$inferSelect;
+
+export const changeOrderItems = pgTable(
+  "change_order_items",
+  {
+    id: text("id").primaryKey(),
+    changeOrderId: text("change_order_id")
+      .notNull()
+      .references(() => changeOrders.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    projectId: text("project_id"),
+    tokenId: text("token_id").notNull(),
+    kind: text("kind", { enum: CHANGE_ORDER_ITEM_KINDS }).notNull(),
+    amount: text("amount").notNull(),
+  },
+  (t) => ({
+    changeOrderIdx: index("change_order_items_change_order").on(t.changeOrderId, t.position),
+  }),
+);
+
+export type ChangeOrderItemRow = typeof changeOrderItems.$inferSelect;
+
+export const allocationPlanLines = pgTable(
+  "allocation_plan_lines",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    projectId: text("project_id").notNull(),
+    tokenId: text("token_id").notNull(),
+    amount: text("amount").notNull(),
+    position: integer("position").notNull(),
+    effectiveFrom: text("effective_from").notNull(),
+    changeOrderId: text("change_order_id")
+      .notNull()
+      .references(() => changeOrders.id),
+    supersededBy: text("superseded_by").references(() => changeOrders.id),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("allocation_plan_lines_engagement").on(t.engagementId, t.position),
+    current: uniqueIndex("allocation_plan_lines_current")
+      .on(t.engagementId, t.projectId, t.tokenId)
+      .where(sql`${t.supersededBy} IS NULL`),
+  }),
+);
+
+export type AllocationPlanLineRow = typeof allocationPlanLines.$inferSelect;
+
+export const allocationPlanApplications = pgTable(
+  "allocation_plan_applications",
+  {
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    period: text("period").notNull(),
+    prepaymentId: text("prepayment_id"),
+    shortfall: text("shortfall").notNull().default("[]"),
+    appliedAt: timestamp("applied_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.engagementId, t.period] }),
+  }),
+);
+
+export type AllocationPlanApplicationRow = typeof allocationPlanApplications.$inferSelect;
 
 export const billings = pgTable(
   "billings",
@@ -183,18 +363,20 @@ export const billings = pgTable(
     id: text("id").primaryKey(),
     projectId: text("project_id").notNull(),
     nearAccount: text("near_account"),
-    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     tokenId: text("token_id").notNull(),
     amount: text("amount").notNull(),
     proposalId: text("proposal_id").notNull(),
+    payingDaoAccountId: text("paying_dao_account_id"),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     cursor: index("billings_cursor").on(t.createdAt, t.id),
-    proposalUnique: uniqueIndex("billings_proposal_unique").on(t.proposalId),
+    payingDaoProposalUnique: uniqueIndex("billings_paying_dao_proposal_unique").on(
+      t.payingDaoAccountId,
+      t.proposalId,
+    ),
     projectIdx: index("billings_project_id").on(t.projectId),
-    clientIdx: index("billings_client_id").on(t.clientId),
     nearAccountIdx: index("billings_near_account").on(t.nearAccount),
   }),
 );
@@ -244,3 +426,67 @@ export const settings = pgTable("settings", {
 
 export type Settings = typeof settings.$inferSelect;
 export type NewSettings = typeof settings.$inferInsert;
+
+export const IDEA_STATUSES = ["new", "accepted", "declined"] as const;
+
+export const ideas = pgTable(
+  "ideas",
+  {
+    projectId: text("project_id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    submittedByUserId: text("submitted_by_user_id").notNull(),
+    status: text("status", { enum: IDEA_STATUSES }).notNull().default("new"),
+    resultProjectId: text("result_project_id"),
+    decidedByUserId: text("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: false }),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("ideas_engagement").on(t.engagementId, t.createdAt),
+  }),
+);
+
+export type IdeaRow = typeof ideas.$inferSelect;
+
+export const agentLinks = pgTable(
+  "agent_links",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    label: text("label").notNull(),
+    url: text("url").notNull(),
+    position: integer("position").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("agent_links_engagement").on(t.engagementId, t.position),
+  }),
+);
+
+export type AgentLinkRow = typeof agentLinks.$inferSelect;
+
+export const reportSnapshots = pgTable(
+  "report_snapshots",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    engagementId: text("engagement_id").references(() => engagements.id),
+    generatedByUserId: text("generated_by_user_id").notNull(),
+    startDate: text("start_date"),
+    endDate: text("end_date"),
+    note: text("note"),
+    payload: text("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    organizationIdx: index("report_snapshots_organization").on(t.organizationId, t.createdAt, t.id),
+  }),
+);
+
+export type ReportSnapshotRow = typeof reportSnapshots.$inferSelect;

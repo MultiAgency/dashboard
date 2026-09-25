@@ -163,6 +163,24 @@ function loadMigrationsFromDisk(): Effect.Effect<Migration[], DatabaseError> {
   });
 }
 
+const dropTablePattern = /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:"[^"]+"\.)?"([^"]+)"/gi;
+
+function tablesAfter(migrations: Migration[]): string[] {
+  const tables = new Set<string>();
+  const sorted = [...migrations].sort((a, b) => a.idx - b.idx);
+  for (const migration of sorted) {
+    for (const statement of migration.sql) {
+      for (const table of extractExpectedTables([{ ...migration, sql: [statement] }])) {
+        tables.add(table);
+      }
+      for (const [, table] of statement.matchAll(dropTablePattern)) {
+        if (table) tables.delete(table);
+      }
+    }
+  }
+  return [...tables];
+}
+
 function journalRef(s: MigrationStorage): ReturnType<typeof sql> {
   return sql.raw(`"${s.schema}"."${s.table}"`);
 }
@@ -305,7 +323,7 @@ export function detectDrift(
 ): Effect.Effect<DriftReport, DatabaseError> {
   return Effect.gen(function* () {
     const journal = storage ?? getMigrationStorage();
-    const expectedTables = extractExpectedTables(migrations);
+    const expectedTables = tablesAfter(migrations);
     const ref = journalRef(journal);
 
     const appliedHashes = yield* readAppliedHashes(db, ref);

@@ -1,12 +1,38 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
+import { useAuthClient } from "@/app";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  Spinner,
+  Textarea,
+} from "@/components";
+import { TreasurySettings } from "@/components/admin/treasury-settings";
 import { AdminError } from "@/components/admin-error";
+import { Loading } from "@/components/admin-form";
+import { PageHeader } from "@/components/page-header";
 import { useApiClient } from "@/lib/api";
-import { adminSettingsQueryOptions, refreshAfter } from "@/lib/queries";
+import { sessionQueryOptions } from "@/lib/auth";
+import {
+  adminSettingsQueryOptions,
+  myOrganizationsQueryOptions,
+  refreshAfter,
+} from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
   head: () => ({
@@ -27,17 +53,51 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
 
 function AdminSettingsPage() {
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          admin · settings
-        </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Settings
-        </h1>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Settings"
+        description="Your Organization's identity, treasury and public Agency details."
+      />
+      <OrganizationIdentity />
+      <section id="treasury" className="scroll-mt-24">
+        <TreasurySettings />
+      </section>
       <AdminSettings />
     </div>
+  );
+}
+
+function OrganizationIdentity() {
+  const authClient = useAuthClient();
+  const apiClient = useApiClient();
+  const { data: session } = useQuery(sessionQueryOptions(authClient));
+  const organizations = useQuery(myOrganizationsQueryOptions(apiClient)).data?.data ?? [];
+  const active = organizations.find((o) => o.id === session?.session?.activeOrganizationId);
+  if (!active) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>Organization</h2>
+        </CardTitle>
+        <CardDescription>
+          An Agency needs this slug and the exact name to propose an Engagement to your
+          Organization.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid gap-4 text-sm sm:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-1">
+            <dt className="text-xs text-muted-foreground">Name</dt>
+            <dd className="font-medium break-words">{active.name}</dd>
+          </div>
+          <div className="flex min-w-0 flex-col gap-1">
+            <dt className="text-xs text-muted-foreground">Slug</dt>
+            <dd className="font-medium break-all">{active.slug}</dd>
+          </div>
+        </dl>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -63,9 +123,6 @@ const settingsFormSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 
-const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
-const ERROR_CLS = "text-sm text-destructive";
-
 function fieldErrorMessage(err: unknown): string {
   if (typeof err === "string") return err;
   if (err && typeof err === "object" && "message" in err) {
@@ -81,13 +138,7 @@ function AdminSettings() {
   const settingsQuery = useQuery(adminSettingsQueryOptions(apiClient));
 
   if (settingsQuery.isLoading) {
-    return (
-      <section className="space-y-6">
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          loading…
-        </p>
-      </section>
-    );
+    return <Loading label="Loading settings" />;
   }
 
   if (settingsQuery.isError || !settingsQuery.data) {
@@ -95,6 +146,33 @@ function AdminSettings() {
   }
 
   return <SettingsForm data={settingsQuery.data} apiClient={apiClient} queryClient={queryClient} />;
+}
+
+function FormField({
+  name,
+  label,
+  description,
+  error,
+  children,
+}: {
+  name: string;
+  label: string;
+  description?: ReactNode;
+  error: unknown;
+  children: ReactNode;
+}) {
+  return (
+    <Field data-invalid={error ? true : undefined}>
+      <FieldLabel htmlFor={name}>{label}</FieldLabel>
+      {children}
+      {description && <FieldDescription>{description}</FieldDescription>}
+      {error ? (
+        <FieldError id={`${name}-error`} aria-live="polite">
+          {fieldErrorMessage(error)}
+        </FieldError>
+      ) : null}
+    </Field>
+  );
 }
 
 function SettingsForm({
@@ -137,217 +215,142 @@ function SettingsForm({
   });
 
   const isPending = submit.isPending;
+  const inputProps = (field: {
+    name: string;
+    state: { value: string; meta: { errors: unknown[] } };
+    handleBlur: () => void;
+    handleChange: (value: string) => void;
+  }) => {
+    const err = field.state.meta.errors[0];
+    return {
+      id: field.name,
+      name: field.name,
+      value: field.state.value,
+      onBlur: field.handleBlur,
+      disabled: isPending,
+      "aria-invalid": err ? true : undefined,
+      "aria-describedby": err ? `${field.name}-error` : undefined,
+    };
+  };
 
   return (
-    <section className="space-y-8">
-      <p className="text-sm text-muted-foreground max-w-2xl">
-        Agency-level configuration for the {data.network} deployment. Editable fields write to the
-        settings row for this workspace. Read-only fields are deploy-time config — env vars or
-        hardcoded brand identity.
-      </p>
-
-      <Card>
-        <CardContent className="space-y-4">
-          <div className="space-y-1">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
-              editable
-            </div>
-            <p className="text-sm text-muted-foreground">
-              NEARN account link and basic metadata. Saved to this workspace's settings row.
-            </p>
-          </div>
-          <form
-            className="space-y-4"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              await form.validateAllFields("submit");
-              if (form.state.canSubmit) {
-                form.handleSubmit();
-              }
-            }}
-          >
-            <div className="space-y-2">
-              <div className={LABEL_CLS}>sputnik dao account</div>
-              <div className="font-mono text-sm break-all px-3 py-2 border border-border bg-muted/30">
-                {data.orgAccountId ?? "—"}
-              </div>
-              <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                set when the agency workspace was created on platform — used for treasury and
-                proposals.
-              </p>
-            </div>
-            <form.Field name="nearnAccountId">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      nearn account id
-                    </label>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>Agency details</h2>
+        </CardTitle>
+        <CardDescription>
+          Public details for the {data.network} deployment, saved to this workspace's settings.
+        </CardDescription>
+      </CardHeader>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          await form.validateAllFields("submit");
+          if (form.state.canSubmit) {
+            form.handleSubmit();
+          }
+        }}
+      >
+        <CardContent>
+          <FieldGroup>
+            <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+              <form.Field name="nearnAccountId">
+                {(field) => (
+                  <FormField
+                    name={field.name}
+                    label="NEARN account ID"
+                    description="Links your NEARN sponsor bounties to Projects."
+                    error={field.state.meta.errors[0]}
+                  >
                     <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
+                      {...inputProps(field)}
                       onChange={(e) => field.handleChange(e.target.value)}
                       placeholder="multiagency"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
                     />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field name="contactEmail">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      contact email
-                    </label>
+                  </FormField>
+                )}
+              </form.Field>
+              <form.Field name="contactEmail">
+                {(field) => (
+                  <FormField
+                    name={field.name}
+                    label="Contact email"
+                    error={field.state.meta.errors[0]}
+                  >
                     <Input
-                      id={field.name}
-                      name={field.name}
+                      {...inputProps(field)}
                       type="email"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
                       onChange={(e) => field.handleChange(e.target.value)}
                       placeholder="hello@example.com"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
                     />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field name="websiteUrl">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      website url
-                    </label>
+                  </FormField>
+                )}
+              </form.Field>
+              <form.Field name="websiteUrl">
+                {(field) => (
+                  <FormField
+                    name={field.name}
+                    label="Website URL"
+                    error={field.state.meta.errors[0]}
+                  >
                     <Input
-                      id={field.name}
-                      name={field.name}
+                      {...inputProps(field)}
                       type="url"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
                       onChange={(e) => field.handleChange(e.target.value)}
                       placeholder="https://multiagency.ai"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
                     />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field name="docsUrl">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      docs url
-                    </label>
+                  </FormField>
+                )}
+              </form.Field>
+              <form.Field name="docsUrl">
+                {(field) => (
+                  <FormField name={field.name} label="Docs URL" error={field.state.meta.errors[0]}>
                     <Input
-                      id={field.name}
-                      name={field.name}
+                      {...inputProps(field)}
                       type="url"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
                       onChange={(e) => field.handleChange(e.target.value)}
                       placeholder="https://docs.multiagency.ai"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
                     />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field name="description">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      description
-                    </label>
-                    <Textarea
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      rows={4}
-                      placeholder="One or two sentences for the landing hero pitch."
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
-                    />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={isPending}
-              className="w-full font-display uppercase tracking-wide"
-            >
-              {isPending && <Spinner />}
-              {isPending ? "saving…" : "save →"}
-            </Button>
-          </form>
-          {data.audit && (
-            <div className="space-y-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              <p>
-                created by {data.audit.createdBy} on {data.audit.createdAt.slice(0, 10)}
-              </p>
-              <p>
-                last updated by {data.audit.updatedBy} on {data.audit.updatedAt.slice(0, 10)}
-              </p>
+                  </FormField>
+                )}
+              </form.Field>
             </div>
-          )}
+            <form.Field name="description">
+              {(field) => (
+                <FormField
+                  name={field.name}
+                  label="Description"
+                  description="One or two sentences for the landing page."
+                  error={field.state.meta.errors[0]}
+                >
+                  <Textarea
+                    {...inputProps(field)}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    rows={4}
+                    placeholder="What your Agency does, in a sentence or two."
+                  />
+                </FormField>
+              )}
+            </form.Field>
+          </FieldGroup>
         </CardContent>
-      </Card>
-    </section>
+        <CardFooter className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {data.audit ? (
+            <p className="text-xs text-muted-foreground">
+              Last updated by {data.audit.updatedBy} on {data.audit.updatedAt.slice(0, 10)}
+            </p>
+          ) : (
+            <span />
+          )}
+          <Button type="submit" disabled={isPending}>
+            {isPending && <Spinner data-icon="inline-start" />}
+            {isPending ? "Saving…" : "Save changes"}
+          </Button>
+        </CardFooter>
+      </form>
+    </Card>
   );
 }

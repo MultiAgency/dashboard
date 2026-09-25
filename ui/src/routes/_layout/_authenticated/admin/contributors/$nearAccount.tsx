@@ -1,11 +1,28 @@
+import { ArrowLeftIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, DataTable } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  DataTable,
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components";
 import { BuilderSummaryPanel } from "@/components/admin/builder-summary-panel";
 import { ContributorProfileForm } from "@/components/admin/contributors-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
 import { BuilderAvatar } from "@/components/builder-avatar";
+import { PageHeader } from "@/components/page-header";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminAssignmentsListQueryOptions,
@@ -26,15 +43,27 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/contributors
   errorComponent: ({ error, reset }) => {
     if (error.message?.toLowerCase().includes("not found")) {
       return (
-        <div className="space-y-3 py-8">
-          <h1 className="font-display text-2xl font-black uppercase">Builder not found</h1>
-          <p className="text-sm text-muted-foreground">
-            No builder or assignment exists for this NEAR account.
-          </p>
-          <Link to="/admin/contributors" className="text-sm underline">
-            ← all builders
-          </Link>
-        </div>
+        <Empty variant="outline">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <UserCircleIcon aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>
+              <h1>Builder not found</h1>
+            </EmptyTitle>
+            <EmptyDescription>
+              No builder or assignment exists for this NEAR account.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/admin/contributors">
+                <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+                All builders
+              </Link>
+            </Button>
+          </EmptyContent>
+        </Empty>
       );
     }
     return <AdminSectionError error={error} onRetry={reset} />;
@@ -47,18 +76,27 @@ function ContributorDetailPage() {
   const apiClient = Route.useRouteContext().apiClient;
   const contributorQuery = useQuery(adminContributorDetailQueryOptions(apiClient, nearAccount));
   const contributor = contributorQuery.data?.contributor;
-  if (contributorQuery.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  if (!contributor) return null;
+  const hasContributor = Boolean(contributor);
 
-  const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
-  const assignmentsQuery = useQuery(adminAssignmentsListQueryOptions(apiClient));
+  const projectsQuery = useQuery({
+    ...adminProjectsListQueryOptions(apiClient),
+    enabled: hasContributor,
+  });
+  const assignmentsQuery = useQuery({
+    ...adminAssignmentsListQueryOptions(apiClient),
+    enabled: hasContributor,
+  });
 
   const billingsQuery = useInfiniteQuery({
     queryKey: adminContributorBillingsQueryKey(nearAccount),
     queryFn: ({ pageParam }) => apiClient.billings.list({ nearAccount, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: hasContributor,
   });
+
+  if (contributorQuery.isLoading) return <AdminSectionSkeleton rows={6} />;
+  if (!contributor) return null;
 
   const projectById = new Map((projectsQuery.data?.data ?? []).map((p) => [p.id, p]));
   const assignments = (assignmentsQuery.data?.data ?? []).filter(
@@ -75,7 +113,7 @@ function ContributorDetailPage() {
         <Link
           to="/admin/projects/$slug"
           params={{ slug: row.original.projectSlug }}
-          className="text-sm underline"
+          className="font-medium hover:underline"
         >
           {row.original.projectTitle}
         </Link>
@@ -89,7 +127,7 @@ function ContributorDetailPage() {
       id: "proposal",
       header: "Proposal",
       accessorKey: "proposalId",
-      cell: ({ row }) => <span className="font-mono text-xs">#{row.original.proposalId}</span>,
+      cell: ({ row }) => <span className="tabular-nums">#{row.original.proposalId}</span>,
     },
     {
       id: "amount",
@@ -99,7 +137,7 @@ function ContributorDetailPage() {
         exportValue: (row: (typeof billings)[number]) => formatTokenAmount(row.amount, row.tokenId),
       },
       cell: ({ row }) => (
-        <span className="font-mono text-sm">
+        <span className="tabular-nums">
           {formatTokenAmount(row.original.amount, row.original.tokenId)}
         </span>
       ),
@@ -113,63 +151,76 @@ function ContributorDetailPage() {
   ];
 
   return (
-    <div className="space-y-8">
-      <div>
-        <Link
-          to="/admin/contributors"
-          className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
-        >
-          ← all builders
+    <div className="flex flex-col gap-6">
+      <Button asChild variant="ghost" size="sm" className="self-start">
+        <Link to="/admin/contributors">
+          <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+          All builders
         </Link>
+      </Button>
+
+      <div className="flex items-start gap-4">
+        <BuilderAvatar name={contributor.name} nearAccount={nearAccount} />
+        <PageHeader
+          className="min-w-0 flex-1"
+          title={contributor.name ?? nearAccount}
+          description={
+            contributor.name
+              ? `${nearAccount} · profile, project assignments and billing history.`
+              : "Profile, project assignments and billing history."
+          }
+        />
       </div>
 
-      <header className="flex flex-wrap items-start gap-4">
-        <BuilderAvatar name={contributor.name} nearAccount={nearAccount} />
-        <div className="space-y-2 min-w-0">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-            people · builders
-          </div>
-          <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-            {contributor.name ?? nearAccount}
-          </h1>
-          <p className="font-mono text-sm text-muted-foreground">{nearAccount}</p>
-          <p className="text-sm text-muted-foreground max-w-2xl">
-            Builder profile, project assignments, and billing history.
-          </p>
-        </div>
-      </header>
-
-      <ContributorProfileForm nearAccount={nearAccount} contributor={contributor} />
+      {contributorQuery.data?.canEdit ? (
+        <ContributorProfileForm nearAccount={nearAccount} contributor={contributor} />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Builder profiles are global. Only the builder or a platform admin can edit this one.
+        </p>
+      )}
 
       <BuilderSummaryPanel billings={billings} projectCount={assignments.length} />
 
-      <section className="space-y-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          projects
-        </h2>
-        <DataTable
-          columns={projectColumns}
-          data={assignments}
-          isLoading={assignmentsQuery.isLoading}
-          emptyMessage="Not assigned to any projects."
-          csvFilename={`contributor-${nearAccount}-projects`}
-          viewId={`contributor-${nearAccount}-projects`}
-        />
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Projects</h2>
+          </CardTitle>
+          <CardDescription>
+            Projects this builder is assigned to in your Organization.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={projectColumns}
+            data={assignments}
+            isLoading={assignmentsQuery.isLoading}
+            emptyMessage="Not assigned to any projects"
+            csvFilename={`contributor-${nearAccount}-projects`}
+            viewId={`contributor-${nearAccount}-projects`}
+          />
+        </CardContent>
+      </Card>
 
-      <section className="space-y-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          billings
-        </h2>
-        <DataTable
-          columns={billingColumns}
-          data={billings}
-          isLoading={billingsQuery.isLoading}
-          emptyMessage="No billings for this builder."
-          csvFilename={`contributor-${nearAccount}-billings`}
-          viewId={`contributor-${nearAccount}-billings`}
-        />
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Billings</h2>
+          </CardTitle>
+          <CardDescription>Every billing recorded for this builder.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DataTable
+            columns={billingColumns}
+            data={billings}
+            isLoading={billingsQuery.isLoading}
+            emptyMessage="No billings for this builder"
+            csvFilename={`contributor-${nearAccount}-billings`}
+            viewId={`contributor-${nearAccount}-billings`}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }

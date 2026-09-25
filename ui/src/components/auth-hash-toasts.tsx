@@ -3,9 +3,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 
 const HASH_MESSAGES: Record<string, string> = {
-  unauthorized: "Sign in with a NEAR wallet that has access to this area.",
-  "not-a-client":
-    "No client portal for this wallet. Ask your agency to add your NEAR account under Admin → Clients.",
+  unauthorized: "Sign in with an account that has access to this area.",
 };
 
 export function AuthHashToasts() {

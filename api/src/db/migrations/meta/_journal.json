@@ -36,6 +36,62 @@
       "when": 1784236800000,
       "tag": "0004_clients_require_agency",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784323200000,
+      "tag": "0005_organization_daos",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784409600000,
+      "tag": "0006_settings_by_organization",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784496000000,
+      "tag": "0007_engagements",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784582400000,
+      "tag": "0008_prepayments",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784668800000,
+      "tag": "0009_change_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784755200000,
+      "tag": "0010_subcontracting",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784928000000,
+      "tag": "0012_ideas_agent_links_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785014400000,
+      "tag": "0013_drop_clients",
+      "breakpoints": true
     }
   ]
 }

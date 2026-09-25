@@ -2,9 +2,18 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
-import { Badge, Button, Card, CardContent, DataTable } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  DataTable,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Field, selectClass } from "@/components/admin-form";
+import { ChoiceSelect } from "@/components/admin-form";
 import {
   buildBillingFilterGraph,
   reconcileBillingFilters,
@@ -16,77 +25,70 @@ import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminAssignmentsListQueryOptions,
   adminBillingsQueryKey,
-  adminClientsListQueryOptions,
   adminContributorsListQueryOptions,
   adminProjectsListQueryOptions,
   clientBillingsQueryKey,
   clientPortalProjectsListQueryOptions,
+  sharedWithUsQueryOptions,
 } from "@/lib/queries";
 
 type Billing = Awaited<ReturnType<ApiClient["billings"]["list"]>>["data"][number];
 
 type BillingsAdminSectionProps = {
   readOnly?: boolean;
-  clientId?: string;
-  /** Use client-portal API (no agency workspace required). */
-  clientPortal?: boolean;
-  /** Agency DAO scope for client portal billings. */
-  agencyDaoAccountId?: string;
-  /** Pre-filter to a single project (e.g. client project detail page). */
+  engagementId?: string;
   fixedProjectId?: string;
 };
 
 export function BillingsAdminSection({
   readOnly = false,
-  clientId: fixedClientId,
-  clientPortal = false,
-  agencyDaoAccountId,
+  engagementId,
   fixedProjectId,
 }: BillingsAdminSectionProps) {
   const apiClient = useApiClient();
+  const clientPortal = engagementId !== undefined;
   const [projectId, setProjectId] = useState(fixedProjectId ?? "");
   const [nearAccount, setNearAccount] = useState("");
-  const [clientId, setClientId] = useState(fixedClientId ?? "");
 
   const adminProjectsQuery = useQuery({
     ...adminProjectsListQueryOptions(apiClient),
     enabled: !clientPortal,
   });
   const clientProjectsQuery = useQuery({
-    ...clientPortalProjectsListQueryOptions(apiClient, agencyDaoAccountId ?? ""),
-    enabled: clientPortal && !!agencyDaoAccountId,
+    ...clientPortalProjectsListQueryOptions(apiClient, engagementId ?? ""),
+    enabled: clientPortal,
   });
   const projectsQuery = clientPortal ? clientProjectsQuery : adminProjectsQuery;
   const contributorsQuery = useQuery({
     ...adminContributorsListQueryOptions(apiClient),
     enabled: !clientPortal,
   });
-  const clientsQuery = useQuery({
-    ...adminClientsListQueryOptions(apiClient),
-    enabled: !clientPortal && !fixedClientId,
-  });
   const assignmentsQuery = useQuery({
     ...adminAssignmentsListQueryOptions(apiClient),
     enabled: !clientPortal,
   });
+  const sharedWithUsQuery = useQuery({
+    ...sharedWithUsQueryOptions(apiClient),
+    enabled: !clientPortal,
+  });
+  const engagementOfShared = new Map(
+    (sharedWithUsQuery.data?.data ?? []).map((s) => [s.project.id, s.engagementId]),
+  );
 
   const billingsQuery = useInfiniteQuery({
-    queryKey: (clientPortal ? clientBillingsQueryKey : adminBillingsQueryKey)({
-      projectId: projectId || null,
-      nearAccount: nearAccount || null,
-      clientId: clientId || null,
-    }),
+    queryKey: engagementId
+      ? clientBillingsQueryKey(engagementId, projectId || null)
+      : adminBillingsQueryKey({ projectId: projectId || null, nearAccount: nearAccount || null }),
     queryFn: ({ pageParam }) =>
-      clientPortal && agencyDaoAccountId
+      engagementId
         ? apiClient.clientPortal.billings.list({
-            agencyDaoAccountId,
+            engagementId,
             projectId: projectId || undefined,
             cursor: pageParam,
           })
         : apiClient.billings.list({
             projectId: projectId || undefined,
             nearAccount: nearAccount || undefined,
-            clientId: clientId || undefined,
             cursor: pageParam,
           }),
     initialPageParam: undefined as string | undefined,
@@ -98,8 +100,13 @@ export function BillingsAdminSection({
     () => billingsQuery.data?.pages.flatMap((p) => p.data) ?? [],
     [billingsQuery.data],
   );
-  const projects = projectsQuery.data?.data ?? [];
-  const clients = clientsQuery.data?.data ?? [];
+  const projects = useMemo(
+    () => [
+      ...(projectsQuery.data?.data ?? []),
+      ...(clientPortal ? [] : (sharedWithUsQuery.data?.data ?? []).map((s) => s.project)),
+    ],
+    [projectsQuery.data, sharedWithUsQuery.data, clientPortal],
+  );
   const allContributors = contributorsQuery.data?.data ?? [];
 
   const filterGraph = useMemo(
@@ -107,14 +114,12 @@ export function BillingsAdminSection({
       buildBillingFilterGraph({
         projectIds: projects.map((p) => p.id),
         assignments: assignmentsQuery.data?.data ?? [],
-        clients: clients.map((c) => ({ id: c.id, projectIds: c.projectIds ?? [] })),
         billingLinks: billings.map((b) => ({
           projectId: b.projectId,
           nearAccount: b.nearAccount,
-          clientId: b.clientId,
         })),
       }),
-    [projects, assignmentsQuery.data?.data, clients, billings],
+    [projects, assignmentsQuery.data?.data, billings],
   );
 
   const allProjectIds = useMemo(() => projects.map((p) => p.id), [projects]);
@@ -122,52 +127,31 @@ export function BillingsAdminSection({
     () => allContributors.map((c) => c.nearAccount),
     [allContributors],
   );
-  const allClientIds = useMemo(() => clients.map((c) => c.id), [clients]);
 
   const dropdownOptions = useMemo(
     () =>
-      resolveBillingFilterDropdownOptions(
-        filterGraph,
-        allProjectIds,
-        allContributorAccounts,
-        allClientIds,
-        { projectId, nearAccount, clientId },
-      ),
-    [
-      filterGraph,
-      allProjectIds,
-      allContributorAccounts,
-      allClientIds,
-      projectId,
-      nearAccount,
-      clientId,
-    ],
+      resolveBillingFilterDropdownOptions(filterGraph, allProjectIds, allContributorAccounts, {
+        projectId,
+        nearAccount,
+      }),
+    [filterGraph, allProjectIds, allContributorAccounts, projectId, nearAccount],
   );
 
   const filterProjects = useMemo(
     () => projects.filter((p) => dropdownOptions.projects.has(p.id)),
     [projects, dropdownOptions.projects],
   );
-  const filterClients = useMemo(
-    () => clients.filter((c) => dropdownOptions.clients.has(c.id)),
-    [clients, dropdownOptions.clients],
-  );
-  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
 
-  const applyFilters = (
-    patch: Partial<{ projectId: string; nearAccount: string; clientId: string }>,
-  ) => {
+  const applyFilters = (patch: Partial<{ projectId: string; nearAccount: string }>) => {
     const next = reconcileBillingFilters(
-      { projectId, nearAccount, clientId },
+      { projectId, nearAccount },
       patch,
       filterGraph,
       allProjectIds,
       allContributorAccounts,
-      allClientIds,
     );
     setProjectId(next.projectId);
     setNearAccount(next.nearAccount);
-    setClientId(next.clientId);
   };
 
   const contributorOptions = useMemo(() => {
@@ -191,8 +175,7 @@ export function BillingsAdminSection({
   }, [allContributors, billings, dropdownOptions.contributors]);
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const contributorByNear = new Map(contributorOptions.map((c) => [c.nearAccount, c]));
-  const filtersActive =
-    projectId !== "" || nearAccount !== "" || (!fixedClientId && clientId !== "");
+  const filtersActive = projectId !== "" || nearAccount !== "";
 
   if (billingsQuery.isError) {
     return <AdminError error={billingsQuery.error} />;
@@ -201,15 +184,15 @@ export function BillingsAdminSection({
   const projectCell = ({ row }: { row: { original: Billing } }) => {
     const project = projectById.get(row.original.projectId);
     if (!project) {
-      return <span className="font-mono text-xs">{row.original.projectId}</span>;
+      return <span className="text-muted-foreground">{row.original.projectId}</span>;
     }
-    if (clientPortal && agencyDaoAccountId) {
+    const sharedThrough = engagementId ?? engagementOfShared.get(project.id);
+    if (sharedThrough) {
       return (
         <Link
-          to="/client/projects/$slug"
-          params={{ slug: project.slug }}
-          search={{ agency: agencyDaoAccountId }}
-          className="underline hover:text-foreground text-sm"
+          to="/client/$engagementId/projects/$slug"
+          params={{ engagementId: sharedThrough, slug: project.slug }}
+          className="font-medium hover:underline"
         >
           {project.title}
         </Link>
@@ -219,7 +202,7 @@ export function BillingsAdminSection({
       <Link
         to="/admin/projects/$slug"
         params={{ slug: project.slug }}
-        className="underline hover:text-foreground text-sm"
+        className="font-medium hover:underline"
       >
         {project.title}
       </Link>
@@ -228,17 +211,17 @@ export function BillingsAdminSection({
 
   const contributorCell = ({ row }: { row: { original: Billing } }) => {
     const near = row.original.nearAccount;
-    if (!near) return <span className="text-sm text-muted-foreground">—</span>;
+    if (!near) return <span className="text-muted-foreground">—</span>;
     const c = contributorByNear.get(near);
     const label = c?.name ?? near;
     if (clientPortal) {
-      return <span className="text-sm">{label}</span>;
+      return <span>{label}</span>;
     }
     return (
       <Link
         to="/admin/contributors/$nearAccount"
         params={{ nearAccount: near }}
-        className="text-sm underline hover:text-foreground"
+        className="hover:underline"
       >
         {label}
       </Link>
@@ -250,7 +233,7 @@ export function BillingsAdminSection({
       id: "proposalId",
       header: "Proposal",
       accessorKey: "proposalId",
-      cell: ({ row }) => <span className="font-mono text-xs">#{row.original.proposalId}</span>,
+      cell: ({ row }) => <span className="tabular-nums">#{row.original.proposalId}</span>,
     },
     {
       id: "project",
@@ -258,32 +241,6 @@ export function BillingsAdminSection({
       accessorFn: (row) => projectById.get(row.projectId)?.title ?? row.projectId,
       cell: projectCell,
     },
-    ...(clientPortal
-      ? []
-      : [
-          {
-            id: "client",
-            header: "Client",
-            accessorFn: (row: Billing) =>
-              row.clientId ? (clientById.get(row.clientId)?.name ?? row.clientId) : "",
-            cell: ({ row }: { row: { original: Billing } }) => {
-              const id = row.original.clientId;
-              if (!id) return <span className="text-sm text-muted-foreground">—</span>;
-              const client = clientById.get(id);
-              return client ? (
-                <Link
-                  to="/admin/clients/$clientId"
-                  params={{ clientId: id }}
-                  className="text-sm underline hover:text-foreground"
-                >
-                  {client.name}
-                </Link>
-              ) : (
-                <span className="font-mono text-xs">{id}</span>
-              );
-            },
-          } satisfies ColumnDef<Billing>,
-        ]),
     {
       id: "contributor",
       header: clientPortal ? "Builder" : "Contributor",
@@ -299,7 +256,7 @@ export function BillingsAdminSection({
         exportValue: (row: Billing) => formatTokenAmount(row.amount, row.tokenId),
       },
       cell: ({ row }) => (
-        <span className="font-mono text-sm">
+        <span className="font-medium tabular-nums">
           {formatTokenAmount(row.original.amount, row.original.tokenId)}
         </span>
       ),
@@ -311,11 +268,19 @@ export function BillingsAdminSection({
       cell: ({ row }) => <Badge variant="outline">{row.original.status}</Badge>,
     },
     {
+      id: "payingDao",
+      header: "Paid from",
+      accessorKey: "payingDaoAccountId",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{row.original.payingDaoAccountId || "—"}</span>
+      ),
+    },
+    {
       id: "createdAt",
       header: "Created",
       accessorFn: (row) => new Date(row.createdAt).toISOString(),
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="text-muted-foreground tabular-nums">
           {new Date(row.original.createdAt).toISOString().slice(0, 10)}
         </span>
       ),
@@ -323,100 +288,85 @@ export function BillingsAdminSection({
   ];
 
   return (
-    <div className="space-y-6">
-      {!readOnly && !clientPortal && (
-        <Card>
-          <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_1fr_auto]">
-            <Field label="project" htmlFor="filter-project">
-              <select
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>{clientPortal ? "Billings" : "All billings"}</h2>
+        </CardTitle>
+        <CardDescription>
+          {clientPortal
+            ? "Payouts recorded on the shared projects."
+            : "Payouts across your projects and projects shared with you."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {!readOnly && !clientPortal && (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-full sm:w-48">
+              <ChoiceSelect
                 id="filter-project"
-                value={projectId}
-                onChange={(e) => applyFilters({ projectId: e.target.value })}
-                className={selectClass}
-              >
-                <option value="">all projects</option>
-                {filterProjects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="contributor" htmlFor="filter-contributor">
-              <select
-                id="filter-contributor"
-                value={nearAccount}
-                onChange={(e) => applyFilters({ nearAccount: e.target.value })}
-                className={selectClass}
-              >
-                <option value="">all contributors</option>
-                {contributorOptions.map((c) => (
-                  <option key={c.nearAccount} value={c.nearAccount}>
-                    {c.name ?? c.nearAccount}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {!fixedClientId && !clientPortal && (
-              <Field label="client" htmlFor="filter-client">
-                <select
-                  id="filter-client"
-                  value={clientId}
-                  onChange={(e) => applyFilters({ clientId: e.target.value })}
-                  className={selectClass}
-                >
-                  <option value="">all clients</option>
-                  {filterClients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            <div className="flex items-end">
-              <Button
-                variant="outline"
+                ariaLabel="Project"
                 size="sm"
-                disabled={!filtersActive}
-                onClick={() => applyFilters({ projectId: "", nearAccount: "", clientId: "" })}
-              >
-                reset
-              </Button>
+                value={projectId}
+                onValueChange={(value) => applyFilters({ projectId: value })}
+                emptyLabel="All projects"
+                options={filterProjects.map((p) => ({ value: p.id, label: p.title }))}
+              />
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div className="w-full sm:w-48">
+              <ChoiceSelect
+                id="filter-contributor"
+                ariaLabel="Builder"
+                size="sm"
+                value={nearAccount}
+                onValueChange={(value) => applyFilters({ nearAccount: value })}
+                emptyLabel="All builders"
+                options={contributorOptions.map((c) => ({
+                  value: c.nearAccount,
+                  label: c.name ?? c.nearAccount,
+                }))}
+              />
+            </div>
+            {filtersActive && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => applyFilters({ projectId: "", nearAccount: "" })}
+              >
+                Reset filters
+              </Button>
+            )}
+          </div>
+        )}
 
-      <DataTable
-        columns={columns}
-        data={billings}
-        isLoading={billingsQuery.isLoading}
-        error={billingsQuery.error}
-        onRetry={() => billingsQuery.refetch()}
-        emptyMessage={
-          filtersActive
-            ? "No billings match the current filters."
-            : "No billings recorded yet. Record them from a project detail page."
-        }
-        csvFilename="billings"
-        viewId={clientPortal ? "client-billings" : "admin-billings"}
-        searchPlaceholder="Search billings…"
-        readOnly={readOnly}
-      />
+        <DataTable
+          columns={columns}
+          data={billings}
+          isLoading={billingsQuery.isLoading}
+          error={billingsQuery.error}
+          onRetry={() => billingsQuery.refetch()}
+          emptyMessage={
+            filtersActive ? "No billings match these filters" : "No billings recorded yet"
+          }
+          csvFilename="billings"
+          viewId={clientPortal ? "client-billings" : "admin-billings"}
+          searchPlaceholder="Search billings…"
+          readOnly={readOnly}
+        />
 
-      {billingsQuery.hasNextPage && (
-        <div className="flex justify-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => billingsQuery.fetchNextPage()}
-            disabled={billingsQuery.isFetchingNextPage}
-          >
-            {billingsQuery.isFetchingNextPage ? "loading..." : "load more"}
-          </Button>
-        </div>
-      )}
-    </div>
+        {billingsQuery.hasNextPage && (
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => billingsQuery.fetchNextPage()}
+              disabled={billingsQuery.isFetchingNextPage}
+            >
+              {billingsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

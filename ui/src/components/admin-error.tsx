@@ -1,5 +1,16 @@
+import { LockIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
-import { Badge, Button, Card, CardContent } from "@/components";
+import {
+  Button,
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components";
+import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
+import { needsTreasury } from "@/lib/treasury";
 
 function isAccessError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -7,51 +18,54 @@ function isAccessError(error: unknown): boolean {
   return code === "FORBIDDEN" || code === "UNAUTHORIZED";
 }
 
+function errorMessage(error: unknown): string {
+  return typeof error === "object" && error && "message" in error
+    ? String((error as { message?: unknown }).message ?? "")
+    : "";
+}
+
 function isNoOrgContext(error: unknown): boolean {
   if (!isAccessError(error)) return false;
-  const message =
-    typeof error === "object" && error && "message" in error
-      ? String((error as { message?: unknown }).message ?? "")
-      : "";
-  const lower = message.toLowerCase();
+  const lower = errorMessage(error).toLowerCase();
   return lower.includes("organization required") || lower.includes("workspace required");
 }
 
 export function AdminError({ error }: { error: unknown }) {
+  if (needsTreasury(error)) return <ConnectTreasuryPrompt />;
   const isAccess = isAccessError(error);
   const noOrg = isNoOrgContext(error);
-  const message =
-    typeof error === "object" && error && "message" in error
-      ? String((error as { message?: unknown }).message ?? "")
-      : "";
+  const message = errorMessage(error);
 
   return (
-    <Card>
-      <CardContent className="p-8 text-center space-y-3">
-        <Badge variant="outline">{isAccess ? "access denied" : "could not load"}</Badge>
-        <p className="text-sm text-muted-foreground max-w-md mx-auto">
+    <Empty variant="outline">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          {isAccess ? <LockIcon aria-hidden /> : <WarningCircleIcon aria-hidden />}
+        </EmptyMedia>
+        <EmptyTitle>
+          {noOrg ? "Workspace not set up" : isAccess ? "Access denied" : "Could not load"}
+        </EmptyTitle>
+        <EmptyDescription>
           {noOrg
             ? "This workspace hasn't been set up yet. Create it in the platform admin to enable member management, settings, and projects."
             : isAccess
               ? message || "You don't have access to this surface."
-              : "We couldn't load this data. Try again, or check the API logs if this keeps happening."}
-        </p>
-        {!isAccess && message && (
-          <pre className="text-xs font-mono text-muted-foreground bg-muted/20 p-2 rounded-sm break-all whitespace-pre-wrap max-w-md mx-auto">
-            {message}
-          </pre>
-        )}
-        <div className="flex gap-2 justify-center">
+              : message ||
+                "We couldn't load this data. Try again, or check the API logs if this keeps happening."}
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <div className="flex flex-wrap justify-center gap-2">
           {noOrg && (
             <Button asChild size="sm">
-              <Link to="/platform">set up workspace</Link>
+              <Link to="/platform">Set up workspace</Link>
             </Button>
           )}
           <Button asChild variant="outline" size="sm">
-            <Link to="/">back to home</Link>
+            <Link to="/">Back to home</Link>
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </EmptyContent>
+    </Empty>
   );
 }

@@ -1,6 +1,7 @@
 import { ORPCError } from "every-plugin/orpc";
-import type { AgencyScope, PluginContext } from "../lib/agency-scope";
+import type { PluginContext } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
+import type { AgencyScope } from "./organization-access";
 
 type PluginProjectsClient = ReturnType<PluginsClient["projects"]>;
 
@@ -32,11 +33,11 @@ export type AgencyProjects = {
   requireBySlug(slug: string): Promise<Project>;
 };
 
-export function toProject(p: PluginProject, agencyDao: string): Project {
+export function toProject(p: PluginProject): Project {
   return {
     id: p.id,
     ownerId: p.ownerId,
-    organizationId: p.organizationId ?? agencyDao,
+    organizationId: p.organizationId ?? "",
     slug: p.slug,
     title: p.title,
     description: p.description,
@@ -58,18 +59,16 @@ export function createProjectDirectory(
 
   function build(scope: AgencyScope): AgencyProjects {
     const client = () => projectsFor(scope.pluginContext);
+    const { organizationId } = scope;
     let listing: Promise<Project[]> | undefined;
 
     async function fetchAll(): Promise<Project[]> {
+      if (!organizationId) return [];
       const out: Project[] = [];
       let cursor: string | undefined;
       do {
-        const page = await client().listProjects({
-          organizationId: scope.agencyDao,
-          limit: 100,
-          cursor,
-        });
-        out.push(...page.data.map((p) => toProject(p, scope.agencyDao)));
+        const page = await client().listProjects({ organizationId, limit: 100, cursor });
+        out.push(...page.data.map(toProject));
         cursor = page.meta.nextCursor ?? undefined;
       } while (cursor);
       return out;
@@ -90,8 +89,8 @@ export function createProjectDirectory(
       } catch {
         throw notFound();
       }
-      if (upstream.organizationId !== scope.agencyDao) throw notFound();
-      return toProject(upstream, scope.agencyDao);
+      if (!organizationId || upstream.organizationId !== organizationId) throw notFound();
+      return toProject(upstream);
     }
 
     return {

@@ -1,10 +1,11 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useRouter } from "@tanstack/react-router";
 import { AppNotFound, AppRouteError, Shell } from "@/components/shell";
-import { meRolesQueryOptions } from "@/lib/queries";
+import { meRolesQueryOptions, setActiveOrganizationKey } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout")({
   head: () => ({ meta: [{ name: "theme-color", content: "#ffff33" }] }),
   beforeLoad: ({ context }) => {
+    setActiveOrganizationKey(context.session?.session?.activeOrganizationId);
     if (context.session) {
       void context.queryClient.prefetchQuery(meRolesQueryOptions(context.apiClient));
     }
@@ -30,10 +31,16 @@ function LayoutNotFound() {
   );
 }
 
-function LayoutError() {
+function LayoutError({ reset }: { reset: () => void }) {
+  const router = useRouter();
   return (
     <Shell>
-      <AppRouteError />
+      <AppRouteError
+        onRetry={() => {
+          reset();
+          void router.invalidate();
+        }}
+      />
     </Shell>
   );
 }

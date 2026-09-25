@@ -1,6 +1,6 @@
 import { Effect } from "every-plugin/effect";
-import type { AgencyScope } from "../lib/agency-scope";
 import type { ProjectLedgers } from "./ledger";
+import type { TreasuryScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 import { getDaoTokenIds, getTreasuryBalances } from "./sputnik";
 import { summarizeTreasury } from "./summaries";
@@ -8,7 +8,7 @@ import { NATIVE_TOKEN_ID } from "./tokens";
 
 export function createTreasuryService(directory: ProjectDirectory, projectLedgers: ProjectLedgers) {
   return {
-    getPublicBalances: (scope: AgencyScope, input: { tokenIds: string[] }) =>
+    getPublicBalances: (scope: TreasuryScope, input: { tokenIds: string[] }) =>
       Effect.gen(function* () {
         const balances = yield* Effect.promise(() =>
           getTreasuryBalances(scope.agencyDao, input.tokenIds),
@@ -21,7 +21,7 @@ export function createTreasuryService(directory: ProjectDirectory, projectLedger
         };
       }),
 
-    getBalances: (scope: AgencyScope, input: { tokenIds: string[] }) =>
+    getBalances: (scope: TreasuryScope, input: { tokenIds: string[] }) =>
       Effect.gen(function* () {
         const projects = yield* Effect.promise(() => directory.forAgency(scope).list());
         const [ledger, balances] = yield* Effect.promise(() =>
@@ -43,7 +43,7 @@ export function createTreasuryService(directory: ProjectDirectory, projectLedger
         };
       }),
 
-    getRollups: (scope: AgencyScope) =>
+    getRollups: (scope: TreasuryScope) =>
       Effect.gen(function* () {
         const projects = yield* Effect.promise(() => directory.forAgency(scope).list());
         const ledger = yield* Effect.promise(() =>
@@ -59,7 +59,7 @@ export function createTreasuryService(directory: ProjectDirectory, projectLedger
         return { rollups: ledger.agencyRollups(balances) };
       }),
 
-    getPublicSummary: (scope: AgencyScope) =>
+    getPublicSummary: (scope: TreasuryScope) =>
       Effect.gen(function* () {
         const [balances, tokenIds] = yield* Effect.promise(() =>
           Promise.all([

@@ -2,27 +2,41 @@ import { createPlugin } from "every-plugin";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
+import pg from "pg";
 import { contract } from "./contract";
 import { DatabaseLive, DatabaseTag } from "./db/layer";
-import { agencyScopeFromRequest, createAgencyRoleMiddleware } from "./lib/agency-scope";
 import { createAuthMiddleware } from "./lib/auth";
+import { authDatabaseDirectory } from "./lib/auth-database";
 import { ContextSchema, runEffect } from "./lib/context";
 import { getNetwork, pinnedNetwork } from "./lib/network";
-import { setDefaultDaoAccountId } from "./lib/org";
+import {
+  betterAuthOrganizations,
+  nearAccountsOf,
+  type PluginContext,
+  unconfiguredDirectory,
+} from "./lib/organizations";
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
+import { createAgencyDaoService } from "./services/agency-dao";
+import { createAgentLinksService } from "./services/agent-links";
 import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
 import { createBillingsService } from "./services/billings";
 import { createBudgetsService } from "./services/budgets";
+import { createChangeOrdersService } from "./services/change-orders";
 import { createClientPortalService } from "./services/client-portal";
-import { createClientsService } from "./services/clients";
 import { createContactFormService } from "./services/contact-form";
 import { createContributorsService } from "./services/contributors";
+import { createEngagementsService } from "./services/engagements";
+import { createIdeasService } from "./services/ideas";
 import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
+import { createNotifications } from "./services/notifications";
+import { resendEmailSender } from "./services/notify";
+import { createOrganizationAccess, ROLE_MATRIX } from "./services/organization-access";
+import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
 import { createReportsService } from "./services/reports";
@@ -38,15 +52,18 @@ import { createTreasuryService } from "./services/treasury";
 export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({
     agencyDaoAccount: z.string().optional(),
+    appOrigin: z.string().url().default("https://dev.multiagency.ai"),
   }),
 
   secrets: z.object({
     API_DATABASE_URL: z.string().default("pglite:.bos/api/:memory:"),
+    AUTH_DATABASE_URL: z.string().optional(),
     APPLICATIONS_WEBHOOK_URL: z.string().optional(),
     CONTACT_FORM_WEBHOOK_URL: z.string().optional(),
     CONTACT_FORM_WEBHOOK_SECRET: z.string().optional(),
     RESEND_API_KEY: z.string().optional(),
     NOTIFY_FROM_EMAIL: z.string().optional(),
+    APP_ORIGIN: z.string().url().optional(),
   }),
 
   context: ContextSchema,
@@ -55,8 +72,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
   initialize: (config, plugins, tools) =>
     Effect.gen(function* () {
-      setDefaultDaoAccountId(config.variables.agencyDaoAccount);
-
       const db = yield* tools.buildService(
         DatabaseTag,
         DatabaseLive(config.secrets.API_DATABASE_URL),
@@ -69,6 +84,29 @@ export default createPlugin.withPlugins<PluginsClient>()({
       };
 
       const directory = createProjectDirectory((pluginContext) => plugins.projects(pluginContext));
+      const authDatabaseUrl = config.secrets.AUTH_DATABASE_URL;
+      const authPool = authDatabaseUrl ? new pg.Pool({ connectionString: authDatabaseUrl }) : null;
+      const organizationDirectory = authPool
+        ? authDatabaseDirectory(authPool)
+        : unconfiguredDirectory();
+      const appOrigin = config.secrets.APP_ORIGIN ?? config.variables.appOrigin;
+      const sendEmail = resendEmailSender({
+        resendApiKey: config.secrets.RESEND_API_KEY,
+        fromEmail: config.secrets.NOTIFY_FROM_EMAIL,
+      });
+      const notifications = createNotifications({
+        db,
+        directory: organizationDirectory,
+        sendEmail,
+        appOrigin,
+      });
+      const access = createOrganizationAccess({
+        db,
+        organizations: betterAuthOrganizations(() => plugins.auth()),
+        directory,
+        defaultDaoAccountId: config.variables.agencyDaoAccount,
+      });
+      const agencyDaos = createAgencyDaoService({ db, directory, daoRoles: getRoles });
       const listings = createListingsService(db, directory);
       const projectLedgers = createProjectLedgers(db, listings);
       const agency = createAgencyService(db, plugins, directory, listings, projectLedgers);
@@ -78,20 +116,55 @@ export default createPlugin.withPlugins<PluginsClient>()({
         webhookUrl: config.secrets.CONTACT_FORM_WEBHOOK_URL,
         webhookSecret: config.secrets.CONTACT_FORM_WEBHOOK_SECRET,
       });
-      const clients = createClientsService(db, directory);
-      const assignments = createAssignmentsService(db, directory);
-      const budgets = createBudgetsService(db, directory, clients);
-      const billings = createBillingsService(db, directory);
-      const reports = createReportsService(db, directory, plugins);
+      const assignments = createAssignmentsService(db, directory, access, organizationDirectory);
+      const budgets = createBudgetsService(db, directory);
+      const billings = createBillingsService(db, directory, access);
+      const reports = createReportsService(db, directory, plugins, organizationDirectory);
+      const changeOrders = createChangeOrdersService({
+        db,
+        organizations: organizationDirectory,
+        notifications,
+      });
+      const engagements = createEngagementsService({
+        db,
+        organizations: organizationDirectory,
+        projects: directory,
+        notifications,
+        sendEmail,
+        appOrigin,
+        subcontracted: access.subcontractedProjects,
+        onEnded: changeOrders.withdrawPending,
+      });
+      const prepayments = createPrepaymentsService({
+        db,
+        organizations: organizationDirectory,
+        notifications,
+        onPlanApplied: changeOrders.notifyPlanApplied,
+      });
+      const ideas = createIdeasService({
+        db,
+        agency,
+        directory,
+        readScopeOfAgency: access.readScopeOfAgency,
+        engagements,
+        notifications,
+        organizations: organizationDirectory,
+      });
+      const agentLinks = createAgentLinksService({ db });
       const clientPortal = createClientPortalService(
-        clients,
+        access,
         agency,
         billings,
         reports,
         directory,
         projectLedgers,
       );
-      const me = createMeService(db, directory);
+      const me = createMeService({
+        db,
+        directory,
+        organizations: organizationDirectory,
+        readScopeOf: access.readScopeOfAgency,
+      });
       const proposals = createProposalsService(db, directory);
       const tokens = createTokensService(db);
       const treasury = createTreasuryService(directory, projectLedgers);
@@ -101,12 +174,21 @@ export default createPlugin.withPlugins<PluginsClient>()({
       yield* Effect.logInfo("[API] Services Initialized");
       return {
         db,
+        access,
+        agencyDaos,
         applications,
         contactForm,
         agency,
         listings,
         contributors,
-        clients,
+        engagements,
+        prepayments,
+        changeOrders,
+        ideas,
+        agentLinks,
+        notifications,
+        organizationDirectory,
+        authPool,
         assignments,
         budgets,
         billings,
@@ -120,17 +202,29 @@ export default createPlugin.withPlugins<PluginsClient>()({
       };
     }),
 
-  shutdown: () => Effect.logInfo("[API] Shutdown"),
+  shutdown: (services) =>
+    Effect.gen(function* () {
+      if (services.authPool) yield* Effect.promise(() => services.authPool!.end());
+      yield* Effect.logInfo("[API] Shutdown");
+    }),
 
   createRouter: (services, builder) => {
     const {
       db,
+      access,
+      agencyDaos,
       applications,
       contactForm,
       agency,
       listings,
       contributors,
-      clients,
+      engagements,
+      prepayments,
+      changeOrders,
+      ideas,
+      agentLinks,
+      notifications,
+      organizationDirectory,
       assignments,
       budgets,
       billings,
@@ -143,7 +237,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
       nearn,
     } = services;
     const auth = createAuthMiddleware(builder);
-    const { member, manager } = createAgencyRoleMiddleware(builder);
+    const {
+      member,
+      manager,
+      treasuryMember,
+      treasuryManager,
+      defaultOrganizationMember,
+      defaultOrganizationManager,
+    } = access.middleware(builder);
 
     return {
       ping: builder.ping.handler(async () => ({
@@ -163,11 +264,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
         ),
 
         list: builder.applications.list
-          .use(member)
+          .use(defaultOrganizationMember)
           .handler(async ({ input }) => runEffect(applications.list(input))),
 
         update: builder.applications.update
-          .use(manager)
+          .use(defaultOrganizationManager)
           .handler(async ({ context, input }) =>
             runEffect(
               applications.update({ near: { primaryAccountId: context.scope.actorId } }, input),
@@ -175,7 +276,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           ),
 
         convertToBuilder: builder.applications.convertToBuilder
-          .use(manager)
+          .use(defaultOrganizationManager)
           .handler(async ({ context, input }) => {
             return runEffect(applications.convertToBuilder(context.scope, input));
           }),
@@ -184,17 +285,21 @@ export default createPlugin.withPlugins<PluginsClient>()({
       agency: {
         projects: {
           list: builder.agency.projects.list.handler(async ({ context }) =>
-            runEffect(agency.listProjects(agencyScopeFromRequest(context))),
+            runEffect(agency.listProjects(await access.publicScope(context))),
           ),
 
+          listOwned: builder.agency.projects.listOwned
+            .use(member)
+            .handler(async ({ context }) => runEffect(agency.listProjects(context.scope))),
+
           get: builder.agency.projects.get
-            .use(auth.requireOrganization)
+            .use(member)
             .handler(async ({ context, input }) =>
-              runEffect(agency.getProject(agencyScopeFromRequest(context), input.slug)),
+              runEffect(agency.getProject(context.scope, input.slug)),
             ),
 
           getBudget: builder.agency.projects.getBudget
-            .use(member)
+            .use(treasuryMember)
             .handler(async ({ context, input }) =>
               runEffect(agency.getBudget(context.scope, input.projectId)),
             ),
@@ -248,39 +353,186 @@ export default createPlugin.withPlugins<PluginsClient>()({
           generate: builder.agency.reports.generate
             .use(member)
             .handler(async ({ context, input }) =>
-              runEffect(reports.generate(context.scope, input)),
+              runEffect(
+                reports.generateSaved(context.scope, input, {
+                  organizationId: context.scope.organizationId,
+                  userId: context.userId ?? context.scope.actorId,
+                }),
+              ),
+            ),
+
+          list: builder.agency.reports.list
+            .use(member)
+            .handler(async ({ context, input }) =>
+              reports.listSaved(context.scope.organizationId, input),
+            ),
+
+          get: builder.agency.reports.get
+            .use(member)
+            .handler(async ({ context, input }) =>
+              reports.getSaved(context.scope.organizationId, input.id),
             ),
         },
       },
 
-      clients: {
-        list: builder.clients.list
-          .use(manager)
-          .handler(async ({ context }) => runEffect(clients.list(context.scope))),
-
-        get: builder.clients.get
+      engagements: {
+        list: builder.engagements.list
           .use(member)
-          .handler(async ({ context, input }) => runEffect(clients.get(context.scope, input.id))),
+          .handler(async ({ context }) => engagements.list(context.scope)),
 
-        lookupByNearAccount: builder.clients.lookupByNearAccount
-          .use(auth.requireAuth)
-          .handler(async ({ context, input }) => ({
-            memberships: await runEffect(clients.membershipsFor(context, input.nearAccountId)),
-          })),
+        get: builder.engagements.get
+          .use(member)
+          .handler(async ({ context, input }) => engagements.get(context.scope, input.id)),
 
-        create: builder.clients.create
-          .use(manager)
-          .handler(async ({ context, input }) => runEffect(clients.create(context.scope, input))),
-
-        update: builder.clients.update
-          .use(manager)
-          .handler(async ({ context, input }) => runEffect(clients.update(context.scope, input))),
-
-        delete: builder.clients.delete
+        createWithClient: builder.engagements.createWithClient
           .use(manager)
           .handler(async ({ context, input }) =>
-            runEffect(clients.delete(context.scope, input.id)),
+            engagements.createWithClient(context.scope, input),
           ),
+
+        subcontract: builder.engagements.subcontract
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.subcontract(context.scope, input)),
+
+        sharedWithUs: builder.engagements.sharedWithUs
+          .use(member)
+          .handler(async ({ context }) => engagements.sharedWithUs(context.scope)),
+
+        propose: builder.engagements.propose
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.propose(context.scope, input)),
+
+        accept: builder.engagements.accept
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.accept(context.scope, input.id)),
+
+        decline: builder.engagements.decline
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.decline(context.scope, input.id)),
+
+        end: builder.engagements.end
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.end(context.scope, input.id)),
+
+        share: builder.engagements.share
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.share(context.scope, input)),
+
+        unshare: builder.engagements.unshare
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.unshare(context.scope, input)),
+
+        invitation: {
+          resend: builder.engagements.invitation.resend
+            .use(manager)
+            .handler(async ({ context, input }) =>
+              engagements.resendInvitation(context.scope, input.id),
+            ),
+
+          cancel: builder.engagements.invitation.cancel
+            .use(manager)
+            .handler(async ({ context, input }) =>
+              engagements.cancelInvitation(context.scope, input.id),
+            ),
+
+          changeEmail: builder.engagements.invitation.changeEmail
+            .use(manager)
+            .handler(async ({ context, input }) =>
+              engagements.changeInvitationEmail(context.scope, input.id, input.email),
+            ),
+        },
+      },
+
+      prepayments: {
+        list: builder.prepayments.list
+          .use(member)
+          .handler(async ({ context, input }) => prepayments.list(context.scope, input)),
+
+        balance: builder.prepayments.balance
+          .use(member)
+          .handler(async ({ context, input }) => prepayments.balance(context.scope, input)),
+
+        record: builder.prepayments.record
+          .use(manager)
+          .handler(async ({ context, input }) => prepayments.record(context.scope, input)),
+
+        correct: builder.prepayments.correct
+          .use(manager)
+          .handler(async ({ context, input }) => prepayments.correct(context.scope, input)),
+
+        remove: builder.prepayments.remove
+          .use(manager)
+          .handler(async ({ context, input }) => prepayments.remove(context.scope, input)),
+      },
+
+      changeOrders: {
+        list: builder.changeOrders.list
+          .use(member)
+          .handler(async ({ context, input }) => changeOrders.list(context.scope, input)),
+
+        awaiting: builder.changeOrders.awaiting
+          .use(member)
+          .handler(async ({ context }) => changeOrders.awaiting(context.scope)),
+
+        plan: builder.changeOrders.plan
+          .use(member)
+          .handler(async ({ context, input }) => changeOrders.plan(context.scope, input)),
+
+        propose: builder.changeOrders.propose
+          .use(manager)
+          .handler(async ({ context, input }) => changeOrders.propose(context.scope, input)),
+
+        withdraw: builder.changeOrders.withdraw
+          .use(manager)
+          .handler(async ({ context, input }) => changeOrders.withdraw(context.scope, input)),
+
+        approve: builder.changeOrders.approve
+          .use(manager)
+          .handler(async ({ context, input }) => changeOrders.approve(context.scope, input)),
+
+        reject: builder.changeOrders.reject
+          .use(manager)
+          .handler(async ({ context, input }) => changeOrders.reject(context.scope, input)),
+      },
+
+      ideas: {
+        list: builder.ideas.list
+          .use(member)
+          .handler(async ({ context, input }) => ideas.list(context.scope, input)),
+
+        submit: builder.ideas.submit
+          .use(member)
+          .handler(async ({ context, input }) => ideas.submit(context.scope, input)),
+
+        accept: builder.ideas.accept
+          .use(manager)
+          .handler(async ({ context, input }) => ideas.accept(context.scope, input)),
+
+        decline: builder.ideas.decline
+          .use(manager)
+          .handler(async ({ context, input }) => ideas.decline(context.scope, input)),
+      },
+
+      agentLinks: {
+        list: builder.agentLinks.list
+          .use(member)
+          .handler(async ({ context, input }) => agentLinks.list(context.scope, input)),
+
+        create: builder.agentLinks.create
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.create(context.scope, input)),
+
+        update: builder.agentLinks.update
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.update(context.scope, input)),
+
+        reorder: builder.agentLinks.reorder
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.reorder(context.scope, input)),
+
+        remove: builder.agentLinks.remove
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.remove(context.scope, input)),
       },
 
       clientPortal: {
@@ -326,7 +578,29 @@ export default createPlugin.withPlugins<PluginsClient>()({
             .handler(async ({ context, input }) =>
               runEffect(clientPortal.generateReport(context, input)),
             ),
+
+          list: builder.clientPortal.reports.list
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.listReports(context, input)),
+
+          get: builder.clientPortal.reports.get
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.getReport(context, input)),
         },
+      },
+
+      notifications: {
+        list: builder.notifications.list
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => notifications.list(context.userId, input)),
+
+        unreadCount: builder.notifications.unreadCount
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => notifications.unreadCount(context.userId)),
+
+        markRead: builder.notifications.markRead
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => notifications.markRead(context.userId, input)),
       },
 
       contributors: {
@@ -373,45 +647,45 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       budgets: {
         list: builder.budgets.list
-          .use(member)
+          .use(treasuryMember)
           .handler(async ({ context, input }) => runEffect(budgets.list(context.scope, input))),
 
         create: builder.budgets.create
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(budgets.create(context.scope, input))),
 
         deallocate: builder.budgets.deallocate
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) =>
             runEffect(budgets.deallocate(context.scope, input)),
           ),
 
         transfer: builder.budgets.transfer
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(budgets.transfer(context.scope, input))),
       },
 
       billings: {
         list: builder.billings.list
-          .use(member)
+          .use(treasuryMember)
           .handler(async ({ context, input }) => runEffect(billings.list(context.scope, input))),
 
         create: builder.billings.create
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(billings.create(context.scope, input))),
 
         delete: builder.billings.delete
-          .use(manager)
+          .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(billings.delete(context.scope, input))),
       },
 
       proposals: {
         list: builder.proposals.list.handler(async ({ context, input }) =>
-          runEffect(proposals.list(agencyScopeFromRequest(context), input)),
+          runEffect(proposals.list(await access.publicTreasuryScope(context), input)),
         ),
 
         getPublicSummary: builder.proposals.getPublicSummary.handler(async ({ context }) =>
-          runEffect(proposals.getPublicSummary(agencyScopeFromRequest(context))),
+          runEffect(proposals.getPublicSummary(await access.publicScope(context))),
         ),
       },
 
@@ -433,61 +707,111 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       tokens: {
         list: builder.tokens.list.handler(async ({ context }) =>
-          runEffect(tokens.list(agencyScopeFromRequest(context))),
+          runEffect(tokens.list(await access.publicScope(context))),
         ),
 
+        listOwned: builder.tokens.listOwned
+          .use(treasuryMember)
+          .handler(async ({ context }) => runEffect(tokens.list(context.scope))),
+
         getStorageStatus: builder.tokens.getStorageStatus.handler(async ({ context, input }) =>
-          runEffect(tokens.getStorageStatus(agencyScopeFromRequest(context), input)),
+          runEffect(tokens.getStorageStatus(await access.publicScope(context), input)),
         ),
       },
 
       treasury: {
         getPublicBalances: builder.treasury.getPublicBalances.handler(async ({ context, input }) =>
-          runEffect(treasury.getPublicBalances(agencyScopeFromRequest(context), input)),
+          runEffect(treasury.getPublicBalances(await access.publicScope(context), input)),
         ),
 
         getBalances: builder.treasury.getBalances
-          .use(member)
+          .use(treasuryMember)
           .handler(async ({ context, input }) =>
             runEffect(treasury.getBalances(context.scope, input)),
           ),
 
         getRollups: builder.treasury.getRollups
-          .use(member)
+          .use(treasuryMember)
           .handler(async ({ context }) => runEffect(treasury.getRollups(context.scope))),
 
         getPublicSummary: builder.treasury.getPublicSummary.handler(async ({ context }) =>
-          runEffect(treasury.getPublicSummary(agencyScopeFromRequest(context))),
+          runEffect(treasury.getPublicSummary(await access.publicScope(context))),
         ),
       },
 
       me: {
         roles: builder.me.roles.use(auth.requireAuth).handler(async ({ context }) => {
-          let role: string | null = null;
-          try {
-            role = agencyScopeFromRequest(context).role;
-          } catch {
-            role = null;
-          }
+          const { role, agencyDao, capabilities } = await access.resolve(context);
           return {
             orgRole: role === "admin" || role === "member" || role === "owner" ? role : null,
+            agencyDao,
+            capabilities,
           };
         }),
 
-        assignedProjects: builder.me.assignedProjects.use(member).handler(async ({ context }) => {
-          const nearAccount = context.near?.primaryAccountId as string | undefined;
-          if (!nearAccount) {
-            throw new ORPCError("FORBIDDEN", {
-              message: "Link a NEAR wallet to view assigned projects",
+        assignedProjects: builder.me.assignedProjects
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => me.assignedProjects(context)),
+
+        billings: builder.me.billings
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => me.billings(context, input)),
+
+        organizations: builder.me.organizations
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => {
+            const memberships = await organizationDirectory.memberships(context.userId);
+            return {
+              data: memberships
+                .filter((m) => !m.organization.isPersonal)
+                .map((m) => ({
+                  id: m.organization.id,
+                  name: m.organization.name,
+                  slug: m.organization.slug,
+                  role: m.role === "contributor" ? null : m.role,
+                }))
+                .sort((a, b) => a.name.localeCompare(b.name)),
+            };
+          }),
+      },
+
+      agencyDao: {
+        get: builder.agencyDao.get
+          .use(manager)
+          .handler(async ({ context }) => agencyDaos.status(context.scope)),
+
+        connect: builder.agencyDao.connect
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => {
+            const network = getNetwork(context.reqHeaders);
+            if (input.organizationId) {
+              if (context.user.role !== "admin") {
+                throw new ORPCError("FORBIDDEN", {
+                  message: "Only platform admins can connect a DAO to another Organization",
+                });
+              }
+              return agencyDaos.connectAsPlatformAdmin(
+                input.organizationId,
+                input.daoAccountId,
+                network,
+              );
+            }
+            const scope = await access.agencyScope(context, ROLE_MATRIX.manage);
+            return agencyDaos.connectForMember(scope, {
+              daoAccountId: input.daoAccountId,
+              network,
+              walletAccounts: nearAccountsOf(context as PluginContext),
             });
-          }
-          return runEffect(me.assignedProjects(context.scope, nearAccount));
-        }),
+          }),
+
+        disconnect: builder.agencyDao.disconnect
+          .use(manager)
+          .handler(async ({ context }) => agencyDaos.disconnect(context.scope)),
       },
 
       team: {
         list: builder.team.list.handler(async ({ context }) => {
-          const { agencyDao } = agencyScopeFromRequest(context);
+          const { agencyDao } = await access.publicScope(context);
           try {
             return { roles: await getRoles(agencyDao) };
           } catch {
@@ -499,7 +823,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
       agencyConfig: {
         getPublic: builder.agencyConfig.getPublic.handler(async ({ context }) => {
           const network = getNetwork(context.reqHeaders);
-          const resolved = await getResolvedPublicSettings(db, network);
+          const resolved = await getResolvedPublicSettings(
+            db,
+            network,
+            await access.defaultOrganization(),
+          );
           return {
             ...resolved,
             network,
@@ -510,14 +838,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
         get: builder.agencyConfig.get
           .use(manager)
           .handler(async ({ context }) =>
-            getAdminSettings(db, context.scope.agencyDao, getNetwork(context.reqHeaders)),
+            getAdminSettings(db, context.scope, getNetwork(context.reqHeaders)),
           ),
 
         update: builder.agencyConfig.update.use(manager).handler(async ({ context, input }) => {
-          const { agencyDao, actorId } = context.scope;
+          const { organizationId, actorId } = context.scope;
           await upsertSettings(
             db,
-            agencyDao,
+            organizationId,
             {
               nearnAccountId: input.nearnAccountId,
               websiteUrl: input.websiteUrl,

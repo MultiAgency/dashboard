@@ -49,23 +49,28 @@ type EditableSettings = {
   contactEmail: string | null;
 };
 
-export async function getSettingsRow(db: Database, agencyDao: string) {
-  const rows = await db
+export type SettingsOwner = { organizationId: string | null; agencyDao: string | null };
+
+export async function getSettingsRow(db: Database, owner: SettingsOwner) {
+  if (!owner.organizationId) return null;
+  const [row] = await db
     .select()
     .from(settingsTable)
-    .where(eq(settingsTable.orgAccountId, agencyDao))
+    .where(eq(settingsTable.orgAccountId, owner.organizationId))
     .limit(1);
-  return rows[0] ?? null;
+  return row ?? null;
 }
 
-export async function getResolvedPublicSettings(db: Database, network: Network) {
-  const rows = await db.select().from(settingsTable).limit(1);
-  const row = rows[0] ?? null;
-  const resolvedOrgId = row?.orgAccountId ?? null;
+export async function getResolvedPublicSettings(
+  db: Database,
+  network: Network,
+  defaultOrganization: SettingsOwner,
+) {
+  const row = await getSettingsRow(db, defaultOrganization);
   const base = defaultPublicSettings(network);
   return {
     ...base,
-    orgAccountId: resolvedOrgId,
+    orgAccountId: defaultOrganization.agencyDao,
     nearnAccountId: row?.nearnAccountId ?? defaultNearnAccountId(),
     websiteUrl: row?.websiteUrl ?? defaultWebsiteUrl(),
     docsUrl: row?.docsUrl ?? defaultDocsUrl(),
@@ -76,7 +81,7 @@ export async function getResolvedPublicSettings(db: Database, network: Network) 
 
 export async function upsertSettings(
   db: Database,
-  agencyDao: string,
+  organizationId: string,
   fields: EditableSettings,
   byAccountId: string,
 ): Promise<void> {
@@ -84,7 +89,7 @@ export async function upsertSettings(
   await db
     .insert(settingsTable)
     .values({
-      orgAccountId: agencyDao,
+      orgAccountId: organizationId,
       nearnAccountId: fields.nearnAccountId,
       websiteUrl: fields.websiteUrl,
       docsUrl: fields.docsUrl,
@@ -110,11 +115,11 @@ export async function upsertSettings(
     });
 }
 
-export async function getAdminSettings(db: Database, agencyDao: string, network: Network) {
-  const row = await getSettingsRow(db, agencyDao);
+export async function getAdminSettings(db: Database, owner: SettingsOwner, network: Network) {
+  const row = await getSettingsRow(db, owner);
   const base = defaultPublicSettings(network);
   return {
-    orgAccountId: row?.orgAccountId ?? agencyDao,
+    orgAccountId: owner.agencyDao,
     network,
     editable: {
       nearnAccountId: row?.nearnAccountId ?? base.nearnAccountId,
