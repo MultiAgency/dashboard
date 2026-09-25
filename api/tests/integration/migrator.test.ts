@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { Migration } from "virtual:drizzle-migrations.sql";
 import { sql } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
@@ -20,6 +22,55 @@ const probeInsert: Migration = {
   hash: "probe-hash-bbbb",
   sql: [`INSERT INTO "probe" (id) VALUES ('seed')`],
 };
+
+const migrationsDir = resolve(import.meta.dirname, "../../src/db/migrations");
+
+function splitSQL(sql: string) {
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split(/\r?\n\t?/g)
+    .map((line) => line.replace(/^--.*$/g, ""))
+    .map((line) => line.replace("--> statement-breakpoint", ""))
+    .map((line) => line.trim())
+    .join(" ")
+    .replaceAll(";", ";\n")
+    .split("\n")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function normalizeStatement(statement: string) {
+  return statement.replace(/\s+/g, " ").trim().replace(/;$/, "").trim();
+}
+
+function splitOnBreakpoints(sql: string) {
+  return sql
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("--> statement-breakpoint")
+    .map((statement) =>
+      statement
+        .split(/\r?\n/)
+        .filter((line) => !line.trim().startsWith("--"))
+        .join(" "),
+    )
+    .map(normalizeStatement)
+    .filter(Boolean);
+}
+
+describe("migration files", () => {
+  const journal = JSON.parse(
+    readFileSync(join(migrationsDir, "meta", "_journal.json"), "utf8"),
+  ) as {
+    entries: { tag: string }[];
+  };
+
+  test.each(
+    journal.entries.map((entry) => entry.tag),
+  )("%s splits into the same statements under the production loader", (tag) => {
+    const raw = readFileSync(join(migrationsDir, `${tag}.sql`), "utf8");
+    expect(splitSQL(raw).map(normalizeStatement)).toEqual(splitOnBreakpoints(raw));
+  });
+});
 
 describe("migrate — runtime migrator", () => {
   let driver: DatabaseDriver;
