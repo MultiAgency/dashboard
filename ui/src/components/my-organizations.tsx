@@ -1,9 +1,19 @@
+import { BuildingsIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
 import { useAuthClient } from "@/app";
-import { Button } from "@/components";
-import { Empty } from "@/components/admin-form";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LoadingCard } from "@/components/loading-card";
 import { OrganizationRowCard } from "@/components/organization-row-card";
+import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { ItemGroup } from "@/components/ui/item";
 import { useLeaveOrganization } from "@/hooks/use-leave-organization";
 import { organizationsQueryOptions } from "@/lib/account";
 import { sessionQueryOptions } from "@/lib/auth";
@@ -17,7 +27,7 @@ type MyMembership = {
   lastOwner: boolean;
 };
 
-export function MyOrganizations() {
+export function MyOrganizations({ emptyAction }: { emptyAction?: ReactNode }) {
   const authClient = useAuthClient();
   const { data: session } = useQuery(sessionQueryOptions(authClient));
   const userId = session?.user?.id;
@@ -46,6 +56,7 @@ export function MyOrganizations() {
   });
 
   const leave = useLeaveOrganization();
+  const [leaving, setLeaving] = useState<MyMembership | null>(null);
 
   if (organizationsQuery.isLoading || membershipsQuery.isLoading) {
     return <LoadingCard label="organizations" />;
@@ -53,34 +64,59 @@ export function MyOrganizations() {
 
   const memberships = membershipsQuery.data ?? [];
   if (memberships.length === 0) {
-    return <Empty label="You are not a member of any Organization." />;
+    return (
+      <Empty variant="outline">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <BuildingsIcon aria-hidden />
+          </EmptyMedia>
+          <EmptyTitle>No Organizations yet</EmptyTitle>
+          <EmptyDescription>
+            Accept an invitation or create an Organization to start working with a team.
+          </EmptyDescription>
+        </EmptyHeader>
+        {emptyAction}
+      </Empty>
+    );
   }
 
   return (
-    <div className="grid gap-3">
-      {memberships.map((membership) => (
-        <OrganizationRowCard
-          key={membership.organizationId}
-          name={membership.name}
-          role={membership.role}
-        >
-          <div className="space-y-1 sm:text-right">
+    <>
+      <ItemGroup>
+        {memberships.map((membership) => (
+          <OrganizationRowCard
+            key={membership.organizationId}
+            name={membership.name}
+            role={membership.role}
+            details={
+              membership.lastOwner ? (
+                <span>Only owner. Make someone else owner to leave.</span>
+              ) : undefined
+            }
+          >
             <Button
               size="sm"
               variant="outline"
-              onClick={() => leave.mutate(membership.organizationId)}
+              onClick={() => setLeaving(membership)}
               disabled={membership.lastOwner || leave.isPending}
             >
-              leave
+              Leave
             </Button>
-            {membership.lastOwner && (
-              <p className="text-xs text-muted-foreground">
-                You are the only owner. Make someone else owner before leaving.
-              </p>
-            )}
-          </div>
-        </OrganizationRowCard>
-      ))}
-    </div>
+          </OrganizationRowCard>
+        ))}
+      </ItemGroup>
+      <ConfirmDialog
+        open={!!leaving}
+        onOpenChange={(open) => !open && setLeaving(null)}
+        title={`Leave ${leaving?.name ?? "Organization"}?`}
+        description="You lose access to its Projects and Engagements until someone invites you again."
+        confirmLabel="Leave"
+        cancelLabel="Cancel"
+        destructive
+        onConfirm={async () => {
+          if (leaving) await leave.mutateAsync(leaving.organizationId).catch(() => {});
+        }}
+      />
+    </>
   );
 }
