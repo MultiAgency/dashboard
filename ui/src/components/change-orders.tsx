@@ -26,6 +26,7 @@ import { useRefreshingMutation } from "@/hooks/use-refreshing-mutation";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import {
+  amountUnit,
   type ChangeOrderItem,
   failureMessage,
   planChangeItems,
@@ -261,7 +262,10 @@ function PlanEditor({
                   onChange={(tokenId) => update(index, { tokenId })}
                 />
               </Field>
-              <Field label="per month" htmlFor={`plan-amount-${index}`}>
+              <Field
+                label={`per month (${amountUnit(line.tokenId)})`}
+                htmlFor={`plan-amount-${index}`}
+              >
                 <Input
                   id={`plan-amount-${index}`}
                   inputMode="decimal"
@@ -387,7 +391,10 @@ function MoveForm({ engagementId, projects }: { engagementId: string; projects: 
                 onChange={(tokenId) => update(index, { tokenId })}
               />
             </Field>
-            <Field label="amount (+ in, − out)" htmlFor={`move-amount-${index}`}>
+            <Field
+              label={`amount in ${amountUnit(row.tokenId)} (+ in, − out)`}
+              htmlFor={`move-amount-${index}`}
+            >
               <Input
                 id={`move-amount-${index}`}
                 inputMode="decimal"
