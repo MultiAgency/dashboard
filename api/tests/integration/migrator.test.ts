@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createDatabaseDriver, type DatabaseDriver } from "../../src/db";
-import { loadMigrations, migrate } from "../../src/db/migrate";
+import { detectDrift, loadMigrations, migrate } from "../../src/db/migrate";
 
 const probeTable: Migration = {
   idx: 0,
@@ -134,6 +134,15 @@ describe("migrate — runtime migrator", () => {
     );
     const hashes = (rawTracking as unknown as { rows: { hash: string }[] }).rows.map((r) => r.hash);
     expect(hashes).toEqual(["probe-hash-aaaa", "probe-hash-bbbb"]);
+  });
+
+  test("a fully migrated database reports no drift, even for tables a later migration dropped", async () => {
+    const { migrations } = await Effect.runPromise(loadMigrations());
+    await Effect.runPromise(migrate(driver.db, migrations));
+
+    const drift = await Effect.runPromise(detectDrift(driver.db, migrations));
+
+    expect(drift).toMatchObject({ status: "healthy", missingTables: [] });
   });
 
   test("CREATE SCHEMA IF NOT EXISTS is idempotent across multiple migrate() calls", async () => {
