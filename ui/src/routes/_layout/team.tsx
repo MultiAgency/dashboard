@@ -1,19 +1,31 @@
+import { UsersThreeIcon } from "@phosphor-icons/react";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   Badge,
+  Button,
   Card,
+  CardAction,
   CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
   Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
+  Separator,
   Skeleton,
 } from "@/components";
+import { LoadError } from "@/components/load-error";
+import { PageHeader } from "@/components/page-header";
 import { useApiClient } from "@/lib/api";
 import { teamListQueryOptions } from "@/lib/queries";
 
@@ -49,18 +61,11 @@ function Team() {
   });
 
   return (
-    <div className="space-y-12 pb-12 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          agency · team
-        </div>
-        <h1 className="text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-          Team
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Roles, members, and permissions — live from the agency's Sputnik DAO contract.
-        </p>
-      </header>
+    <div className="flex animate-fade-in flex-col gap-8">
+      <PageHeader
+        title="Team"
+        description="Roles, members and permissions, live from the Agency DAO contract."
+      />
 
       <PublicRoles teamQuery={teamQuery} onSelectMember={setSelectedMember} />
       <MemberDetailDialog
@@ -85,7 +90,7 @@ function PublicRoles({
 }) {
   if (teamQuery.isLoading) {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {[0, 1, 2].map((i) => (
           <RoleCardSkeleton key={i} />
         ))}
@@ -93,15 +98,11 @@ function PublicRoles({
     );
   }
   if (teamQuery.isError) {
-    return (
-      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-        could not load — try again
-      </p>
-    );
+    return <LoadError title="Could not load the team" onRetry={() => teamQuery.refetch()} />;
   }
   if (teamQuery.data && teamQuery.data.roles.length > 0) {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {teamQuery.data.roles.map((role) => (
           <RoleCard key={role.name} role={role} onSelectMember={onSelectMember} />
         ))}
@@ -109,33 +110,40 @@ function PublicRoles({
     );
   }
   return (
-    <Empty>
-      <EmptyTitle>no roles defined</EmptyTitle>
+    <Empty variant="outline">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <UsersThreeIcon aria-hidden />
+        </EmptyMedia>
+        <EmptyTitle>No roles defined</EmptyTitle>
+        <EmptyDescription>The DAO has no roles yet.</EmptyDescription>
+      </EmptyHeader>
     </Empty>
   );
 }
 
 function RoleCardSkeleton() {
   return (
-    <Card className="flex flex-col">
-      <CardContent className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-3 w-16" />
-        </div>
+    <Card>
+      <CardHeader>
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-3 w-16" />
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
         <Skeleton className="h-3 w-3/4" />
         <Skeleton className="h-3 w-2/3" />
-        <div className="space-y-1 pt-2 border-t border-foreground/20">
-          <Skeleton className="h-3 w-20" />
-          <div className="flex flex-wrap gap-1">
-            <Skeleton className="h-4 w-12" />
-            <Skeleton className="h-4 w-16" />
-            <Skeleton className="h-4 w-10" />
-          </div>
+        <div className="flex flex-wrap gap-1">
+          <Skeleton className="h-5 w-12" />
+          <Skeleton className="h-5 w-16" />
         </div>
       </CardContent>
     </Card>
   );
+}
+
+function memberCount(role: Role) {
+  if (role.isEveryone) return "Everyone";
+  return `${role.members.length} member${role.members.length === 1 ? "" : "s"}`;
 }
 
 function RoleCard({
@@ -146,57 +154,71 @@ function RoleCard({
   onSelectMember: (account: string) => void;
 }) {
   return (
-    <Card className="flex flex-col">
-      <CardContent className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          <span className="truncate">{role.name}</span>
-          <span>
-            {role.isEveryone
-              ? "everyone"
-              : `${role.members.length} member${role.members.length === 1 ? "" : "s"}`}
-          </span>
-        </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2 className="truncate">{role.name}</h2>
+        </CardTitle>
+        <CardDescription>{memberCount(role)}</CardDescription>
+        <CardAction>
+          <Badge variant="outline">
+            {role.permissions.length} permission{role.permissions.length === 1 ? "" : "s"}
+          </Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
         {role.isEveryone ? (
-          <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-            open to anyone
-          </p>
+          <p className="text-xs text-muted-foreground">Open to anyone.</p>
         ) : role.members.length === 0 ? (
-          <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-            no members
-          </p>
+          <p className="text-xs text-muted-foreground">No members.</p>
         ) : (
-          <div className="grid gap-1">
+          <ul className="flex flex-col gap-1">
             {role.members.map((acct) => (
-              <button
-                key={acct}
-                type="button"
-                onClick={() => onSelectMember(acct)}
-                aria-label={`Open ${acct} details`}
-                className="font-mono text-xs truncate text-left hover:text-foreground/70 focus:outline-none focus-visible:underline cursor-pointer"
-              >
-                {acct}
-              </button>
+              <li key={acct} className="flex min-w-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full min-w-0 justify-start"
+                  onClick={() => onSelectMember(acct)}
+                  aria-label={`Open ${acct} details`}
+                >
+                  <span className="truncate">{acct}</span>
+                </Button>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
         {role.permissions.length > 0 && (
-          <div className="space-y-1 pt-2 border-t border-foreground/20">
-            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-              permissions
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {role.permissions.map((p) => (
-                <Badge key={p} variant="outline" className="">
-                  {p}
-                </Badge>
-              ))}
-            </div>
-          </div>
+          <>
+            <Separator />
+            <BadgeList label="Permissions" items={role.permissions} />
+          </>
         )}
       </CardContent>
     </Card>
   );
 }
+
+function BadgeList({ label, items, empty }: { label: string; items: string[]; empty?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-xs text-muted-foreground">{label}</h3>
+      {items.length === 0 ? (
+        <p className="text-xs">{empty}</p>
+      ) : (
+        <div className="flex flex-wrap gap-1">
+          {items.map((item) => (
+            <Badge key={item} variant="outline">
+              {item}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MemberDetailDialog({
   accountId,
   roles,
@@ -206,83 +228,35 @@ function MemberDetailDialog({
   roles: Role[];
   onOpenChange: (open: boolean) => void;
 }) {
-  if (!accountId) {
-    return (
-      <Dialog open={false} onOpenChange={onOpenChange}>
-        <DialogContent />
-      </Dialog>
-    );
-  }
-  const heldRoles = roles.filter((r) => !r.isEveryone && r.members.includes(accountId));
+  const heldRoles = accountId
+    ? roles.filter((r) => !r.isEveryone && r.members.includes(accountId))
+    : [];
   const openRoles = roles.filter((r) => r.isEveryone);
   const permissions = Array.from(new Set(heldRoles.flatMap((r) => r.permissions))).sort();
   return (
     <Dialog open={!!accountId} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <div className="flex flex-wrap items-center gap-2 font-mono text-xs uppercase tracking-widest">
-            <span className="text-muted-foreground">member</span>
-            <Badge variant="outline">
-              {heldRoles.length} role{heldRoles.length === 1 ? "" : "s"}
-            </Badge>
-          </div>
-          <DialogTitle className="break-all">{accountId}</DialogTitle>
-          <DialogDescription className="sr-only">
-            DAO roles and permissions for {accountId}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-              roles held
+        {accountId && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="break-all">{accountId}</DialogTitle>
+              <DialogDescription>
+                DAO member with {heldRoles.length} role{heldRoles.length === 1 ? "" : "s"}.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-4">
+              <BadgeList
+                label="Roles held"
+                items={heldRoles.map((r) => r.name)}
+                empty="No explicit roles."
+              />
+              {openRoles.length > 0 && (
+                <BadgeList label="Open roles" items={openRoles.map((r) => r.name)} />
+              )}
+              <BadgeList label="Permissions" items={permissions} empty="None, read-only." />
             </div>
-            {heldRoles.length === 0 ? (
-              <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-                no explicit roles
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-1">
-                {heldRoles.map((r) => (
-                  <Badge key={r.name} variant="outline">
-                    {r.name}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-          {openRoles.length > 0 && (
-            <div className="space-y-2">
-              <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-                open roles
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {openRoles.map((r) => (
-                  <Badge key={r.name} variant="outline" className="">
-                    {r.name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="space-y-2">
-            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-              permissions
-            </div>
-            {permissions.length === 0 ? (
-              <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
-                none — read-only
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-1">
-                {permissions.map((p) => (
-                  <Badge key={p} variant="outline" className="">
-                    {p}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
