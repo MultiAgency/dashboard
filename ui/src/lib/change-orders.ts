@@ -1,4 +1,4 @@
-import { parseDecimalToBase } from "@/lib/format-amount";
+import { parseDecimalToBase, tokenDecimals, tokenSymbol } from "@/lib/format-amount";
 
 export type ChangeOrderItemKind = "plan_change" | "one_off_move";
 
@@ -35,6 +35,12 @@ export function planChangeItems(current: PlanLine[], edited: PlanLine[]): Change
     }
   }
   return items;
+}
+
+export function amountUnit(tokenId: string): string {
+  return tokenDecimals(tokenId) === undefined
+    ? `smallest unit of ${tokenId}`
+    : tokenSymbol(tokenId);
 }
 
 export function signedBaseAmount(

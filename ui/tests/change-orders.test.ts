@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  amountUnit,
   awaitingCountFor,
   awaitingLink,
   planChangeItems,
@@ -48,6 +49,16 @@ describe("signedBaseAmount", () => {
     expect(signedBaseAmount("0", 24).error).not.toBe("");
     expect(signedBaseAmount("1.5", undefined).error).not.toBe("");
     expect(signedBaseAmount("", 24)).toEqual({ value: "", error: "" });
+  });
+});
+
+describe("amountUnit", () => {
+  test("names the token symbol when its decimals are known", () => {
+    expect(amountUnit("near")).toBe("NEAR");
+  });
+
+  test("asks for the smallest unit when the token is unknown", () => {
+    expect(amountUnit("mystery.near")).toBe("smallest unit of mystery.near");
   });
 });
 
