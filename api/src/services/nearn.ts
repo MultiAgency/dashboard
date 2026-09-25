@@ -1,7 +1,7 @@
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
-import type { AgencyScope } from "../lib/agency-scope";
 import { fetchWithTimeout } from "./fetch";
+import type { AgencyScope } from "./organization-access";
 import { defaultNearnAccountId } from "./settings-admin";
 
 const NEARN_BASE_URL = "https://nearn.io";

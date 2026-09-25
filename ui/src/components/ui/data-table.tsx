@@ -66,25 +66,23 @@ function columnExportValue<TData>(col: ColumnDef<TData, unknown>, row: TData): s
   return "";
 }
 
+type SortDirection = string | false;
+
+function ariaSort(sorted: SortDirection) {
+  return sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none";
+}
+
 function SortHeader({
-  column,
+  sorted,
+  onToggle,
   label,
 }: {
-  column: {
-    id: string;
-    getIsSorted: () => string | false;
-    getToggleSortingHandler: () => ((event: unknown) => void) | undefined;
-  };
+  sorted: SortDirection;
+  onToggle: ((event: unknown) => void) | undefined;
   label: string;
 }) {
-  const sorted = column.getIsSorted();
   return (
-    <th
-      scope="col"
-      onClick={column.getToggleSortingHandler()}
-      className={SORT_BTN_CLS}
-      aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"}
-    >
+    <button type="button" onClick={onToggle} className={SORT_BTN_CLS}>
       {label}
       {sorted === "asc" ? (
         <ArrowDown className="size-3" />
@@ -93,7 +91,7 @@ function SortHeader({
       ) : (
         <ArrowUpDown className="size-3 opacity-40" />
       )}
-    </th>
+    </button>
   );
 }
 
@@ -280,15 +278,18 @@ export function DataTable<TData, TValue>({
                     {headerGroup.headers.map((header) => {
                       const label = flexRender(header.column.columnDef.header, header.getContext());
                       const isSortable = header.column.getCanSort();
+                      const sorted = header.column.getIsSorted();
                       return (
-                        <th key={header.id} scope="col" className={TH_CLS}>
+                        <th
+                          key={header.id}
+                          scope="col"
+                          className={TH_CLS}
+                          aria-sort={isSortable ? ariaSort(sorted) : undefined}
+                        >
                           {isSortable ? (
                             <SortHeader
-                              column={{
-                                id: header.column.id,
-                                getIsSorted: () => header.column.getIsSorted(),
-                                getToggleSortingHandler: header.column.getToggleSortingHandler,
-                              }}
+                              sorted={sorted}
+                              onToggle={header.column.getToggleSortingHandler()}
                               label={label as string}
                             />
                           ) : (

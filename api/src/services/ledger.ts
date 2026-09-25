@@ -2,8 +2,8 @@ import { inArray } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { billings, budgets, type Listing } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
 import type { ListingsService } from "./listings";
+import type { AgencyScope } from "./organization-access";
 import { type DaoProposalStatus, enrichWithChainStatus } from "./sputnik";
 import { displayToBaseUnits, getTokenMetadataBySymbol } from "./tokens";
 

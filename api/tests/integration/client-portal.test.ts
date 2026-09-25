@@ -14,25 +14,30 @@ import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createAgencyService } from "../../src/services/agency";
 import { createBillingsService } from "../../src/services/billings";
 import { createClientPortalService } from "../../src/services/client-portal";
-import { createClientsService } from "../../src/services/clients";
+import { createProjectLedgers } from "../../src/services/ledger";
+import { createListingsService } from "../../src/services/listings";
+import type { OrganizationAccessService } from "../../src/services/organization-access";
+import { createProjectDirectory, type ProjectsClient } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
+import { inMemoryAccess } from "../fakes/organizations";
 import { applyAllMigrations } from "./_pg";
 
 const AGENCY_A = "agency-a.sputnik-dao.near";
 const AGENCY_B = "agency-b.sputnik-dao.near";
 const NEAR_ACCOUNT = "client.near";
+const CLIENT_CONTEXT = { near: { primaryAccountId: NEAR_ACCOUNT } };
 
-describe("client-portal — resolveClientScope (via clients.getByNearAndAgency)", () => {
+describe("client-portal — resolveClientScope (via organization access)", () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
-  let clientsService: ReturnType<typeof createClientsService>;
+  let access: OrganizationAccessService;
 
   beforeEach(async () => {
     const { PGlite } = await import("@electric-sql/pglite");
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg);
-    clientsService = createClientsService(db as never);
+    access = inMemoryAccess(db);
   });
 
   afterEach(async () => {
@@ -54,40 +59,29 @@ describe("client-portal — resolveClientScope (via clients.getByNearAndAgency)"
   test("valid nearAccountId + agencyDaoAccountId resolves the right client", async () => {
     await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
 
-    const result = await Effect.runPromise(
-      clientsService.getByNearAndAgency(NEAR_ACCOUNT, AGENCY_A),
-    );
+    const result = await Effect.runPromise(access.clientPortal(CLIENT_CONTEXT, AGENCY_A));
 
-    expect(result).not.toBeNull();
-    expect(result?.client.id).toBe("client-1");
-    expect(result?.client.agencyDaoAccountId).toBe(AGENCY_A);
-    expect(result?.projectIds).toEqual([]);
+    expect(result.client.id).toBe("client-1");
+    expect(result.client.agencyDaoAccountId).toBe(AGENCY_A);
+    expect(result.projectIds).toEqual([]);
   });
 
-  test("unknown NEAR account resolves to no scope", async () => {
+  test.each([
+    ["stranger.near", AGENCY_A],
+    [NEAR_ACCOUNT, AGENCY_B],
+  ])("%s has no client portal at %s", async (nearAccount, agency) => {
     await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
 
-    const result = await Effect.runPromise(
-      clientsService.getByNearAndAgency("stranger.near", AGENCY_A),
-    );
-
-    expect(result).toBeNull();
-  });
-
-  test("right NEAR account but wrong agencyDaoAccountId resolves to no scope (cross-agency leak check)", async () => {
-    await insertClient("client-1", AGENCY_A, NEAR_ACCOUNT);
-
-    const result = await Effect.runPromise(
-      clientsService.getByNearAndAgency(NEAR_ACCOUNT, AGENCY_B),
-    );
-
-    expect(result).toBeNull();
+    await expect(
+      Effect.runPromise(access.clientPortal({ near: { primaryAccountId: nearAccount } }, agency)),
+    ).rejects.toThrow(/No client portal/);
   });
 });
 
 // Agency id ends in .testnet so `isNearnAvailable` short-circuits the NEARN listing
 // lookup in agency.listProjects — keeps these tests free of network calls.
 const AGENCY_C = "agency-c.sputnik-dao.testnet";
+const AT_C = { agencyDaoAccountId: AGENCY_C };
 
 type FakeUpstreamProject = {
   id: string;
@@ -138,6 +132,13 @@ function createFakePlugins(
           }
           return { data: project };
         },
+        getProjectBySlug: async ({ slug }: { slug: string }) => {
+          const project = projects.find((p) => p.slug === slug);
+          if (!project) {
+            throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+          }
+          return { data: project };
+        },
       }) as never,
     builders: () =>
       ({
@@ -150,14 +151,12 @@ function createFakePlugins(
 describe("client-portal — dashboardSummary / listProjects / getProject", () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;
-  let clientsService: ReturnType<typeof createClientsService>;
 
   beforeEach(async () => {
     const { PGlite } = await import("@electric-sql/pglite");
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg);
-    clientsService = createClientsService(db as never);
   });
 
   afterEach(async () => {
@@ -165,10 +164,20 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
   });
 
   function buildPortal(plugins: PluginsClient) {
-    const agency = createAgencyService(db as never, plugins);
-    const billingsService = createBillingsService(db as never, agency);
-    const reports = createReportsService(db as never, agency, plugins);
-    return createClientPortalService(clientsService, agency, billingsService, reports);
+    const directory = createProjectDirectory(() => plugins.projects() as ProjectsClient);
+    const listings = createListingsService(db as never, directory);
+    const projectLedgers = createProjectLedgers(db as never, listings);
+    const agency = createAgencyService(db as never, plugins, directory, listings, projectLedgers);
+    const billingsService = createBillingsService(db as never, directory);
+    const reports = createReportsService(db as never, directory, plugins);
+    return createClientPortalService(
+      inMemoryAccess(db),
+      agency,
+      billingsService,
+      reports,
+      directory,
+      projectLedgers,
+    );
   }
 
   async function insertClient(id: string) {
@@ -202,7 +211,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const plugins = createFakePlugins([makeProject({ id: "project-1", slug: "project-one" })]);
     const portal = buildPortal(plugins);
 
-    const summary = await Effect.runPromise(portal.dashboardSummary(NEAR_ACCOUNT, AGENCY_C, {}));
+    const summary = await Effect.runPromise(portal.dashboardSummary(CLIENT_CONTEXT, AT_C));
 
     expect(summary.projectCount).toBe(1);
     expect(summary.remainingByToken).toEqual([{ tokenId: "near", amount: "1000" }]);
@@ -218,7 +227,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     ]);
     const portal = buildPortal(plugins);
 
-    const result = await Effect.runPromise(portal.listProjects(NEAR_ACCOUNT, AGENCY_C, {}));
+    const result = await Effect.runPromise(portal.listProjects(CLIENT_CONTEXT, AT_C));
 
     expect(result.data).toHaveLength(1);
     expect(result.data[0]?.id).toBe("project-a");
@@ -241,7 +250,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     const result = await Effect.runPromise(
-      portal.getProject(NEAR_ACCOUNT, AGENCY_C, "project-a-slug", {}),
+      portal.getProject(CLIENT_CONTEXT, { ...AT_C, slug: "project-a-slug" }),
     );
 
     expect(result.project.slug).toBe("project-a-slug");
@@ -261,7 +270,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     await expect(
-      Effect.runPromise(portal.getProject(NEAR_ACCOUNT, AGENCY_C, "project-c-slug", {})),
+      Effect.runPromise(portal.getProject(CLIENT_CONTEXT, { ...AT_C, slug: "project-c-slug" })),
     ).rejects.toThrow(/Project not found/);
   });
 
@@ -293,7 +302,7 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     const result = await Effect.runPromise(
-      portal.getBudget(NEAR_ACCOUNT, AGENCY_C, "project-a", {}),
+      portal.getBudget(CLIENT_CONTEXT, { ...AT_C, projectId: "project-a" }),
     );
 
     expect(result.budgets).toEqual([
@@ -353,14 +362,14 @@ describe("client-portal — dashboardSummary / listProjects / getProject", () =>
     const portal = buildPortal(plugins);
 
     const page1 = await Effect.runPromise(
-      portal.listBillings(NEAR_ACCOUNT, AGENCY_C, { limit: 2 }, {}),
+      portal.listBillings(CLIENT_CONTEXT, { ...AT_C, limit: 2 }),
     );
     expect(page1.data).toHaveLength(2);
     expect(page1.data.every((b) => b.clientId === "client-9")).toBe(true);
     expect(page1.nextCursor).not.toBeNull();
 
     const page2 = await Effect.runPromise(
-      portal.listBillings(NEAR_ACCOUNT, AGENCY_C, { limit: 2, cursor: page1.nextCursor! }, {}),
+      portal.listBillings(CLIENT_CONTEXT, { ...AT_C, limit: 2, cursor: page1.nextCursor! }),
     );
     expect(page2.data).toHaveLength(1);
     expect(page2.data[0]?.id).toBe("billing-9-0");

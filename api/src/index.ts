@@ -4,11 +4,10 @@ import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 import { contract } from "./contract";
 import { DatabaseLive, DatabaseTag } from "./db/layer";
-import { agencyScopeFromRequest, createAgencyRoleMiddleware } from "./lib/agency-scope";
 import { createAuthMiddleware } from "./lib/auth";
 import { ContextSchema, runEffect } from "./lib/context";
 import { getNetwork, pinnedNetwork } from "./lib/network";
-import { setDefaultDaoAccountId } from "./lib/org";
+import { betterAuthOrganizations } from "./lib/organizations";
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
 import { createApplicationsService } from "./services/applications";
@@ -23,6 +22,7 @@ import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
+import { createOrganizationAccess } from "./services/organization-access";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
 import { createReportsService } from "./services/reports";
@@ -55,8 +55,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
   initialize: (config, plugins, tools) =>
     Effect.gen(function* () {
-      setDefaultDaoAccountId(config.variables.agencyDaoAccount);
-
       const db = yield* tools.buildService(
         DatabaseTag,
         DatabaseLive(config.secrets.API_DATABASE_URL),
@@ -69,6 +67,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
       };
 
       const directory = createProjectDirectory((pluginContext) => plugins.projects(pluginContext));
+      const access = createOrganizationAccess({
+        db,
+        organizations: betterAuthOrganizations(() => plugins.auth()),
+        defaultDaoAccountId: config.variables.agencyDaoAccount,
+      });
       const listings = createListingsService(db, directory);
       const projectLedgers = createProjectLedgers(db, listings);
       const agency = createAgencyService(db, plugins, directory, listings, projectLedgers);
@@ -84,7 +87,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const billings = createBillingsService(db, directory);
       const reports = createReportsService(db, directory, plugins);
       const clientPortal = createClientPortalService(
-        clients,
+        access,
         agency,
         billings,
         reports,
@@ -101,6 +104,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       yield* Effect.logInfo("[API] Services Initialized");
       return {
         db,
+        access,
         applications,
         contactForm,
         agency,
@@ -125,6 +129,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
   createRouter: (services, builder) => {
     const {
       db,
+      access,
       applications,
       contactForm,
       agency,
@@ -143,7 +148,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
       nearn,
     } = services;
     const auth = createAuthMiddleware(builder);
-    const { member, manager } = createAgencyRoleMiddleware(builder);
+    const { member, manager, defaultOrganizationMember, defaultOrganizationManager } =
+      access.middleware(builder);
 
     return {
       ping: builder.ping.handler(async () => ({
@@ -163,11 +169,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
         ),
 
         list: builder.applications.list
-          .use(member)
+          .use(defaultOrganizationMember)
           .handler(async ({ input }) => runEffect(applications.list(input))),
 
         update: builder.applications.update
-          .use(manager)
+          .use(defaultOrganizationManager)
           .handler(async ({ context, input }) =>
             runEffect(
               applications.update({ near: { primaryAccountId: context.scope.actorId } }, input),
@@ -175,7 +181,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           ),
 
         convertToBuilder: builder.applications.convertToBuilder
-          .use(manager)
+          .use(defaultOrganizationManager)
           .handler(async ({ context, input }) => {
             return runEffect(applications.convertToBuilder(context.scope, input));
           }),
@@ -184,13 +190,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
       agency: {
         projects: {
           list: builder.agency.projects.list.handler(async ({ context }) =>
-            runEffect(agency.listProjects(agencyScopeFromRequest(context))),
+            runEffect(agency.listProjects(await access.publicScope(context))),
           ),
 
           get: builder.agency.projects.get
             .use(auth.requireOrganization)
             .handler(async ({ context, input }) =>
-              runEffect(agency.getProject(agencyScopeFromRequest(context), input.slug)),
+              runEffect(agency.getProject(await access.publicScope(context), input.slug)),
             ),
 
           getBudget: builder.agency.projects.getBudget
@@ -265,7 +271,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         lookupByNearAccount: builder.clients.lookupByNearAccount
           .use(auth.requireAuth)
           .handler(async ({ context, input }) => ({
-            memberships: await runEffect(clients.membershipsFor(context, input.nearAccountId)),
+            memberships: await runEffect(access.clientMemberships(context, input.nearAccountId)),
           })),
 
         create: builder.clients.create
@@ -407,11 +413,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       proposals: {
         list: builder.proposals.list.handler(async ({ context, input }) =>
-          runEffect(proposals.list(agencyScopeFromRequest(context), input)),
+          runEffect(proposals.list(await access.publicScope(context), input)),
         ),
 
         getPublicSummary: builder.proposals.getPublicSummary.handler(async ({ context }) =>
-          runEffect(proposals.getPublicSummary(agencyScopeFromRequest(context))),
+          runEffect(proposals.getPublicSummary(await access.publicScope(context))),
         ),
       },
 
@@ -433,17 +439,17 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       tokens: {
         list: builder.tokens.list.handler(async ({ context }) =>
-          runEffect(tokens.list(agencyScopeFromRequest(context))),
+          runEffect(tokens.list(await access.publicScope(context))),
         ),
 
         getStorageStatus: builder.tokens.getStorageStatus.handler(async ({ context, input }) =>
-          runEffect(tokens.getStorageStatus(agencyScopeFromRequest(context), input)),
+          runEffect(tokens.getStorageStatus(await access.publicScope(context), input)),
         ),
       },
 
       treasury: {
         getPublicBalances: builder.treasury.getPublicBalances.handler(async ({ context, input }) =>
-          runEffect(treasury.getPublicBalances(agencyScopeFromRequest(context), input)),
+          runEffect(treasury.getPublicBalances(await access.publicScope(context), input)),
         ),
 
         getBalances: builder.treasury.getBalances
@@ -457,20 +463,16 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context }) => runEffect(treasury.getRollups(context.scope))),
 
         getPublicSummary: builder.treasury.getPublicSummary.handler(async ({ context }) =>
-          runEffect(treasury.getPublicSummary(agencyScopeFromRequest(context))),
+          runEffect(treasury.getPublicSummary(await access.publicScope(context))),
         ),
       },
 
       me: {
         roles: builder.me.roles.use(auth.requireAuth).handler(async ({ context }) => {
-          let role: string | null = null;
-          try {
-            role = agencyScopeFromRequest(context).role;
-          } catch {
-            role = null;
-          }
+          const { role, capabilities } = await access.resolve(context);
           return {
             orgRole: role === "admin" || role === "member" || role === "owner" ? role : null,
+            capabilities,
           };
         }),
 
@@ -487,7 +489,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       team: {
         list: builder.team.list.handler(async ({ context }) => {
-          const { agencyDao } = agencyScopeFromRequest(context);
+          const { agencyDao } = await access.publicScope(context);
           try {
             return { roles: await getRoles(agencyDao) };
           } catch {

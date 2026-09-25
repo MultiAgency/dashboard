@@ -4,7 +4,7 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { billings } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 import { enrichWithChainStatus, getProposal } from "./sputnik";
 import { NATIVE_TOKEN_ID } from "./tokens";
