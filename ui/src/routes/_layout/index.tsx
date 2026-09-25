@@ -1,3 +1,4 @@
+import { ArrowRightIcon, GithubLogoIcon, XLogoIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
@@ -217,7 +218,7 @@ function Landing() {
         <div className="relative flex flex-col items-start space-y-6 text-left">
           <div className="w-full pl-3 pr-3">
             <h1
-              className="font-heading font-black uppercase leading-[0.88] break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-[-0.04em]"
+              className="font-heading font-black uppercase leading-none break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-tighter"
               style={{
                 fontFeatureSettings: '"kern", "liga"',
                 WebkitFontSmoothing: "subpixel-antialiased",
@@ -228,23 +229,23 @@ function Landing() {
               {LANDING.name}
             </h1>
             <div className="mt-3 flex items-center gap-3">
-              <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-[0.22em] text-primary">
+              <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-widest text-primary">
                 Build Agencies Together
               </span>
               <div className="flex-1 h-px bg-primary/80" />
-              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] text-primary tabular-nums">
+              <span className="font-mono font-semibold text-xs uppercase tracking-widest text-primary tabular-nums">
                 v0.1
               </span>
             </div>
           </div>
-          <p className="max-w-2xl pl-3 font-display text-xl sm:text-2xl uppercase font-extrabold tracking-tight leading-tight">
+          <p className="max-w-2xl pl-3 text-xl sm:text-2xl uppercase font-extrabold tracking-tight leading-tight">
             {LANDING.headline}
           </p>
           <div className="flex flex-wrap items-center gap-3 pl-3 pt-2">
-            <Button asChild variant="outline" className="font-display uppercase tracking-wide">
+            <Button asChild variant="outline">
               <Link to="/apply">join →</Link>
             </Button>
-            <Button asChild className="font-display uppercase tracking-wide">
+            <Button asChild>
               <Link to="/contact">hire →</Link>
             </Button>
           </div>
@@ -255,14 +256,14 @@ function Landing() {
         <div className="grid gap-8 lg:grid-cols-2 lg:items-start pl-3 pr-3">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-background/70">
+              <span className="font-mono text-xs uppercase tracking-widest text-background/70">
                 agency · template
               </span>
-              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] bg-primary text-primary-foreground px-2 py-0.5">
+              <span className="font-mono font-semibold text-xs uppercase tracking-widest bg-primary text-primary-foreground px-2 py-0.5">
                 coming soon
               </span>
             </div>
-            <h2 className="font-display text-4xl sm:text-6xl uppercase tracking-tight font-black leading-[0.92]">
+            <h2 className="text-4xl sm:text-6xl uppercase tracking-tight font-black leading-none">
               Launch Your Own Agency
             </h2>
             <div className="h-px w-full bg-background/25" />
@@ -270,26 +271,26 @@ function Landing() {
               Same blueprint. One command. Your business.
             </p>
             <div className="pt-2">
-              <Button asChild className="font-display uppercase tracking-wide">
+              <Button asChild>
                 <Link to="/register">register →</Link>
               </Button>
             </div>
           </div>
           <div className="border-2 border-background">
-            <div className="border-b-2 border-background bg-primary text-primary-foreground px-4 py-2 font-mono font-semibold text-[11px] uppercase tracking-[0.22em]">
+            <div className="border-b-2 border-background bg-primary text-primary-foreground px-4 py-2 font-mono font-semibold text-xs uppercase tracking-widest">
               standard issue
             </div>
             <div className="divide-y-2 divide-background">
               {STANDARD.map((item, i) => (
                 <div key={item.label} className="flex items-center gap-4 px-4 py-4">
-                  <span className="font-display text-3xl sm:text-4xl font-black tabular-nums leading-none text-background/25 shrink-0 w-12">
+                  <span className="text-3xl sm:text-4xl font-black tabular-nums leading-none text-background/25 shrink-0 w-12">
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <div className="space-y-1">
-                    <div className="font-display text-lg uppercase tracking-tight font-extrabold leading-none">
+                    <div className="text-lg uppercase tracking-tight font-extrabold leading-none">
                       {item.label}
                     </div>
-                    <div className="font-mono text-[11px] uppercase tracking-[0.14em] text-background/55">
+                    <div className="font-mono text-xs uppercase tracking-widest text-background/55">
                       {item.note}
                     </div>
                   </div>
@@ -302,12 +303,10 @@ function Landing() {
 
       <section className="space-y-6">
         <div className="pl-3 pr-3 space-y-2">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             opportunities
           </div>
-          <h2 className="font-display text-3xl sm:text-5xl font-black uppercase tracking-tight">
-            Our Work
-          </h2>
+          <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight">Our Work</h2>
         </div>
         {projectsQuery.isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -318,15 +317,13 @@ function Landing() {
         ) : projectsQuery.isError ? (
           <p
             role="alert"
-            className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground"
+            className="font-mono text-xs uppercase tracking-widest text-muted-foreground"
           >
             could not load — try again
           </p>
         ) : projects.length === 0 ? (
-          <Empty className="border-2 border-dashed border-border/40">
-            <EmptyTitle className="font-display text-lg uppercase tracking-tight text-muted-foreground">
-              no public projects yet
-            </EmptyTitle>
+          <Empty>
+            <EmptyTitle>no public projects yet</EmptyTitle>
           </Empty>
         ) : (
           <>
@@ -339,7 +336,7 @@ function Landing() {
             </div>
             {hasMore && (
               <div className="flex justify-center pt-2">
-                <Button asChild variant="outline" className="font-display uppercase tracking-wide">
+                <Button asChild variant="outline">
                   <Link to="/work">explore →</Link>
                 </Button>
               </div>
@@ -350,12 +347,10 @@ function Landing() {
 
       <section className="space-y-6">
         <div className="pl-3 pr-3 space-y-2">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             apparatus
           </div>
-          <h2 className="font-display text-3xl sm:text-5xl font-black uppercase tracking-tight">
-            Featuring
-          </h2>
+          <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight">Featuring</h2>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <StackCard
@@ -383,15 +378,28 @@ function Landing() {
         </div>
       </section>
 
-      <footer className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 pt-8 border-t-2 border-foreground/15">
-        <FooterLink href={repositoryUrl}>open source →</FooterLink>
-        <Link
-          to="/docs"
-          className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
-        >
-          docs →
-        </Link>
-        <FooterLink href="https://x.com/_multiagency">x →</FooterLink>
+      <footer className="flex flex-wrap items-center justify-center gap-2 border-t border-border pt-8">
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/docs">
+            docs
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
+          </Link>
+        </Button>
+        <Button asChild variant="ghost" size="icon-sm">
+          <a href={repositoryUrl} target="_blank" rel="noopener noreferrer" aria-label="github">
+            <GithubLogoIcon aria-hidden />
+          </a>
+        </Button>
+        <Button asChild variant="ghost" size="icon-sm">
+          <a
+            href="https://x.com/_multiagency"
+            target="_blank"
+            rel="me noopener noreferrer"
+            aria-label="x"
+          >
+            <XLogoIcon aria-hidden />
+          </a>
+        </Button>
       </footer>
     </div>
   );
@@ -402,16 +410,16 @@ function ProjectCard({ project }: { project: LandingProject }) {
   return (
     <Card className="flex flex-col border-2 border-foreground">
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
           <span className="truncate">@{project.slug}</span>
           <span>project</span>
         </div>
-        <h3 className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
+        <h3 className="text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
           {project.title}
         </h3>
         {hasBounty && <Badge variant="default">bounty</Badge>}
         <div className="mt-auto pt-2">
-          <Button asChild variant="outline" className="w-full font-display uppercase tracking-wide">
+          <Button asChild variant="outline" className="w-full">
             <Link to="/work">open →</Link>
           </Button>
         </div>
@@ -463,7 +471,7 @@ function StackCard({
   return (
     <Card className="flex flex-col border-2 border-foreground">
       <CardContent className="p-4 flex-1 flex flex-col gap-4">
-        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
           <span>{label}</span>
           <span>{tag}</span>
         </div>
@@ -479,13 +487,11 @@ function StackCard({
             />
           </h3>
         ) : (
-          <h3 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-            {name}
-          </h3>
+          <h3 className="text-2xl uppercase tracking-tight font-extrabold leading-tight">{name}</h3>
         )}
         <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
         <div className="mt-auto pt-2">
-          <Button asChild variant="outline" className="font-display uppercase tracking-wide w-full">
+          <Button asChild variant="outline" className="w-full">
             <a href={url} target="_blank" rel="noopener noreferrer">
               {host} →
             </a>
@@ -493,18 +499,5 @@ function StackCard({
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
-    >
-      {children}
-    </a>
   );
 }

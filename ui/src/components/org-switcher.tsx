@@ -72,30 +72,28 @@ export function OrgSwitcher() {
           <Button
             variant="ghost"
             size="sm"
-            className="flex items-center gap-2 text-xs text-muted-foreground max-w-[120px] sm:max-w-[180px]"
+            className="max-w-30 sm:max-w-45"
             aria-label={`Organization: ${activeOrg?.name ?? "none"}`}
           >
-            <BankIcon className="h-3.5 w-3.5 shrink-0" />
+            <BankIcon aria-hidden />
             <span className="hidden sm:inline truncate min-w-0">
               {activeOrg?.name ?? "organization"}
             </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
-          <DropdownMenuLabel className="text-xs text-muted-foreground">
-            organizations
-          </DropdownMenuLabel>
+          <DropdownMenuLabel>organizations</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {organizations.map((org) => (
             <DropdownMenuItem
               key={org.id}
-              className="flex items-center justify-between gap-2 cursor-pointer"
+              className="flex items-center justify-between cursor-pointer"
               onClick={() => {
                 if (org.id !== activeOrgId) switchMutation.mutate(org.id);
               }}
             >
               <span className="truncate min-w-0 flex-1">{org.name}</span>
-              <span className="font-mono text-[10px] uppercase text-muted-foreground">
+              <span className="font-mono text-xs uppercase text-muted-foreground">
                 {org.role ?? ""}
               </span>
               {org.id === activeOrgId && (
@@ -110,14 +108,14 @@ export function OrgSwitcher() {
           )}
           <DropdownMenuSeparator />
           {invitationCount > 0 && (
-            <DropdownMenuItem asChild className="cursor-pointer gap-2">
+            <DropdownMenuItem asChild className="cursor-pointer">
               <Link to="/profile" hash="invitations">
                 <EnvelopeIcon className="h-3.5 w-3.5" />
                 {invitationCount} pending invitation{invitationCount === 1 ? "" : "s"}
               </Link>
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setCreating(true)}>
+          <DropdownMenuItem className="cursor-pointer" onClick={() => setCreating(true)}>
             <PlusIcon className="h-3.5 w-3.5" />
             create organization
           </DropdownMenuItem>

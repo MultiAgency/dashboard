@@ -13,7 +13,7 @@ export function NetworkToggle() {
   if (supportedNetworks.length <= 1) return null;
 
   return (
-    <div className="flex items-center gap-2 p-1 border border-border rounded-lg bg-muted/30">
+    <div className="flex h-7 items-center gap-0.5 border border-border bg-muted/30 p-0.5">
       {supportedNetworks.map((network) => (
         <button
           type="button"
@@ -21,16 +21,16 @@ export function NetworkToggle() {
           onClick={() => {
             auth.near.setNetwork(network);
           }}
-          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+          aria-pressed={currentNetwork === network}
+          className={`flex h-full items-center gap-1.5 px-2 text-xs font-medium leading-none transition-colors ${
             currentNetwork === network
-              ? "bg-background text-foreground shadow-sm border border-border/50"
+              ? "bg-background text-foreground"
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          <span className="flex items-center gap-1.5">
-            <GlobeIcon className="h-3 w-3" />
-            {network === "mainnet" ? "Mainnet" : "Testnet"}
-          </span>
+          <GlobeIcon aria-hidden className="hidden size-3 sm:block" />
+          <span className="sm:hidden">{network === "mainnet" ? "Main" : "Test"}</span>
+          <span className="hidden sm:inline">{network === "mainnet" ? "Mainnet" : "Testnet"}</span>
         </button>
       ))}
     </div>
