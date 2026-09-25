@@ -6,7 +6,7 @@
   "description": "Human-led, AI-native agencies for hire.",
   "testnet": "agency.testnet",
   "staging": {
-    "domain": "dev.multiagency.ai"
+    "domain": "staging.multiagency.ai"
   },
   "repository": "https://github.com/MultiAgency/dashboard",
   "app": {
