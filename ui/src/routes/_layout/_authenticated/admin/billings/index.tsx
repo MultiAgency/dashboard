@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BillingsAdminSection } from "@/components/admin/billings-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
+import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { adminProjectsListQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/billings/")({
@@ -16,6 +18,7 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/billings/")(
 });
 
 function AdminBillingsPage() {
+  const { agencyDao, isLoaded } = useMeRoles();
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -37,7 +40,7 @@ function AdminBillingsPage() {
           .
         </p>
       </header>
-      <BillingsAdminSection />
+      {isLoaded && !agencyDao ? <ConnectTreasuryPrompt /> : <BillingsAdminSection />}
     </div>
   );
 }
