@@ -13,15 +13,7 @@ import {
   refreshAfter,
 } from "@/lib/queries";
 import { isSlugTakenError, isValidSlug, slugify, suggestSlug } from "@/lib/slugify";
-
-function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
+import { isHttpUrl } from "@/lib/url";
 
 export type ProjectStatus = "active" | "paused" | "archived";
 export type Visibility = "public" | "unlisted" | "private";

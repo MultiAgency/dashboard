@@ -1010,6 +1010,7 @@ export const contract = oc.router({
           title: z.string().trim().min(1).max(200),
           slug,
           parentSlug: slug.optional(),
+          repository: httpUrl.optional(),
           share: z.boolean().default(true),
         }),
       )
