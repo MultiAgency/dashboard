@@ -1,4 +1,6 @@
 export { Budget, SubcontractorSpend } from "./budget";
+export { LoadError } from "./load-error";
+export { PageHeader, SectionHeader } from "./page-header";
 export { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 export { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 export { Badge } from "./ui/badge";
