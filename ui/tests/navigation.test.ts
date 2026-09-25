@@ -1,0 +1,46 @@
+import { describe, expect, it } from "vitest";
+import { workspaceNavigation } from "../src/lib/navigation";
+
+const labels = (...args: Parameters<typeof workspaceNavigation>) =>
+  workspaceNavigation(...args).flatMap((g) => g.items.map((i) => i.label));
+
+describe("workspaceNavigation", () => {
+  it.each([
+    ["nothing to someone without a role", null, true, true, []],
+    [
+      "every Organization the Agency sections",
+      "owner",
+      false,
+      false,
+      ["projects", "reports", "engagements", "builders", "team", "settings"],
+    ],
+    [
+      "money only with an Agency DAO",
+      "admin",
+      true,
+      false,
+      ["projects", "reports", "engagements", "builders", "team", "billings", "budgets", "settings"],
+    ],
+    [
+      "members the screens they can use, without management links",
+      "member",
+      true,
+      true,
+      ["projects", "reports", "builders", "billings", "budgets", "agencies"],
+    ],
+  ] as const)("gives %s", (_, role, hasAgencyDao, hasClientSections, expected) => {
+    expect(labels({ role, hasAgencyDao, hasClientSections })).toEqual(expected);
+  });
+
+  it("adds the Client sections when the Organization is a Client of an Agency", () => {
+    const groups = workspaceNavigation({
+      role: "admin",
+      hasAgencyDao: false,
+      hasClientSections: true,
+    });
+
+    expect(groups.find((g) => g.title === "as client")?.items).toEqual([
+      { to: "/client", label: "agencies" },
+    ]);
+  });
+});

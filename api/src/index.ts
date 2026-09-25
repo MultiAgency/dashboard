@@ -2,12 +2,19 @@ import { createPlugin } from "every-plugin";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
+import pg from "pg";
 import { contract } from "./contract";
 import { DatabaseLive, DatabaseTag } from "./db/layer";
 import { createAuthMiddleware } from "./lib/auth";
+import { authDatabaseDirectory } from "./lib/auth-database";
 import { ContextSchema, runEffect } from "./lib/context";
 import { getNetwork, pinnedNetwork } from "./lib/network";
-import { betterAuthOrganizations, type PluginContext } from "./lib/organizations";
+import {
+  betterAuthOrganizations,
+  nearAccountsOf,
+  type PluginContext,
+  unconfiguredDirectory,
+} from "./lib/organizations";
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
 import { createAgencyDaoService } from "./services/agency-dao";
@@ -16,13 +23,15 @@ import { createAssignmentsService } from "./services/assignments";
 import { createBillingsService } from "./services/billings";
 import { createBudgetsService } from "./services/budgets";
 import { createClientPortalService } from "./services/client-portal";
-import { createClientsService } from "./services/clients";
 import { createContactFormService } from "./services/contact-form";
 import { createContributorsService } from "./services/contributors";
+import { createEngagementsService } from "./services/engagements";
 import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
+import { createNotifications } from "./services/notifications";
+import { resendEmailSender } from "./services/notify";
 import { createOrganizationAccess, ROLE_MATRIX } from "./services/organization-access";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
@@ -39,15 +48,18 @@ import { createTreasuryService } from "./services/treasury";
 export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({
     agencyDaoAccount: z.string().optional(),
+    appOrigin: z.string().url().default("https://dev.multiagency.ai"),
   }),
 
   secrets: z.object({
     API_DATABASE_URL: z.string().default("pglite:.bos/api/:memory:"),
+    AUTH_DATABASE_URL: z.string().optional(),
     APPLICATIONS_WEBHOOK_URL: z.string().optional(),
     CONTACT_FORM_WEBHOOK_URL: z.string().optional(),
     CONTACT_FORM_WEBHOOK_SECRET: z.string().optional(),
     RESEND_API_KEY: z.string().optional(),
     NOTIFY_FROM_EMAIL: z.string().optional(),
+    APP_ORIGIN: z.string().url().optional(),
   }),
 
   context: ContextSchema,
@@ -68,6 +80,22 @@ export default createPlugin.withPlugins<PluginsClient>()({
       };
 
       const directory = createProjectDirectory((pluginContext) => plugins.projects(pluginContext));
+      const authDatabaseUrl = config.secrets.AUTH_DATABASE_URL;
+      const authPool = authDatabaseUrl ? new pg.Pool({ connectionString: authDatabaseUrl }) : null;
+      const organizationDirectory = authPool
+        ? authDatabaseDirectory(authPool)
+        : unconfiguredDirectory();
+      const appOrigin = config.secrets.APP_ORIGIN ?? config.variables.appOrigin;
+      const sendEmail = resendEmailSender({
+        resendApiKey: config.secrets.RESEND_API_KEY,
+        fromEmail: config.secrets.NOTIFY_FROM_EMAIL,
+      });
+      const notifications = createNotifications({
+        db,
+        directory: organizationDirectory,
+        sendEmail,
+        appOrigin,
+      });
       const access = createOrganizationAccess({
         db,
         organizations: betterAuthOrganizations(() => plugins.auth()),
@@ -83,11 +111,18 @@ export default createPlugin.withPlugins<PluginsClient>()({
         webhookUrl: config.secrets.CONTACT_FORM_WEBHOOK_URL,
         webhookSecret: config.secrets.CONTACT_FORM_WEBHOOK_SECRET,
       });
-      const clients = createClientsService(db, directory);
       const assignments = createAssignmentsService(db, directory);
-      const budgets = createBudgetsService(db, directory, clients);
+      const budgets = createBudgetsService(db, directory);
       const billings = createBillingsService(db, directory);
-      const reports = createReportsService(db, directory, plugins);
+      const reports = createReportsService(db, directory, plugins, organizationDirectory);
+      const engagements = createEngagementsService({
+        db,
+        organizations: organizationDirectory,
+        projects: directory,
+        notifications,
+        sendEmail,
+        appOrigin,
+      });
       const clientPortal = createClientPortalService(
         access,
         agency,
@@ -96,7 +131,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
         directory,
         projectLedgers,
       );
-      const me = createMeService(db, directory);
+      const me = createMeService({
+        db,
+        directory,
+        organizations: organizationDirectory,
+        readScopeOf: access.readScopeOfAgency,
+      });
       const proposals = createProposalsService(db, directory);
       const tokens = createTokensService(db);
       const treasury = createTreasuryService(directory, projectLedgers);
@@ -113,7 +153,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
         agency,
         listings,
         contributors,
-        clients,
+        engagements,
+        notifications,
+        organizationDirectory,
+        authPool,
         assignments,
         budgets,
         billings,
@@ -127,7 +170,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
       };
     }),
 
-  shutdown: () => Effect.logInfo("[API] Shutdown"),
+  shutdown: (services) =>
+    Effect.gen(function* () {
+      if (services.authPool) yield* Effect.promise(() => services.authPool!.end());
+      yield* Effect.logInfo("[API] Shutdown");
+    }),
 
   createRouter: (services, builder) => {
     const {
@@ -139,7 +186,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
       agency,
       listings,
       contributors,
-      clients,
+      engagements,
+      notifications,
+      organizationDirectory,
       assignments,
       budgets,
       billings,
@@ -273,34 +322,64 @@ export default createPlugin.withPlugins<PluginsClient>()({
         },
       },
 
-      clients: {
-        list: builder.clients.list
-          .use(treasuryManager)
-          .handler(async ({ context }) => runEffect(clients.list(context.scope))),
+      engagements: {
+        list: builder.engagements.list
+          .use(member)
+          .handler(async ({ context }) => engagements.list(context.scope)),
 
-        get: builder.clients.get
-          .use(treasuryMember)
-          .handler(async ({ context, input }) => runEffect(clients.get(context.scope, input.id))),
+        get: builder.engagements.get
+          .use(member)
+          .handler(async ({ context, input }) => engagements.get(context.scope, input.id)),
 
-        lookupByNearAccount: builder.clients.lookupByNearAccount
-          .use(auth.requireAuth)
-          .handler(async ({ context, input }) => ({
-            memberships: await runEffect(access.clientMemberships(context, input.nearAccountId)),
-          })),
-
-        create: builder.clients.create
-          .use(treasuryManager)
-          .handler(async ({ context, input }) => runEffect(clients.create(context.scope, input))),
-
-        update: builder.clients.update
-          .use(treasuryManager)
-          .handler(async ({ context, input }) => runEffect(clients.update(context.scope, input))),
-
-        delete: builder.clients.delete
-          .use(treasuryManager)
+        createWithClient: builder.engagements.createWithClient
+          .use(manager)
           .handler(async ({ context, input }) =>
-            runEffect(clients.delete(context.scope, input.id)),
+            engagements.createWithClient(context.scope, input),
           ),
+
+        propose: builder.engagements.propose
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.propose(context.scope, input)),
+
+        accept: builder.engagements.accept
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.accept(context.scope, input.id)),
+
+        decline: builder.engagements.decline
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.decline(context.scope, input.id)),
+
+        end: builder.engagements.end
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.end(context.scope, input.id)),
+
+        share: builder.engagements.share
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.share(context.scope, input)),
+
+        unshare: builder.engagements.unshare
+          .use(manager)
+          .handler(async ({ context, input }) => engagements.unshare(context.scope, input)),
+
+        invitation: {
+          resend: builder.engagements.invitation.resend
+            .use(manager)
+            .handler(async ({ context, input }) =>
+              engagements.resendInvitation(context.scope, input.id),
+            ),
+
+          cancel: builder.engagements.invitation.cancel
+            .use(manager)
+            .handler(async ({ context, input }) =>
+              engagements.cancelInvitation(context.scope, input.id),
+            ),
+
+          changeEmail: builder.engagements.invitation.changeEmail
+            .use(manager)
+            .handler(async ({ context, input }) =>
+              engagements.changeInvitationEmail(context.scope, input.id, input.email),
+            ),
+        },
       },
 
       clientPortal: {
@@ -347,6 +426,20 @@ export default createPlugin.withPlugins<PluginsClient>()({
               runEffect(clientPortal.generateReport(context, input)),
             ),
         },
+      },
+
+      notifications: {
+        list: builder.notifications.list
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => notifications.list(context.userId, input)),
+
+        unreadCount: builder.notifications.unreadCount
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => notifications.unreadCount(context.userId)),
+
+        markRead: builder.notifications.markRead
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => notifications.markRead(context.userId, input)),
       },
 
       contributors: {
@@ -495,15 +588,30 @@ export default createPlugin.withPlugins<PluginsClient>()({
           };
         }),
 
-        assignedProjects: builder.me.assignedProjects.use(member).handler(async ({ context }) => {
-          const nearAccount = context.near?.primaryAccountId as string | undefined;
-          if (!nearAccount) {
-            throw new ORPCError("FORBIDDEN", {
-              message: "Link a NEAR wallet to view assigned projects",
-            });
-          }
-          return runEffect(me.assignedProjects(context.scope, nearAccount));
-        }),
+        assignedProjects: builder.me.assignedProjects
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => me.assignedProjects(context)),
+
+        billings: builder.me.billings
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => me.billings(context, input)),
+
+        organizations: builder.me.organizations
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => {
+            const memberships = await organizationDirectory.memberships(context.userId);
+            return {
+              data: memberships
+                .filter((m) => !m.organization.isPersonal)
+                .map((m) => ({
+                  id: m.organization.id,
+                  name: m.organization.name,
+                  slug: m.organization.slug,
+                  role: m.role === "contributor" ? null : m.role,
+                }))
+                .sort((a, b) => a.name.localeCompare(b.name)),
+            };
+          }),
       },
 
       agencyDao: {
@@ -528,14 +636,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
               );
             }
             const scope = await access.agencyScope(context, ROLE_MATRIX.manage);
-            const near = (context as PluginContext).near;
             return agencyDaos.connectForMember(scope, {
               daoAccountId: input.daoAccountId,
               network,
-              walletAccounts: [
-                ...(near?.primaryAccountId ? [near.primaryAccountId] : []),
-                ...(near?.linkedAccounts ?? []).map((a) => a.accountId),
-              ],
+              walletAccounts: nearAccountsOf(context as PluginContext),
             });
           }),
 

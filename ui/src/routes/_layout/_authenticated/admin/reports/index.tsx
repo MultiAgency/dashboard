@@ -8,7 +8,7 @@ import { Field, selectClass } from "@/components/admin-form";
 import { ReportNoteField } from "@/components/report-note-field";
 import { useApiClient } from "@/lib/api";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
-import { adminClientsListQueryOptions, adminProjectsListQueryOptions } from "@/lib/queries";
+import { adminProjectsListQueryOptions, engagementsListQueryOptions } from "@/lib/queries";
 import { formatAllocatedSpent, formatTokenTotals } from "@/lib/report-amounts";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/reports/")({
@@ -20,9 +20,9 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/reports/")({
 
 function AdminReportsPage() {
   const apiClient = useApiClient();
-  const clientsQuery = useQuery(adminClientsListQueryOptions(apiClient));
+  const engagementsQuery = useQuery(engagementsListQueryOptions(apiClient));
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
-  const [clientId, setClientId] = useState("");
+  const [engagementId, setEngagementId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -31,20 +31,22 @@ function AdminReportsPage() {
     ReturnType<typeof apiClient.agency.reports.generate>
   > | null>(null);
 
-  const clients = clientsQuery.data?.data ?? [];
+  const engagements = (engagementsQuery.data?.data ?? []).filter(
+    (e) => e.side === "agency" && (e.status === "active" || e.status === "ended"),
+  );
   const projects = projectsQuery.data?.data ?? [];
 
   const projectOptions = useMemo(() => {
-    if (!clientId) return projects;
-    const client = clients.find((c) => c.id === clientId);
-    const allowed = new Set(client?.projectIds ?? []);
+    if (!engagementId) return projects;
+    const engagement = engagements.find((e) => e.id === engagementId);
+    const allowed = new Set(engagement?.projectIds ?? []);
     return projects.filter((p) => allowed.has(p.id));
-  }, [clientId, clients, projects]);
+  }, [engagementId, engagements, projects]);
 
   const generateMutation = useMutation({
     mutationFn: () =>
       apiClient.agency.reports.generate({
-        clientId: clientId || undefined,
+        engagementId: engagementId || undefined,
         projectId: projectId || undefined,
         note: note.trim() || undefined,
         startDate: startDate || undefined,
@@ -108,17 +110,17 @@ function AdminReportsPage() {
           <Field label="client filter (optional)" htmlFor="report-client">
             <select
               id="report-client"
-              value={clientId}
+              value={engagementId}
               onChange={(e) => {
-                setClientId(e.target.value);
+                setEngagementId(e.target.value);
                 setProjectId("");
               }}
               className={selectClass}
             >
               <option value="">all clients</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              {engagements.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.client.name}
                 </option>
               ))}
             </select>

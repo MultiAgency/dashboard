@@ -23,6 +23,7 @@ export function classifyInvitation(input: {
   if (input.error) {
     if (input.error.code === "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION") return "wrong-email";
     if (input.error.code?.startsWith("EMAIL_VERIFICATION_REQUIRED")) return "verify-email";
+    if (input.error.code === "INVITER_IS_NO_LONGER_A_MEMBER_OF_THE_ORGANIZATION") return "pending";
     return "unavailable";
   }
   return input.invitation ? "pending" : "unavailable";

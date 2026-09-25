@@ -138,4 +138,36 @@ describe("migrate — runtime migrator", () => {
       },
     ]);
   });
+
+  test("the engagements migration keeps budgets and enforces one active and one pending Engagement per pair", async () => {
+    const { migrations } = await Effect.runPromise(loadMigrations());
+    await Effect.runPromise(
+      migrate(
+        driver.db,
+        migrations.filter((m) => m.tag < "0007"),
+      ),
+    );
+    await driver.db.execute(
+      sql`INSERT INTO budgets (id, project_id, token_id, amount, actor_account_id) VALUES ('b1', 'p1', 'near', '10', 'admin.near')`,
+    );
+
+    await Effect.runPromise(migrate(driver.db, migrations));
+
+    const raw = await driver.db.execute(sql`SELECT id, engagement_id FROM budgets`);
+    expect((raw as unknown as { rows: unknown[] }).rows).toEqual([
+      { id: "b1", engagement_id: null },
+    ]);
+    const insert = (id: string, agency: string, client: string, status: string) =>
+      driver.db.execute(
+        sql`INSERT INTO engagements (id, agency_organization_id, client_organization_id, status, proposed_by) VALUES (${id}, ${agency}, ${client}, ${status}, 'admin')`,
+      );
+    await insert("e1", "agency", "client", "active");
+    await insert("e2", "agency", "client", "proposed");
+    await insert("e3", "agency", "client", "ended");
+    await insert("e4", "client", "agency", "active");
+    await expect(insert("e5", "agency", "client", "active")).rejects.toThrow();
+    await expect(insert("e6", "agency", "client", "proposed")).rejects.toThrow();
+    await expect(insert("e7", "agency", "agency", "proposed")).rejects.toThrow();
+    await expect(insert("e8", "agency", "other", "paused")).rejects.toThrow();
+  });
 });

@@ -15,6 +15,14 @@ describe("classifyInvitation", () => {
     ],
     ["an invitation the server returns", { signedIn: true, invitation: { id: "i1" } }, "pending"],
     [
+      "a first-admin invitation from an Agency that is not a member",
+      {
+        signedIn: true,
+        error: { status: 400, code: "INVITER_IS_NO_LONGER_A_MEMBER_OF_THE_ORGANIZATION" },
+      },
+      "pending",
+    ],
+    [
       "an invitation for another email",
       {
         signedIn: true,

@@ -67,7 +67,10 @@ export function createAssignmentsService(db: Database, directory: ProjectDirecto
       },
     ) =>
       Effect.gen(function* () {
-        yield* Effect.promise(() => directory.forAgency(scope).require(input.projectId));
+        const project = yield* Effect.promise(() =>
+          directory.forAgency(scope).require(input.projectId),
+        );
+        const organizationId = project.organizationId || scope.organizationId;
         if (!input.nearAccount?.trim()) {
           return yield* Effect.fail(
             new ORPCError("BAD_REQUEST", { message: "nearAccount is required" }),
@@ -82,11 +85,13 @@ export function createAssignmentsService(db: Database, directory: ProjectDirecto
               nearAccount: input.nearAccount.trim(),
               role: input.role ?? null,
               onboardingStatus: input.onboardingStatus ?? "pending",
+              organizationId,
             })
             .onConflictDoUpdate({
               target: [projectContributors.projectId, projectContributors.nearAccount],
               set: {
                 role: input.role ?? null,
+                organizationId,
                 ...(input.onboardingStatus !== undefined
                   ? { onboardingStatus: input.onboardingStatus }
                   : {}),

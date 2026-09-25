@@ -151,6 +151,77 @@ export const clientProjects = pgTable(
   }),
 );
 
+export const ENGAGEMENT_STATUSES = ["proposed", "active", "declined", "ended"] as const;
+export const ENGAGEMENT_KINDS = ["client", "subcontract"] as const;
+
+export const engagements = pgTable(
+  "engagements",
+  {
+    id: text("id").primaryKey(),
+    agencyOrganizationId: text("agency_organization_id").notNull(),
+    clientOrganizationId: text("client_organization_id").notNull(),
+    kind: text("kind", { enum: ENGAGEMENT_KINDS }).notNull().default("client"),
+    status: text("status", { enum: ENGAGEMENT_STATUSES }).notNull(),
+    proposedBy: text("proposed_by").notNull(),
+    invitationId: text("invitation_id"),
+    invitationAcceptedAt: timestamp("invitation_accepted_at", { withTimezone: false }),
+    legacyClientId: text("legacy_client_id"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+    decidedAt: timestamp("decided_at", { withTimezone: false }),
+    endedAt: timestamp("ended_at", { withTimezone: false }),
+  },
+  (t) => ({
+    activePair: uniqueIndex("engagements_active_pair")
+      .on(t.agencyOrganizationId, t.clientOrganizationId)
+      .where(sql`${t.status} = 'active'`),
+    proposedPair: uniqueIndex("engagements_proposed_pair")
+      .on(t.agencyOrganizationId, t.clientOrganizationId)
+      .where(sql`${t.status} = 'proposed'`),
+    legacyClient: uniqueIndex("engagements_legacy_client")
+      .on(t.legacyClientId)
+      .where(sql`${t.legacyClientId} IS NOT NULL`),
+    agencyIdx: index("engagements_agency").on(t.agencyOrganizationId),
+    clientIdx: index("engagements_client").on(t.clientOrganizationId),
+  }),
+);
+
+export type EngagementRow = typeof engagements.$inferSelect;
+
+export const engagementProjects = pgTable(
+  "engagement_projects",
+  {
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.engagementId, t.projectId] }),
+    projectIdx: index("engagement_projects_project_id").on(t.projectId),
+  }),
+);
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: text("id").primaryKey(),
+    recipientUserId: text("recipient_user_id").notNull(),
+    organizationId: text("organization_id").notNull(),
+    kind: text("kind").notNull(),
+    payload: text("payload").notNull(),
+    link: text("link"),
+    readAt: timestamp("read_at", { withTimezone: false }),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    recipientIdx: index("notifications_recipient").on(t.recipientUserId, t.createdAt, t.id),
+  }),
+);
+
+export type NotificationRow = typeof notifications.$inferSelect;
+
 export const projectContributors = pgTable(
   "project_contributors",
   {
@@ -158,6 +229,7 @@ export const projectContributors = pgTable(
     nearAccount: text("near_account").notNull(),
     role: text("role"),
     onboardingStatus: text("onboarding_status").notNull().default("pending"),
+    organizationId: text("organization_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
@@ -177,12 +249,16 @@ export const budgets = pgTable(
     actorAccountId: text("actor_account_id").notNull(),
     relatedBudgetId: text("related_budget_id"),
     clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    engagementId: text("engagement_id").references(() => engagements.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     cursor: index("budgets_cursor").on(t.createdAt, t.id),
     projectIdx: index("budgets_project_id").on(t.projectId),
     clientIdx: index("budgets_client_id").on(t.clientId),
+    engagementIdx: index("budgets_engagement_id").on(t.engagementId),
   }),
 );
 

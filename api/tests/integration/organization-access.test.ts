@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { organizationDaos } from "../../src/db/schema";
+import { engagements, organizationDaos } from "../../src/db/schema";
 import {
   NO_AGENCY_DAO,
   ROLE_MATRIX,
@@ -54,7 +54,7 @@ describe("organization access", () => {
   const database = migratedDatabase();
 
   beforeEach(async () => {
-    await database.pg.query("TRUNCATE organization_daos");
+    await database.pg.query("TRUNCATE organization_daos, engagements CASCADE");
     await seedAgencyDaos(database.db, organizations);
   });
 
@@ -177,7 +177,7 @@ describe("organization access", () => {
   });
 
   test("Organization metadata naming a DAO grants no Agency DAO without a connection", async () => {
-    await database.pg.query("TRUNCATE organization_daos");
+    await database.pg.query("TRUNCATE organization_daos, engagements CASCADE");
 
     expect((await accessWith().resolve(signedIn("owner", "other"))).agencyDao).toBeNull();
   });
@@ -201,5 +201,23 @@ describe("organization access", () => {
     expect(() => access.requireDefaultOrganization(outsider)).toThrow(
       expect.objectContaining(FORBIDDEN),
     );
+  });
+
+  test.each([
+    ["active", true],
+    ["ended", true],
+    ["proposed", true],
+    ["declined", false],
+  ] as const)("a %s Engagement gives its Client Organization Client sections: %s", async (status, expected) => {
+    await database.db.insert(engagements).values({
+      id: "e",
+      agencyOrganizationId: "other",
+      clientOrganizationId: "multiagency",
+      status,
+      proposedBy: "x",
+    });
+
+    const access = await accessWith().resolve(signedIn("u1", "multiagency"));
+    expect(access.capabilities.hasClientSections).toBe(expected);
   });
 });

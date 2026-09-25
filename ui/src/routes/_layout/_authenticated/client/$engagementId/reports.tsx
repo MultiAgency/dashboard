@@ -10,12 +10,12 @@ import { useApiClient } from "@/lib/api";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 import { formatAllocatedSpent } from "@/lib/report-amounts";
 
-export const Route = createFileRoute("/_layout/_authenticated/client/reports/")({
+export const Route = createFileRoute("/_layout/_authenticated/client/$engagementId/reports")({
   component: ClientReportsPage,
 });
 
 function ClientReportsPage() {
-  const { agencyDaoAccountId } = Route.useRouteContext();
+  const { engagement } = Route.useRouteContext();
   const apiClient = useApiClient();
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -27,7 +27,7 @@ function ClientReportsPage() {
   const generateMutation = useMutation({
     mutationFn: () =>
       apiClient.clientPortal.reports.generate({
-        agencyDaoAccountId,
+        engagementId: engagement.id,
         note: note.trim() || undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
@@ -66,7 +66,8 @@ function ClientReportsPage() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">
-        Generate a tabular report scoped to your projects and billings.
+        Generate a report of the Projects {engagement.agency.name} shares with you, with their
+        budget and billings.
       </p>
       <Card>
         <CardContent className="p-5 grid gap-4">

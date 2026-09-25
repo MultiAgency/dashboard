@@ -17,7 +17,6 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
         projectId?: string;
         projectIds?: string[];
         nearAccount?: string;
-        clientId?: string;
         cursor?: string;
         limit: number;
       },
@@ -62,7 +61,6 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
               and(
                 inArray(billings.projectId, projectIds),
                 input.nearAccount ? eq(billings.nearAccount, input.nearAccount) : undefined,
-                input.clientId ? eq(billings.clientId, input.clientId) : undefined,
                 cursorWhere(billings.createdAt, billings.id, input.cursor),
               ),
             )
@@ -85,7 +83,6 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
       input: {
         projectId: string;
         nearAccount?: string;
-        clientId?: string;
         proposalId: string;
         note?: string;
       },
@@ -158,7 +155,6 @@ export function createBillingsService(db: Database, directory: ProjectDirectory)
               id,
               projectId: input.projectId,
               nearAccount,
-              clientId: input.clientId ?? null,
               tokenId: transferKind.tokenId === "" ? NATIVE_TOKEN_ID : transferKind.tokenId,
               amount: transferKind.amount,
               proposalId: input.proposalId,
