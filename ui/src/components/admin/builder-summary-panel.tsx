@@ -1,5 +1,19 @@
 import { useMemo } from "react";
-import { Card, CardContent, CardDescription } from "@/components";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components";
+import { Empty } from "@/components/admin-form";
+import { StatCard } from "@/components/budget";
 import { TokenAmountCell } from "@/components/token-amounts";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { tokenDisplayName } from "@/lib/report-amounts";
@@ -26,10 +40,6 @@ type TokenTotalRow = {
   pendingCount: number;
 };
 
-const SECTION_LABEL =
-  "font-mono text-xs uppercase tracking-widest text-muted-foreground px-3 py-2 text-left border-b border-border";
-const CELL = "px-3 py-2 text-sm border-b border-border";
-
 function buildTokenTotals(billings: BillingRow[]): TokenTotalRow[] {
   const byToken = new Map<
     string,
@@ -53,9 +63,7 @@ function buildTokenTotals(billings: BillingRow[]): TokenTotalRow[] {
         existing.pendingCount += 1;
       }
       byToken.set(billing.tokenId, existing);
-    } catch {
-      // skip non-numeric amounts
-    }
+    } catch {}
   }
 
   return [...byToken.entries()]
@@ -89,140 +97,102 @@ export function BuilderSummaryPanel({ billings, projectCount }: BuilderSummaryPa
   const hasOutstanding = tokenTotals.some((row) => row.pendingCount > 0);
 
   return (
-    <section className="space-y-3">
-      <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-        payment summary
+    <section className="flex flex-col gap-4" aria-labelledby="payment-summary-title">
+      <h2 id="payment-summary-title" className="font-heading text-lg font-semibold">
+        Payment summary
       </h2>
 
-      <dl className="grid gap-3 sm:grid-cols-4">
-        <Card>
-          <CardContent className="px-4 py-3">
-            <dt className="text-xs text-muted-foreground">Billing entries</dt>
-            <dd className="text-2xl font-black">{billings.length}</dd>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="px-4 py-3">
-            <dt className="text-xs text-muted-foreground">Approved</dt>
-            <dd className="text-2xl font-black">{approvedCount}</dd>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="px-4 py-3">
-            <dt className="text-xs text-muted-foreground">Outstanding</dt>
-            <dd className="text-2xl font-black">{pendingCount}</dd>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="px-4 py-3">
-            <dt className="text-xs text-muted-foreground">Projects</dt>
-            <dd className="text-2xl font-black">{projectCount}</dd>
-          </CardContent>
-        </Card>
-      </dl>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Billing entries" value={billings.length} />
+        <StatCard label="Approved" value={approvedCount} />
+        <StatCard label="Outstanding" value={pendingCount} />
+        <StatCard label="Projects" value={projectCount} />
+      </div>
 
       {tokenTotals.length === 0 ? (
-        <Card>
-          <CardContent className="px-4 py-6">
-            <CardDescription className="text-center">No billings yet.</CardDescription>
-          </CardContent>
-        </Card>
+        <Empty label="No billings yet" />
       ) : (
         <Card>
-          <CardContent className="p-0">
-            <div className="px-4 py-3 border-b border-border">
-              <h3 className="text-sm font-medium">Totals by token</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr>
-                    <th scope="col" className={SECTION_LABEL}>
-                      Token
-                    </th>
-                    <th scope="col" className={SECTION_LABEL}>
-                      Approved
-                    </th>
-                    <th scope="col" className={SECTION_LABEL}>
-                      Outstanding
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tokenTotals.map((row) => (
-                    <tr key={row.tokenId} className="hover:bg-muted/20">
-                      <td className={CELL}>
-                        <span className="font-medium" title={row.tokenId}>
-                          {row.tokenLabel}
-                        </span>
-                      </td>
-                      <td className={CELL}>
-                        {row.approvedCount > 0 ? (
-                          <TokenAmountCell amount={row.approvedAmount} tokenId={row.tokenId} />
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className={CELL}>
-                        {row.pendingCount > 0 ? (
-                          <TokenAmountCell amount={row.pendingAmount} tokenId={row.tokenId} />
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <CardHeader>
+            <CardTitle>
+              <h3>Totals by token</h3>
+            </CardTitle>
+            {hasOutstanding && (
+              <CardDescription>
+                Outstanding amounts are billings not yet approved on-chain.
+              </CardDescription>
+            )}
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">Token</TableHead>
+                  <TableHead scope="col">Approved</TableHead>
+                  <TableHead scope="col">Outstanding</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tokenTotals.map((row) => (
+                  <TableRow key={row.tokenId}>
+                    <TableCell className="font-medium" title={row.tokenId}>
+                      {row.tokenLabel}
+                    </TableCell>
+                    <TableCell>
+                      {row.approvedCount > 0 ? (
+                        <TokenAmountCell amount={row.approvedAmount} tokenId={row.tokenId} />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.pendingCount > 0 ? (
+                        <TokenAmountCell amount={row.pendingAmount} tokenId={row.tokenId} />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
-      )}
-
-      {hasOutstanding && (
-        <p className="text-xs text-muted-foreground">
-          Outstanding amounts are billings not yet approved on-chain.
-        </p>
       )}
 
       {paymentHistory.length > 0 && (
         <Card>
-          <CardContent className="p-0">
-            <div className="px-4 py-3 border-b border-border">
-              <h3 className="text-sm font-medium">Payment history</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr>
-                    <th scope="col" className={SECTION_LABEL}>
-                      Date
-                    </th>
-                    <th scope="col" className={SECTION_LABEL}>
-                      Proposal
-                    </th>
-                    <th scope="col" className={SECTION_LABEL}>
-                      Amount
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paymentHistory.map((row) => (
-                    <tr key={row.proposalId} className="hover:bg-muted/20">
-                      <td className={`${CELL} font-mono text-xs`}>
-                        {new Date(row.createdAt).toISOString().slice(0, 10)}
-                      </td>
-                      <td className={`${CELL} font-mono text-xs`}>#{row.proposalId}</td>
-                      <td className={CELL}>
-                        <span className="font-mono text-sm">
-                          {formatTokenAmount(row.amount, row.tokenId)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <CardHeader>
+            <CardTitle>
+              <h3>Recent payments</h3>
+            </CardTitle>
+            <CardDescription>The last ten approved billings.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">Date</TableHead>
+                  <TableHead scope="col">Proposal</TableHead>
+                  <TableHead scope="col" className="text-right">
+                    Amount
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paymentHistory.map((row) => (
+                  <TableRow key={row.proposalId}>
+                    <TableCell className="tabular-nums">
+                      {new Date(row.createdAt).toISOString().slice(0, 10)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">#{row.proposalId}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatTokenAmount(row.amount, row.tokenId)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}
