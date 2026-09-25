@@ -9,6 +9,7 @@ export const ORGANIZATION_ROLES: readonly OrganizationRole[] = [
 
 export type PluginContext = {
   userId?: string | null;
+  reqHeaders?: Headers;
   near?: {
     primaryAccountId?: string | null;
     linkedAccounts?: Array<{ accountId: string }> | null;

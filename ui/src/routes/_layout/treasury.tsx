@@ -51,6 +51,7 @@ import {
   tokensListQueryOptions,
   treasuryPublicBalancesQueryOptions,
 } from "@/lib/queries";
+import { isDefaultOrganizationStaff } from "@/lib/treasury";
 import { trezuProposalUrl } from "@/lib/trezu";
 
 const TREASURY_TABS = ["balances", "payouts"] as const;
@@ -105,7 +106,10 @@ type Token = {
 function TreasuryPage() {
   const loaderData = Route.useLoaderData();
   const apiClient = useApiClient();
-  const { canAccessAdmin } = useMeRoles();
+  const { canAccessAdmin, agencyDao } = useMeRoles();
+  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
+  const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
+  const isDefaultStaff = isDefaultOrganizationStaff(canAccessAdmin, agencyDao, orgAccountId);
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
@@ -157,23 +161,18 @@ function TreasuryPage() {
       return false;
     }
   };
-  const visibleTokens = canAccessAdmin
+  const visibleTokens = isDefaultStaff
     ? tokens
     : tokens.filter((t) => isNonZero(balanceByToken.get(t.tokenId) ?? "0"));
 
   const proposalsQuery = useInfiniteQuery({
     queryKey: proposalsQueryKey(),
-    queryFn: ({ pageParam }) =>
-      canAccessAdmin
-        ? apiClient.proposals.list({ limit: 50, fromIndex: pageParam })
-        : apiClient.proposals.list({ limit: 50, fromIndex: pageParam }),
+    queryFn: ({ pageParam }) => apiClient.proposals.list({ limit: 50, fromIndex: pageParam }),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (last) => last.nextFromIndex ?? undefined,
     staleTime: 30_000,
     retry: false,
   });
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
-  const orgAccountId = settingsQuery.data?.orgAccountId ?? null;
   const proposals = useMemo(
     () => proposalsQuery.data?.pages.flatMap((p) => p.data) ?? [],
     [proposalsQuery.data],
@@ -181,14 +180,14 @@ function TreasuryPage() {
 
   const adminProjectsQuery = useQuery({
     ...adminProjectsListQueryOptions(apiClient),
-    enabled: canAccessAdmin,
+    enabled: isDefaultStaff,
   });
   const adminContributorsQuery = useQuery({
     ...adminContributorsListQueryOptions(apiClient),
-    enabled: canAccessAdmin,
+    enabled: isDefaultStaff,
   });
   const operatorContext: OperatorContext | undefined = useMemo(() => {
-    if (!canAccessAdmin) return undefined;
+    if (!isDefaultStaff) return undefined;
     return {
       projects: (adminProjectsQuery.data?.data ?? []).map((p) => ({
         id: p.id,
@@ -200,7 +199,7 @@ function TreasuryPage() {
         name: c.name ?? c.nearAccount,
       })),
     };
-  }, [canAccessAdmin, adminProjectsQuery.data, adminContributorsQuery.data]);
+  }, [isDefaultStaff, adminProjectsQuery.data, adminContributorsQuery.data]);
 
   const proposalsListProps = {
     proposals,

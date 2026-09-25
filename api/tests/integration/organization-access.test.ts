@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { organizationDaos } from "../../src/db/schema";
-import { ROLE_MATRIX } from "../../src/services/organization-access";
+import {
+  NO_AGENCY_DAO,
+  ROLE_MATRIX,
+  requireTreasury,
+} from "../../src/services/organization-access";
 import {
   type FakeMember,
   type FakeOrganization,
   inMemoryAccess,
+  seedAgencyDaos,
   signedIn,
 } from "../fakes/organizations";
 import { migratedDatabase } from "./_pg";
@@ -50,6 +55,7 @@ describe("organization access", () => {
 
   beforeEach(async () => {
     await database.pg.query("TRUNCATE organization_daos");
+    await seedAgencyDaos(database.db, organizations);
   });
 
   const accessWith = (defaultDao: string | null = DEFAULT_DAO) =>
@@ -79,13 +85,16 @@ describe("organization access", () => {
       canSeePrivate: true,
     });
     expect((await access.publicScope(signedIn("owner", "other"))).actorId).toBe("owner");
+    expect(
+      (await access.agencyScope(signedIn("member", "other"), ROLE_MATRIX.work)).canSeePrivate,
+    ).toBe(true);
   });
 
   test.each([
-    { role: "owner", manages: true, money: true, works: true, seesPrivate: true },
-    { role: "admin", manages: true, money: true, works: true, seesPrivate: true },
-    { role: "member", manages: false, money: true, works: true, seesPrivate: false },
-    { role: "contributor", manages: false, money: false, works: false, seesPrivate: true },
+    { role: "owner", manages: true, money: true, works: true },
+    { role: "admin", manages: true, money: true, works: true },
+    { role: "member", manages: false, money: true, works: true },
+    { role: "contributor", manages: false, money: false, works: false },
   ])("$role capabilities and agency routes follow the role matrix", async (row) => {
     const access = accessWith();
     const context = signedIn(row.role, "other");
@@ -96,7 +105,6 @@ describe("organization access", () => {
       hasAgencySections: row.works,
       hasClientSections: false,
     });
-    expect((await access.publicScope(context)).canSeePrivate).toBe(row.seesPrivate);
     expect(await outcome(access.agencyScope(context, ROLE_MATRIX.work))).toBe(
       row.works ? "allowed" : "FORBIDDEN",
     );
@@ -105,7 +113,7 @@ describe("organization access", () => {
     );
   });
 
-  test("an owner of a DAO-less Organization keeps their role but never borrows the default Agency DAO", async () => {
+  test("an owner of a DAO-less Organization gets agency routes but never borrows the default Agency DAO", async () => {
     const access = accessWith();
     const context = signedIn("u1", "no-dao");
 
@@ -117,7 +125,11 @@ describe("organization access", () => {
       canManageMembers: true,
       hasAgencySections: true,
     });
-    await expect(access.agencyScope(context, ROLE_MATRIX.manage)).rejects.toMatchObject(FORBIDDEN);
+    const scope = await access.agencyScope(context, ROLE_MATRIX.manage);
+    expect(scope).toMatchObject({ organizationId: "no-dao", agencyDao: null, role: "owner" });
+    expect(() => requireTreasury(scope)).toThrow(
+      expect.objectContaining({ code: "FORBIDDEN", data: { reason: NO_AGENCY_DAO } }),
+    );
     expect(await access.publicScope(context)).toMatchObject({
       agencyDao: DEFAULT_DAO,
       role: null,
@@ -125,10 +137,29 @@ describe("organization access", () => {
     });
   });
 
+  test("a DAO-less Organization follows the dashboard network toggle", async () => {
+    const context = {
+      ...signedIn("u1", "no-dao"),
+      reqHeaders: new Headers({ cookie: "current_near_network=testnet" }),
+    };
+
+    expect((await accessWith().agencyScope(context, ROLE_MATRIX.work)).network).toBe("testnet");
+  });
+
+  test("the default Organization is the one mapped to the default Agency DAO", async () => {
+    expect(await accessWith().defaultOrganization()).toEqual({
+      organizationId: "multiagency",
+      agencyDao: DEFAULT_DAO,
+    });
+  });
+
   test.each([
     "personal",
     "odd",
-  ])("a personal Organization (%s) gives its owner no role and no Agency DAO", async (organizationId) => {
+  ])("a personal Organization (%s) gives its owner no role and no Agency DAO, even when one is connected", async (organizationId) => {
+    await database.db
+      .insert(organizationDaos)
+      .values({ organizationId, daoAccountId: `${organizationId}.sputnik-dao.near` });
     const access = accessWith();
     const context = signedIn("u1", organizationId);
 
@@ -138,17 +169,20 @@ describe("organization access", () => {
       capabilities: NO_CAPABILITIES,
     });
     await expect(access.agencyScope(context, ROLE_MATRIX.work)).rejects.toMatchObject(FORBIDDEN);
+    expect(await access.publicScope(context)).toMatchObject({
+      agencyDao: DEFAULT_DAO,
+      role: null,
+      canSeePrivate: false,
+    });
   });
 
-  test("a DAO mapped to another Organization is not granted from metadata", async () => {
-    await database.db
-      .insert(organizationDaos)
-      .values({ organizationId: "other", daoAccountId: DEFAULT_DAO });
+  test("Organization metadata naming a DAO grants no Agency DAO without a connection", async () => {
+    await database.pg.query("TRUNCATE organization_daos");
 
-    expect((await accessWith().resolve(signedIn("u1", "multiagency"))).agencyDao).toBeNull();
+    expect((await accessWith().resolve(signedIn("owner", "other"))).agencyDao).toBeNull();
   });
 
-  test("the mapping takes precedence over Organization metadata", async () => {
+  test("a connected DAO is the Organization's Agency DAO", async () => {
     await database.db
       .insert(organizationDaos)
       .values({ organizationId: "no-dao", daoAccountId: "mapped.sputnik-dao.near" });

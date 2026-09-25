@@ -37,6 +37,16 @@ export function adminSettingsQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const agencyDaoQueryKey = ["admin", "agency-dao"] as const;
+
+export function agencyDaoQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...agencyDaoQueryKey, getNetwork()] as const,
+    queryFn: () => apiClient.agencyDao.get(),
+    retry: false,
+  });
+}
+
 export const meRolesQueryKey = ["me", "roles"] as const;
 
 export function meRolesQueryOptions(apiClient: ApiClient) {
@@ -111,7 +121,7 @@ export const adminProjectsListQueryKey = ["admin", "projects", "list"] as const;
 export function adminProjectsListQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...adminProjectsListQueryKey, getNetwork()] as const,
-    queryFn: () => apiClient.agency.projects.list(),
+    queryFn: () => apiClient.agency.projects.listOwned(),
     retry: false,
   });
 }
@@ -214,7 +224,7 @@ export const adminTokensQueryKey = ["admin", "tokens"] as const;
 export function adminTokensQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...adminTokensQueryKey, getNetwork()] as const,
-    queryFn: () => apiClient.tokens.list(),
+    queryFn: () => apiClient.tokens.listOwned(),
     staleTime: 60 * 60_000,
   });
 }
@@ -236,6 +246,7 @@ export function adminProjectBudgetQueryOptions(apiClient: ApiClient, projectId: 
     queryKey: [...adminProjectBudgetQueryKey, getNetwork(), projectId] as const,
     queryFn: () => apiClient.agency.projects.getBudget({ projectId }),
     staleTime: 30_000,
+    retry: false,
   });
 }
 

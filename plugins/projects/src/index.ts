@@ -4,6 +4,7 @@ import { z } from "every-plugin/zod";
 import { contract } from "./contract";
 import { DatabaseLive } from "./db/layer";
 import { createAuthMiddleware } from "./lib/auth";
+import { type CallerContext, callerOf } from "./lib/caller";
 import { ContextSchema, runEffect } from "./lib/context";
 import { ProjectService, ProjectServiceLive } from "./services/projects";
 
@@ -32,34 +33,22 @@ export default createPlugin({
 
   createRouter: (services, builder) => {
     const auth = createAuthMiddleware(builder);
+    const caller = (context: unknown) => callerOf(context as CallerContext);
 
-    const getAlternateOwnerId = (context: any) =>
-      context.near?.primaryAccountId && context.near?.primaryAccountId !== context.userId
-        ? context.userId
-        : undefined;
-
-    const getOrgInfo = (context: any) => ({
-      orgId: context.organization?.activeOrganizationId ?? context.organizationId,
-      orgRole: context.organization?.member?.role,
-    });
+    const rethrowNotFound =
+      (notFound: () => Error) =>
+      (err: { code?: string }): never => {
+        if (err?.code === "NOT_FOUND") throw notFound();
+        throw err;
+      };
 
     return {
-      listProjects: builder.listProjects.handler(async ({ input, context }) => {
-        const ctx = context as any;
-        const ownerId = ctx.near?.primaryAccountId ?? ctx.userId;
-        const { orgId, orgRole } = getOrgInfo(ctx);
-        return runEffect(
-          services.project.listProjects(input, ownerId, getAlternateOwnerId(ctx), orgId, orgRole),
-        );
-      }),
+      listProjects: builder.listProjects.handler(async ({ input, context }) =>
+        runEffect(services.project.listProjects(input, caller(context))),
+      ),
 
       getProject: builder.getProject.handler(async ({ input, errors, context }) => {
-        const ctx = context as any;
-        const ownerId = ctx.near?.primaryAccountId ?? ctx.userId;
-        const { orgId, orgRole } = getOrgInfo(ctx);
-        const result = await runEffect(
-          services.project.getProject(input.id, ownerId, getAlternateOwnerId(ctx), orgId, orgRole),
-        );
+        const result = await runEffect(services.project.getProject(input.id, caller(context)));
         if (!result) {
           throw errors.NOT_FOUND({
             message: "Project not found",
@@ -70,17 +59,8 @@ export default createPlugin({
       }),
 
       getProjectBySlug: builder.getProjectBySlug.handler(async ({ input, errors, context }) => {
-        const ctx = context as any;
-        const ownerId = ctx.near?.primaryAccountId ?? ctx.userId;
-        const { orgId, orgRole } = getOrgInfo(ctx);
         const result = await runEffect(
-          services.project.getProjectBySlug(
-            input.slug,
-            ownerId,
-            getAlternateOwnerId(ctx),
-            orgId,
-            orgRole,
-          ),
+          services.project.getProjectBySlug(input.slug, caller(context)),
         );
         if (!result) {
           throw errors.NOT_FOUND({
@@ -93,72 +73,35 @@ export default createPlugin({
 
       createProject: builder.createProject
         .use(auth.requireAuth)
-        .handler(async ({ input, context }) => {
-          const ctx = context as any;
-          const ownerId = ctx.near?.primaryAccountId ?? ctx.userId;
-          const { orgId, orgRole } = getOrgInfo(ctx);
-          return runEffect(
-            services.project.createProject(
-              input,
-              ownerId,
-              ctx.user.role,
-              getAlternateOwnerId(ctx),
-              orgId,
-              orgRole,
-            ),
-          );
-        }),
+        .handler(async ({ input, context }) =>
+          runEffect(services.project.createProject(input, caller(context))),
+        ),
 
       updateProject: builder.updateProject
         .use(auth.requireAuth)
-        .handler(async ({ input, context, errors }) => {
-          const ctx = context as any;
-          const { orgId, orgRole } = getOrgInfo(ctx);
-          return runEffect(
-            services.project.updateProject(
-              input.id,
-              input,
-              ctx.near?.primaryAccountId ?? ctx.userId,
-              ctx.user.role,
-              getAlternateOwnerId(ctx),
-              orgId,
-              orgRole,
-            ),
-          ).catch((err) => {
-            if (err?.code === "NOT_FOUND") {
-              throw errors.NOT_FOUND({
+        .handler(async ({ input, context, errors }) =>
+          runEffect(services.project.updateProject(input.id, input, caller(context))).catch(
+            rethrowNotFound(() =>
+              errors.NOT_FOUND({
                 message: "Project not found",
                 data: { resource: "project", resourceId: input.id },
-              });
-            }
-            throw err;
-          });
-        }),
+              }),
+            ),
+          ),
+        ),
 
       deleteProject: builder.deleteProject
         .use(auth.requireAuth)
-        .handler(async ({ input, context, errors }) => {
-          const ctx = context as any;
-          const { orgId, orgRole } = getOrgInfo(ctx);
-          return runEffect(
-            services.project.deleteProject(
-              input.id,
-              ctx.near?.primaryAccountId ?? ctx.userId,
-              ctx.user.role,
-              getAlternateOwnerId(ctx),
-              orgId,
-              orgRole,
-            ),
-          ).catch((err) => {
-            if (err?.code === "NOT_FOUND") {
-              throw errors.NOT_FOUND({
+        .handler(async ({ input, context, errors }) =>
+          runEffect(services.project.deleteProject(input.id, caller(context))).catch(
+            rethrowNotFound(() =>
+              errors.NOT_FOUND({
                 message: "Project not found",
                 data: { resource: "project", resourceId: input.id },
-              });
-            }
-            throw err;
-          });
-        }),
+              }),
+            ),
+          ),
+        ),
 
       listProjectApps: builder.listProjectApps.handler(async ({ input }) => {
         const result = await runEffect(services.project.listProjectApps(input.projectId));
@@ -167,101 +110,58 @@ export default createPlugin({
 
       linkAppToProject: builder.linkAppToProject
         .use(auth.requireAuth)
-        .handler(async ({ input, context, errors }) => {
-          const ctx = context as any;
-          const { orgId, orgRole } = getOrgInfo(ctx);
-          return runEffect(
+        .handler(async ({ input, context, errors }) =>
+          runEffect(
             services.project.linkAppToProject(
               input.projectId,
               input.accountId,
               input.domain,
-              ctx.near?.primaryAccountId ?? ctx.userId,
-              ctx.user.role,
-              getAlternateOwnerId(ctx),
-              orgId,
-              orgRole,
+              caller(context),
             ),
-          ).catch((err) => {
-            if (err?.code === "NOT_FOUND") {
-              throw errors.NOT_FOUND({
+          ).catch(
+            rethrowNotFound(() =>
+              errors.NOT_FOUND({
                 message: "Project not found",
                 data: { resource: "project", resourceId: input.projectId },
-              });
-            }
-            throw err;
-          });
-        }),
+              }),
+            ),
+          ),
+        ),
 
       unlinkAppFromProject: builder.unlinkAppFromProject
         .use(auth.requireAuth)
-        .handler(async ({ input, context, errors }) => {
-          const ctx = context as any;
-          const { orgId, orgRole } = getOrgInfo(ctx);
-          return runEffect(
+        .handler(async ({ input, context, errors }) =>
+          runEffect(
             services.project.unlinkAppFromProject(
               input.projectId,
               input.accountId,
               input.domain,
-              ctx.near?.primaryAccountId ?? ctx.userId,
-              ctx.user.role,
-              getAlternateOwnerId(ctx),
-              orgId,
-              orgRole,
+              caller(context),
             ),
-          ).catch((err) => {
-            if (err?.code === "NOT_FOUND") {
-              throw errors.NOT_FOUND({
+          ).catch(
+            rethrowNotFound(() =>
+              errors.NOT_FOUND({
                 message: "Project or app not found",
                 data: { resource: "project-app" },
-              });
-            }
-            throw err;
-          });
-        }),
+              }),
+            ),
+          ),
+        ),
 
       listProjectsForApp: builder.listProjectsForApp.handler(async ({ input, context }) => {
-        const ctx = context as any;
-        const { orgId, orgRole } = getOrgInfo(ctx);
         const result = await runEffect(
-          services.project.listProjectsForApp(
-            input.accountId,
-            input.domain,
-            ctx.near?.primaryAccountId ?? ctx.userId,
-            getAlternateOwnerId(ctx),
-            orgId,
-            orgRole,
-          ),
+          services.project.listProjectsForApp(input.accountId, input.domain, caller(context)),
         );
         return { data: result };
       }),
 
       listMentions: builder.listMentions.handler(async ({ input, context }) => {
-        const ctx = context as any;
-        const { orgId, orgRole } = getOrgInfo(ctx);
-        const result = await runEffect(
-          services.project.listMentions(
-            input.id,
-            ctx.near?.primaryAccountId ?? ctx.userId,
-            getAlternateOwnerId(ctx),
-            orgId,
-            orgRole,
-          ),
-        );
+        const result = await runEffect(services.project.listMentions(input.id, caller(context)));
         return { data: result };
       }),
 
       listMentionedBy: builder.listMentionedBy.handler(async ({ input, context }) => {
-        const ctx = context as any;
-        const { orgId, orgRole } = getOrgInfo(ctx);
-        const result = await runEffect(
-          services.project.listMentionedBy(
-            input.id,
-            ctx.near?.primaryAccountId ?? ctx.userId,
-            getAlternateOwnerId(ctx),
-            orgId,
-            orgRole,
-          ),
-        );
+        const result = await runEffect(services.project.listMentionedBy(input.id, caller(context)));
         return { data: result };
       }),
     };

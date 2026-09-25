@@ -3,13 +3,13 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type Client, clientProjects, clients } from "../db/schema";
-import type { AgencyScope } from "./organization-access";
+import type { TreasuryScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
 const clientNotFound = () => new ORPCError("NOT_FOUND", { message: "Client not found" });
 
 export function createClientsService(db: Database, directory: ProjectDirectory) {
-  const requireClient = (scope: AgencyScope, id: string) =>
+  const requireClient = (scope: TreasuryScope, id: string) =>
     Effect.gen(function* () {
       const rows = yield* Effect.promise(() =>
         db
@@ -23,7 +23,7 @@ export function createClientsService(db: Database, directory: ProjectDirectory) 
       return row;
     });
 
-  const requireAgencyProjects = (scope: AgencyScope, projectIds: string[] | undefined) =>
+  const requireAgencyProjects = (scope: TreasuryScope, projectIds: string[] | undefined) =>
     Effect.promise(async () => {
       const projects = directory.forAgency(scope);
       for (const projectId of new Set(projectIds ?? [])) await projects.require(projectId);
@@ -39,7 +39,7 @@ export function createClientsService(db: Database, directory: ProjectDirectory) 
     );
 
   return {
-    list: (scope: AgencyScope) =>
+    list: (scope: TreasuryScope) =>
       Effect.gen(function* () {
         const rows: Client[] = yield* Effect.promise(() =>
           db
@@ -69,20 +69,20 @@ export function createClientsService(db: Database, directory: ProjectDirectory) 
         };
       }),
 
-    get: (scope: AgencyScope, id: string) =>
+    get: (scope: TreasuryScope, id: string) =>
       Effect.gen(function* () {
         const row = yield* requireClient(scope, id);
         return { client: row, projectIds: yield* projectIdsOf(id) };
       }),
 
-    projectIdsFor: (scope: AgencyScope, clientId: string) =>
+    projectIdsFor: (scope: TreasuryScope, clientId: string) =>
       Effect.gen(function* () {
         yield* requireClient(scope, clientId);
         return yield* projectIdsOf(clientId);
       }),
 
     create: (
-      scope: AgencyScope,
+      scope: TreasuryScope,
       input: {
         orgId: string;
         name: string;
@@ -155,7 +155,7 @@ export function createClientsService(db: Database, directory: ProjectDirectory) 
       }),
 
     update: (
-      scope: AgencyScope,
+      scope: TreasuryScope,
       input: {
         id: string;
         name?: string;
@@ -196,7 +196,7 @@ export function createClientsService(db: Database, directory: ProjectDirectory) 
         return { client: row!, projectIds: yield* projectIdsOf(input.id) };
       }),
 
-    delete: (scope: AgencyScope, id: string) =>
+    delete: (scope: TreasuryScope, id: string) =>
       Effect.gen(function* () {
         yield* requireClient(scope, id);
         yield* Effect.promise(() => db.delete(clients).where(eq(clients.id, id)));

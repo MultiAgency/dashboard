@@ -1,4 +1,5 @@
 import type { Database } from "../../src/db";
+import { organizationDaos } from "../../src/db/schema";
 import {
   type Organization,
   type OrganizationRole,
@@ -77,4 +78,11 @@ export function inMemoryAccess(
 ) {
   const { port } = inMemoryOrganizations({ organizations: [], ...seed });
   return createOrganizationAccess({ db: db as Database, organizations: port, defaultDaoAccountId });
+}
+
+export async function seedAgencyDaos(db: Database, organizations: FakeOrganization[]) {
+  const rows = organizations.flatMap((o) =>
+    o.daoAccountId && !o.isPersonal ? [{ organizationId: o.id, daoAccountId: o.daoAccountId }] : [],
+  );
+  if (rows.length > 0) await db.insert(organizationDaos).values(rows).onConflictDoNothing();
 }

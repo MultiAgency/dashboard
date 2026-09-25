@@ -10,25 +10,31 @@ import { createBudgetsService } from "../../src/services/budgets";
 import { createClientPortalService } from "../../src/services/client-portal";
 import { createClientsService } from "../../src/services/clients";
 import {
-  type AgencyScope,
   type OrganizationAccessService,
   ROLE_MATRIX,
+  requireTreasury,
+  type TreasuryScope,
 } from "../../src/services/organization-access";
 import { createProjectDirectory } from "../../src/services/project-directory";
-import { inMemoryAccess, signedIn } from "../fakes/organizations";
+import { inMemoryAccess, seedAgencyDaos, signedIn } from "../fakes/organizations";
 import { inMemoryProjects, project } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
 const ALPHA = "alpha.sputnik-dao.near";
 const BETA = "beta.sputnik-dao.near";
 
+const agencies = [
+  { id: "alpha-org", daoAccountId: ALPHA },
+  { id: "beta-org", daoAccountId: BETA },
+];
+
 describe("agency isolation", () => {
   let pg: PGlite;
   let db: Database;
   let access: OrganizationAccessService;
-  let alpha: AgencyScope;
-  let beta: AgencyScope;
-  let alphaTreasurer: AgencyScope;
+  let alpha: TreasuryScope;
+  let beta: TreasuryScope;
+  let alphaTreasurer: TreasuryScope;
   const directory = createProjectDirectory(
     () =>
       inMemoryProjects([
@@ -43,19 +49,19 @@ describe("agency isolation", () => {
     pg = new PGlite("memory://");
     await applyAllMigrations(pg);
     db = drizzle(pg, { schema }) as unknown as Database;
+    await seedAgencyDaos(db, agencies);
     access = inMemoryAccess(db, {
-      organizations: [
-        { id: "alpha-org", daoAccountId: ALPHA },
-        { id: "beta-org", daoAccountId: BETA },
-      ],
+      organizations: agencies,
       members: [
         { userId: "alpha-admin", organizationId: "alpha-org", role: "admin" },
         { userId: "alpha-treasurer", organizationId: "alpha-org", role: "owner" },
         { userId: "beta-admin", organizationId: "beta-org", role: "admin" },
       ],
     });
-    const manager = (userId: string, organizationId: string, near: string) =>
-      access.agencyScope(signedIn(userId, organizationId, near), ROLE_MATRIX.manage);
+    const manager = async (userId: string, organizationId: string, near: string) =>
+      requireTreasury(
+        await access.agencyScope(signedIn(userId, organizationId, near), ROLE_MATRIX.manage),
+      );
     alpha = await manager("alpha-admin", "alpha-org", "admin.near");
     beta = await manager("beta-admin", "beta-org", "admin.near");
     alphaTreasurer = await manager("alpha-treasurer", "alpha-org", "treasurer.near");

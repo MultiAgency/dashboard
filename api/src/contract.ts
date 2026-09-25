@@ -2,6 +2,19 @@ import { BAD_REQUEST, FORBIDDEN, NOT_FOUND, UNAUTHORIZED } from "every-plugin/er
 import { oc } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 
+const tokenList = z.object({
+  tokens: z.array(
+    z.object({
+      tokenId: z.string(),
+      network: z.string(),
+      symbol: z.string(),
+      decimals: z.number().int().nonnegative(),
+      name: z.string(),
+      icon: z.string().nullable(),
+    }),
+  ),
+});
+
 const applicationKind = z.enum(["founder", "contributor", "client"]);
 
 const projectStatus = z.enum(["active", "paused", "archived"]);
@@ -374,6 +387,11 @@ export const contract = oc.router({
       list: oc
         .route({ method: "GET", path: "/projects" })
         .output(z.object({ data: z.array(projectWithNearn) })),
+
+      listOwned: oc
+        .route({ method: "GET", path: "/admin/projects" })
+        .output(z.object({ data: z.array(projectWithNearn) }))
+        .errors({ UNAUTHORIZED, FORBIDDEN }),
 
       get: oc
         .route({ method: "GET", path: "/projects/{slug}" })
@@ -963,20 +981,12 @@ export const contract = oc.router({
   },
 
   tokens: {
-    list: oc.route({ method: "GET", path: "/tokens" }).output(
-      z.object({
-        tokens: z.array(
-          z.object({
-            tokenId: z.string(),
-            network: z.string(),
-            symbol: z.string(),
-            decimals: z.number().int().nonnegative(),
-            name: z.string(),
-            icon: z.string().nullable(),
-          }),
-        ),
-      }),
-    ),
+    list: oc.route({ method: "GET", path: "/tokens" }).output(tokenList),
+
+    listOwned: oc
+      .route({ method: "GET", path: "/admin/tokens" })
+      .output(tokenList)
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
 
     getStorageStatus: oc
       .route({ method: "GET", path: "/tokens/storage-status" })
@@ -1120,6 +1130,7 @@ export const contract = oc.router({
       .output(
         z.object({
           orgRole: z.enum(["admin", "member", "owner"]).nullable(),
+          agencyDao: z.string().nullable(),
           capabilities: z.object({
             canManageMembers: z.boolean(),
             canUseMoney: z.boolean(),
@@ -1146,6 +1157,35 @@ export const contract = oc.router({
           ),
         }),
       )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+  },
+
+  agencyDao: {
+    get: oc
+      .route({ method: "GET", path: "/admin/agency-dao" })
+      .output(
+        z.object({
+          daoAccountId: z.string().nullable(),
+          network: z.enum(["mainnet", "testnet"]),
+          inUse: z.boolean(),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    connect: oc
+      .route({ method: "POST", path: "/admin/agency-dao" })
+      .input(
+        z.object({
+          daoAccountId: z.string().trim().min(1).max(64),
+          organizationId: z.string().min(1).optional(),
+        }),
+      )
+      .output(z.object({ daoAccountId: z.string() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+
+    disconnect: oc
+      .route({ method: "DELETE", path: "/admin/agency-dao" })
+      .output(z.object({ daoAccountId: z.null() }))
       .errors({ UNAUTHORIZED, FORBIDDEN }),
   },
 
