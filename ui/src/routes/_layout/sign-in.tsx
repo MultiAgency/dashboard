@@ -9,7 +9,7 @@ import { ResendVerificationButton } from "@/components/resend-verification-butto
 import { useNearSignIn } from "@/hooks/use-near-sign-in";
 import {
   landingDestination,
-  refreshAccountQueries,
+  refreshAfterAccountChange,
   requestPasswordReset,
   WELCOME_PATH,
 } from "@/lib/account";
@@ -69,9 +69,11 @@ function SignInPage() {
   const mode = search.mode ?? "sign-in";
   const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const refreshSession = () => refreshAccountQueries(queryClient);
+  const refreshSession = async () => {
+    await refreshAfterAccountChange(queryClient, authClient);
+  };
   const finish = usePostSignIn(search.redirect);
-  const nearSignIn = useNearSignIn(refreshSession);
+  const nearSignIn = useNearSignIn(() => {});
   const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {

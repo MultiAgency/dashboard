@@ -1,7 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { refreshAfterAccountChange } from "@/lib/account";
+import { sessionQueryKey } from "@/lib/auth";
 import { getNetwork, setNetwork } from "@/lib/network";
 import { meRolesQueryKey } from "@/lib/queries";
 
@@ -53,10 +54,7 @@ export function useNearSignIn(onSignedIn: () => void | Promise<void>) {
         });
       }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey }),
-        queryClient.invalidateQueries({ queryKey: meRolesQueryKey }),
-      ]);
+      await refreshAfterAccountChange(queryClient, authClient);
       await onSignedIn();
     },
     onError: (error: Error) => {

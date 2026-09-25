@@ -9,6 +9,7 @@ import { OrganizationRowCard } from "@/components/organization-row-card";
 import {
   landingDestination,
   refreshAccountQueries,
+  refreshAfterAccountChange,
   userInvitationsQueryOptions,
 } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
@@ -31,7 +32,7 @@ export function useInvitationActions() {
         });
         if (activeError) throw new Error(activeError.message ?? "Could not open the Organization");
       }
-      await refreshAccountQueries(queryClient);
+      await refreshAfterAccountChange(queryClient, authClient);
       return landingDestination({ authClient, apiClient, queryClient });
     },
     onSuccess: (destination) => {
