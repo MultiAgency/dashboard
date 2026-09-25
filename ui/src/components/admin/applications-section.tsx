@@ -1,10 +1,21 @@
+import { TrayIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Card, CardContent, DataTable } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  DataTable,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Field, selectClass } from "@/components/admin-form";
+import { ChoiceSelect, Empty } from "@/components/admin-form";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { adminApplicationsListQueryKey, refreshAfter } from "@/lib/queries";
@@ -40,13 +51,10 @@ export function ApplicationsAdminSection() {
   if (applicationsQuery.isError) {
     if (isForbidden(applicationsQuery.error)) {
       return (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              Applications are reviewed by the MultiAgency team.
-            </p>
-          </CardContent>
-        </Card>
+        <Empty
+          icon={<TrayIcon aria-hidden />}
+          label="Applications are reviewed by the MultiAgency team."
+        />
       );
     }
     return <AdminError error={applicationsQuery.error} />;
@@ -60,15 +68,11 @@ export function ApplicationsAdminSection() {
       header: "Name",
       accessorKey: "name",
       cell: ({ row }) => (
-        <div className="space-y-0.5">
-          <div className="text-sm uppercase tracking-tight font-bold">{row.original.name}</div>
-          <div className="font-mono text-xs text-muted-foreground break-all">
-            {row.original.email}
-          </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="font-medium">{row.original.name}</span>
+          <span className="text-muted-foreground break-all">{row.original.email}</span>
           {row.original.nearAccountId && (
-            <div className="font-mono text-xs text-muted-foreground">
-              {row.original.nearAccountId}
-            </div>
+            <span className="text-muted-foreground">{row.original.nearAccountId}</span>
           )}
         </div>
       ),
@@ -78,7 +82,7 @@ export function ApplicationsAdminSection() {
       header: "Message",
       accessorKey: "message",
       cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground line-clamp-2 max-w-xs">
+        <span className="line-clamp-2 max-w-xs whitespace-normal text-muted-foreground">
           {row.original.message ?? "—"}
         </span>
       ),
@@ -104,7 +108,7 @@ export function ApplicationsAdminSection() {
       header: "Created",
       accessorFn: (row) => new Date(row.createdAt).toISOString(),
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="text-muted-foreground tabular-nums">
           {new Date(row.original.createdAt).toISOString().slice(0, 10)}
         </span>
       ),
@@ -119,82 +123,94 @@ export function ApplicationsAdminSection() {
   ];
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_auto]">
-          <Field label="kind" htmlFor="filter-kind">
-            <select
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>Applications</h2>
+        </CardTitle>
+        <CardDescription>
+          Founder, builder and client applications from the public site.
+        </CardDescription>
+        <CardAction>
+          <Badge variant="secondary">{apps.length}</Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-40">
+            <ChoiceSelect
               id="filter-kind"
-              value={filterKind}
-              onChange={(e) => setFilterKind(e.target.value as ApplicationKind | "")}
-              className={selectClass}
-            >
-              <option value="">all kinds</option>
-              <option value="founder">founder</option>
-              <option value="contributor">contributor</option>
-              <option value="client">client</option>
-            </select>
-          </Field>
-          <Field label="status" htmlFor="filter-status">
-            <select
-              id="filter-status"
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as ApplicationStatus | "")}
-              className={selectClass}
-            >
-              <option value="">all statuses</option>
-              <option value="new">new</option>
-              <option value="reviewing">reviewing</option>
-              <option value="accepted">accepted</option>
-              <option value="declined">declined</option>
-              <option value="converted">converted</option>
-            </select>
-          </Field>
-          <div className="flex items-end">
-            <Button
-              variant="outline"
+              ariaLabel="Kind"
               size="sm"
-              disabled={!filtersActive}
+              value={filterKind}
+              onValueChange={(value) => setFilterKind(value as ApplicationKind | "")}
+              emptyLabel="All kinds"
+              options={[
+                { value: "founder", label: "Founder" },
+                { value: "contributor", label: "Contributor" },
+                { value: "client", label: "Client" },
+              ]}
+            />
+          </div>
+          <div className="w-40">
+            <ChoiceSelect
+              id="filter-status"
+              ariaLabel="Status"
+              size="sm"
+              value={filterStatus}
+              onValueChange={(value) => setFilterStatus(value as ApplicationStatus | "")}
+              emptyLabel="All statuses"
+              options={[
+                { value: "new", label: "New" },
+                { value: "reviewing", label: "Reviewing" },
+                { value: "accepted", label: "Accepted" },
+                { value: "declined", label: "Declined" },
+                { value: "converted", label: "Converted" },
+              ]}
+            />
+          </div>
+          {filtersActive && (
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 setFilterKind("");
                 setFilterStatus("new");
               }}
             >
-              reset
+              Reset filters
+            </Button>
+          )}
+        </div>
+
+        <DataTable
+          columns={columns}
+          data={apps}
+          isLoading={applicationsQuery.isLoading}
+          error={applicationsQuery.error}
+          onRetry={() => applicationsQuery.refetch()}
+          emptyMessage={
+            filtersActive ? "No applications match these filters" : "No applications yet"
+          }
+          csvFilename="applications"
+          viewId="admin-applications"
+          searchPlaceholder="Search applications…"
+        />
+
+        {applicationsQuery.hasNextPage && (
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => applicationsQuery.fetchNextPage()}
+              disabled={applicationsQuery.isFetchingNextPage}
+            >
+              {applicationsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
-
-      <DataTable
-        columns={columns}
-        data={apps}
-        isLoading={applicationsQuery.isLoading}
-        error={applicationsQuery.error}
-        onRetry={() => applicationsQuery.refetch()}
-        emptyMessage={
-          filtersActive
-            ? "No applications match the current filters."
-            : "No applications submitted yet."
-        }
-        csvFilename="applications"
-        viewId="admin-applications"
-        searchPlaceholder="Search applications…"
-      />
-
-      {applicationsQuery.hasNextPage && (
-        <div className="flex justify-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => applicationsQuery.fetchNextPage()}
-            disabled={applicationsQuery.isFetchingNextPage}
-          >
-            {applicationsQuery.isFetchingNextPage ? "loading..." : "load more"}
-          </Button>
-        </div>
-      )}
-    </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -230,7 +246,7 @@ function ApplicationActions({ application }: { application: Application }) {
   });
 
   return (
-    <div className="flex flex-wrap gap-1 justify-end">
+    <div className="flex justify-end gap-1">
       {application.kind === "contributor" &&
         application.status === "accepted" &&
         application.nearAccountId && (
@@ -240,7 +256,7 @@ function ApplicationActions({ application }: { application: Application }) {
             onClick={() => convertMutation.mutate()}
             disabled={convertMutation.isPending}
           >
-            {convertMutation.isPending ? "converting..." : "convert to builder"}
+            {convertMutation.isPending ? "Converting…" : "Convert to builder"}
           </Button>
         )}
       {application.status === "converted" && <Badge variant="secondary">converted</Badge>}
@@ -262,30 +278,30 @@ function ApplicationActions({ application }: { application: Application }) {
 function transitionsFor(status: ApplicationStatus): {
   to: ApplicationStatus;
   label: string;
-  variant: "default" | "outline" | "destructive";
+  variant: "default" | "outline" | "ghost" | "destructive";
 }[] {
   switch (status) {
     case "new":
       return [
-        { to: "reviewing", label: "review", variant: "default" },
-        { to: "accepted", label: "accept", variant: "default" },
-        { to: "declined", label: "decline", variant: "destructive" },
+        { to: "reviewing", label: "Review", variant: "outline" },
+        { to: "accepted", label: "Accept", variant: "default" },
+        { to: "declined", label: "Decline", variant: "destructive" },
       ];
     case "reviewing":
       return [
-        { to: "accepted", label: "accept", variant: "default" },
-        { to: "declined", label: "decline", variant: "destructive" },
-        { to: "new", label: "reset", variant: "outline" },
+        { to: "accepted", label: "Accept", variant: "default" },
+        { to: "declined", label: "Decline", variant: "destructive" },
+        { to: "new", label: "Reset", variant: "ghost" },
       ];
     case "accepted":
       return [
-        { to: "reviewing", label: "reopen", variant: "outline" },
-        { to: "declined", label: "decline", variant: "destructive" },
+        { to: "reviewing", label: "Reopen", variant: "outline" },
+        { to: "declined", label: "Decline", variant: "destructive" },
       ];
     case "declined":
       return [
-        { to: "reviewing", label: "reopen", variant: "outline" },
-        { to: "accepted", label: "accept", variant: "default" },
+        { to: "reviewing", label: "Reopen", variant: "outline" },
+        { to: "accepted", label: "Accept", variant: "default" },
       ];
     case "converted":
       return [];
