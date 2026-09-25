@@ -3,8 +3,10 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Button, Input } from "@/components";
-import { Field } from "@/components/admin-form";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { landingDestination, refreshAccountQueries } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
 import { availableSlug, isOrganizationSlugTaken, isValidSlug, slugify } from "@/lib/slugify";
@@ -68,77 +70,94 @@ export function CreateOrganizationForm({ onCreated }: { onCreated?: () => void }
   });
 
   const canSubmit = name.trim().length > 0 && isValidSlug(slugTrimmed) && !create.isPending;
+  const slugTaken = create.error instanceof SlugTakenError;
+  const slugMalformed = slugTrimmed.length > 0 && !isValidSlug(slugTrimmed);
+  const slugInvalid = slugTaken || slugMalformed;
+
+  const applySuggestion = (value: string) => {
+    setSlug(value);
+    setSlugTouched(true);
+    setSuggestion(null);
+    create.reset();
+  };
 
   return (
     <form
       autoComplete="off"
-      className="grid gap-4"
+      className="flex flex-col gap-6"
       onSubmit={(e) => {
         e.preventDefault();
         if (canSubmit) create.mutate();
       }}
     >
-      <Field label="name" htmlFor="create-organization-name">
-        <Input
-          id="create-organization-name"
-          value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            if (!slugTouched) setSlug(slugify(e.target.value));
-          }}
-          disabled={create.isPending}
-          required
-        />
-      </Field>
-      <Field
-        label="slug"
-        htmlFor="create-organization-slug"
-        helper="Unique across the platform. Others use it to find your Organization."
-      >
-        <Input
-          id="create-organization-slug"
-          value={slug}
-          onChange={(e) => {
-            setSlugTouched(true);
-            setSuggestion(null);
-            create.reset();
-            setSlug(
-              e.target.value
-                .toLowerCase()
-                .replace(/\s+/g, "-")
-                .replace(/[^a-z0-9-]/g, ""),
-            );
-          }}
-          placeholder="lowercase-with-hyphens"
-          disabled={create.isPending}
-          required
-        />
-        {create.error instanceof SlugTakenError && (
-          <p className="text-xs text-destructive">
-            “{slugTrimmed}” is already taken.
-            {suggestion && (
-              <>
-                {" "}
-                <button
-                  type="button"
-                  className="underline text-foreground"
-                  onClick={() => {
-                    setSlug(suggestion);
-                    setSlugTouched(true);
-                    setSuggestion(null);
-                    create.reset();
-                  }}
-                >
-                  Use “{suggestion}”
-                </button>
-              </>
-            )}
-          </p>
-        )}
-      </Field>
-      <Button type="submit" disabled={!canSubmit}>
-        {create.isPending ? "creating..." : "create organization"}
-      </Button>
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="create-organization-name">Name</FieldLabel>
+          <Input
+            id="create-organization-name"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (!slugTouched) setSlug(slugify(e.target.value));
+            }}
+            placeholder="Acme Studio"
+            disabled={create.isPending}
+            required
+          />
+        </Field>
+        <Field data-invalid={slugInvalid || undefined}>
+          <FieldLabel htmlFor="create-organization-slug">Slug</FieldLabel>
+          <Input
+            id="create-organization-slug"
+            value={slug}
+            onChange={(e) => {
+              setSlugTouched(true);
+              setSuggestion(null);
+              create.reset();
+              setSlug(
+                e.target.value
+                  .toLowerCase()
+                  .replace(/\s+/g, "-")
+                  .replace(/[^a-z0-9-]/g, ""),
+              );
+            }}
+            placeholder="acme-studio"
+            aria-invalid={slugInvalid || undefined}
+            aria-describedby="create-organization-slug-description"
+            disabled={create.isPending}
+            required
+          />
+          <FieldDescription id="create-organization-slug-description">
+            Unique across the platform. Others use it to find your Organization.
+          </FieldDescription>
+          {slugMalformed && !slugTaken && (
+            <FieldError aria-live="polite">
+              Use lowercase letters, numbers and single hyphens.
+            </FieldError>
+          )}
+          {slugTaken && (
+            <FieldError aria-live="polite">“{slugTrimmed}” is already taken.</FieldError>
+          )}
+          {slugTaken && suggestion && (
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={() => applySuggestion(suggestion)}
+              >
+                Use “{suggestion}”
+              </Button>
+            </div>
+          )}
+        </Field>
+      </FieldGroup>
+      <div className="flex justify-end">
+        <Button type="submit" disabled={!canSubmit}>
+          {create.isPending && <Spinner data-icon="inline-start" />}
+          {create.isPending ? "Creating…" : "Create Organization"}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -1,10 +1,30 @@
-import { ArrowRightIcon } from "@phosphor-icons/react";
+import {
+  CheckCircleIcon,
+  EnvelopeSimpleIcon,
+  PasswordIcon,
+  WalletIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Badge, Button, Card, CardContent, Input } from "@/components";
+import { LoadingCard } from "@/components/loading-card";
 import { ResendVerificationButton } from "@/components/resend-verification-button";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
 import { refreshAccountQueries, requestPasswordReset } from "@/lib/account";
 import { sessionQueryOptions } from "@/lib/auth";
 import { realEmail } from "@/lib/membership";
@@ -62,108 +82,121 @@ export function SignInMethods() {
   });
 
   if (!user) return null;
+  if (accountsQuery.isLoading) return <LoadingCard label="sign-in methods" rows={3} />;
 
   const accounts = accountsQuery.data;
   const verified = !!email && user.emailVerified;
+  const hasPassword = !!accounts?.hasPassword;
+  const nearAccountId = accounts?.nearAccountId ?? null;
 
   return (
-    <Card>
-      <CardContent className="grid gap-5">
-        <MethodRow
-          label="email"
-          status={email ? (verified ? "verified" : "unverified") : "not added"}
-          active={verified}
-        >
-          {email ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs break-all">{email}</span>
-              {!verified && (
-                <ResendVerificationButton
-                  email={email}
-                  callbackURL="/profile"
-                  label="send verification"
-                  size="sm"
-                />
-              )}
-            </div>
-          ) : (
-            <AddEmailForm onAdded={refresh} />
-          )}
-        </MethodRow>
-
-        <MethodRow
-          label="password"
-          status={accounts?.hasPassword ? "set" : "not set"}
-          active={!!accounts?.hasPassword}
-        >
-          {!accounts?.hasPassword && (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                {verified
-                  ? "We email you a link to choose a password, so you can sign in without a wallet."
-                  : "Add and verify an email first."}
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setPassword.mutate()}
-                disabled={!verified || setPassword.isPending}
-              >
-                {setPassword.isPending ? "sending..." : "set password"}
-              </Button>
-            </div>
-          )}
-        </MethodRow>
-
-        <MethodRow
-          label="near wallet"
-          status={accounts?.nearAccountId ? "linked" : "not linked"}
-          active={!!accounts?.nearAccountId}
-        >
-          {accounts?.nearAccountId ? (
-            <span className="font-mono text-xs break-all">{accounts.nearAccountId}</span>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                Link a wallet to receive payouts or act onchain. You can then sign in with it too.
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => linkNear.mutate()}
-                disabled={linkNear.isPending || accountsQuery.isLoading}
-              >
-                {linkNear.isPending ? "linking..." : "link NEAR wallet"}
-              </Button>
-            </div>
-          )}
-        </MethodRow>
-      </CardContent>
-    </Card>
+    <ItemGroup>
+      <MethodItem
+        icon={<EnvelopeSimpleIcon aria-hidden className="text-muted-foreground" />}
+        title="Email"
+        status={email ? (verified ? "Verified" : "Unverified") : "Not added"}
+        active={verified}
+        description={email ?? "Add an email to sign in with a password and receive invitations."}
+        actions={
+          email && !verified ? (
+            <ResendVerificationButton
+              email={email}
+              callbackURL="/profile"
+              label="Send verification"
+              size="sm"
+            />
+          ) : null
+        }
+        footer={email ? null : <AddEmailForm onAdded={refresh} />}
+      />
+      <MethodItem
+        icon={<PasswordIcon aria-hidden className="text-muted-foreground" />}
+        title="Password"
+        status={hasPassword ? "Set" : "Not set"}
+        active={hasPassword}
+        description={
+          hasPassword
+            ? "You can sign in with your email and password."
+            : verified
+              ? "We email you a link to choose a password, so you can sign in without a wallet."
+              : "Add and verify an email first."
+        }
+        actions={
+          hasPassword ? null : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPassword.mutate()}
+              disabled={!verified || setPassword.isPending}
+            >
+              {setPassword.isPending && <Spinner data-icon="inline-start" />}
+              Set password
+            </Button>
+          )
+        }
+      />
+      <MethodItem
+        icon={<WalletIcon aria-hidden className="text-muted-foreground" />}
+        title="NEAR wallet"
+        status={nearAccountId ? "Linked" : "Not linked"}
+        active={!!nearAccountId}
+        description={
+          nearAccountId ??
+          "Link a wallet to receive payouts or act onchain. You can then sign in with it too."
+        }
+        actions={
+          nearAccountId ? null : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => linkNear.mutate()}
+              disabled={linkNear.isPending}
+            >
+              {linkNear.isPending && <Spinner data-icon="inline-start" />}
+              Link wallet
+            </Button>
+          )
+        }
+      />
+    </ItemGroup>
   );
 }
 
-function MethodRow({
-  label,
+function MethodItem({
+  icon,
+  title,
   status,
   active,
-  children,
+  description,
+  actions,
+  footer,
 }: {
-  label: string;
+  icon: ReactNode;
+  title: string;
   status: string;
   active: boolean;
-  children: ReactNode;
+  description: ReactNode;
+  actions?: ReactNode;
+  footer?: ReactNode;
 }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-start">
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          {label}
-        </span>
-        <Badge variant={active ? "default" : "outline"}>{status}</Badge>
-      </div>
-      <div className="min-w-0">{children}</div>
-    </div>
+    <Item asChild variant="outline" size="sm">
+      <li>
+        <ItemMedia variant="icon">{icon}</ItemMedia>
+        <ItemContent className="min-w-0">
+          <ItemTitle>
+            {title}
+            <Badge variant={active ? "secondary" : "outline"}>
+              {active && <CheckCircleIcon data-icon="inline-start" aria-hidden />}
+              {status}
+            </Badge>
+          </ItemTitle>
+          <ItemDescription className="break-all">{description}</ItemDescription>
+        </ItemContent>
+        {actions && <ItemActions>{actions}</ItemActions>}
+        {footer && <ItemFooter>{footer}</ItemFooter>}
+      </li>
+    </Item>
   );
 }
 
@@ -193,20 +226,25 @@ function AddEmailForm({ onAdded }: { onAdded: () => Promise<void> }) {
   };
 
   return (
-    <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submit}>
-      <Input
-        type="email"
-        aria-label="email address"
-        placeholder="you@example.com"
-        autoComplete="email"
-        required
-        value={newEmail}
-        onChange={(e) => setNewEmail(e.target.value)}
-        disabled={change.isPending}
-      />
-      <Button type="submit" size="sm" disabled={change.isPending || !newEmail.trim()}>
-        {change.isPending ? "adding..." : "add email"}
-        <ArrowRightIcon data-icon="inline-end" aria-hidden />
+    <form className="flex w-full flex-col gap-2 sm:flex-row sm:items-end" onSubmit={submit}>
+      <Field className="flex-1">
+        <FieldLabel htmlFor="add-email" className="sr-only">
+          Email address
+        </FieldLabel>
+        <Input
+          id="add-email"
+          type="email"
+          placeholder="you@example.com"
+          autoComplete="email"
+          required
+          value={newEmail}
+          onChange={(e) => setNewEmail(e.target.value)}
+          disabled={change.isPending}
+        />
+      </Field>
+      <Button type="submit" disabled={change.isPending || !newEmail.trim()}>
+        {change.isPending && <Spinner data-icon="inline-start" />}
+        Add email
       </Button>
     </form>
   );

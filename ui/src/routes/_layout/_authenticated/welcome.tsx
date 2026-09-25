@@ -2,11 +2,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuthClient } from "@/app";
-import { Card, CardContent, CardDescription } from "@/components";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "@/components";
 import { CreateOrganizationForm } from "@/components/create-organization-form";
+import { LoadingCard } from "@/components/loading-card";
+import { PageHeader } from "@/components/page-header";
 import { PendingInvitationsList } from "@/components/pending-invitations";
 import { landingDestination, WELCOME_PATH } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
+import { sessionQueryOptions } from "@/lib/auth";
+import { realEmail } from "@/lib/membership";
 
 export const Route = createFileRoute("/_layout/_authenticated/welcome")({
   head: () => ({
@@ -23,6 +27,8 @@ function WelcomePage() {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { data: session } = useQuery(sessionQueryOptions(authClient));
+  const email = realEmail(session?.user?.email);
 
   const landing = useQuery({
     queryKey: ["landing"],
@@ -40,47 +46,60 @@ function WelcomePage() {
 
   if (landing.isLoading || (landing.data && landing.data !== WELCOME_PATH)) {
     return (
-      <Card>
-        <CardContent>
-          <CardDescription className="text-center">opening your workspace...</CardDescription>
-        </CardContent>
-      </Card>
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-6 w-40" />
+          <Skeleton className="h-3 w-3/4" />
+        </div>
+        <LoadingCard label="your workspace" rows={2} />
+      </div>
     );
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          get · started
-        </div>
-        <h1 className="text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-          Welcome
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          You are not a member of any Organization yet. Accept an invitation below to join one, or
-          create your own. If you are expecting an invitation, ask an owner or admin of that
-          Organization to send it to the email on your Profile.
-        </p>
-      </header>
+    <div className="mx-auto flex w-full max-w-2xl animate-fade-in flex-col gap-6">
+      <PageHeader
+        title="Welcome to MultiAgency"
+        description="You're not in an Organization yet. Join one you were invited to, or create your own."
+      />
 
-      <section className="space-y-3">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          pending invitations
-        </div>
-        <PendingInvitationsList />
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Join an Organization</h2>
+          </CardTitle>
+          <CardDescription>Accept an invitation to work with an existing team.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PendingInvitationsList
+            emptyDescription={
+              email ? (
+                <>
+                  Ask an owner or admin to invite{" "}
+                  <span className="font-medium break-all text-foreground">{email}</span>.
+                  Invitations show up here.
+                </>
+              ) : (
+                "Add an email on your Profile, then ask an owner or admin to invite it."
+              )
+            }
+          />
+        </CardContent>
+      </Card>
 
-      <section className="space-y-3">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          create an organization
-        </div>
-        <Card>
-          <CardContent className="p-5">
-            <CreateOrganizationForm />
-          </CardContent>
-        </Card>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Create an Organization</h2>
+          </CardTitle>
+          <CardDescription>
+            You become its owner and can invite your team. Connect a treasury later in Settings.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CreateOrganizationForm />
+        </CardContent>
+      </Card>
     </div>
   );
 }
