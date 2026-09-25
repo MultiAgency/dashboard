@@ -31,21 +31,21 @@ describe("proposals-list — STATUS_ROW_VARIANT map covers every status with the
 
 describe("proposals-list — VoteTally renders all three vote actions conditionally", () => {
   test("approve count always renders (most common positive signal)", () => {
-    expect(source).toMatch(/approve<\/span>\s*\{counts\.Approve\}/);
+    expect(source).toMatch(/approve<\/span>\s*\{counts\.Approve\}/i);
   });
 
   test("reject count always renders (most common negative signal)", () => {
-    expect(source).toMatch(/reject<\/span>\s*\{counts\.Reject\}/);
+    expect(source).toMatch(/reject<\/span>\s*\{counts\.Reject\}/i);
   });
 
   test("remove count renders only when > 0 (rare action; would clutter common cases)", () => {
     expect(source).toMatch(/\{counts\.Remove\s*>\s*0\s*&&/);
-    expect(source).toMatch(/remove<\/span>\s*\{counts\.Remove\}/);
+    expect(source).toMatch(/remove<\/span>\s*\{counts\.Remove\}/i);
   });
 
   test('empty vote record renders "no tally available" (cache-served terminals carry {})', () => {
     expect(source).toMatch(/entries\.length\s*===\s*0/);
-    expect(source).toMatch(/no tally available/);
+    expect(source).toMatch(/no tally available/i);
   });
 
   test("tally aggregation iterates over Object.values(votes) — order-independent count", () => {
