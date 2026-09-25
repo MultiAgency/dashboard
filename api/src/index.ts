@@ -18,6 +18,7 @@ import {
 import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
 import { createAgencyDaoService } from "./services/agency-dao";
+import { createAgentLinksService } from "./services/agent-links";
 import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
 import { createBillingsService } from "./services/billings";
@@ -27,6 +28,7 @@ import { createClientPortalService } from "./services/client-portal";
 import { createContactFormService } from "./services/contact-form";
 import { createContributorsService } from "./services/contributors";
 import { createEngagementsService } from "./services/engagements";
+import { createIdeasService } from "./services/ideas";
 import { createProjectLedgers } from "./services/ledger";
 import { createListingsService } from "./services/listings";
 import { createMeService } from "./services/me";
@@ -139,6 +141,16 @@ export default createPlugin.withPlugins<PluginsClient>()({
         notifications,
         onPlanApplied: changeOrders.notifyPlanApplied,
       });
+      const ideas = createIdeasService({
+        db,
+        agency,
+        directory,
+        readScopeOfAgency: access.readScopeOfAgency,
+        engagements,
+        notifications,
+        organizations: organizationDirectory,
+      });
+      const agentLinks = createAgentLinksService({ db });
       const clientPortal = createClientPortalService(
         access,
         agency,
@@ -172,6 +184,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
         engagements,
         prepayments,
         changeOrders,
+        ideas,
+        agentLinks,
         notifications,
         organizationDirectory,
         authPool,
@@ -207,6 +221,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
       engagements,
       prepayments,
       changeOrders,
+      ideas,
+      agentLinks,
       notifications,
       organizationDirectory,
       assignments,
@@ -337,7 +353,24 @@ export default createPlugin.withPlugins<PluginsClient>()({
           generate: builder.agency.reports.generate
             .use(member)
             .handler(async ({ context, input }) =>
-              runEffect(reports.generate(context.scope, input)),
+              runEffect(
+                reports.generateSaved(context.scope, input, {
+                  organizationId: context.scope.organizationId,
+                  userId: context.userId ?? context.scope.actorId,
+                }),
+              ),
+            ),
+
+          list: builder.agency.reports.list
+            .use(member)
+            .handler(async ({ context, input }) =>
+              reports.listSaved(context.scope.organizationId, input),
+            ),
+
+          get: builder.agency.reports.get
+            .use(member)
+            .handler(async ({ context, input }) =>
+              reports.getSaved(context.scope.organizationId, input.id),
             ),
         },
       },
@@ -462,6 +495,46 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context, input }) => changeOrders.reject(context.scope, input)),
       },
 
+      ideas: {
+        list: builder.ideas.list
+          .use(member)
+          .handler(async ({ context, input }) => ideas.list(context.scope, input)),
+
+        submit: builder.ideas.submit
+          .use(member)
+          .handler(async ({ context, input }) => ideas.submit(context.scope, input)),
+
+        accept: builder.ideas.accept
+          .use(manager)
+          .handler(async ({ context, input }) => ideas.accept(context.scope, input)),
+
+        decline: builder.ideas.decline
+          .use(manager)
+          .handler(async ({ context, input }) => ideas.decline(context.scope, input)),
+      },
+
+      agentLinks: {
+        list: builder.agentLinks.list
+          .use(member)
+          .handler(async ({ context, input }) => agentLinks.list(context.scope, input)),
+
+        create: builder.agentLinks.create
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.create(context.scope, input)),
+
+        update: builder.agentLinks.update
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.update(context.scope, input)),
+
+        reorder: builder.agentLinks.reorder
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.reorder(context.scope, input)),
+
+        remove: builder.agentLinks.remove
+          .use(manager)
+          .handler(async ({ context, input }) => agentLinks.remove(context.scope, input)),
+      },
+
       clientPortal: {
         dashboard: {
           summary: builder.clientPortal.dashboard.summary
@@ -505,6 +578,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
             .handler(async ({ context, input }) =>
               runEffect(clientPortal.generateReport(context, input)),
             ),
+
+          list: builder.clientPortal.reports.list
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.listReports(context, input)),
+
+          get: builder.clientPortal.reports.get
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.getReport(context, input)),
         },
       },
 

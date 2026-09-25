@@ -110,17 +110,37 @@ export function createClientPortalService(
     ) =>
       Effect.gen(function* () {
         const engagement = yield* shared(context, input.engagementId);
-        return yield* reports.generate(engagement.scope, {
-          engagementId: engagement.engagement.id,
-          note: input.note,
-          startDate: input.startDate,
-          endDate: input.endDate,
-          subcontractorDao:
-            engagement.engagement.kind === "subcontract"
-              ? (engagement.viewerAgencyDao ?? "")
-              : undefined,
-        });
+        return yield* reports.generateSaved(
+          engagement.scope,
+          {
+            engagementId: engagement.engagement.id,
+            forClient: true,
+            note: input.note,
+            startDate: input.startDate,
+            endDate: input.endDate,
+            subcontractorDao:
+              engagement.engagement.kind === "subcontract"
+                ? (engagement.viewerAgencyDao ?? "")
+                : undefined,
+          },
+          {
+            organizationId: engagement.engagement.clientOrganizationId,
+            userId: context.userId ?? engagement.scope.actorId,
+          },
+        );
       }),
+
+    listReports: async (context: PluginContext, input: { engagementId: string }) => {
+      const { engagement } = await access.sharedWith(context, input.engagementId);
+      return reports.listSaved(engagement.clientOrganizationId, { engagementId: engagement.id });
+    },
+
+    getReport: async (context: PluginContext, input: { engagementId: string; id: string }) => {
+      const { engagement } = await access.sharedWith(context, input.engagementId);
+      return reports.getSaved(engagement.clientOrganizationId, input.id, {
+        engagementId: engagement.id,
+      });
+    },
 
     dashboardSummary: (context: PluginContext, input: { engagementId: string }) =>
       Effect.gen(function* () {

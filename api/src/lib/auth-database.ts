@@ -224,6 +224,19 @@ export function authDatabaseDirectory(
       });
     },
 
+    member: async (organizationId, userId) => {
+      const m = await columns(tables.member);
+      const { rows } = await sql.query<{ role: string; email: string | null }>(
+        `SELECT m.role, u.email FROM ${member} m JOIN ${user} u ON u.id = m.${m("userId")} WHERE m.${m("organizationId")} = $1 AND m.${m("userId")} = $2 LIMIT 1`,
+        [organizationId, userId],
+      );
+      const row = rows[0];
+      const role = row
+        ? (managerRole(row.role) ?? toOrganizationRole(row.role.split(",")[0]?.trim()))
+        : null;
+      return row && role ? { userId, role, email: deliverableEmail(row.email) } : null;
+    },
+
     memberships: async (userId) => {
       const m = await columns(tables.member);
       const { rows } = await sql.query<OrganizationRowShape & { role: string }>(

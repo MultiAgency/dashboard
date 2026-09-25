@@ -58,7 +58,13 @@ export function workspaceNavigation(access: WorkspaceAccess): NavGroup[] {
 
 export type EngagementStatus = "proposed" | "active" | "declined" | "ended";
 
-export function clientEngagementSections(engagementId: string): NavItem[] {
+export type EngagementKind = "client" | "subcontract";
+
+export function acceptsIdeas(kind: EngagementKind): boolean {
+  return kind === "client";
+}
+
+export function clientEngagementSections(engagementId: string, kind: EngagementKind): NavItem[] {
   const base = `/client/${engagementId}`;
   return [
     { to: base, label: "overview" },
@@ -67,6 +73,7 @@ export function clientEngagementSections(engagementId: string): NavItem[] {
     { to: `${base}/plan`, label: "plan & change orders" },
     { to: `${base}/billings`, label: "billings" },
     { to: `${base}/reports`, label: "reports" },
+    ...(acceptsIdeas(kind) ? [{ to: `${base}/ideas`, label: "ideas" }] : []),
   ];
 }
 

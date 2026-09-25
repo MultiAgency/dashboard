@@ -2,7 +2,7 @@ import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { notifications } from "../db/schema";
-import type { OrganizationDirectory } from "../lib/organizations";
+import type { OrganizationDirectory, OrganizationManager } from "../lib/organizations";
 import { appUrl, type EmailSender, escapeHtml } from "./notify";
 
 type Payload = Record<string, string>;
@@ -78,6 +78,18 @@ export const NOTIFICATION_KINDS = {
     title: "A Change order could not be applied",
     body: `A Change order on the Engagement between ${p.agencyName} and ${p.clientName} could not be applied because the limits no longer allowed it. Nothing changed; propose a new one if still needed.`,
   }),
+  idea_submitted: (p) => ({
+    title: `${p.clientName} submitted an idea`,
+    body: `${p.clientName} submitted the idea "${p.ideaTitle}" to ${p.agencyName}. Accept or decline it on MultiAgency.`,
+  }),
+  idea_accepted: (p) => ({
+    title: `${p.agencyName} accepted your idea`,
+    body: `${p.agencyName} accepted the idea "${p.ideaTitle}" from ${p.clientName} and turned it into ${p.resultTitle}.`,
+  }),
+  idea_declined: (p) => ({
+    title: `${p.agencyName} declined your idea`,
+    body: `${p.agencyName} declined the idea "${p.ideaTitle}" from ${p.clientName}.`,
+  }),
   plan_shortfall: (p) => ({
     title: `The Allocation plan for ${p.period} was not fully applied`,
     body: `The Prepaid balance of ${p.clientName} with ${p.agencyName} did not cover ${p.count} plan line(s) for ${p.period} (${p.amounts}). They were skipped.`,
@@ -109,6 +121,7 @@ export type NotifyInput = {
   payload: Payload;
   link: string;
   excludeUserId?: string | null;
+  alsoNotifyUserIds?: string[];
 };
 
 export function createNotifications(deps: {
@@ -140,11 +153,22 @@ export function createNotifications(deps: {
     return results.filter((r) => r.status === "fulfilled").length;
   }
 
+  async function recipientsOf(input: NotifyInput): Promise<OrganizationManager[]> {
+    const managers = await directory.managers(input.organizationId);
+    const extra = (input.alsoNotifyUserIds ?? []).filter(
+      (userId) => !managers.some((m) => m.userId === userId),
+    );
+    const members = await Promise.all(
+      [...new Set(extra)].map((userId) => directory.member(input.organizationId, userId)),
+    );
+    return [...managers, ...members.filter((m): m is OrganizationManager => m !== null)].filter(
+      (r) => r.userId !== input.excludeUserId,
+    );
+  }
+
   return {
     notify: async (input: NotifyInput) => {
-      const recipients = (await directory.managers(input.organizationId)).filter(
-        (r) => r.userId !== input.excludeUserId,
-      );
+      const recipients = await recipientsOf(input);
       if (recipients.length === 0) return { recipients: 0, emailed: 0 };
       const payload = JSON.stringify(input.payload);
       await db.insert(notifications).values(

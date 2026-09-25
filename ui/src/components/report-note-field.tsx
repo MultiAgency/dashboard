@@ -2,7 +2,7 @@ import { Input } from "@/components";
 import { Field } from "@/components/admin-form";
 
 const REPORT_NOTE_HELPER =
-  "Optional memo for this export — e.g. “Q3 review for Acme” or “excludes pending billings”. Shown in the preview and summary CSV; not saved as report history.";
+  "Optional memo for this export — e.g. “Q3 review for Acme” or “excludes pending billings”. Saved with the report for your team, and shown in the preview and summary CSV.";
 
 type ReportNoteFieldProps = {
   id: string;

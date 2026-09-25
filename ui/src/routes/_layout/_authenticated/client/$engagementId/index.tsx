@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components";
 import { AdminError } from "@/components/admin-error";
+import { AgentLinksCard } from "@/components/agent-links";
 import { PrepaidBalanceCard } from "@/components/prepayments";
 import { TokenAmountCell } from "@/components/token-amounts";
 import { useApiClient } from "@/lib/api";
@@ -58,6 +59,7 @@ function EngagementOverview() {
           </CardContent>
         </Card>
         <PrepaidBalanceCard engagementId={engagement.id} />
+        <AgentLinksCard engagementId={engagement.id} />
       </div>
     </div>
   );

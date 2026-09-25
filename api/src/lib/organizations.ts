@@ -9,6 +9,7 @@ export const ORGANIZATION_ROLES: readonly OrganizationRole[] = [
 
 export type PluginContext = {
   userId?: string | null;
+  trusted?: boolean;
   reqHeaders?: Headers;
   near?: {
     primaryAccountId?: string | null;
@@ -86,6 +87,7 @@ export type OrganizationDirectory = {
   get(organizationId: string): Promise<Organization | null>;
   findBySlug(slug: string): Promise<Organization | null>;
   managers(organizationId: string): Promise<OrganizationManager[]>;
+  member(organizationId: string, userId: string): Promise<OrganizationManager | null>;
   memberships(userId: string): Promise<UserMembership[]>;
   create(input: { name: string; slug: string }): Promise<Organization>;
   invite(input: {
@@ -202,6 +204,7 @@ export function unconfiguredDirectory(): OrganizationDirectory {
     get: async () => null,
     findBySlug: async () => null,
     managers: async () => [],
+    member: async () => null,
     memberships: async () => [],
     create: unavailable,
     invite: unavailable,
