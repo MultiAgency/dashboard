@@ -5,7 +5,6 @@ type TokenAmountCellProps = {
   tokenId: string;
 };
 
-/** Single formatted amount for table cells. */
 export function TokenAmountCell({ amount, tokenId }: TokenAmountCellProps) {
   if (!amount) {
     return <span className="text-muted-foreground">—</span>;
@@ -16,7 +15,7 @@ export function TokenAmountCell({ amount, tokenId }: TokenAmountCellProps) {
 
   return (
     <span
-      className="font-mono text-xs whitespace-nowrap"
+      className="whitespace-nowrap tabular-nums"
       title={known ? tokenId : `${amount} base units\n${tokenId}`}
     >
       {formatted}

@@ -1,5 +1,25 @@
+import { BuildingsIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
-import { Badge, Card, CardContent } from "@/components";
+import { Badge } from "@/components/ui/badge";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+
+const ROLE_LABELS: Record<string, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  member: "Member",
+};
+
+export function roleLabel(role: string | null | undefined): string {
+  const value = role ?? "member";
+  return ROLE_LABELS[value] ?? value;
+}
 
 export function OrganizationRowCard({
   name,
@@ -13,21 +33,22 @@ export function OrganizationRowCard({
   children: ReactNode;
 }) {
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1 min-w-0">
-          <div className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
-            {name}
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono text-[10px] uppercase">
-              {role ?? "member"}
-            </Badge>
-            {details}
-          </div>
-        </div>
-        {children}
-      </CardContent>
-    </Card>
+    <Item asChild variant="outline" size="sm">
+      <li>
+        <ItemMedia variant="icon">
+          <BuildingsIcon aria-hidden className="text-muted-foreground" />
+        </ItemMedia>
+        <ItemContent className="min-w-0">
+          <ItemTitle className="break-words">{name}</ItemTitle>
+          <ItemDescription>
+            <span className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">{roleLabel(role)}</Badge>
+              {details}
+            </span>
+          </ItemDescription>
+        </ItemContent>
+        <ItemActions>{children}</ItemActions>
+      </li>
+    </Item>
   );
 }

@@ -1,13 +1,49 @@
+import { LightbulbIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Input } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+  Input,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemGroup,
+  ItemTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Separator,
+  Skeleton,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import type { EngagementView } from "@/components/engagement-status";
 import { IdeaStatusBadge, type IdeaView } from "@/components/idea-status";
+import { Checkbox } from "@/components/ui/checkbox";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useApiClient } from "@/lib/api";
 import { adminProjectsListQueryOptions, ideasListQueryOptions, refreshAfter } from "@/lib/queries";
 import { isSlugTakenError, isValidSlug, slugify } from "@/lib/slugify";
@@ -71,11 +107,14 @@ function AcceptIdeaForm({
     isValidSlug(slug) &&
     (kind === "project" ? repositoryOk : parentSlug !== "");
   const prefix = `accept-${idea.id}`;
+  const titleError = submitted && title.trim() === "";
+  const slugError = (submitted || slug !== "") && !isValidSlug(slug);
+  const parentError = submitted && parentSlug === "";
 
   return (
     <form
       noValidate
-      className="grid gap-3 sm:grid-cols-2"
+      className="flex w-full flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
         setSubmitted(true);
@@ -90,95 +129,111 @@ function AcceptIdeaForm({
         });
       }}
     >
-      <Field label="turn into" htmlFor={`${prefix}-kind`}>
-        <select
-          id={`${prefix}-kind`}
+      <FieldSet>
+        <FieldLegend variant="label">Turn it into</FieldLegend>
+        <RadioGroup
           value={kind}
-          onChange={(e) => setKind(e.target.value === "scope" ? "scope" : "project")}
-          className={selectClass}
+          onValueChange={(value) => setKind(value === "scope" ? "scope" : "project")}
+          className="sm:grid-cols-2"
         >
-          <option value="project">a new Project</option>
-          <option value="scope">a scope of a Project</option>
-        </select>
-      </Field>
-      {kind === "scope" && (
-        <Field label="parent project" htmlFor={`${prefix}-parent`}>
-          <select
-            id={`${prefix}-parent`}
-            value={parentSlug}
-            onChange={(e) => setParentSlug(e.target.value)}
-            className={selectClass}
-            aria-invalid={submitted && parentSlug === ""}
-          >
-            <option value="">choose a project</option>
-            {parents.map((p) => (
-              <option key={p.id} value={p.slug}>
-                {p.title}
-              </option>
-            ))}
-          </select>
-          {submitted && parentSlug === "" && (
-            <p className="text-xs text-destructive">Choose the Project this scope belongs to</p>
-          )}
-        </Field>
-      )}
-      {kind === "project" && (
-        <Field
-          label="repository url"
-          htmlFor={`${prefix}-repository`}
-          helper="Required. Must start with http:// or https://."
-        >
+          <Field orientation="horizontal">
+            <RadioGroupItem value="project" id={`${prefix}-kind-project`} />
+            <FieldLabel htmlFor={`${prefix}-kind-project`}>A new Project</FieldLabel>
+          </Field>
+          <Field orientation="horizontal">
+            <RadioGroupItem value="scope" id={`${prefix}-kind-scope`} />
+            <FieldLabel htmlFor={`${prefix}-kind-scope`}>A scope of a Project</FieldLabel>
+          </Field>
+        </RadioGroup>
+      </FieldSet>
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <Field data-invalid={titleError || undefined}>
+          <FieldLabel htmlFor={`${prefix}-title`}>Title</FieldLabel>
           <Input
-            id={`${prefix}-repository`}
-            value={repository}
-            onChange={(e) => {
-              setRepository(e.target.value);
-              onEdit();
-            }}
-            placeholder="https://github.com/org/repo"
-            aria-invalid={repositoryError !== null}
+            id={`${prefix}-title`}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={200}
+            aria-invalid={titleError || undefined}
             disabled={pending}
-            required
           />
-          {repositoryError && <p className="text-xs text-destructive">{repositoryError}</p>}
+          {titleError && <FieldError>Enter a title</FieldError>}
         </Field>
-      )}
-      <Field label="title" htmlFor={`${prefix}-title`}>
-        <Input
-          id={`${prefix}-title`}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          maxLength={200}
-          aria-invalid={submitted && title.trim() === ""}
-          disabled={pending}
-        />
-        {submitted && title.trim() === "" && (
-          <p className="text-xs text-destructive">Enter a title</p>
+        <Field data-invalid={slugError || undefined}>
+          <FieldLabel htmlFor={`${prefix}-slug`}>Slug</FieldLabel>
+          <Input
+            id={`${prefix}-slug`}
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            maxLength={80}
+            aria-invalid={slugError || undefined}
+            disabled={pending}
+          />
+          {slugError && <FieldError>Use lowercase letters, numbers and dashes</FieldError>}
+        </Field>
+        {kind === "scope" ? (
+          <Field data-invalid={parentError || undefined} className="sm:col-span-2">
+            <FieldLabel htmlFor={`${prefix}-parent`}>Parent Project</FieldLabel>
+            <Select value={parentSlug} onValueChange={setParentSlug}>
+              <SelectTrigger
+                id={`${prefix}-parent`}
+                className="w-full"
+                aria-invalid={parentError || undefined}
+              >
+                <SelectValue placeholder="Choose a Project" />
+              </SelectTrigger>
+              <SelectContent>
+                {parents.map((p) => (
+                  <SelectItem key={p.id} value={p.slug}>
+                    {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {parentError && <FieldError>Choose the Project this scope belongs to</FieldError>}
+          </Field>
+        ) : (
+          <Field data-invalid={repositoryError !== null || undefined} className="sm:col-span-2">
+            <FieldLabel htmlFor={`${prefix}-repository`}>Repository URL</FieldLabel>
+            <Input
+              id={`${prefix}-repository`}
+              value={repository}
+              onChange={(e) => {
+                setRepository(e.target.value);
+                onEdit();
+              }}
+              placeholder="https://github.com/org/repo"
+              aria-invalid={repositoryError !== null || undefined}
+              disabled={pending}
+              required
+            />
+            {repositoryError ? (
+              <FieldError>{repositoryError}</FieldError>
+            ) : (
+              <FieldDescription>Required. Starts with http:// or https://.</FieldDescription>
+            )}
+          </Field>
         )}
-      </Field>
-      <Field label="slug" htmlFor={`${prefix}-slug`}>
-        <Input
-          id={`${prefix}-slug`}
-          value={slug}
-          onChange={(e) => setSlug(e.target.value)}
-          maxLength={80}
-          aria-invalid={(submitted || slug !== "") && !isValidSlug(slug)}
-          disabled={pending}
+      </div>
+      <Field orientation="horizontal">
+        <Checkbox
+          id={`${prefix}-share`}
+          checked={share}
+          onCheckedChange={(checked) => setShare(checked === true)}
         />
-        {(submitted || slug !== "") && !isValidSlug(slug) && (
-          <p className="text-xs text-destructive">Invalid slug format</p>
-        )}
+        <FieldContent>
+          <FieldLabel htmlFor={`${prefix}-share`}>Share it with {clientName}</FieldLabel>
+          <FieldDescription>
+            Through this Engagement, so their members can follow it.
+          </FieldDescription>
+        </FieldContent>
       </Field>
-      <label className="flex items-center gap-2 text-sm sm:col-span-2">
-        <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} />
-        Share it with {clientName} through this Engagement
-      </label>
-      <div className="flex gap-2 sm:col-span-2">
-        <Button type="submit" size="sm" disabled={pending}>
-          {pending ? "accepting..." : "accept"}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
         </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-          cancel
+        <Button type="submit" disabled={pending}>
+          {pending ? "Accepting…" : "Accept idea"}
         </Button>
       </div>
     </form>
@@ -206,90 +261,112 @@ export function IdeasInbox({
   const decline = useIdeaMutation((id: string) => apiClient.ideas.decline({ id }), "Idea declined");
 
   return (
-    <section className="space-y-3">
-      <h2 className="font-display text-xl uppercase font-extrabold">Ideas</h2>
-      <p className="text-sm text-muted-foreground max-w-2xl">
-        Ideas {engagement.client.name} submitted. They are private Projects of kind idea that you
-        own. Accept one to turn it into a Project or scope, or decline it; {engagement.client.name}{" "}
-        is told either way.
-      </p>
-      {ideasQuery.isLoading ? (
-        <Loading label="Loading ideas" />
-      ) : ideasQuery.isError ? (
-        <AdminError error={ideasQuery.error} />
-      ) : ideas.length === 0 ? (
-        <Empty label="No ideas yet." />
-      ) : (
-        <ul className="space-y-2">
-          {ideas.map((idea) => (
-            <li key={idea.id} className="rounded-sm border border-border p-3 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-display text-sm uppercase font-bold">{idea.title}</span>
-                <IdeaStatusBadge status={idea.status} />
-              </div>
-              {idea.description && (
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {idea.description}
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
-                <span>submitted {new Date(idea.createdAt).toISOString().slice(0, 10)}</span>
-                {idea.result && (
-                  <>
-                    <Link
-                      to="/admin/projects/$slug"
-                      params={{ slug: idea.result.slug }}
-                      className="underline hover:text-foreground"
-                    >
-                      became {idea.result.title}
-                    </Link>
-                    <Badge variant="secondary">
-                      {idea.result.shared ? "shared" : "not shared"}
-                    </Badge>
-                  </>
-                )}
-              </div>
-              {decidable && idea.status === "new" && accepting !== idea.id && (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      accept.reset();
-                      setAccepting(idea.id);
-                    }}
-                  >
-                    accept
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setDeclining(idea)}>
-                    decline
-                  </Button>
-                </div>
-              )}
-              {accepting === idea.id && (
-                <AcceptIdeaForm
-                  idea={idea}
-                  clientName={engagement.client.name}
-                  pending={accept.isPending}
-                  error={accept.error}
-                  onEdit={() => {
-                    if (accept.error) accept.reset();
-                  }}
-                  onCancel={() => {
-                    accept.reset();
-                    setAccepting(null);
-                  }}
-                  onSubmit={(fields) =>
-                    accept.mutate(
-                      { id: idea.id, ...fields },
-                      { onSuccess: () => setAccepting(null) },
-                    )
-                  }
-                />
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+    <Card>
+      <CardHeader>
+        <CardTitle>Ideas</CardTitle>
+        <CardDescription>
+          Ideas {engagement.client.name} submitted. Accept one to turn it into a Project or scope,
+          or decline it; they are told either way.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {ideasQuery.isLoading ? (
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        ) : ideasQuery.isError ? (
+          <AdminError error={ideasQuery.error} />
+        ) : ideas.length === 0 ? (
+          <Empty variant="outline">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <LightbulbIcon aria-hidden />
+              </EmptyMedia>
+              <EmptyTitle>No ideas yet</EmptyTitle>
+              <EmptyDescription>
+                Ideas {engagement.client.name} submits show up here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <ItemGroup>
+            {ideas.map((idea) => (
+              <Item key={idea.id} asChild variant="outline">
+                <li>
+                  <ItemContent className="min-w-0">
+                    <ItemTitle>{idea.title}</ItemTitle>
+                    <ItemDescription>
+                      Submitted {new Date(idea.createdAt).toISOString().slice(0, 10)}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <IdeaStatusBadge status={idea.status} />
+                  </ItemActions>
+                  {idea.description && (
+                    <p className="basis-full text-sm whitespace-pre-wrap text-muted-foreground">
+                      {idea.description}
+                    </p>
+                  )}
+                  {idea.result && (
+                    <ItemFooter className="justify-start">
+                      <Link
+                        to="/admin/projects/$slug"
+                        params={{ slug: idea.result.slug }}
+                        className="underline underline-offset-4 hover:text-foreground"
+                      >
+                        Became {idea.result.title}
+                      </Link>
+                      <Badge variant="secondary">
+                        {idea.result.shared ? "Shared" : "Not shared"}
+                      </Badge>
+                    </ItemFooter>
+                  )}
+                  {decidable && idea.status === "new" && accepting !== idea.id && (
+                    <ItemFooter className="justify-end">
+                      <Button variant="outline" onClick={() => setDeclining(idea)}>
+                        Decline
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          accept.reset();
+                          setAccepting(idea.id);
+                        }}
+                      >
+                        Accept
+                      </Button>
+                    </ItemFooter>
+                  )}
+                  {accepting === idea.id && (
+                    <div className="flex basis-full flex-col gap-4">
+                      <Separator />
+                      <AcceptIdeaForm
+                        idea={idea}
+                        clientName={engagement.client.name}
+                        pending={accept.isPending}
+                        error={accept.error}
+                        onEdit={() => {
+                          if (accept.error) accept.reset();
+                        }}
+                        onCancel={() => {
+                          accept.reset();
+                          setAccepting(null);
+                        }}
+                        onSubmit={(fields) =>
+                          accept.mutate(
+                            { id: idea.id, ...fields },
+                            { onSuccess: () => setAccepting(null) },
+                          )
+                        }
+                      />
+                    </div>
+                  )}
+                </li>
+              </Item>
+            ))}
+          </ItemGroup>
+        )}
+      </CardContent>
       <ConfirmDialog
         open={declining !== null}
         onOpenChange={(open) => {
@@ -297,12 +374,13 @@ export function IdeasInbox({
         }}
         title={`Decline ${declining?.title ?? "this idea"}?`}
         description={`${engagement.client.name} will see it as declined.`}
-        confirmLabel="decline"
+        confirmLabel="Decline"
+        cancelLabel="Cancel"
         destructive
         onConfirm={async () => {
           if (declining) await decline.mutateAsync(declining.id);
         }}
       />
-    </section>
+    </Card>
   );
 }

@@ -1,9 +1,21 @@
+import { ArrowUpRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Card, CardContent, Input } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  FieldGroup,
+  Input,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field, Loading } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -51,108 +63,121 @@ export function TreasurySettings() {
 
   return (
     <Card>
-      <CardContent className="p-5 space-y-4">
-        {connected ? (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-sm break-all">{connected}</span>
-              <Badge variant="outline">{network}</Badge>
-              <a
-                href={trezuTreasuryUrl(connected)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs underline text-muted-foreground hover:text-foreground"
-              >
-                open in trezu <ArrowUpRight className="size-3" />
+      <CardHeader>
+        <CardTitle>
+          <h2>Treasury</h2>
+        </CardTitle>
+        <CardDescription>
+          {connected
+            ? "The Agency DAO that funds Budgets and Billings of your Projects."
+            : "No Agency DAO is connected. Budgets, Billings and treasury views need one; Projects, members and reports work without it."}
+        </CardDescription>
+        <CardAction>
+          <Badge variant="outline">{network}</Badge>
+        </CardAction>
+      </CardHeader>
+
+      {connected && (
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-sm font-medium break-all">{connected}</span>
+            <Button asChild variant="link" size="xs">
+              <a href={trezuTreasuryUrl(connected)} target="_blank" rel="noopener noreferrer">
+                Open in Trezu
+                <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
               </a>
-            </div>
-            {inUse ? (
-              <p className="text-xs text-muted-foreground">
-                This Agency DAO funds Budget entries or Billings of your Projects, so it cannot be
-                changed or disconnected.
-              </p>
-            ) : (
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => setChanging((v) => !v)}
-                >
-                  {changing ? "cancel" : "change"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => setConfirmingDisconnect(true)}
-                >
-                  disconnect
-                </Button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No Agency DAO is connected. Budgets, Billings and treasury views need one. Projects,
-            members and reports work without it.
-          </p>
-        )}
-
-        {showForm && (
-          <form
-            className="grid gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (daoAccountId.trim() && !busy) connect.mutate();
-            }}
-          >
-            <Field
-              label="sputnik dao account"
-              htmlFor="agency-dao-account"
-              helper={
-                <>
-                  Must exist on {network}, and your linked NEAR wallet must hold a role in it. A
-                  single-member treasury from{" "}
-                  <a
-                    href="https://trezu.app"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline"
-                  >
-                    Trezu
-                  </a>{" "}
-                  works.
-                </>
-              }
-            >
-              <Input
-                id="agency-dao-account"
-                value={daoAccountId}
-                onChange={(e) => setDaoAccountId(e.target.value)}
-                placeholder={
-                  network === "testnet" ? "your-org.sputnikv2.testnet" : "your-org.sputnik-dao.near"
-                }
-                autoComplete="off"
-                disabled={busy}
-              />
-            </Field>
-            <Button type="submit" size="sm" disabled={!daoAccountId.trim() || busy}>
-              {connect.isPending ? "connecting..." : "connect treasury"}
             </Button>
-          </form>
-        )}
+          </div>
+          {inUse && (
+            <p className="text-xs text-muted-foreground">
+              This Agency DAO funds Budget entries or Billings of your Projects, so it cannot be
+              changed or disconnected.
+            </p>
+          )}
+        </CardContent>
+      )}
 
-        <ConfirmDialog
-          open={confirmingDisconnect}
-          onOpenChange={setConfirmingDisconnect}
-          title="Disconnect the Agency DAO?"
-          description="Budgets, Billings and treasury views stop working until you connect another one."
-          confirmLabel="disconnect"
-          destructive
-          onConfirm={() => disconnect.mutate()}
-        />
-      </CardContent>
+      {showForm && (
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (daoAccountId.trim() && !busy) connect.mutate();
+          }}
+        >
+          <CardContent>
+            <FieldGroup>
+              <Field
+                label="Sputnik DAO account"
+                htmlFor="agency-dao-account"
+                helper={
+                  <>
+                    Must exist on {network}, and your linked NEAR wallet must hold a role in it. A
+                    single-member treasury from{" "}
+                    <a href="https://trezu.app" target="_blank" rel="noopener noreferrer">
+                      Trezu
+                    </a>{" "}
+                    works.
+                  </>
+                }
+              >
+                <Input
+                  id="agency-dao-account"
+                  value={daoAccountId}
+                  onChange={(e) => setDaoAccountId(e.target.value)}
+                  placeholder={
+                    network === "testnet"
+                      ? "your-org.sputnikv2.testnet"
+                      : "your-org.sputnik-dao.near"
+                  }
+                  autoComplete="off"
+                  disabled={busy}
+                />
+              </Field>
+            </FieldGroup>
+          </CardContent>
+          <CardFooter className="justify-end gap-2">
+            {changing && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setChanging(false)}
+              >
+                Cancel
+              </Button>
+            )}
+            <Button type="submit" disabled={!daoAccountId.trim() || busy}>
+              {connect.isPending ? "Connecting…" : "Connect treasury"}
+            </Button>
+          </CardFooter>
+        </form>
+      )}
+
+      {connected && !inUse && !changing && (
+        <CardFooter className="justify-end gap-2">
+          <Button variant="outline" disabled={busy} onClick={() => setChanging(true)}>
+            Change
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={busy}
+            onClick={() => setConfirmingDisconnect(true)}
+          >
+            Disconnect
+          </Button>
+        </CardFooter>
+      )}
+
+      <ConfirmDialog
+        open={confirmingDisconnect}
+        onOpenChange={setConfirmingDisconnect}
+        title="Disconnect the Agency DAO?"
+        description="Budgets, Billings and treasury views stop working until you connect another one."
+        confirmLabel="Disconnect"
+        destructive
+        onConfirm={() => disconnect.mutate()}
+      />
     </Card>
   );
 }

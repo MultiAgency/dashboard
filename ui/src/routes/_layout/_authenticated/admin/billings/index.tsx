@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { BillingsAdminSection } from "@/components/admin/billings-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
 import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
+import { PageHeader } from "@/components/page-header";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { adminProjectsListQueryOptions } from "@/lib/queries";
 
@@ -20,26 +21,19 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/billings/")(
 function AdminBillingsPage() {
   const { agencyDao, isLoaded } = useMeRoles();
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          money · billings
-        </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Billings
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          All recorded payouts across projects. To record a new billing, open the{" "}
-          <Link to="/admin/projects" className="underline underline-offset-2 hover:text-foreground">
-            project
-          </Link>{" "}
-          where the work happened. Cross-project budget transfers live under{" "}
-          <Link to="/admin/budgets" className="underline underline-offset-2 hover:text-foreground">
-            advanced budgets
-          </Link>
-          .
-        </p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Billings"
+        description={
+          <>
+            All recorded payouts across projects. Record a new billing on the{" "}
+            <Link to="/admin/projects" className="underline underline-offset-2">
+              project
+            </Link>{" "}
+            where the work happened.
+          </>
+        }
+      />
       {isLoaded && !agencyDao ? <ConnectTreasuryPrompt /> : <BillingsAdminSection />}
     </div>
   );

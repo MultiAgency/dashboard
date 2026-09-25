@@ -1,4 +1,16 @@
 import {
+  ArrowDownIcon,
+  ArrowsDownUpIcon,
+  ArrowUpIcon,
+  CaretLeftIcon,
+  CaretRightIcon,
+  ColumnsIcon,
+  DownloadSimpleIcon,
+  FunnelIcon,
+  MagnifyingGlassIcon,
+  TableIcon,
+} from "@phosphor-icons/react";
+import {
   type ColumnDef,
   type ColumnFiltersState,
   flexRender,
@@ -10,9 +22,42 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button, Input, Skeleton } from "@/components";
+import { LoadError } from "@/components/load-error";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 
 export type { ColumnDef };
@@ -33,12 +78,6 @@ export type DataTableProps<TData, TValue> = {
   /** Hide CSV export and column picker when tables are read-only. */
   readOnly?: boolean;
 };
-
-const TH_CLS =
-  "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground px-3 py-2 text-left border-b border-border";
-const TD_CLS = "px-3 py-2 text-sm border-b border-border";
-const SORT_BTN_CLS =
-  "inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer";
 
 type ExportMeta<TData> = {
   exportValue?: (row: TData) => string;
@@ -82,16 +121,22 @@ function SortHeader({
   label: string;
 }) {
   return (
-    <button type="button" onClick={onToggle} className={SORT_BTN_CLS}>
+    <Button
+      type="button"
+      variant="ghost"
+      size="xs"
+      onClick={onToggle}
+      className="-ml-2 text-muted-foreground hover:text-foreground"
+    >
       {label}
       {sorted === "asc" ? (
-        <ArrowDown className="size-3" />
+        <ArrowDownIcon data-icon="inline-end" aria-hidden />
       ) : sorted === "desc" ? (
-        <ArrowUp className="size-3" />
+        <ArrowUpIcon data-icon="inline-end" aria-hidden />
       ) : (
-        <ArrowUpDown className="size-3 opacity-40" />
+        <ArrowsDownUpIcon data-icon="inline-end" aria-hidden className="opacity-50" />
       )}
-    </button>
+    </Button>
   );
 }
 
@@ -126,11 +171,12 @@ export function DataTable<TData, TValue>({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
     loadVisibility(viewId),
   );
-  const [colsOpen, setColsOpen] = useState(false);
 
   useEffect(() => {
     if (!viewId || typeof window === "undefined") return;
-    localStorage.setItem(`datatable-cols-${viewId}`, JSON.stringify(columnVisibility));
+    try {
+      localStorage.setItem(`datatable-cols-${viewId}`, JSON.stringify(columnVisibility));
+    } catch {}
   }, [columnVisibility, viewId]);
 
   const table = useReactTable({
@@ -152,26 +198,25 @@ export function DataTable<TData, TValue>({
 
   if (error) {
     return (
-      <div data-slot="data-table" className="space-y-3">
-        <div className="rounded-sm border border-destructive/60 px-4 py-3 text-sm text-destructive">
-          {error.message || "Failed to load data"}
-        </div>
-        {onRetry && (
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            retry
-          </Button>
-        )}
+      <div data-slot="data-table">
+        <LoadError
+          title="Could not load this list"
+          description={error.message || "Check your connection and try again."}
+          onRetry={onRetry}
+        />
       </div>
     );
   }
 
   if (isLoading) {
     return (
-      <div data-slot="data-table" className="space-y-2">
-        <Skeleton className="h-9 w-full" />
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" />
-        ))}
+      <div data-slot="data-table" className="flex flex-col gap-3">
+        <Skeleton className="h-8 w-64 max-w-full" />
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -190,167 +235,195 @@ export function DataTable<TData, TValue>({
 
   const rows = table.getRowModel().rows;
   const filteredEmpty = data.length > 0 && rows.length === 0;
+  const hideableColumns = table.getAllColumns().filter((c) => {
+    if (!c.getCanHide()) return false;
+    const header = c.columnDef.header;
+    return !(typeof header === "string" && header.trim() === "");
+  });
+  const showColumns = !readOnly && hideableColumns.length > 0;
+  const showExport = !readOnly && !!csvFilename && exportColumns.length > 0;
+  const showToolbar = enableSearch || showColumns || showExport;
+  const pageCount = table.getPageCount() || 1;
+  const showPagination =
+    pageCount > 1 || table.getPrePaginationRowModel().rows.length > (pageSizeOptions[0] ?? 10);
 
   return (
-    <div data-slot="data-table" className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          {enableSearch && (
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-              <Input
+    <div data-slot="data-table" className="flex min-w-0 flex-col gap-3">
+      {showToolbar && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {enableSearch ? (
+            <InputGroup className="w-full sm:w-64">
+              <InputGroupAddon>
+                <MagnifyingGlassIcon aria-hidden />
+              </InputGroupAddon>
+              <InputGroupInput
                 value={globalFilter}
                 onChange={(e) => setGlobalFilter(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="pl-7 h-8 w-48 sm:w-64"
+                aria-label={searchPlaceholder}
               />
-            </div>
+            </InputGroup>
+          ) : (
+            <span />
           )}
-          {!readOnly && (
-            <div className="relative">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setColsOpen((v) => !v)}
-                className="gap-1.5"
-              >
-                <Columns3 className="size-3.5" />
-                columns
-              </Button>
-              {colsOpen && (
-                <div className="absolute z-20 mt-1 w-48 rounded-sm border border-border bg-background p-2 shadow-md space-y-1">
-                  {table
-                    .getAllColumns()
-                    .filter((c) => {
-                      if (!c.getCanHide()) return false;
-                      const header = c.columnDef.header;
-                      if (typeof header === "string" && header.trim() === "") return false;
-                      return true;
-                    })
-                    .map((column) => (
-                      <label
+          {(showColumns || showExport) && (
+            <div className="flex items-center gap-2">
+              {showColumns && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="outline" size="sm">
+                      <ColumnsIcon data-icon="inline-start" aria-hidden />
+                      Columns
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {hideableColumns.map((column) => (
+                      <DropdownMenuCheckboxItem
                         key={column.id}
-                        className="flex items-center gap-2 px-1 py-1 text-xs font-mono cursor-pointer hover:bg-muted/40 rounded-sm"
+                        checked={column.getIsVisible()}
+                        onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                        onSelect={(e) => e.preventDefault()}
                       >
-                        <input
-                          type="checkbox"
-                          checked={column.getIsVisible()}
-                          onChange={column.getToggleVisibilityHandler()}
-                          className="accent-foreground"
-                        />
                         {typeof column.columnDef.header === "string"
                           ? column.columnDef.header
                           : column.id}
-                      </label>
+                      </DropdownMenuCheckboxItem>
                     ))}
-                </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              {showExport && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    downloadCsv(`${csvFilename}-${csvTimestamp()}.csv`, exportRows, exportColumns)
+                  }
+                >
+                  <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+                  Export CSV
+                </Button>
               )}
             </div>
           )}
         </div>
-        {!readOnly && csvFilename && exportColumns.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              downloadCsv(`${csvFilename}-${csvTimestamp()}.csv`, exportRows, exportColumns)
-            }
-          >
-            export csv
-          </Button>
-        )}
-      </div>
+      )}
 
       {data.length === 0 || filteredEmpty ? (
-        <div className="rounded-sm border border-dashed border-border px-4 py-8 text-center space-y-3">
-          <p className="text-sm text-muted-foreground">
-            {filteredEmpty ? "No rows match the current filter." : emptyMessage}
-          </p>
-          {!filteredEmpty && emptyAction}
-        </div>
+        <Empty variant="outline">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              {filteredEmpty ? <FunnelIcon aria-hidden /> : <TableIcon aria-hidden />}
+            </EmptyMedia>
+            <EmptyTitle>{filteredEmpty ? "No matching rows" : emptyMessage}</EmptyTitle>
+            {filteredEmpty && (
+              <EmptyDescription>Try a different search or clear the filter.</EmptyDescription>
+            )}
+          </EmptyHeader>
+          {filteredEmpty ? (
+            <EmptyContent>
+              <Button type="button" variant="outline" size="sm" onClick={() => setGlobalFilter("")}>
+                Clear filter
+              </Button>
+            </EmptyContent>
+          ) : (
+            emptyAction && <EmptyContent>{emptyAction}</EmptyContent>
+          )}
+        </Empty>
       ) : (
         <>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <tr key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => {
-                      const label = flexRender(header.column.columnDef.header, header.getContext());
-                      const isSortable = header.column.getCanSort();
-                      const sorted = header.column.getIsSorted();
-                      return (
-                        <th
-                          key={header.id}
-                          scope="col"
-                          className={TH_CLS}
-                          aria-sort={isSortable ? ariaSort(sorted) : undefined}
-                        >
-                          {isSortable ? (
-                            <SortHeader
-                              sorted={sorted}
-                              onToggle={header.column.getToggleSortingHandler()}
-                              label={label as string}
-                            />
-                          ) : (
-                            label
-                          )}
-                        </th>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="hover:bg-muted/30 transition-colors">
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={TD_CLS}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id} className="hover:bg-transparent">
+                  {headerGroup.headers.map((header) => {
+                    const label = flexRender(header.column.columnDef.header, header.getContext());
+                    const isSortable = header.column.getCanSort();
+                    const sorted = header.column.getIsSorted();
+                    return (
+                      <TableHead
+                        key={header.id}
+                        scope="col"
+                        className="text-muted-foreground"
+                        aria-sort={isSortable ? ariaSort(sorted) : undefined}
+                      >
+                        {isSortable ? (
+                          <SortHeader
+                            sorted={sorted}
+                            onToggle={header.column.getToggleSortingHandler()}
+                            label={label as string}
+                          />
+                        ) : (
+                          label
+                        )}
+                      </TableHead>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-              <span>
-                page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}
-              </span>
-              <select
-                value={table.getState().pagination.pageSize}
-                onChange={(e) => table.setPageSize(Number(e.target.value))}
-                className="h-7 border border-input bg-background px-2 rounded-sm"
-              >
-                {pageSizeOptions.map((n) => (
-                  <option key={n} value={n}>
-                    {n} / page
-                  </option>
-                ))}
-              </select>
+          {showPagination && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>
+                  Page {table.getState().pagination.pageIndex + 1} of {pageCount}
+                </span>
+                <Select
+                  value={String(table.getState().pagination.pageSize)}
+                  onValueChange={(value) => table.setPageSize(Number(value))}
+                >
+                  <SelectTrigger size="sm" aria-label="Rows per page">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pageSizeOptions.map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n} / page
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.previousPage()}
+                  disabled={!table.getCanPreviousPage()}
+                >
+                  <CaretLeftIcon data-icon="inline-start" aria-hidden />
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => table.nextPage()}
+                  disabled={!table.getCanNextPage()}
+                >
+                  Next
+                  <CaretRightIcon data-icon="inline-end" aria-hidden />
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-              >
-                prev
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-              >
-                next
-              </Button>
-            </div>
-          </div>
+          )}
         </>
       )}
     </div>

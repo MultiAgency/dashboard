@@ -1,4 +1,7 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components";
+import { PageHeader, SectionHeader } from "@/components/page-header";
 import { DOCS, type DocSection } from "@/lib/docs-registry";
 
 export const Route = createFileRoute("/_layout/docs/")({
@@ -18,9 +21,9 @@ const SECTION_TITLE: Record<DocSection, string> = {
   skills: "Integration skills",
 };
 
-const SECTION_EYEBROW: Record<DocSection, string> = {
-  operating: "agency · model",
-  skills: "agency · skills",
+const SECTION_DESCRIPTION: Record<DocSection, string> = {
+  operating: "How the Agency is set up and how work gets paid.",
+  skills: "Guides for the integrations the platform runs on.",
 };
 
 function DocsIndex() {
@@ -30,49 +33,37 @@ function DocsIndex() {
   }));
 
   return (
-    <div className="space-y-12 pb-12 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          agency · docs
-        </div>
-        <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-          Docs
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          How MultiAgency operates and the integrations it runs on.
-        </p>
-      </header>
+    <div className="flex animate-fade-in flex-col gap-10">
+      <PageHeader
+        title="Docs"
+        description="How MultiAgency operates and the integrations it runs on."
+      />
 
       {grouped.map(({ section, entries }) => (
-        <section key={section} className="space-y-4">
-          <div className="flex items-baseline justify-between gap-3 border-b-2 border-foreground/15 pb-2">
-            <h2 className="font-display text-xl uppercase tracking-tight font-extrabold">
-              {SECTION_TITLE[section]}
-            </h2>
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              {SECTION_EYEBROW[section]}
-            </span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+        <section key={section} className="flex flex-col gap-4">
+          <SectionHeader
+            title={SECTION_TITLE[section]}
+            description={SECTION_DESCRIPTION[section]}
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
             {entries.map((d) => (
               <Link
                 key={d.slug}
                 to="/docs/$slug"
                 params={{ slug: d.slug }}
-                className="border-2 border-border flex flex-col bg-card hover:bg-accent/20 transition-colors"
+                className="flex outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
-                <div className="p-4 flex-1 flex flex-col gap-3">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                    {section === "skills" ? "skill" : "model"}
-                  </div>
-                  <h3 className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight">
-                    {d.title}
-                  </h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{d.desc}</p>
-                  <div className="mt-auto pt-2 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                    read →
-                  </div>
-                </div>
+                <Card variant="interactive" className="w-full">
+                  <CardHeader>
+                    <CardTitle>
+                      <h3>{d.title}</h3>
+                    </CardTitle>
+                    <CardDescription>{d.desc}</CardDescription>
+                    <CardAction>
+                      <ArrowRightIcon aria-hidden className="size-4 text-muted-foreground" />
+                    </CardAction>
+                  </CardHeader>
+                </Card>
               </Link>
             ))}
           </div>

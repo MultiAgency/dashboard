@@ -1,10 +1,38 @@
+import { InfoIcon, LightbulbIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Button, Card, CardContent, Input } from "@/components";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemGroup,
+  SectionHeader,
+  Skeleton,
+  Spinner,
+  Textarea,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Empty, Field, Loading, textareaClass } from "@/components/admin-form";
 import { IdeaStatusBadge } from "@/components/idea-status";
 import { useApiClient } from "@/lib/api";
 import { acceptsIdeas } from "@/lib/navigation";
@@ -46,94 +74,127 @@ function ClientIdeasPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <p className="text-sm text-muted-foreground max-w-2xl">
+    <div className="flex flex-col gap-6">
+      <p className="max-w-2xl text-sm text-pretty text-muted-foreground">
         Suggest work to {engagement.agency.name}. They accept an idea by turning it into a Project
         or scope, or decline it; you see the decision here.
       </p>
       {active ? (
         <Card>
-          <CardContent className="p-5">
-            <form
-              className="grid gap-4"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (title.trim()) submit.mutate();
-              }}
-            >
-              <Field label="idea" htmlFor="idea-title">
-                <Input
-                  id="idea-title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  maxLength={200}
-                  placeholder="e.g. Monthly progress reports"
-                  disabled={submit.isPending}
-                />
-              </Field>
-              <Field label="details (optional)" htmlFor="idea-description">
-                <textarea
-                  id="idea-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  maxLength={4000}
-                  rows={4}
-                  className={textareaClass}
-                  disabled={submit.isPending}
-                />
-              </Field>
-              <div>
-                <Button type="submit" size="sm" disabled={!title.trim() || submit.isPending}>
-                  {submit.isPending ? "sending..." : "submit idea"}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
+          <CardHeader>
+            <CardTitle>Submit an idea</CardTitle>
+            <CardDescription>
+              {engagement.agency.name} is notified and decides what to do with it.
+            </CardDescription>
+          </CardHeader>
+          <form
+            className="flex flex-col gap-(--card-spacing)"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (title.trim()) submit.mutate();
+            }}
+          >
+            <CardContent>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="idea-title">Idea</FieldLabel>
+                  <Input
+                    id="idea-title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. Monthly progress reports"
+                    disabled={submit.isPending}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="idea-description">Details (optional)</FieldLabel>
+                  <Textarea
+                    id="idea-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    maxLength={4000}
+                    rows={4}
+                    disabled={submit.isPending}
+                  />
+                </Field>
+              </FieldGroup>
+            </CardContent>
+            <CardFooter className="justify-end">
+              <Button type="submit" disabled={!title.trim() || submit.isPending}>
+                {submit.isPending && <Spinner data-icon="inline-start" />}
+                Submit idea
+              </Button>
+            </CardFooter>
+          </form>
         </Card>
       ) : (
-        <p className="text-sm text-muted-foreground">
-          This Engagement ended, so no new ideas can be submitted.
-        </p>
+        <Alert>
+          <InfoIcon aria-hidden />
+          <AlertTitle>This Engagement ended</AlertTitle>
+          <AlertDescription>No new ideas can be submitted.</AlertDescription>
+        </Alert>
       )}
 
-      {ideasQuery.isLoading ? (
-        <Loading label="Loading ideas" />
-      ) : ideasQuery.isError ? (
-        <AdminError error={ideasQuery.error} />
-      ) : ideas.length === 0 ? (
-        <Empty label="No ideas submitted yet." />
-      ) : (
-        <ul className="space-y-2">
-          {ideas.map((idea) => (
-            <li key={idea.id} className="rounded-sm border border-border p-3 space-y-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-display text-sm uppercase font-bold">{idea.title}</span>
-                <IdeaStatusBadge status={idea.status} />
-              </div>
-              {idea.description && (
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {idea.description}
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
-                <span>submitted {new Date(idea.createdAt).toISOString().slice(0, 10)}</span>
-                {idea.decidedAt && (
-                  <span>decided {new Date(idea.decidedAt).toISOString().slice(0, 10)}</span>
-                )}
-                {idea.result && (
-                  <Link
-                    to="/client/$engagementId/projects/$slug"
-                    params={{ engagementId: engagement.id, slug: idea.result.slug }}
-                    className="underline hover:text-foreground"
-                  >
-                    became {idea.result.title}
-                  </Link>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="flex flex-col gap-3">
+        <SectionHeader title="Submitted ideas" />
+        {ideasQuery.isLoading ? (
+          <div className="flex flex-col gap-2" aria-busy="true">
+            <span className="sr-only">Loading ideas</span>
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        ) : ideasQuery.isError ? (
+          <AdminError error={ideasQuery.error} />
+        ) : ideas.length === 0 ? (
+          <Empty variant="outline">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <LightbulbIcon aria-hidden />
+              </EmptyMedia>
+              <EmptyTitle>No ideas yet</EmptyTitle>
+              <EmptyDescription>
+                Ideas you submit and their decisions show up here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <ItemGroup>
+            {ideas.map((idea) => (
+              <li key={idea.id}>
+                <Item variant="outline" size="sm">
+                  <ItemContent className="min-w-0">
+                    <h3 className="text-xs font-medium break-words">{idea.title}</h3>
+                    {idea.description && (
+                      <p className="text-xs/relaxed whitespace-pre-wrap text-muted-foreground">
+                        {idea.description}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+                      <span>Submitted {new Date(idea.createdAt).toISOString().slice(0, 10)}</span>
+                      {idea.decidedAt && (
+                        <span>Decided {new Date(idea.decidedAt).toISOString().slice(0, 10)}</span>
+                      )}
+                      {idea.result && (
+                        <Link
+                          to="/client/$engagementId/projects/$slug"
+                          params={{ engagementId: engagement.id, slug: idea.result.slug }}
+                          className="text-foreground underline underline-offset-4"
+                        >
+                          Became {idea.result.title}
+                        </Link>
+                      )}
+                    </div>
+                  </ItemContent>
+                  <ItemActions>
+                    <IdeaStatusBadge status={idea.status} />
+                  </ItemActions>
+                </Item>
+              </li>
+            ))}
+          </ItemGroup>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,16 +1,26 @@
+import { ArrowRightIcon, ArrowUpRightIcon, FolderSimpleIcon } from "@phosphor-icons/react";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Badge,
   Button,
   Card,
+  CardAction,
   CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
   Empty,
   EmptyContent,
   EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
   EmptyTitle,
   Skeleton,
 } from "@/components";
+import { LoadError } from "@/components/load-error";
+import { PageHeader } from "@/components/page-header";
 import { useApiClient } from "@/lib/api";
 import {
   formatNearnReward,
@@ -22,7 +32,7 @@ import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/quer
 
 export const Route = createFileRoute("/_layout/work")({
   head: () => ({
-    meta: [{ title: "Work" }, { name: "description", content: "Active projects." }],
+    meta: [{ title: "Work" }, { name: "description", content: "Active Projects." }],
   }),
   loader: async ({ context }) => {
     const [settings, projects] = await Promise.all([
@@ -80,29 +90,21 @@ function WorkIndex() {
     : null;
 
   return (
-    <div className="space-y-12 pb-12 animate-fade-in">
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="space-y-2">
-            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-              agency · work
-            </div>
-            <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-              Our Work
-            </h1>
-          </div>
-          {nearnUrl && (
-            <Button asChild variant="outline" className="font-display uppercase tracking-wide">
+    <div className="flex animate-fade-in flex-col gap-8">
+      <PageHeader
+        title="Our work"
+        description="Active Projects. Open work, listings and applications live on NEARN."
+        actions={
+          nearnUrl && (
+            <Button asChild variant="outline">
               <a href={nearnUrl} target="_blank" rel="noopener noreferrer">
-                nearn →
+                View on NEARN
+                <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
               </a>
             </Button>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Active projects. Open work, listings, and applications live on NEARN.
-        </p>
-      </header>
+          )
+        }
+      />
 
       <PublicProjects
         projectsQuery={projectsQuery}
@@ -123,7 +125,7 @@ function PublicProjects({
 }) {
   if (projectsQuery.isLoading) {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {[0, 1, 2].map((i) => (
           <ProjectCardSkeleton key={i} />
         ))}
@@ -131,26 +133,11 @@ function PublicProjects({
     );
   }
   if (projectsQuery.isError) {
-    return (
-      <div
-        role="alert"
-        className="flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground"
-      >
-        <span>could not load</span>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => projectsQuery.refetch()}
-          className="font-display uppercase tracking-wide"
-        >
-          try again
-        </Button>
-      </div>
-    );
+    return <LoadError title="Could not load Projects" onRetry={() => projectsQuery.refetch()} />;
   }
   if (projectsQuery.data && projectsQuery.data.data.length > 0) {
     return (
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {projectsQuery.data.data.map((p) => (
           <ProjectCard key={p.id} project={p} nearnSponsor={nearnSponsor} />
         ))}
@@ -158,16 +145,20 @@ function PublicProjects({
     );
   }
   return (
-    <Empty className="border-2 border-dashed border-border/40">
-      <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
-        no public projects yet
-      </EmptyTitle>
-      <EmptyDescription className="font-mono text-xs uppercase tracking-wide">
-        check back as the agency boots up.
-      </EmptyDescription>
+    <Empty variant="outline">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <FolderSimpleIcon aria-hidden />
+        </EmptyMedia>
+        <EmptyTitle>No public Projects yet</EmptyTitle>
+        <EmptyDescription>Check back soon, or apply to contribute.</EmptyDescription>
+      </EmptyHeader>
       <EmptyContent>
-        <Button asChild className="font-display uppercase tracking-wide">
-          <Link to="/apply">apply →</Link>
+        <Button asChild>
+          <Link to="/apply">
+            Apply to contribute
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
+          </Link>
         </Button>
       </EmptyContent>
     </Empty>
@@ -184,73 +175,75 @@ function ProjectCard({
   const n = project.nearnListing;
   const nearnHref = n ? nearnListingHref(n, nearnSponsor) : null;
   const descriptionPreview = nearnDescriptionPreview(n?.description);
+  const paid =
+    n?.totalWinnersSelected != null && n.totalWinnersSelected > 0
+      ? `${n.totalPaymentsMade ?? 0} of ${n.totalWinnersSelected}`
+      : null;
+  const deadline = n?.deadline ? new Date(n.deadline).toISOString().slice(0, 10) : null;
   return (
-    <Card className="flex flex-col border-2 border-foreground">
-      <CardContent className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          <span className="truncate">@{project.slug}</span>
-          <div className="flex items-center gap-1.5">
-            {n?.type && <Badge variant="outline">{n.type}</Badge>}
-            {n?.status ? (
-              <Badge variant="default">{n.status}</Badge>
-            ) : (
-              <span>{project.status}</span>
-            )}
-          </div>
-        </div>
-        <h2 className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
-          {project.title}
-        </h2>
+    <Card>
+      <CardHeader>
+        <CardDescription>
+          <span className="block truncate">@{project.slug}</span>
+        </CardDescription>
+        <CardTitle>
+          <h2 className="break-words">{project.title}</h2>
+        </CardTitle>
+        <CardAction>
+          <Badge variant="outline">{n?.status ?? project.status}</Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
         {descriptionPreview && (
-          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-            {descriptionPreview}
-          </p>
+          <p className="line-clamp-3 text-xs/relaxed text-muted-foreground">{descriptionPreview}</p>
         )}
-        <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground space-y-1">
-          {n && <div>reward · {formatNearnReward(n)}</div>}
-          {n?.totalWinnersSelected != null && n.totalWinnersSelected > 0 && (
-            <div>
-              {n.totalPaymentsMade ?? 0} of {n.totalWinnersSelected} paid
-            </div>
-          )}
-          {n?.deadline && <div>deadline · {new Date(n.deadline).toISOString().slice(0, 10)}</div>}
-        </div>
-        {nearnHref && (
-          <div className="mt-auto pt-2">
-            <Button
-              asChild
-              variant="outline"
-              className="w-full font-display uppercase tracking-wide"
-            >
-              <a href={nearnHref} target="_blank" rel="noopener noreferrer">
-                open →
-              </a>
-            </Button>
-          </div>
+        {n && (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+            <ListingFact label="Reward" value={formatNearnReward(n)} />
+            {n.type && <ListingFact label="Type" value={n.type} />}
+            {paid && <ListingFact label="Paid" value={paid} />}
+            {deadline && <ListingFact label="Deadline" value={deadline} />}
+          </dl>
         )}
       </CardContent>
+      {nearnHref && (
+        <CardFooter className="mt-auto">
+          <Button asChild variant="outline" className="w-full">
+            <a href={nearnHref} target="_blank" rel="noopener noreferrer">
+              Open listing
+              <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
+            </a>
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   );
 }
+
+function ListingFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="truncate font-medium tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
 function ProjectCardSkeleton() {
   return (
-    <Card className="flex flex-col border-2 border-foreground">
-      <CardContent className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-3 w-16" />
-        </div>
-        <Skeleton className="h-6 w-3/4" />
+    <Card>
+      <CardHeader>
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-4 w-3/4" />
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
         <Skeleton className="h-3 w-full" />
         <Skeleton className="h-3 w-5/6" />
-        <div className="space-y-1">
-          <Skeleton className="h-3 w-1/3" />
-          <Skeleton className="h-3 w-1/4" />
-        </div>
-        <div className="mt-auto pt-2">
-          <Skeleton className="h-10 w-full" />
-        </div>
+        <Skeleton className="h-3 w-1/3" />
       </CardContent>
+      <CardFooter>
+        <Skeleton className="h-8 w-full" />
+      </CardFooter>
     </Card>
   );
 }

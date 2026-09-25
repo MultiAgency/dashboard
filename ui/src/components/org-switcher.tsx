@@ -1,6 +1,6 @@
+import { BankIcon, CheckIcon, EnvelopeIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter } from "@tanstack/react-router";
-import { Building2, Check, Mail, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
@@ -72,52 +72,50 @@ export function OrgSwitcher() {
           <Button
             variant="ghost"
             size="sm"
-            className="flex items-center gap-2 text-xs text-muted-foreground max-w-[120px] sm:max-w-[180px]"
+            className="max-w-30 sm:max-w-45"
             aria-label={`Organization: ${activeOrg?.name ?? "none"}`}
           >
-            <Building2 className="h-3.5 w-3.5 shrink-0" />
-            <span className="hidden sm:inline truncate min-w-0">
-              {activeOrg?.name ?? "organization"}
+            <BankIcon aria-hidden />
+            <span className="hidden min-w-0 truncate sm:inline">
+              {activeOrg?.name ?? "Organization"}
             </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
-          <DropdownMenuLabel className="text-xs text-muted-foreground">
-            organizations
-          </DropdownMenuLabel>
+          <DropdownMenuLabel>Organizations</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {organizations.map((org) => (
             <DropdownMenuItem
               key={org.id}
-              className="flex items-center justify-between gap-2 cursor-pointer"
-              onClick={() => {
+              onSelect={() => {
                 if (org.id !== activeOrgId) switchMutation.mutate(org.id);
               }}
             >
-              <span className="truncate min-w-0 flex-1">{org.name}</span>
-              <span className="font-mono text-[10px] uppercase text-muted-foreground">
-                {org.role ?? ""}
-              </span>
-              {org.id === activeOrgId && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
+              <span className="min-w-0 flex-1 truncate">{org.name}</span>
+              {org.role && <span className="text-xs text-muted-foreground">{org.role}</span>}
+              <CheckIcon
+                aria-hidden
+                className={org.id === activeOrgId ? "text-foreground" : "invisible"}
+              />
             </DropdownMenuItem>
           ))}
           {organizations.length === 0 && (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
               You are not in an Organization yet. Create one, or accept an invitation.
-            </div>
+            </p>
           )}
           <DropdownMenuSeparator />
           {invitationCount > 0 && (
-            <DropdownMenuItem asChild className="cursor-pointer gap-2">
+            <DropdownMenuItem asChild>
               <Link to="/profile" hash="invitations">
-                <Mail className="h-3.5 w-3.5" />
+                <EnvelopeIcon aria-hidden />
                 {invitationCount} pending invitation{invitationCount === 1 ? "" : "s"}
               </Link>
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setCreating(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            create organization
+          <DropdownMenuItem onSelect={() => setCreating(true)}>
+            <PlusIcon aria-hidden />
+            Create Organization
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

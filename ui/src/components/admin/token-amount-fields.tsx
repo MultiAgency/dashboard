@@ -1,6 +1,19 @@
-import { Input } from "@/components";
-import { Field, selectClass } from "@/components/admin-form";
+import { WarningIcon } from "@phosphor-icons/react";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { parseDecimalToBase } from "@/lib/format-amount";
+import { cn } from "@/lib/utils";
 
 export type KnownToken = {
   tokenId: string;
@@ -20,6 +33,8 @@ export function TokenSelect({
   options,
   custom,
   disabled,
+  className,
+  "aria-label": ariaLabel,
 }: {
   id: string;
   value: string;
@@ -27,22 +42,23 @@ export function TokenSelect({
   options: { tokenId: string; label: string }[];
   custom?: boolean;
   disabled?: boolean;
+  className?: string;
+  "aria-label"?: string;
 }) {
   return (
-    <select
-      id={id}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      className={selectClass}
-    >
-      {options.map((option) => (
-        <option key={option.tokenId} value={option.tokenId}>
-          {option.label}
-        </option>
-      ))}
-      {custom && <option value={CUSTOM_TOKEN}>Custom…</option>}
-    </select>
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger id={id} aria-label={ariaLabel} className={cn("w-full", className)}>
+        <SelectValue placeholder="Choose a token" />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.tokenId} value={option.tokenId}>
+            {option.label}
+          </SelectItem>
+        ))}
+        {custom && <SelectItem value={CUSTOM_TOKEN}>Custom token</SelectItem>}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -72,58 +88,78 @@ export function TokenAmountFields({
   const isCustom = tokenSelection === CUSTOM_TOKEN;
   const effectiveTokenId = isCustom ? customTokenId.trim() : tokenSelection;
   const knownToken = tokens.find((t) => t.tokenId === effectiveTokenId);
+  const unknownDecimals = isCustom && customTokenId.trim().length > 0 && !knownToken;
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="token" htmlFor={`${idPrefix}-token`}>
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor={`${idPrefix}-token`}>Token</FieldLabel>
           <TokenSelect
             id={`${idPrefix}-token`}
             value={tokenSelection}
             onChange={setTokenSelection}
-            options={tokens.map((t) => ({ tokenId: t.tokenId, label: `${t.symbol} — ${t.name}` }))}
+            options={tokens.map((t) => ({ tokenId: t.tokenId, label: `${t.symbol} · ${t.name}` }))}
             custom
             disabled={disabled}
           />
-          {knownToken?.icon && (
-            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <img src={knownToken.icon} alt="" width={16} height={16} className="rounded-full" />
-              <span className="font-mono">{knownToken.tokenId}</span>
-            </div>
+          {knownToken && (
+            <FieldDescription>
+              <span className="flex items-center gap-1.5 break-all">
+                {knownToken.icon && (
+                  <img
+                    src={knownToken.icon}
+                    alt=""
+                    width={16}
+                    height={16}
+                    className="rounded-full"
+                  />
+                )}
+                {knownToken.tokenId}
+              </span>
+            </FieldDescription>
           )}
         </Field>
-        <Field
-          label={knownToken ? `amount (${knownToken.symbol})` : "amount (smallest unit)"}
-          htmlFor={`${idPrefix}-amount`}
-        >
-          <Input
-            id={`${idPrefix}-amount`}
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={knownToken ? "1.5" : "1000000000000000000000000"}
-            disabled={disabled}
-          />
+        <Field data-invalid={amountError ? true : undefined}>
+          <FieldLabel htmlFor={`${idPrefix}-amount`}>Amount</FieldLabel>
+          <InputGroup>
+            <InputGroupInput
+              id={`${idPrefix}-amount`}
+              inputMode="decimal"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={knownToken ? "1.5" : "1000000000000000000000000"}
+              aria-invalid={amountError ? true : undefined}
+              disabled={disabled}
+            />
+            <InputGroupAddon align="inline-end">
+              {knownToken ? knownToken.symbol : "units"}
+            </InputGroupAddon>
+          </InputGroup>
+          {amountError && <FieldError>{amountError}</FieldError>}
         </Field>
       </div>
       {isCustom && (
-        <Field label="custom token id" htmlFor={`${idPrefix}-custom-token`}>
+        <Field>
+          <FieldLabel htmlFor={`${idPrefix}-custom-token`}>Custom token ID</FieldLabel>
           <Input
             id={`${idPrefix}-custom-token`}
             value={customTokenId}
             onChange={(e) => setCustomTokenId(e.target.value)}
-            placeholder="e.g. usdc.token.near"
+            placeholder="usdc.token.near"
             disabled={disabled}
           />
+          {unknownDecimals && (
+            <FieldDescription>
+              <span className="flex items-start gap-1.5">
+                <WarningIcon aria-hidden className="mt-0.5 shrink-0" />
+                The decimals of {effectiveTokenId} are unknown, so enter the amount in its smallest
+                whole unit.
+              </span>
+            </FieldDescription>
+          )}
         </Field>
       )}
-      {isCustom && customTokenId.trim().length > 0 && !knownToken && (
-        <p className="text-xs text-muted-foreground">
-          ⚠ Decimals unknown for "{effectiveTokenId}". Enter the amount in the token's smallest
-          integer unit.
-        </p>
-      )}
-      {amountError && <p className="text-xs text-destructive">{amountError}</p>}
     </>
   );
 }

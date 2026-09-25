@@ -23,35 +23,35 @@ export function workspaceNavigation(access: WorkspaceAccess): NavGroup[] {
   const manager = isManager(access.role);
   const groups: NavGroup[] = [
     {
-      title: "work",
+      title: "Work",
       items: [
-        { to: "/admin/projects", label: "projects" },
-        { to: "/admin/reports", label: "reports" },
+        { to: "/admin/projects", label: "Projects" },
+        { to: "/admin/reports", label: "Reports" },
       ],
     },
     {
-      title: "people",
+      title: "People",
       items: [
-        ...(manager ? [{ to: "/admin/engagements", label: "engagements" }] : []),
-        { to: "/admin/contributors", label: "builders", match: "/admin/contributors" },
-        ...(manager ? [{ to: "/admin/members", label: "team" }] : []),
+        ...(manager ? [{ to: "/admin/engagements", label: "Engagements" }] : []),
+        { to: "/admin/contributors", label: "Builders", match: "/admin/contributors" },
+        ...(manager ? [{ to: "/admin/members", label: "Team" }] : []),
       ],
     },
   ];
   if (access.hasAgencyDao) {
     groups.push({
-      title: "money",
+      title: "Money",
       items: [
-        { to: "/admin/billings", label: "billings" },
-        { to: "/admin/budgets", label: "budgets" },
+        { to: "/admin/billings", label: "Billings" },
+        { to: "/admin/budgets", label: "Budgets" },
       ],
     });
   }
   if (access.hasClientSections) {
-    groups.push({ title: "as client", items: [{ to: "/client", label: "agencies" }] });
+    groups.push({ title: "As client", items: [{ to: "/client", label: "Agencies" }] });
   }
   if (manager) {
-    groups.push({ title: "setup", items: [{ to: "/admin/settings", label: "settings" }] });
+    groups.push({ title: "Setup", items: [{ to: "/admin/settings", label: "Settings" }] });
   }
   return groups;
 }
@@ -67,13 +67,13 @@ export function acceptsIdeas(kind: EngagementKind): boolean {
 export function clientEngagementSections(engagementId: string, kind: EngagementKind): NavItem[] {
   const base = `/client/${engagementId}`;
   return [
-    { to: base, label: "overview" },
-    { to: `${base}/projects`, label: "shared projects" },
-    { to: `${base}/prepayments`, label: "prepayments" },
-    { to: `${base}/plan`, label: "plan & change orders" },
-    { to: `${base}/billings`, label: "billings" },
-    { to: `${base}/reports`, label: "reports" },
-    ...(acceptsIdeas(kind) ? [{ to: `${base}/ideas`, label: "ideas" }] : []),
+    { to: base, label: "Overview" },
+    { to: `${base}/projects`, label: "Shared projects" },
+    { to: `${base}/prepayments`, label: "Prepayments" },
+    { to: `${base}/plan`, label: "Plan & Change orders" },
+    { to: `${base}/billings`, label: "Billings" },
+    { to: `${base}/reports`, label: "Reports" },
+    ...(acceptsIdeas(kind) ? [{ to: `${base}/ideas`, label: "Ideas" }] : []),
   ];
 }
 

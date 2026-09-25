@@ -8,8 +8,8 @@ export const Route = createFileRoute("/_layout/_authenticated/client/$engagement
 function EngagementPrepayments() {
   const { engagement } = Route.useRouteContext();
   return (
-    <section className="space-y-4">
-      <p className="text-sm text-muted-foreground max-w-2xl">
+    <section className="flex flex-col gap-4">
+      <p className="max-w-2xl text-sm text-pretty text-muted-foreground">
         Every Prepayment {engagement.agency.name} recorded for you. Your Prepaid balance is what you
         prepaid minus what went into Project budgets; it rolls over from month to month.
       </p>

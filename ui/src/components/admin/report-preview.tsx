@@ -1,7 +1,16 @@
 import type { ColumnDef } from "@tanstack/react-table";
-import { useMemo } from "react";
-import { DataTable } from "@/components";
+import { type ReactNode, useMemo } from "react";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  DataTable,
+} from "@/components";
 import { ClientBreakdownSection } from "@/components/admin/client-breakdown-section";
+import { StatCard } from "@/components/budget";
 import { TokenAmountCell } from "@/components/token-amounts";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
@@ -48,8 +57,6 @@ type BuilderRow = {
   billingCount: number;
   amounts: TokenAmount[];
 };
-
-const SECTION_TITLE = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground";
 
 function buildTokenSummaryRows(budget: TokenAmount[], billed: TokenAmount[]): TokenSummaryRow[] {
   return collectReportTokenIds(budget, billed).map((tokenId) => ({
@@ -105,11 +112,9 @@ function useBuilderColumns(tokenIds: string[]): ColumnDef<BuilderRow>[] {
         header: "Builder",
         accessorKey: "name",
         cell: ({ row }) => (
-          <div>
-            <div className="font-medium">{row.original.name}</div>
-            <div className="font-mono text-[10px] text-muted-foreground">
-              {row.original.nearAccount}
-            </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium">{row.original.name}</span>
+            <span className="text-muted-foreground">{row.original.nearAccount}</span>
           </div>
         ),
         meta: {
@@ -151,11 +156,11 @@ function useBuilderColumns(tokenIds: string[]): ColumnDef<BuilderRow>[] {
 
 type ReportPreviewProps = {
   report: ReportViewData;
-  /** Hide builder section (client portal). */
   showBuilders?: boolean;
+  actions?: ReactNode;
 };
 
-export function ReportPreview({ report, showBuilders = true }: ReportPreviewProps) {
+export function ReportPreview({ report, showBuilders = true, actions }: ReportPreviewProps) {
   const tokenSummary = useMemo(
     () => buildTokenSummaryRows(report.overview.budgetByToken, report.overview.billedByToken),
     [report.overview.budgetByToken, report.overview.billedByToken],
@@ -180,52 +185,69 @@ export function ReportPreview({ report, showBuilders = true }: ReportPreviewProp
   const builderColumns = useBuilderColumns(builderTokenIds);
 
   return (
-    <div className="space-y-6">
-      <section className="space-y-3">
-        <h2 className={SECTION_TITLE}>overview</h2>
-        <dl className="grid gap-3 sm:grid-cols-3 text-sm mb-2">
-          <div className="rounded-sm border border-border px-3 py-2">
-            <dt className="text-xs text-muted-foreground">Projects</dt>
-            <dd className="font-display text-2xl font-black">{report.overview.projectCount}</dd>
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Report overview</h2>
+          </CardTitle>
+          <CardDescription>Budget and billed totals per token for the period.</CardDescription>
+          {actions && <CardAction>{actions}</CardAction>}
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatCard label="Projects" value={report.overview.projectCount} />
+            <div className="sm:col-span-2">
+              <StatCard label="Period" value={report.overview.period} />
+            </div>
           </div>
-          <div className="rounded-sm border border-border px-3 py-2 sm:col-span-2">
-            <dt className="text-xs text-muted-foreground">Period</dt>
-            <dd className="font-mono">{report.overview.period}</dd>
-          </div>
-        </dl>
-        <DataTable
-          columns={tokenSummaryColumns}
-          data={tokenSummary}
-          emptyMessage="No budget or billing amounts."
-          csvFilename="report-token-summary"
-          viewId="report-token-summary"
-          enableSearch={false}
-        />
-      </section>
+          <DataTable
+            columns={tokenSummaryColumns}
+            data={tokenSummary}
+            emptyMessage="No budget or billing amounts"
+            csvFilename="report-token-summary"
+            viewId="report-token-summary"
+            enableSearch={false}
+          />
+        </CardContent>
+      </Card>
 
       {report.clientBreakdown.length > 0 && (
         <ClientBreakdownSection breakdown={report.clientBreakdown} />
       )}
 
       {showBuilders && report.contributorStats.length > 0 && (
-        <section className="space-y-3">
-          <h2 className={SECTION_TITLE}>builders</h2>
-          <DataTable
-            columns={builderColumns}
-            data={builderRows}
-            emptyMessage="No builder billings."
-            csvFilename="report-builders"
-            viewId="report-builders"
-            enableSearch={false}
-          />
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Builders</h2>
+            </CardTitle>
+            <CardDescription>Billed amounts per builder and token.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              columns={builderColumns}
+              data={builderRows}
+              emptyMessage="No builder billings"
+              csvFilename="report-builders"
+              viewId="report-builders"
+              enableSearch={false}
+            />
+          </CardContent>
+        </Card>
       )}
 
       {report.notes && (
-        <section className="rounded-sm border border-border p-4 space-y-2">
-          <h2 className={SECTION_TITLE}>report memo</h2>
-          <p className="text-sm whitespace-pre-wrap">{report.notes}</p>
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Report memo</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm whitespace-pre-wrap">{report.notes}</p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
