@@ -91,7 +91,7 @@ function EngagementLayout() {
         }
       />
       <Tabs value={current} activationMode="manual">
-        <div className="-mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+        <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
           <TabsList variant="line" aria-label="Engagement sections">
             {sections.map((section) => (
               <TabsTrigger key={section.to} value={section.to} asChild>

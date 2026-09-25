@@ -200,7 +200,7 @@ function EngagementDetailPage() {
             });
           }}
         >
-          <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
             <TabsList variant="line">
               <TabsTrigger value="projects">Shared Projects</TabsTrigger>
               <TabsTrigger value="prepayments">Prepayments</TabsTrigger>
