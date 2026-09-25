@@ -1,10 +1,22 @@
 import { ArrowLeftIcon } from "@phosphor-icons/react";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-import { Button } from "@/components";
+import {
+  Badge,
+  Button,
+  Separator,
+  Skeleton,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components";
+import { LoadError } from "@/components/load-error";
 import { UnknownDoc } from "@/components/shell";
 import { type DocEntry, findDoc } from "@/lib/docs-registry";
 
@@ -30,7 +42,7 @@ async function loadDocPage(slug: string, assetsUrl: string): Promise<DocLoaderDa
     const raw = await res.text();
     return {
       doc,
-      content: raw.replace(/^---\n[\s\S]*?\n---\n/, ""),
+      content: raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, ""),
       error: null,
     };
   } catch (error) {
@@ -106,16 +118,14 @@ function MermaidBlock({ code }: { code: string }) {
 
   if (failed) {
     return (
-      <pre className="font-mono text-sm bg-muted border border-border p-4 overflow-x-auto rounded-sm">
-        {code}
-      </pre>
+      <pre className="overflow-x-auto border bg-muted p-4 font-mono text-xs/relaxed">{code}</pre>
     );
   }
 
   return (
     <div
       ref={ref}
-      className="my-6 overflow-x-auto rounded-sm border border-border bg-muted/20 p-6 [&_svg]:mx-auto [&_svg]:max-w-full [&_foreignObject_div]:text-center [&_foreignObject_span]:text-center"
+      className="overflow-x-auto border bg-muted/20 p-6 [&_svg]:mx-auto [&_svg]:max-w-full [&_foreignObject_div]:text-center [&_foreignObject_span]:text-center"
     />
   );
 }
@@ -126,75 +136,73 @@ function DocPage() {
   const content = loaderData?.content ?? null;
   const error = loaderData?.error ?? null;
   const navigate = useNavigate();
+  const router = useRouter();
 
   if (!doc) {
     return <UnknownDoc />;
   }
 
-  const eyebrow = doc.section === "skills" ? "agency · skill" : "agency · model";
-  const showRegistryTitle = !!content && !/^\s*#\s/.test(content);
+  const sectionLabel = doc.section === "skills" ? "Integration skill" : "Operating model";
+  const showRegistryTitle = !content || !/^\s*#\s/.test(content);
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-1 sm:px-0 space-y-4 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          {eyebrow}
-        </div>
-        {showRegistryTitle && (
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-black uppercase leading-none tracking-tight">
-            {doc.title}
-          </h1>
-        )}
-      </header>
+    <div className="mx-auto flex w-full max-w-3xl animate-fade-in flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/docs">
+            <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+            All docs
+          </Link>
+        </Button>
+        <Badge variant="outline">{sectionLabel}</Badge>
+      </div>
+
+      {showRegistryTitle && (
+        <h1 className="font-heading text-3xl font-semibold tracking-tight text-balance">
+          {doc.title}
+        </h1>
+      )}
 
       {error ? (
-        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          could not load — try again
-        </p>
+        <LoadError title="Could not load this doc" onRetry={() => void router.invalidate()} />
       ) : !content ? (
-        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          loading…
-        </p>
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
       ) : (
-        <article className="space-y-5 text-base leading-7">
+        <article className="flex min-w-0 flex-col gap-4 text-sm/7">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeHighlight]}
             components={{
               h1: ({ children }) => (
-                <h1 className="text-4xl sm:text-5xl md:text-6xl font-black uppercase leading-none tracking-tight mt-0 mb-3">
+                <h1 className="font-heading text-3xl font-semibold tracking-tight text-balance">
                   {children}
                 </h1>
               ),
               h2: ({ children }) => (
-                <h2 className="text-2xl sm:text-3xl uppercase tracking-tight font-bold leading-tight mt-10 mb-3 border-b border-border pb-2">
+                <h2 className="border-b pt-6 pb-2 font-heading text-xl font-semibold tracking-tight">
                   {children}
                 </h2>
               ),
               h3: ({ children }) => (
-                <h3 className="text-lg sm:text-xl uppercase tracking-tight font-bold leading-tight mt-8 mb-2">
+                <h3 className="pt-4 font-heading text-base font-semibold tracking-tight">
                   {children}
                 </h3>
               ),
               h4: ({ children }) => (
-                <h4 className="text-base uppercase tracking-tight font-semibold mt-6 mb-2">
-                  {children}
-                </h4>
+                <h4 className="pt-2 font-heading text-sm font-semibold">{children}</h4>
               ),
-              p: ({ children }) => (
-                <p className="text-base leading-7 text-foreground/90">{children}</p>
-              ),
+              p: ({ children }) => <p className="text-pretty">{children}</p>,
               ul: ({ children }) => (
-                <ul className="list-disc pl-6 space-y-2 text-base leading-7 text-foreground/90">
-                  {children}
-                </ul>
+                <ul className="flex list-disc flex-col gap-2 pl-6">{children}</ul>
               ),
               ol: ({ children }) => (
-                <ol className="list-decimal pl-6 space-y-2 text-base leading-7 text-foreground/90">
-                  {children}
-                </ol>
+                <ol className="flex list-decimal flex-col gap-2 pl-6">{children}</ol>
               ),
-              li: ({ children }) => <li className="leading-7">{children}</li>,
+              li: ({ children }) => <li>{children}</li>,
               a: ({ href, children }) => {
                 const isInternal = !!href && href.startsWith("/");
                 return (
@@ -217,7 +225,7 @@ function DocPage() {
                           },
                         }
                       : { target: "_blank", rel: "noopener noreferrer" })}
-                    className="underline underline-offset-2 text-foreground hover:text-muted-foreground"
+                    className="font-medium underline underline-offset-4 hover:text-muted-foreground"
                   >
                     {children}
                   </a>
@@ -232,11 +240,7 @@ function DocPage() {
                 }
                 const isInline = !className;
                 if (isInline) {
-                  return (
-                    <code className="font-mono text-sm bg-muted px-1.5 py-0.5 border border-border rounded-sm">
-                      {children}
-                    </code>
-                  );
+                  return <code className="bg-muted px-1 py-0.5 font-mono text-xs">{children}</code>;
                 }
                 return (
                   <code className={className} {...props}>
@@ -257,34 +261,29 @@ function DocPage() {
                   }
                 }
                 return (
-                  <pre className="font-mono text-sm leading-6 bg-muted border border-border p-4 overflow-x-auto rounded-sm my-4">
+                  <pre className="overflow-x-auto border bg-muted p-4 font-mono text-xs/relaxed">
                     {children}
                   </pre>
                 );
               },
               blockquote: ({ children }) => (
-                <blockquote className="border-l-4 border-foreground/40 pl-4 my-4 text-base text-muted-foreground italic">
+                <blockquote className="border-l-2 pl-4 text-muted-foreground italic">
                   {children}
                 </blockquote>
               ),
               table: ({ children }) => (
-                <div className="overflow-x-auto my-4 -mx-1 sm:mx-0">
-                  <table className="w-full text-sm border-collapse border border-border min-w-[20rem]">
-                    {children}
-                  </table>
+                <div className="border">
+                  <Table>{children}</Table>
                 </div>
               ),
-              th: ({ children }) => (
-                <th className="font-mono text-xs uppercase tracking-wide border border-border bg-muted px-3 py-2 text-left">
-                  {children}
-                </th>
-              ),
+              thead: ({ children }) => <TableHeader>{children}</TableHeader>,
+              tbody: ({ children }) => <TableBody>{children}</TableBody>,
+              tr: ({ children }) => <TableRow>{children}</TableRow>,
+              th: ({ children }) => <TableHead>{children}</TableHead>,
               td: ({ children }) => (
-                <td className="border border-border px-3 py-2 align-top text-sm leading-6">
-                  {children}
-                </td>
+                <TableCell className="align-top whitespace-normal">{children}</TableCell>
               ),
-              hr: () => <hr className="border-t-2 border-foreground/20 my-8" />,
+              hr: () => <Separator />,
             }}
           >
             {content}
@@ -292,11 +291,12 @@ function DocPage() {
         </article>
       )}
 
-      <div className="pt-6 border-t-2 border-foreground/15">
-        <Button asChild variant="outline" size="sm">
+      <Separator />
+      <div>
+        <Button asChild variant="outline">
           <Link to="/docs">
             <ArrowLeftIcon data-icon="inline-start" aria-hidden />
-            all docs
+            All docs
           </Link>
         </Button>
       </div>
