@@ -1,18 +1,23 @@
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Button } from "@/components";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 export function ResendVerificationButton({
   email,
   callbackURL,
   label,
   size,
+  variant = "outline",
+  className,
 }: {
   email: string | null;
   callbackURL: string;
   label: string;
   size?: "sm";
+  variant?: "default" | "outline";
+  className?: string;
 }) {
   const authClient = useAuthClient();
   const resend = useMutation({
@@ -27,12 +32,15 @@ export function ResendVerificationButton({
 
   return (
     <Button
+      type="button"
       size={size}
-      variant="outline"
+      variant={variant}
+      className={className}
       onClick={() => resend.mutate()}
       disabled={resend.isPending}
     >
-      {resend.isPending ? "sending..." : label}
+      {resend.isPending && <Spinner data-icon="inline-start" />}
+      {resend.isPending ? "Sending…" : label}
     </Button>
   );
 }
