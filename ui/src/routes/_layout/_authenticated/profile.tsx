@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
@@ -151,7 +152,8 @@ function ProfilePage() {
           disabled={signOutMutation.isPending}
           variant="outline"
         >
-          {signOutMutation.isPending ? "signing out..." : "sign out →"}
+          {signOutMutation.isPending ? "signing out..." : "sign out"}
+          <ArrowRightIcon data-icon="inline-end" aria-hidden />
         </Button>
       </section>
     </div>

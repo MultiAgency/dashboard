@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
@@ -98,7 +99,8 @@ function ResetPasswordPage() {
               </Field>
               <div className="flex justify-end">
                 <Button type="submit" disabled={reset.isPending}>
-                  {reset.isPending ? "saving..." : "set password →"}
+                  {reset.isPending ? "saving..." : "set password"}
+                  <ArrowRightIcon data-icon="inline-end" aria-hidden />
                 </Button>
               </div>
             </form>

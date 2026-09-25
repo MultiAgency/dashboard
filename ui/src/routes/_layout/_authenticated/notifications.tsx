@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -128,7 +129,8 @@ function NotificationsPage() {
                   variant="outline"
                   onClick={() => router.history.push(awaitingLink(changeOrder))}
                 >
-                  review →
+                  review
+                  <ArrowRightIcon data-icon="inline-end" aria-hidden />
                 </Button>
               </CardContent>
             </Card>
@@ -162,7 +164,8 @@ function NotificationsPage() {
                   disabled={open.isPending}
                   onClick={() => open.mutate(notification)}
                 >
-                  open →
+                  open
+                  <ArrowRightIcon data-icon="inline-end" aria-hidden />
                 </Button>
               )}
             </CardContent>

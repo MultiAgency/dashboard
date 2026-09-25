@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
@@ -357,7 +358,8 @@ function SettingsForm({
             </form.Field>
             <Button type="submit" disabled={isPending} className="w-full">
               {isPending && <Spinner />}
-              {isPending ? "saving…" : "save →"}
+              {isPending ? "saving…" : "save"}
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Button>
           </form>
           {data.audit && (

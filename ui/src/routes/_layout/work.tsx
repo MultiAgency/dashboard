@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -94,7 +95,8 @@ function WorkIndex() {
           {nearnUrl && (
             <Button asChild variant="outline">
               <a href={nearnUrl} target="_blank" rel="noopener noreferrer">
-                nearn →
+                nearn
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
               </a>
             </Button>
           )}
@@ -158,7 +160,10 @@ function PublicProjects({
       <EmptyDescription>check back as the agency boots up.</EmptyDescription>
       <EmptyContent>
         <Button asChild>
-          <Link to="/apply">apply →</Link>
+          <Link to="/apply">
+            apply
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
+          </Link>
         </Button>
       </EmptyContent>
     </Empty>
@@ -210,7 +215,8 @@ function ProjectCard({
           <div className="mt-auto pt-2">
             <Button asChild variant="outline" className="w-full">
               <a href={nearnHref} target="_blank" rel="noopener noreferrer">
-                open →
+                open
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
               </a>
             </Button>
           </div>

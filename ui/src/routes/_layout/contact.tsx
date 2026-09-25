@@ -1,3 +1,4 @@
+import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -77,13 +78,17 @@ function Contact() {
             </p>
             <Link
               to="/team"
-              className="inline-block font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
             >
-              Get to know our team →
+              Get to know our team
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Link>
             <div className="pt-2">
               <Button asChild variant="outline" size="sm">
-                <Link to="/">← back to home</Link>
+                <Link to="/">
+                  <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+                  back to home
+                </Link>
               </Button>
             </div>
           </CardContent>
@@ -240,7 +245,8 @@ function Contact() {
             </form.Field>
             <Button type="submit" disabled={isPending} className="w-full">
               {isPending && <Spinner />}
-              {isPending ? "submitting..." : "send →"}
+              {isPending ? "submitting..." : "send"}
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Button>
           </form>
         </CardContent>

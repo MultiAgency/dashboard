@@ -1,3 +1,4 @@
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -497,7 +498,7 @@ function TransferPanel({
                     <span className="font-mono tabular-nums">
                       {formatTokenAmount(fromCurrent.toString(), effectiveTokenId)}
                     </span>
-                    <span>→</span>
+                    <ArrowRightIcon aria-hidden />
                     <span
                       className={`font-mono tabular-nums ${fromAfter < 0n ? "text-destructive" : ""}`}
                     >
@@ -513,7 +514,7 @@ function TransferPanel({
                     <span className="font-mono tabular-nums">
                       {formatTokenAmount(toCurrent.toString(), effectiveTokenId)}
                     </span>
-                    <span>→</span>
+                    <ArrowRightIcon aria-hidden />
                     <span className="font-mono tabular-nums">
                       {formatTokenAmount(toAfter.toString(), effectiveTokenId)}
                     </span>
@@ -673,7 +674,7 @@ export function ProjectBudgetPanel({
               to="/admin/budgets"
               className="text-xs font-mono uppercase tracking-wide text-muted-foreground underline underline-offset-2 hover:text-foreground"
             >
-              cross-project transfers →
+              cross-project transfers <ArrowRightIcon aria-hidden className="inline" />
             </Link>
           )}
         </div>
@@ -725,7 +726,7 @@ export function ProjectBudgetPanel({
                   <span className="font-mono tabular-nums">
                     {formatTokenAmount(currentBudgetBigInt.toString(), effectiveTokenId)}
                   </span>
-                  <span>→</span>
+                  <ArrowRightIcon aria-hidden />
                   <span
                     className={`font-mono ${previewBudgetBigInt < 0n ? "text-destructive" : ""}`}
                   >

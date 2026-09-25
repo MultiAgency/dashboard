@@ -243,10 +243,16 @@ function Landing() {
           </p>
           <div className="flex flex-wrap items-center gap-3 pl-3 pt-2">
             <Button asChild variant="outline">
-              <Link to="/apply">join →</Link>
+              <Link to="/apply">
+                join
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
+              </Link>
             </Button>
             <Button asChild>
-              <Link to="/contact">hire →</Link>
+              <Link to="/contact">
+                hire
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
+              </Link>
             </Button>
           </div>
         </div>
@@ -272,7 +278,10 @@ function Landing() {
             </p>
             <div className="pt-2">
               <Button asChild>
-                <Link to="/register">register →</Link>
+                <Link to="/register">
+                  register
+                  <ArrowRightIcon data-icon="inline-end" aria-hidden />
+                </Link>
               </Button>
             </div>
           </div>
@@ -337,7 +346,10 @@ function Landing() {
             {hasMore && (
               <div className="flex justify-center pt-2">
                 <Button asChild variant="outline">
-                  <Link to="/work">explore →</Link>
+                  <Link to="/work">
+                    explore
+                    <ArrowRightIcon data-icon="inline-end" aria-hidden />
+                  </Link>
                 </Button>
               </div>
             )}
@@ -420,7 +432,10 @@ function ProjectCard({ project }: { project: LandingProject }) {
         {hasBounty && <Badge variant="default">bounty</Badge>}
         <div className="mt-auto pt-2">
           <Button asChild variant="outline" className="w-full">
-            <Link to="/work">open →</Link>
+            <Link to="/work">
+              open
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
+            </Link>
           </Button>
         </div>
       </CardContent>
@@ -493,7 +508,8 @@ function StackCard({
         <div className="mt-auto pt-2">
           <Button asChild variant="outline" className="w-full">
             <a href={url} target="_blank" rel="noopener noreferrer">
-              {host} →
+              {host}
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </a>
           </Button>
         </div>

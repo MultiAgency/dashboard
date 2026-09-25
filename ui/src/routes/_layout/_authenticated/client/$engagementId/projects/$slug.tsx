@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { Badge } from "@/components";
@@ -42,9 +43,10 @@ function SharedProjectPage() {
         <Link
           to="/client/$engagementId/projects"
           params={{ engagementId: engagement.id }}
-          className="text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
         >
-          ← shared projects
+          <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+          shared projects
         </Link>
       </div>
 

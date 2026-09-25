@@ -1,3 +1,4 @@
+import { ArrowDownIcon, ArrowUpIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -162,22 +163,22 @@ export function AgentLinksPanel({
                   {editable && (
                     <div className="flex flex-wrap gap-1">
                       <Button
-                        size="sm"
+                        size="icon-sm"
                         variant="outline"
                         aria-label={`Move ${link.label} up`}
                         disabled={index === 0 || reorder.isPending}
                         onClick={() => reorder.mutate(moveLink(ids, link.id, -1))}
                       >
-                        ↑
+                        <ArrowUpIcon aria-hidden />
                       </Button>
                       <Button
-                        size="sm"
+                        size="icon-sm"
                         variant="outline"
                         aria-label={`Move ${link.label} down`}
                         disabled={index === links.length - 1 || reorder.isPending}
                         onClick={() => reorder.mutate(moveLink(ids, link.id, 1))}
                       >
-                        ↓
+                        <ArrowDownIcon aria-hidden />
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => setEditing(link.id)}>
                         edit

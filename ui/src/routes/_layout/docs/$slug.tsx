@@ -1,3 +1,4 @@
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -293,7 +294,10 @@ function DocPage() {
 
       <div className="pt-6 border-t-2 border-foreground/15">
         <Button asChild variant="outline" size="sm">
-          <Link to="/docs">← all docs</Link>
+          <Link to="/docs">
+            <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+            all docs
+          </Link>
         </Button>
       </div>
     </div>
