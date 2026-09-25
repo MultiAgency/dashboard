@@ -12,21 +12,21 @@ describe("workspaceNavigation", () => {
       "owner",
       false,
       false,
-      ["projects", "reports", "engagements", "builders", "team", "settings"],
+      ["Projects", "Reports", "Engagements", "Builders", "Team", "Settings"],
     ],
     [
       "money only with an Agency DAO",
       "admin",
       true,
       false,
-      ["projects", "reports", "engagements", "builders", "team", "billings", "budgets", "settings"],
+      ["Projects", "Reports", "Engagements", "Builders", "Team", "Billings", "Budgets", "Settings"],
     ],
     [
       "members the screens they can use, without management links",
       "member",
       true,
       true,
-      ["projects", "reports", "builders", "billings", "budgets", "agencies"],
+      ["Projects", "Reports", "Builders", "Billings", "Budgets", "Agencies"],
     ],
   ] as const)("gives %s", (_, role, hasAgencyDao, hasClientSections, expected) => {
     expect(labels({ role, hasAgencyDao, hasClientSections })).toEqual(expected);
@@ -39,8 +39,8 @@ describe("workspaceNavigation", () => {
       hasClientSections: true,
     });
 
-    expect(groups.find((g) => g.title === "as client")?.items).toEqual([
-      { to: "/client", label: "agencies" },
+    expect(groups.find((g) => g.title === "As client")?.items).toEqual([
+      { to: "/client", label: "Agencies" },
     ]);
   });
 });
@@ -48,19 +48,19 @@ describe("workspaceNavigation", () => {
 describe("clientEngagementSections", () => {
   it("gives Client members every section of their Engagement, Prepayments and the plan included", () => {
     expect(clientEngagementSections("e1", "client")).toEqual([
-      { to: "/client/e1", label: "overview" },
-      { to: "/client/e1/projects", label: "shared projects" },
-      { to: "/client/e1/prepayments", label: "prepayments" },
-      { to: "/client/e1/plan", label: "plan & change orders" },
-      { to: "/client/e1/billings", label: "billings" },
-      { to: "/client/e1/reports", label: "reports" },
-      { to: "/client/e1/ideas", label: "ideas" },
+      { to: "/client/e1", label: "Overview" },
+      { to: "/client/e1/projects", label: "Shared projects" },
+      { to: "/client/e1/prepayments", label: "Prepayments" },
+      { to: "/client/e1/plan", label: "Plan & Change orders" },
+      { to: "/client/e1/billings", label: "Billings" },
+      { to: "/client/e1/reports", label: "Reports" },
+      { to: "/client/e1/ideas", label: "Ideas" },
     ]);
   });
 
   it("leaves out ideas for a Subcontractor, who does not submit ideas to the hiring Agency", () => {
     expect(clientEngagementSections("e1", "subcontract").map((s) => s.label)).not.toContain(
-      "ideas",
+      "Ideas",
     );
   });
 });
