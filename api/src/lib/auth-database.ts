@@ -92,24 +92,6 @@ export function authDatabaseMembers(
     promoteToOwner: async ({ memberId }) => {
       await sql.query(`UPDATE ${member} SET role = 'owner' WHERE id = $1`, [memberId]);
     },
-
-    findUserIdByNearAccount: async (accountId) => {
-      const { rows: found } = await sql.query<{ table_name: string }>(
-        "SELECT table_name FROM information_schema.tables WHERE table_name IN ('nearAccount', 'near_account')",
-      );
-      const table = found[0]?.table_name;
-      if (!table) return null;
-      const snake = table === "near_account";
-      const { rows } = await sql.query<{ userId: string }>(
-        `SELECT ${quote(snake ? "user_id" : "userId")} AS "userId" FROM ${quote(table)} WHERE ${quote(snake ? "account_id" : "accountId")} = $1 LIMIT 1`,
-        [accountId],
-      );
-      return rows[0]?.userId ?? null;
-    },
-
-    removeMember: async ({ memberId }) => {
-      await sql.query(`DELETE FROM ${member} WHERE id = $1`, [memberId]);
-    },
   };
 }
 

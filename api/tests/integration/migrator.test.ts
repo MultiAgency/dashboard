@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createDatabaseDriver, type DatabaseDriver } from "../../src/db";
-import { loadMigrations, migrate } from "../../src/db/migrate";
+import { detectDrift, loadMigrations, migrate } from "../../src/db/migrate";
 
 const probeTable: Migration = {
   idx: 0,
@@ -83,6 +83,17 @@ describe("migrate — runtime migrator", () => {
     await driver.close();
   });
 
+  const migrateBefore = async (tag: string) => {
+    const { migrations } = await Effect.runPromise(loadMigrations());
+    await Effect.runPromise(
+      migrate(
+        driver.db,
+        migrations.filter((m) => m.tag < tag),
+      ),
+    );
+    return migrations;
+  };
+
   test("tracks applied hashes in drizzle.__drizzle_migrations, not public", async () => {
     await Effect.runPromise(migrate(driver.db, [probeTable]));
 
@@ -125,6 +136,15 @@ describe("migrate — runtime migrator", () => {
     expect(hashes).toEqual(["probe-hash-aaaa", "probe-hash-bbbb"]);
   });
 
+  test("a fully migrated database reports no drift, even for tables a later migration dropped", async () => {
+    const { migrations } = await Effect.runPromise(loadMigrations());
+    await Effect.runPromise(migrate(driver.db, migrations));
+
+    const drift = await Effect.runPromise(detectDrift(driver.db, migrations));
+
+    expect(drift).toMatchObject({ status: "healthy", missingTables: [] });
+  });
+
   test("CREATE SCHEMA IF NOT EXISTS is idempotent across multiple migrate() calls", async () => {
     await Effect.runPromise(migrate(driver.db, []));
     await Effect.runPromise(migrate(driver.db, []));
@@ -136,14 +156,12 @@ describe("migrate — runtime migrator", () => {
   });
 
   test("the organization_daos migration upgrades existing data and allows one Organization per Agency DAO", async () => {
-    const { migrations } = await Effect.runPromise(loadMigrations());
-    const before = migrations.filter((m) => m.tag < "0005");
-    await Effect.runPromise(migrate(driver.db, before));
+    await migrateBefore("0005");
     await driver.db.execute(
       sql`INSERT INTO clients (id, org_id, agency_dao_account_id, name) VALUES ('nf', 'nf-org', 'multiagency.sputnik-dao.near', 'NEAR Foundation')`,
     );
 
-    await Effect.runPromise(migrate(driver.db, migrations));
+    await migrateBefore("0013");
 
     await driver.db.execute(
       sql`INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ('multiagency', 'multiagency.sputnik-dao.near')`,
@@ -157,13 +175,7 @@ describe("migrate — runtime migrator", () => {
     expect((rawClients as unknown as { rows: { id: string }[] }).rows).toEqual([{ id: "nf" }]);
   });
   test("the settings migration re-keys settings from the Agency DAO to its Organization", async () => {
-    const { migrations } = await Effect.runPromise(loadMigrations());
-    await Effect.runPromise(
-      migrate(
-        driver.db,
-        migrations.filter((m) => m.tag < "0006"),
-      ),
-    );
+    const migrations = await migrateBefore("0006");
     await driver.db.execute(
       sql`INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ('multiagency', 'multiagency.sputnik-dao.near')`,
     );
@@ -191,13 +203,7 @@ describe("migrate — runtime migrator", () => {
   });
 
   test("the engagements migration keeps budgets and enforces one active and one pending Engagement per pair", async () => {
-    const { migrations } = await Effect.runPromise(loadMigrations());
-    await Effect.runPromise(
-      migrate(
-        driver.db,
-        migrations.filter((m) => m.tag < "0007"),
-      ),
-    );
+    const migrations = await migrateBefore("0007");
     await driver.db.execute(
       sql`INSERT INTO budgets (id, project_id, token_id, amount, actor_account_id) VALUES ('b1', 'p1', 'near', '10', 'admin.near')`,
     );
@@ -223,13 +229,7 @@ describe("migrate — runtime migrator", () => {
   });
 
   test("the prepayments migration records the funding Agency DAO of attributed Budget entries", async () => {
-    const { migrations } = await Effect.runPromise(loadMigrations());
-    await Effect.runPromise(
-      migrate(
-        driver.db,
-        migrations.filter((m) => m.tag < "0008"),
-      ),
-    );
+    await migrateBefore("0008");
     await driver.db.execute(
       sql`INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ('studio', 'studio.sputnik-dao.near')`,
     );
@@ -243,7 +243,7 @@ describe("migrate — runtime migrator", () => {
       sql`INSERT INTO budgets (id, project_id, token_id, amount, actor_account_id, engagement_id, client_id) VALUES ('by-engagement', 'p1', 'near', '10', 'admin.near', 'e1', NULL), ('by-client', 'p1', 'near', '5', 'admin.near', NULL, 'legacy'), ('own', 'p1', 'near', '1', 'admin.near', NULL, NULL)`,
     );
 
-    await Effect.runPromise(migrate(driver.db, migrations));
+    await migrateBefore("0013");
 
     const raw = await driver.db.execute(
       sql`SELECT id, funding_dao_account_id FROM budgets ORDER BY id`,
@@ -262,13 +262,7 @@ describe("migrate — runtime migrator", () => {
     await expect(insert("2026-10", "0")).rejects.toThrow();
   });
   test("the subcontracting migration records the paying Agency DAO, makes proposal ids unique per DAO and drops the billings client column", async () => {
-    const { migrations } = await Effect.runPromise(loadMigrations());
-    await Effect.runPromise(
-      migrate(
-        driver.db,
-        migrations.filter((m) => m.tag < "0010"),
-      ),
-    );
+    await migrateBefore("0010");
     await driver.db.execute(
       sql`INSERT INTO clients (id, org_id, agency_dao_account_id, name) VALUES ('legacy', 'acme', 'legacy.sputnik-dao.near', 'Acme')`,
     );
@@ -282,7 +276,7 @@ describe("migrate — runtime migrator", () => {
       sql`INSERT INTO project_contributors (project_id, near_account, organization_id) VALUES ('p1', 'dev.near', 'studio')`,
     );
 
-    await Effect.runPromise(migrate(driver.db, migrations));
+    await migrateBefore("0013");
 
     const paying = await driver.db.execute(
       sql`SELECT id, paying_dao_account_id FROM billings ORDER BY id`,
@@ -310,5 +304,100 @@ describe("migrate — runtime migrator", () => {
       sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'billings' AND column_name = 'client_id'`,
     );
     expect((clientColumn as unknown as { rows: unknown[] }).rows).toEqual([]);
+  });
+
+  describe("dropping the legacy Client model", () => {
+    const seedClient = async (clientOrganizationId: string, shared: boolean) => {
+      const migrations = await migrateBefore("0013");
+      await driver.db.execute(
+        sql`INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ('studio', 'studio.sputnik-dao.near')`,
+      );
+      await driver.db.execute(
+        sql`INSERT INTO clients (id, org_id, agency_dao_account_id, name) VALUES ('legacy', ${clientOrganizationId}, 'studio.sputnik-dao.near', 'Acme')`,
+      );
+      if (shared) {
+        await driver.db.execute(
+          sql`INSERT INTO client_projects (client_id, project_id) VALUES ('legacy', 'p1')`,
+        );
+        await driver.db.execute(
+          sql`INSERT INTO budgets (id, project_id, token_id, amount, actor_account_id, client_id) VALUES ('b1', 'p1', 'near', '10', 'admin.near', 'legacy')`,
+        );
+      }
+      return migrations;
+    };
+    type Engagement = {
+      status: string;
+      legacy: boolean;
+      projects: boolean;
+      budgets: boolean;
+    };
+    const engage = async ({ status, legacy, projects, budgets }: Engagement) => {
+      await driver.db.execute(
+        sql`INSERT INTO engagements (id, agency_organization_id, client_organization_id, status, proposed_by, legacy_client_id) VALUES ('e1', 'studio', 'acme', ${status}, 'migration', ${legacy ? "legacy" : null})`,
+      );
+      if (projects) {
+        await driver.db.execute(
+          sql`INSERT INTO engagement_projects (engagement_id, project_id) VALUES ('e1', 'p1')`,
+        );
+      }
+      if (budgets) {
+        await driver.db.execute(
+          sql`UPDATE budgets SET engagement_id = 'e1' WHERE client_id = 'legacy'`,
+        );
+      }
+    };
+    const rows = async (query: ReturnType<typeof sql>) =>
+      ((await driver.db.execute(query)) as unknown as { rows: unknown[] }).rows;
+    const legacyLeft = () =>
+      rows(
+        sql`SELECT table_name AS name FROM information_schema.tables WHERE table_name IN ('clients', 'client_projects') UNION ALL SELECT column_name FROM information_schema.columns WHERE table_name = 'budgets' AND column_name = 'client_id' ORDER BY name`,
+      );
+    const covered = { status: "active", legacy: true, projects: true, budgets: true };
+
+    test.each([
+      ["its migrated Engagement", "acme", covered],
+      ["an active Engagement of the same pair", "acme", { ...covered, legacy: false }],
+      [
+        "an ended Engagement of the same pair",
+        "acme",
+        { ...covered, legacy: false, status: "ended" },
+      ],
+      ["no Engagement for a self-Engagement row with nothing shared", "studio", null],
+    ])("drops the legacy Client model and keeps migrated Budget entries with %s", async (_, organization, engagement) => {
+      const migrations = await seedClient(organization, engagement !== null);
+      if (engagement) await engage(engagement);
+
+      await Effect.runPromise(migrate(driver.db, migrations));
+
+      expect(await legacyLeft()).toEqual([]);
+      expect(await rows(sql`SELECT id, engagement_id FROM budgets`)).toEqual(
+        engagement ? [{ id: "b1", engagement_id: "e1" }] : [],
+      );
+    });
+
+    test.each([
+      ["a clients row has no Engagement", "acme", null],
+      ["a shared Project was not copied", "acme", { ...covered, projects: false }],
+      ["a Budget entry is not on its Engagement", "acme", { ...covered, budgets: false }],
+      [
+        "the pair's only Engagement is proposed",
+        "acme",
+        { ...covered, legacy: false, status: "proposed" },
+      ],
+      ["a self-Engagement row shares a Project", "studio", null],
+    ])("refuses and keeps the tables when %s", async (_, organization, engagement) => {
+      const migrations = await seedClient(organization, true);
+      if (engagement) await engage(engagement);
+
+      await expect(Effect.runPromise(migrate(driver.db, migrations))).rejects.toThrow(
+        "Legacy clients are not migrated to Engagements yet",
+      );
+
+      expect(await legacyLeft()).toEqual([
+        { name: "client_id" },
+        { name: "client_projects" },
+        { name: "clients" },
+      ]);
+    });
   });
 });

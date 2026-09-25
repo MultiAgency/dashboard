@@ -10,8 +10,6 @@ export type OrganizationMembersStore = {
   roster(organizationId: string): Promise<Roster | null>;
   addOwner(input: { organizationId: string; userId: string }): Promise<void>;
   promoteToOwner(input: { memberId: string }): Promise<void>;
-  findUserIdByNearAccount(accountId: string): Promise<string | null>;
-  removeMember(input: { memberId: string }): Promise<void>;
 };
 
 export type AssignOwnerResult = {

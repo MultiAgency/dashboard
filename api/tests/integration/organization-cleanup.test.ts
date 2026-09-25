@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { clientProjects, clients, organizationDaos } from "../../src/db/schema";
+import { organizationDaos } from "../../src/db/schema";
 import { createOrganizationCleanup } from "../../src/services/organization-cleanup";
 import { type FakeOrganization, inMemoryOrganizations } from "../fakes/organizations";
 import { migratedDatabase } from "./_pg";
@@ -11,17 +11,7 @@ describe("organization cleanup", () => {
   const database = migratedDatabase();
 
   beforeEach(async () => {
-    await database.pg.query("TRUNCATE organization_daos, clients, client_projects CASCADE");
-    await database.db.insert(clients).values({
-      id: "nf",
-      orgId: "client-org",
-      agencyDaoAccountId: MULTIAGENCY,
-      name: "NEAR Foundation",
-    });
-    await database.db.insert(clientProjects).values([
-      { clientId: "nf", projectId: "alive" },
-      { clientId: "nf", projectId: "deleted" },
-    ]);
+    await database.pg.query("TRUNCATE organization_daos");
   });
 
   const duplicated: FakeOrganization[] = [
@@ -35,38 +25,30 @@ describe("organization cleanup", () => {
 
   function cleanupWith() {
     const fake = inMemoryOrganizations({ organizations: duplicated });
-    const cleanup = createOrganizationCleanup({
-      db: database.db,
-      organizations: fake.port,
-      existingProjects: async (ids) => new Set(ids.filter((id) => id === "alive")),
-    });
+    const cleanup = createOrganizationCleanup({ db: database.db, organizations: fake.port });
     return { fake, cleanup };
   }
 
   async function stateOf(fake: ReturnType<typeof cleanupWith>["fake"]) {
     const mapped = await database.db.select().from(organizationDaos);
-    const links = await database.db.select().from(clientProjects);
     return {
       organizations: fake.ids(),
       mappings: mapped.map((r) => [r.organizationId, r.daoAccountId]).sort(),
-      links: links.map((l) => l.projectId).sort(),
     };
   }
 
-  test("keeps the oldest Organization of a duplicated Agency DAO, maps every Agency DAO and drops dangling links", async () => {
+  test("keeps the oldest Organization of a duplicated Agency DAO and maps every Agency DAO", async () => {
     const { fake, cleanup } = cleanupWith();
 
     const report = await cleanup.run();
 
     expect(report.removedOrganizations.sort()).toEqual(["another-copy", "test-copy"]);
-    expect(report.removedClientProjectLinks).toEqual([{ clientId: "nf", projectId: "deleted" }]);
     expect(await stateOf(fake)).toEqual({
       organizations: ["client-org", "multiagency", "other", "personal"],
       mappings: [
         ["multiagency", MULTIAGENCY],
         ["other", OTHER],
       ],
-      links: ["alive"],
     });
   });
 
@@ -95,7 +77,6 @@ describe("organization cleanup", () => {
     expect(await cleanup.run()).toEqual({
       removedOrganizations: [],
       mappedOrganizations: [],
-      removedClientProjectLinks: [],
     });
     expect(await stateOf(fake)).toEqual(cleaned);
   });
