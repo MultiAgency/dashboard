@@ -1,6 +1,6 @@
+import { WarningIcon } from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -102,7 +102,7 @@ export function InternalListingSection({
 
       {hasNearnListing && (
         <Alert>
-          <AlertTriangle />
+          <WarningIcon />
           <AlertTitle>NEARN listing takes priority for rollups</AlertTitle>
           <AlertDescription>
             This project has a NEARN listing attached. The internal listing is dormant — rollup math

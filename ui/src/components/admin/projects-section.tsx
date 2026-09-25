@@ -223,7 +223,7 @@ function NearnSnapshot({ slug, nearnSponsor }: { slug: string; nearnSponsor: str
     <div className="rounded-sm border border-border bg-muted/10 p-3 space-y-1 text-xs">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">NEARN snapshot</Badge>
-        {l.status && <Badge variant="default">{l.status}</Badge>}
+        {l.status && <Badge variant="outline">{l.status}</Badge>}
         {l.type && <Badge variant="outline">{l.type}</Badge>}
       </div>
       {l.title && <div className="text-sm font-medium">{l.title}</div>}

@@ -192,7 +192,7 @@ function ProjectCard({
           <div className="flex items-center gap-1.5">
             {n?.type && <Badge variant="outline">{n.type}</Badge>}
             {n?.status ? (
-              <Badge variant="default">{n.status}</Badge>
+              <Badge variant="outline">{n.status}</Badge>
             ) : (
               <span>{project.status}</span>
             )}

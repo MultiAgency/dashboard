@@ -150,7 +150,7 @@ function EngagementDetailPage() {
             <TabsTrigger value="plan">
               plan & change orders
               {awaiting > 0 && (
-                <Badge variant="accent" className="ml-1 px-1.5 py-0 font-mono text-[10px]">
+                <Badge variant="default" className="ml-1 px-1.5 py-0 font-mono text-[10px]">
                   {awaiting}
                 </Badge>
               )}

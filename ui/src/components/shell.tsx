@@ -1,5 +1,5 @@
+import { ListIcon } from "@phosphor-icons/react";
 import { Link, useMatchRoute } from "@tanstack/react-router";
-import { Menu } from "lucide-react";
 import type * as React from "react";
 import type { ReactNode } from "react";
 import { AuthHashToasts } from "@/components/auth-hash-toasts";
@@ -137,7 +137,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   className="sm:hidden flex cursor-pointer items-center justify-center size-8 text-muted-foreground hover:text-foreground hover:opacity-80 transition-opacity duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   aria-label="Open menu"
                 >
-                  <Menu className="size-5" />
+                  <ListIcon className="size-5" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   {PRIMARY_NAV.map((item) => (

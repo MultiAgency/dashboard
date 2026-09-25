@@ -60,7 +60,7 @@ function ResetPasswordPage() {
       </header>
 
       {error || !token ? (
-        <Card variant="hi-vis">
+        <Card variant="highlight">
           <CardContent className="space-y-4 text-sm leading-relaxed">
             <p>This reset link is invalid or has expired. Request a new one.</p>
             <Button asChild variant="outline">

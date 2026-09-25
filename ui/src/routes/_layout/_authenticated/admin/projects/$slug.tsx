@@ -1,6 +1,6 @@
+import { ArrowUpRightIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle, Badge, Button } from "@/components";
@@ -134,7 +134,7 @@ function AdminProjectDetail() {
           <h2 className="text-xs uppercase tracking-wide text-muted-foreground">NEARN listing</h2>
           <Button asChild variant="outline" size="sm">
             <a href={nearnUrl} target="_blank" rel="noopener noreferrer">
-              view on nearn <ArrowUpRight className="ml-1 size-3" />
+              view on nearn <ArrowUpRightIcon className="ml-1 size-3" />
             </a>
           </Button>
         </section>
@@ -245,7 +245,7 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
                   </Button>
                 ))}
               {s.isWinner && (
-                <Badge variant="default">
+                <Badge variant="outline">
                   winner{s.winnerPosition ? ` #${s.winnerPosition}` : ""}
                 </Badge>
               )}
@@ -270,7 +270,7 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
                     rel="noopener noreferrer"
                     className="ml-auto text-muted-foreground hover:text-foreground"
                   >
-                    open <ArrowUpRight className="inline size-3" />
+                    open <ArrowUpRightIcon className="inline size-3" />
                   </a>
                 ) : null;
               })()}
@@ -310,7 +310,7 @@ function DeleteProjectSection({
     <section className="space-y-3 pt-4 border-t border-destructive/30">
       <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Danger zone</h2>
       <Alert variant="destructive">
-        <AlertTriangle className="size-4" />
+        <WarningIcon className="size-4" />
         <AlertTitle>Delete this project</AlertTitle>
         <AlertDescription>
           Removes the project with its builder assignments and listings. A project that is shared

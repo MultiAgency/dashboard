@@ -1,6 +1,6 @@
+import { ArrowUpRightIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Badge, Button, Card, CardContent, Input } from "@/components";
@@ -63,7 +63,7 @@ export function TreasurySettings() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-xs underline text-muted-foreground hover:text-foreground"
               >
-                open in trezu <ArrowUpRight className="size-3" />
+                open in trezu <ArrowUpRightIcon className="size-3" />
               </a>
             </div>
             {inUse ? (

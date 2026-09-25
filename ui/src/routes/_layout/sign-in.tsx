@@ -348,7 +348,7 @@ function VerificationPending({
   onBack: () => void;
 }) {
   return (
-    <Card variant="hi-vis">
+    <Card variant="highlight">
       <CardContent className="space-y-4">
         <p className="text-sm leading-relaxed">
           We sent a verification link to <span className="font-mono">{email}</span>. Open it to
@@ -378,7 +378,7 @@ function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) {
 
   if (sent) {
     return (
-      <Card variant="hi-vis">
+      <Card variant="highlight">
         <CardContent className="text-sm leading-relaxed">
           If an account exists for <span className="font-mono">{email.trim()}</span>, a link to set
           a new password is on its way.

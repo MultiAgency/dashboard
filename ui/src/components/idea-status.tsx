@@ -4,7 +4,7 @@ import type { ApiClient } from "@/lib/api";
 export type IdeaView = Awaited<ReturnType<ApiClient["ideas"]["list"]>>["data"][number];
 
 const VARIANT = {
-  new: "accent",
+  new: "default",
   accepted: "outline",
   declined: "secondary",
 } as const;

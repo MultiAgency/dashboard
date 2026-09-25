@@ -84,7 +84,7 @@ function AcceptInvitationPage() {
       {state === "verify-email" && <VerifyEmail email={userEmail} callbackURL={here} />}
       {state === "wrong-email" && <WrongEmail email={userEmail} redirect={here} />}
       {state === "pending" && (
-        <Card variant="hi-vis">
+        <Card variant="highlight">
           <CardContent className="space-y-4">
             {invitation ? (
               <div className="space-y-1">
@@ -168,7 +168,7 @@ function Message({ children }: { children: ReactNode }) {
 
 function SignedOut({ redirect, email }: { redirect: string; email?: string }) {
   return (
-    <Card variant="hi-vis">
+    <Card variant="highlight">
       <CardContent className="space-y-4">
         <p className="text-sm leading-relaxed">
           Someone invited you to join their Organization. Create an account with the email address
@@ -194,7 +194,7 @@ function SignedOut({ redirect, email }: { redirect: string; email?: string }) {
 
 function VerifyEmail({ email, callbackURL }: { email: string | null; callbackURL: string }) {
   return (
-    <Card variant="hi-vis">
+    <Card variant="highlight">
       <CardContent className="space-y-4">
         <p className="text-sm leading-relaxed">
           Verify <span className="font-mono">{email}</span> before answering this invitation. The
@@ -230,7 +230,7 @@ function WrongEmail({ email, redirect }: { email: string | null; redirect: strin
   });
 
   return (
-    <Card variant="hi-vis">
+    <Card variant="highlight">
       <CardContent className="space-y-4">
         <p className="text-sm leading-relaxed">
           {shownEmail ? (

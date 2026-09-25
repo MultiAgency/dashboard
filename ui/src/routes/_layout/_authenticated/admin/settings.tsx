@@ -357,7 +357,6 @@ function SettingsForm({
             </form.Field>
             <Button
               type="submit"
-              variant="primary"
               disabled={isPending}
               className="w-full font-display uppercase tracking-wide"
             >

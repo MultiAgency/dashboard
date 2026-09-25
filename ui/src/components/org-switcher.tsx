@@ -1,6 +1,6 @@
+import { BankIcon, CheckIcon, EnvelopeIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter } from "@tanstack/react-router";
-import { Building2, Check, Mail, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
@@ -75,7 +75,7 @@ export function OrgSwitcher() {
             className="flex items-center gap-2 text-xs text-muted-foreground max-w-[120px] sm:max-w-[180px]"
             aria-label={`Organization: ${activeOrg?.name ?? "none"}`}
           >
-            <Building2 className="h-3.5 w-3.5 shrink-0" />
+            <BankIcon className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden sm:inline truncate min-w-0">
               {activeOrg?.name ?? "organization"}
             </span>
@@ -98,7 +98,9 @@ export function OrgSwitcher() {
               <span className="font-mono text-[10px] uppercase text-muted-foreground">
                 {org.role ?? ""}
               </span>
-              {org.id === activeOrgId && <Check className="h-3.5 w-3.5 text-muted-foreground" />}
+              {org.id === activeOrgId && (
+                <CheckIcon className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
             </DropdownMenuItem>
           ))}
           {organizations.length === 0 && (
@@ -110,13 +112,13 @@ export function OrgSwitcher() {
           {invitationCount > 0 && (
             <DropdownMenuItem asChild className="cursor-pointer gap-2">
               <Link to="/profile" hash="invitations">
-                <Mail className="h-3.5 w-3.5" />
+                <EnvelopeIcon className="h-3.5 w-3.5" />
                 {invitationCount} pending invitation{invitationCount === 1 ? "" : "s"}
               </Link>
             </DropdownMenuItem>
           )}
           <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setCreating(true)}>
-            <Plus className="h-3.5 w-3.5" />
+            <PlusIcon className="h-3.5 w-3.5" />
             create organization
           </DropdownMenuItem>
         </DropdownMenuContent>

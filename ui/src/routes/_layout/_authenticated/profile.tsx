@@ -82,7 +82,7 @@ function ProfilePage() {
         </h1>
       </header>
 
-      <Card variant="hi-vis">
+      <Card variant="highlight">
         <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Avatar className="size-16 rounded-full shrink-0">
             {avatarUrl && <AvatarImage src={avatarUrl} alt={displayName} />}
