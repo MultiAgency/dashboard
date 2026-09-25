@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, Button, DataTable } from "@/components";
+import { Badge, Button, DataTable, PageHeader, SectionHeader, Spinner } from "@/components";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { myAssignedProjectsQueryOptions } from "@/lib/queries";
@@ -61,7 +61,7 @@ function MyWorkPage() {
       accessorKey: "amount",
       meta: { exportValue: (row: MyBilling) => formatTokenAmount(row.amount, row.tokenId) },
       cell: ({ row }) => (
-        <span className="font-mono text-sm">
+        <span className="whitespace-nowrap tabular-nums">
           {formatTokenAmount(row.original.amount, row.original.tokenId)}
         </span>
       ),
@@ -77,7 +77,7 @@ function MyWorkPage() {
       header: "Created",
       accessorFn: (row) => new Date(row.createdAt).toISOString(),
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="whitespace-nowrap text-muted-foreground tabular-nums">
           {new Date(row.original.createdAt).toISOString().slice(0, 10)}
         </span>
       ),
@@ -85,25 +85,26 @@ function MyWorkPage() {
   ];
 
   return (
-    <div className="space-y-8 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          you · my work
-        </div>
-        <h1 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          My work
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Projects any Agency assigned to the NEAR accounts linked on your{" "}
-          <Link to="/profile" className="underline underline-offset-2">
-            profile
-          </Link>
-          , and the billings paid to them.
-        </p>
-      </header>
+    <div className="flex animate-fade-in flex-col gap-8">
+      <PageHeader
+        title="My work"
+        description={
+          <>
+            Projects any Agency assigned to the NEAR accounts linked on your{" "}
+            <Link to="/profile" className="text-foreground underline underline-offset-4">
+              profile
+            </Link>
+            , and the billings paid to them.
+          </>
+        }
+      />
 
-      <section className="space-y-3">
-        <h2 className="text-xl uppercase font-extrabold">Assigned projects</h2>
+      <section className="flex flex-col gap-3" aria-labelledby="my-assigned-projects">
+        <SectionHeader
+          id="my-assigned-projects"
+          title="Assigned Projects"
+          description="Projects you are assigned to, with your role and onboarding status."
+        />
         <DataTable
           readOnly
           columns={projectColumns}
@@ -117,8 +118,12 @@ function MyWorkPage() {
         />
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-xl uppercase font-extrabold">My billings</h2>
+      <section className="flex flex-col gap-3" aria-labelledby="my-billings">
+        <SectionHeader
+          id="my-billings"
+          title="My billings"
+          description="Billings paid to your NEAR accounts, newest first."
+        />
         <DataTable
           readOnly
           columns={billingColumns}
@@ -138,7 +143,8 @@ function MyWorkPage() {
               onClick={() => billingsQuery.fetchNextPage()}
               disabled={billingsQuery.isFetchingNextPage}
             >
-              {billingsQuery.isFetchingNextPage ? "loading..." : "load more"}
+              {billingsQuery.isFetchingNextPage && <Spinner data-icon="inline-start" />}
+              Load more
             </Button>
           </div>
         )}

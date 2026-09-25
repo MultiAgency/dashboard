@@ -1,11 +1,29 @@
-import { ArrowRightIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, BellIcon, ChecksIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Badge, Button, Card, CardContent } from "@/components";
+import {
+  Badge,
+  Button,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+  PageHeader,
+  SectionHeader,
+  Skeleton,
+  Spinner,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Empty } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import { awaitingLink } from "@/lib/change-orders";
@@ -17,6 +35,7 @@ import {
   refreshAfter,
   setActiveOrganizationKey,
 } from "@/lib/queries";
+import { cn } from "@/lib/utils";
 import { switchWorkspace } from "@/lib/workspace";
 
 export const Route = createFileRoute("/_layout/_authenticated/notifications")({
@@ -81,110 +100,162 @@ function NotificationsPage() {
   });
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-2">
-          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            you · inbox
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-            Notifications
-          </h1>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={unread.length === 0 || markRead.isPending}
-          onClick={() => markRead.mutate(undefined)}
-        >
-          mark all read
-        </Button>
-      </header>
-
-      {awaiting.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            Change orders awaiting you
-          </h2>
-          {awaiting.map((changeOrder) => (
-            <Card key={changeOrder.id}>
-              <CardContent className="p-4 flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="default">to decide</Badge>
-                    <span className="text-sm font-medium">
-                      Change order from the {changeOrder.proposedBy.side}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    {changeOrder.note ??
-                      changeOrder.items
-                        .filter((item) => item.projectId !== null)
-                        .map((item) => formatTokenAmount(item.amount, item.tokenId))
-                        .join(", ")}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => router.history.push(awaitingLink(changeOrder))}
-                >
-                  review
-                  <ArrowRightIcon data-icon="inline-end" aria-hidden />
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </section>
-      )}
-
-      {inbox.isError && <AdminError error={inbox.error} />}
-      {inbox.isSuccess && items.length === 0 && (
-        <Empty label="Nothing yet. Engagement proposals and shared Projects show up here." />
-      )}
-
-      <div className="space-y-2">
-        {items.map((notification) => (
-          <Card key={notification.id} variant={notification.readAt ? "muted" : "default"}>
-            <CardContent className="p-4 flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  {!notification.readAt && <Badge variant="default">new</Badge>}
-                  <span className="text-sm font-medium">{notification.title}</span>
-                </div>
-                <p className="text-sm text-muted-foreground">{notification.body}</p>
-                <p className="font-mono text-xs text-muted-foreground">
-                  {new Date(notification.createdAt).toISOString().slice(0, 16).replace("T", " ")}
-                </p>
-              </div>
-              {notification.link && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={open.isPending}
-                  onClick={() => open.mutate(notification)}
-                >
-                  open
-                  <ArrowRightIcon data-icon="inline-end" aria-hidden />
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {inbox.hasNextPage && (
-        <div className="flex justify-center">
+    <div className="flex animate-fade-in flex-col gap-8">
+      <PageHeader
+        title="Notifications"
+        description={
+          inbox.isSuccess && unread.length > 0
+            ? `${unread.length} unread${inbox.hasNextPage ? " on this page" : ""}.`
+            : "Engagement proposals, shared Projects and billing updates."
+        }
+        actions={
           <Button
             variant="outline"
             size="sm"
-            onClick={() => inbox.fetchNextPage()}
-            disabled={inbox.isFetchingNextPage}
+            disabled={unread.length === 0 || markRead.isPending}
+            onClick={() => markRead.mutate(undefined)}
           >
-            {inbox.isFetchingNextPage ? "loading..." : "load more"}
+            <ChecksIcon data-icon="inline-start" aria-hidden />
+            Mark all read
           </Button>
-        </div>
+        }
+      />
+
+      {awaiting.length > 0 && (
+        <section className="flex flex-col gap-3" aria-labelledby="awaiting-change-orders">
+          <SectionHeader
+            id="awaiting-change-orders"
+            title="Change orders awaiting you"
+            description="Approve or reject them from the Engagement's plan."
+          />
+          <ItemGroup>
+            {awaiting.map((changeOrder) => (
+              <li key={changeOrder.id}>
+                <Item variant="outline" size="sm">
+                  <ItemContent className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge>To decide</Badge>
+                      <ItemTitle>Change order from the {changeOrder.proposedBy.side}</ItemTitle>
+                    </div>
+                    <ItemDescription>
+                      {changeOrder.note ??
+                        changeOrder.items
+                          .filter((item) => item.projectId !== null)
+                          .map((item) => formatTokenAmount(item.amount, item.tokenId))
+                          .join(", ")}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => router.history.push(awaitingLink(changeOrder))}
+                    >
+                      Review
+                      <ArrowRightIcon data-icon="inline-end" aria-hidden />
+                    </Button>
+                  </ItemActions>
+                </Item>
+              </li>
+            ))}
+          </ItemGroup>
+        </section>
       )}
+
+      <section className="flex flex-col gap-3" aria-labelledby="inbox">
+        {awaiting.length > 0 && <SectionHeader id="inbox" title="Inbox" />}
+        {inbox.isLoading ? (
+          <div className="flex flex-col gap-2" aria-busy="true">
+            <span className="sr-only">Loading notifications</span>
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-20 w-full" />
+            ))}
+          </div>
+        ) : inbox.isError ? (
+          <AdminError error={inbox.error} />
+        ) : items.length === 0 ? (
+          <Empty variant="outline">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <BellIcon aria-hidden />
+              </EmptyMedia>
+              <EmptyTitle>You're all caught up</EmptyTitle>
+              <EmptyDescription>
+                Engagement proposals and shared Projects show up here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <ItemGroup aria-label="Notifications">
+            {items.map((notification) => (
+              <li key={notification.id}>
+                <NotificationItem
+                  notification={notification}
+                  opening={open.isPending}
+                  onOpen={() => open.mutate(notification)}
+                />
+              </li>
+            ))}
+          </ItemGroup>
+        )}
+
+        {inbox.hasNextPage && (
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => inbox.fetchNextPage()}
+              disabled={inbox.isFetchingNextPage}
+            >
+              {inbox.isFetchingNextPage && <Spinner data-icon="inline-start" />}
+              Load more
+            </Button>
+          </div>
+        )}
+      </section>
     </div>
+  );
+}
+
+function NotificationItem({
+  notification,
+  opening,
+  onOpen,
+}: {
+  notification: Notification;
+  opening: boolean;
+  onOpen: () => void;
+}) {
+  const unread = !notification.readAt;
+  return (
+    <Item variant={unread ? "outline" : "muted"} size="sm">
+      <ItemMedia>
+        <span
+          className={cn("size-2 rounded-full", unread ? "bg-primary" : "bg-transparent")}
+          aria-hidden
+        />
+      </ItemMedia>
+      <ItemContent className="min-w-0">
+        <p className={cn("text-xs font-medium break-words", !unread && "text-muted-foreground")}>
+          {unread && <span className="sr-only">Unread: </span>}
+          {notification.title}
+        </p>
+        <ItemDescription>{notification.body}</ItemDescription>
+        <time
+          dateTime={new Date(notification.createdAt).toISOString()}
+          className="text-muted-foreground tabular-nums"
+        >
+          {new Date(notification.createdAt).toISOString().slice(0, 16).replace("T", " ")}
+        </time>
+      </ItemContent>
+      {notification.link && (
+        <ItemActions>
+          <Button size="sm" variant="outline" disabled={opening} onClick={onOpen}>
+            Open
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
+          </Button>
+        </ItemActions>
+      )}
+    </Item>
   );
 }
