@@ -1,11 +1,28 @@
-import { ArrowRightIcon } from "@phosphor-icons/react";
+import {
+  EnvelopeOpenIcon,
+  EnvelopeSimpleIcon,
+  HandshakeIcon,
+  UserSwitchIcon,
+  WarningIcon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Badge, Button, Card, CardContent } from "@/components";
-import { LoadingCard } from "@/components/loading-card";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  Skeleton,
+  Spinner,
+} from "@/components";
+import { AuthCardHeader } from "@/components/auth-card-header";
+import { roleLabel } from "@/components/organization-row-card";
 import { useInvitationActions } from "@/components/pending-invitations";
 import { ResendVerificationButton } from "@/components/resend-verification-button";
 import { refreshAfterAccountChange } from "@/lib/account";
@@ -28,8 +45,6 @@ export const Route = createFileRoute("/_layout/accept-invitation/$id")({
   component: AcceptInvitationPage,
 });
 
-type PageState = InvitationState | "declined";
-
 type InvitationDetails = {
   role: string | null;
   organizationName: string;
@@ -48,7 +63,6 @@ function AcceptInvitationPage() {
   const { data: session, isLoading: sessionLoading } = useQuery(sessionQueryOptions(authClient));
   const signedIn = !!session?.user;
   const [declined, setDeclined] = useState(false);
-  const { accept, decline, busy } = useInvitationActions();
 
   const invitationQuery = useQuery({
     queryKey: ["invitation", id, session?.user?.id ?? null],
@@ -66,152 +80,206 @@ function AcceptInvitationPage() {
   const here = `/accept-invitation/${id}`;
 
   if (sessionLoading || (signedIn && invitationQuery.isLoading)) {
-    return <Page state={null} />;
+    return (
+      <Page>
+        <InvitationSkeleton />
+      </Page>
+    );
   }
 
-  const state: PageState = declined
+  const state: InvitationState | "declined" = declined
     ? "declined"
     : classifyInvitation({
         signedIn,
         invitation: invitationQuery.data?.invitation,
         error: invitationQuery.data?.error,
       });
-  const invitation = invitationQuery.data?.invitation ?? null;
   const userEmail = session?.user?.email ?? null;
 
   return (
-    <Page state={state}>
+    <Page>
       {state === "signed-out" && <SignedOut redirect={here} email={search.email} />}
       {state === "verify-email" && <VerifyEmail email={userEmail} callbackURL={here} />}
       {state === "wrong-email" && <WrongEmail email={userEmail} redirect={here} />}
       {state === "pending" && (
-        <Card variant="highlight">
-          <CardContent className="space-y-4">
-            {invitation ? (
-              <div className="space-y-1">
-                <div className="text-3xl uppercase tracking-tight font-extrabold leading-tight break-words">
-                  {invitation.organizationName}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-mono">{invitation.inviterEmail}</span> invited you to join
-                  as <Badge variant="outline">{invitation.role ?? "member"}</Badge>
-                </p>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                An Agency set up an Organization for you on MultiAgency and invited you as its first
-                admin. You will own it and manage its team; the Agency is not a member.
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => accept.mutate(id)} disabled={busy}>
-                {accept.isPending ? "joining..." : "accept"}
-                <ArrowRightIcon data-icon="inline-end" aria-hidden />
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => decline.mutate(id, { onSuccess: () => setDeclined(true) })}
-                disabled={busy}
-              >
-                decline
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <PendingInvitation
+          id={id}
+          invitation={invitationQuery.data?.invitation ?? null}
+          onDeclined={() => setDeclined(true)}
+        />
       )}
-      {state === "declined" && <Message>You declined this invitation.</Message>}
+      {state === "declined" && (
+        <Outcome
+          icon={<XCircleIcon aria-hidden />}
+          title="Invitation declined"
+          description="You declined this invitation. The person who invited you can send a new one."
+        />
+      )}
       {state === "unavailable" && (
-        <Message>
-          This invitation is no longer valid. It may have expired, been declined or canceled, or
-          already been used. Ask the person who invited you to send a new one.
-        </Message>
+        <Outcome
+          icon={<WarningIcon aria-hidden />}
+          title="Invitation unavailable"
+          description="This invitation is no longer valid. It may have expired, been declined or canceled, or already been used. Ask the person who invited you to send a new one."
+        />
       )}
     </Page>
   );
 }
 
-const TITLES: Record<PageState, string> = {
-  "signed-out": "You're invited",
-  "verify-email": "Verify your email",
-  "wrong-email": "Different account",
-  pending: "Join Organization",
-  declined: "Invitation declined",
-  unavailable: "Invitation unavailable",
-};
-
-function Page({ state, children }: { state: PageState | null; children?: ReactNode }) {
+function Page({ children }: { children: ReactNode }) {
   return (
-    <div className="mx-auto max-w-xl space-y-8 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          organization · invitation
-        </div>
-        <h1 className="text-4xl sm:text-5xl font-black uppercase leading-none tracking-tight">
-          {state ? TITLES[state] : "Invitation"}
-        </h1>
-      </header>
-      {state ? children : <LoadingCard label="invitation" />}
-    </div>
+    <div className="mx-auto flex w-full max-w-md animate-fade-in flex-col gap-6 sm:py-8">{children}</div>
   );
 }
 
-function Message({ children }: { children: ReactNode }) {
+function InvitationSkeleton() {
+  return (
+    <Card role="status" aria-live="polite">
+      <CardHeader className="justify-items-center gap-3">
+        <Skeleton className="size-10" />
+        <Skeleton className="h-5 w-3/5" />
+        <Skeleton className="h-3 w-4/5" />
+      </CardHeader>
+      <CardFooter className="gap-2">
+        <Skeleton className="h-8 flex-1" />
+        <Skeleton className="h-8 flex-1" />
+      </CardFooter>
+      <span className="sr-only">Loading invitation</span>
+    </Card>
+  );
+}
+
+function PendingInvitation({
+  id,
+  invitation,
+  onDeclined,
+}: {
+  id: string;
+  invitation: InvitationDetails | null;
+  onDeclined: () => void;
+}) {
+  const { accept, decline, busy } = useInvitationActions();
+
   return (
     <Card>
-      <CardContent className="space-y-4">
-        <p className="text-sm leading-relaxed">{children}</p>
-        <Button asChild variant="outline">
-          <Link to="/welcome">
-            continue
-            <ArrowRightIcon data-icon="inline-end" aria-hidden />
-          </Link>
+      {invitation ? (
+        <AuthCardHeader
+          icon={<HandshakeIcon aria-hidden />}
+          title={`Join ${invitation.organizationName}`}
+          description={
+            <>
+              <span className="font-medium break-all text-foreground">
+                {invitation.inviterEmail}
+              </span>{" "}
+              invited you to join this Organization on MultiAgency.
+            </>
+          }
+        />
+      ) : (
+        <AuthCardHeader
+          icon={<HandshakeIcon aria-hidden />}
+          title="Your Organization is ready"
+          description="An Agency set up an Organization for you on MultiAgency and invited you as its first admin. You own it and manage its team; the Agency is not a member."
+        />
+      )}
+      {invitation && (
+        <CardContent className="flex justify-center">
+          <Badge variant="secondary">Role: {roleLabel(invitation.role)}</Badge>
+        </CardContent>
+      )}
+      <CardFooter className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => decline.mutate(id, { onSuccess: onDeclined })}
+          disabled={busy}
+        >
+          {decline.isPending && <Spinner data-icon="inline-start" />}
+          Decline
         </Button>
-      </CardContent>
+        <Button type="button" onClick={() => accept.mutate(id)} disabled={busy}>
+          {accept.isPending && <Spinner data-icon="inline-start" />}
+          {accept.isPending ? "Joining…" : "Accept"}
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
+function Outcome({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Card>
+      <AuthCardHeader icon={icon} title={title} description={description} />
+      <CardFooter>
+        <Button asChild variant="outline" className="w-full">
+          <Link to="/welcome">Continue</Link>
+        </Button>
+      </CardFooter>
     </Card>
   );
 }
 
 function SignedOut({ redirect, email }: { redirect: string; email?: string }) {
   return (
-    <Card variant="highlight">
-      <CardContent className="space-y-4">
-        <p className="text-sm leading-relaxed">
-          Someone invited you to join their Organization. Create an account with the email address
-          the invitation was sent to, verify it, and you'll come straight back here to accept. If
-          you already have an account with that email, sign in instead.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild>
-            <Link to="/sign-in" search={{ mode: "sign-up", redirect, email }}>
-              create account
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
-            </Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/sign-in" search={{ mode: "sign-in", redirect, email }}>
-              sign in
-            </Link>
-          </Button>
-        </div>
-      </CardContent>
+    <Card>
+      <AuthCardHeader
+        icon={<EnvelopeOpenIcon aria-hidden />}
+        title="You're invited"
+        description="Someone invited you to join their Organization. Create an account with the email the invitation was sent to, or sign in if you already have one. You come straight back here to accept."
+      />
+      <CardFooter className="flex-col gap-2">
+        <Button asChild className="w-full">
+          <Link to="/sign-in" search={{ mode: "sign-up", redirect, email }}>
+            Create account
+          </Link>
+        </Button>
+        <Button asChild variant="outline" className="w-full">
+          <Link to="/sign-in" search={{ mode: "sign-in", redirect, email }}>
+            Sign in
+          </Link>
+        </Button>
+      </CardFooter>
     </Card>
   );
 }
 
 function VerifyEmail({ email, callbackURL }: { email: string | null; callbackURL: string }) {
+  const shownEmail = realEmail(email);
   return (
-    <Card variant="highlight">
-      <CardContent className="space-y-4">
-        <p className="text-sm leading-relaxed">
-          Verify <span className="font-mono">{email}</span> before answering this invitation. The
-          link in the verification email brings you back here.
-        </p>
+    <Card>
+      <AuthCardHeader
+        icon={<EnvelopeSimpleIcon aria-hidden />}
+        title="Verify your email"
+        description={
+          <>
+            Verify{" "}
+            {shownEmail ? (
+              <span className="font-medium break-all text-foreground">{shownEmail}</span>
+            ) : (
+              "your email"
+            )}{" "}
+            before answering this invitation. The link in the verification email brings you back
+            here.
+          </>
+        }
+      />
+      <CardFooter>
         <ResendVerificationButton
           email={email}
           callbackURL={callbackURL}
-          label="send verification email"
+          label="Send verification email"
+          variant="default"
+          className="w-full"
         />
-      </CardContent>
+      </CardFooter>
     </Card>
   );
 }
@@ -236,30 +304,40 @@ function WrongEmail({ email, redirect }: { email: string | null; redirect: strin
   });
 
   return (
-    <Card variant="highlight">
-      <CardContent className="space-y-4">
-        <p className="text-sm leading-relaxed">
-          {shownEmail ? (
-            <>
-              This invitation was sent to a different email than{" "}
-              <span className="font-mono">{shownEmail}</span>.
-            </>
-          ) : (
-            <>This invitation was sent to an email address this account does not have.</>
-          )}{" "}
-          Sign out and sign in with the invited email, or add that email to this account on your
-          Profile and open the link again.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => switchAccount.mutate()} disabled={switchAccount.isPending}>
-            {switchAccount.isPending ? "signing out..." : "sign out and switch"}
-            <ArrowRightIcon data-icon="inline-end" aria-hidden />
-          </Button>
-          <Button asChild variant="outline">
-            <Link to="/profile">open profile</Link>
-          </Button>
-        </div>
-      </CardContent>
+    <Card>
+      <AuthCardHeader
+        icon={<UserSwitchIcon aria-hidden />}
+        title="This invitation is for another email"
+        description={
+          <>
+            {shownEmail ? (
+              <>
+                You're signed in as{" "}
+                <span className="font-medium break-all text-foreground">{shownEmail}</span>, but the
+                invitation was sent to a different address.
+              </>
+            ) : (
+              "The invitation was sent to an email address this account does not have."
+            )}{" "}
+            Sign in with the invited email, or add it to this account on your Profile and open the
+            link again.
+          </>
+        }
+      />
+      <CardFooter className="flex-col gap-2">
+        <Button
+          type="button"
+          className="w-full"
+          onClick={() => switchAccount.mutate()}
+          disabled={switchAccount.isPending}
+        >
+          {switchAccount.isPending && <Spinner data-icon="inline-start" />}
+          {switchAccount.isPending ? "Signing out…" : "Sign out and switch account"}
+        </Button>
+        <Button asChild variant="outline" className="w-full">
+          <Link to="/profile">Open Profile</Link>
+        </Button>
+      </CardFooter>
     </Card>
   );
 }
