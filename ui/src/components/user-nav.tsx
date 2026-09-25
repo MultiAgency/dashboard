@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { Mail } from "lucide-react";
 import { useAuthClient } from "@/app";
+import { usePendingInvitations } from "@/components/pending-invitations";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,26 +14,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useNearSignIn } from "@/hooks/use-near-sign-in";
 import { useApiClient } from "@/lib/api";
-import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { sessionQueryOptions } from "@/lib/auth";
 import { nearProfileQueryOptions } from "@/lib/near-profile";
-import { getNetwork, setNetwork } from "@/lib/network";
-import { clientLookupQueryOptions, meRolesQueryKey, meRolesQueryOptions } from "@/lib/queries";
-
-type Network = "mainnet" | "testnet";
-
-class NetworkMismatchError extends Error {
-  readonly account: string;
-  readonly walletNetwork: Network;
-  readonly dashboardNetwork: Network;
-  constructor(account: string, walletNetwork: Network, dashboardNetwork: Network) {
-    super(`Wallet ${account} is on ${walletNetwork}, dashboard is on ${dashboardNetwork}`);
-    this.name = "NetworkMismatchError";
-    this.account = account;
-    this.walletNetwork = walletNetwork;
-    this.dashboardNetwork = dashboardNetwork;
-  }
-}
+import { clientLookupQueryOptions, meRolesQueryOptions } from "@/lib/queries";
 
 export function UserNav() {
   const queryClient = useQueryClient();
@@ -58,62 +45,9 @@ export function UserNav() {
     profile?.image?.url ??
     (profile?.image?.ipfs_cid ? `https://ipfs.io/ipfs/${profile.image.ipfs_cid}` : null);
 
-  const connectMutation = useMutation({
-    mutationFn: () =>
-      new Promise<void>((resolve, reject) => {
-        authClient.signIn.near({
-          onSuccess: () => {
-            const state = authClient.near.getState();
-            if (!state?.accountId) {
-              reject(
-                new Error(
-                  "Sign-in completed but the NEAR wallet did not report the linked account. Try again — if the issue persists, reconnect your wallet extension.",
-                ),
-              );
-              return;
-            }
-            const dashboardNetwork = getNetwork();
-            const walletNetwork = state.networkId as Network;
-            if (walletNetwork !== dashboardNetwork) {
-              void authClient.signOut().catch(() => {});
-              reject(new NetworkMismatchError(state.accountId, walletNetwork, dashboardNetwork));
-              return;
-            }
-            resolve();
-          },
-          onError: (error) => {
-            reject(error);
-          },
-        });
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: sessionQueryOptions(authClient).queryKey }),
-        queryClient.invalidateQueries({ queryKey: meRolesQueryKey }),
-      ]);
-      navigate({ to: "/treasury" });
-    },
-    onError: (error: Error) => {
-      if (error instanceof NetworkMismatchError) {
-        queryClient.setQueryData(sessionQueryKey, null);
-        void queryClient.invalidateQueries({ queryKey: meRolesQueryKey });
-        toast.error(
-          `wallet ${error.account} is on ${error.walletNetwork} — dashboard is on ${error.dashboardNetwork}`,
-          {
-            action: {
-              label: `switch to ${error.walletNetwork}`,
-              onClick: () => {
-                void setNetwork(error.walletNetwork);
-              },
-            },
-            duration: 15_000,
-          },
-        );
-        return;
-      }
-      toast.error(error.message || "Failed to connect NEAR wallet");
-    },
-  });
+  const connectMutation = useNearSignIn(() => navigate({ to: "/treasury" }));
+  const invitationsQuery = usePendingInvitations();
+  const invitationCount = invitationsQuery.data?.length ?? 0;
 
   const signOutMutation = useMutation({
     mutationFn: async () => {
@@ -131,12 +65,33 @@ export function UserNav() {
   });
 
   if (!user) {
-    return <ConnectButton connect={connectMutation} />;
+    return (
+      <div className="flex items-center gap-2">
+        <Button asChild variant="ghost" className="px-3 py-1.5 text-xs font-medium rounded-md">
+          <Link to="/sign-in">sign in</Link>
+        </Button>
+        <ConnectButton connect={connectMutation} />
+      </div>
+    );
   }
 
   const identifier = user.name || user.email || user.id;
   return (
     <div className="flex items-center gap-2">
+      {invitationCount > 0 && (
+        <Link
+          to="/profile"
+          hash="invitations"
+          aria-label={`${invitationCount} pending invitation${invitationCount === 1 ? "" : "s"}`}
+          title="pending invitations"
+          className="flex items-center gap-1 rounded-sm text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Mail className="size-4" />
+          <Badge variant="accent" className="px-1.5 py-0 font-mono text-[10px]">
+            {invitationCount}
+          </Badge>
+        </Link>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
