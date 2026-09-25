@@ -246,6 +246,7 @@ export function adminProjectBudgetQueryOptions(apiClient: ApiClient, projectId: 
     queryKey: [...adminProjectBudgetQueryKey, getNetwork(), projectId] as const,
     queryFn: () => apiClient.agency.projects.getBudget({ projectId }),
     staleTime: 30_000,
+    retry: false,
   });
 }
 
