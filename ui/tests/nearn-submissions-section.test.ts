@@ -22,8 +22,10 @@ describe("NearnSubmissionsSection — wiring guarantees", () => {
     expect(source).toMatch(/useQuery\(adminNearnSubmissionsQueryOptions\(apiClient,\s*slug\)\)/);
   });
 
-  test("error state renders a destructive-border message (no silent return null)", () => {
-    expect(source).toMatch(/border-destructive\/60[\s\S]*NEARN submissions not reachable/);
+  test("error state renders a LoadError with retry (no silent return null)", () => {
+    expect(source).toMatch(
+      /<LoadError[\s\S]*?title="NEARN submissions not reachable"[\s\S]*?onRetry/,
+    );
   });
 
   test("link href goes through safeHttpHref (no raw user-supplied URL)", () => {
@@ -67,7 +69,7 @@ describe("NearnSubmissionsSection — add-contributor CTA", () => {
 
   test("CTA renders only when publicKey is unmatched (mirror of the match badge)", () => {
     expect(source).toMatch(
-      /contributorByNearAccount\.has\(s\.user\.publicKey\)\s*\?[\s\S]*?\+ add builder/,
+      /contributorByNearAccount\.has\(s\.user\.publicKey\)\s*\?[\s\S]*?"Add builder"/,
     );
   });
 
@@ -81,7 +83,7 @@ describe("NearnSubmissionsSection — add-contributor CTA", () => {
     expect(source).toMatch(
       /addContributorMutation\.isPending\s*&&[\s\S]*?addContributorMutation\.variables\?\.nearAccount\s*===\s*s\.user\.publicKey/,
     );
-    expect(source).toMatch(/"adding…"/);
+    expect(source).toMatch(/"Adding…"/);
   });
 
   test("error path surfaces a toast (not a silent failure)", () => {
