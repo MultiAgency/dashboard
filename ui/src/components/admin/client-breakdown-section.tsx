@@ -1,7 +1,8 @@
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
-import { Button, Input } from "@/components";
+import { Button } from "@/components";
 import { TokenAmountCell } from "@/components/token-amounts";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
@@ -194,15 +195,16 @@ export function ClientBreakdownSection({ breakdown }: ClientBreakdownSectionProp
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <MagnifyingGlassIcon className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-            <Input
+          <InputGroup className="w-48 sm:w-64">
+            <InputGroupAddon>
+              <MagnifyingGlassIcon aria-hidden />
+            </InputGroupAddon>
+            <InputGroupInput
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter client or project…"
-              className="pl-7 h-8 w-48 sm:w-64"
             />
-          </div>
+          </InputGroup>
           <Button variant="outline" size="sm" onClick={handleExport}>
             export csv
           </Button>

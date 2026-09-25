@@ -145,7 +145,7 @@ function NotificationsPage() {
 
       <div className="space-y-2">
         {items.map((notification) => (
-          <Card key={notification.id} className={notification.readAt ? "opacity-70" : undefined}>
+          <Card key={notification.id} variant={notification.readAt ? "muted" : "default"}>
             <CardContent className="p-4 flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">

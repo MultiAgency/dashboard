@@ -8,6 +8,7 @@ import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@
 import { useApiClient } from "@/lib/api";
 import { projectsListQueryOptions } from "@/lib/queries";
 import { getRepoUrl } from "@/lib/repo";
+import { cn } from "@/lib/utils";
 import { Route as RootRoute } from "../__root";
 
 const RD_W = 200;
@@ -154,8 +155,10 @@ function ReactionDiffusionField({
     <canvas
       ref={canvasRef}
       aria-hidden
-      className={className ?? "absolute inset-0 pointer-events-none w-full h-full opacity-55"}
-      style={{ imageRendering: "pixelated" }}
+      className={cn(
+        "rendering-pixelated",
+        className ?? "absolute inset-0 pointer-events-none w-full h-full opacity-55",
+      )}
     />
   );
 }
@@ -217,15 +220,7 @@ function Landing() {
         <ReactionDiffusionField />
         <div className="relative flex flex-col items-start space-y-6 text-left">
           <div className="w-full pl-3 pr-3">
-            <h1
-              className="font-heading font-black uppercase leading-none break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-tighter"
-              style={{
-                fontFeatureSettings: '"kern", "liga"',
-                WebkitFontSmoothing: "subpixel-antialiased",
-                MozOsxFontSmoothing: "auto",
-                textRendering: "geometricPrecision",
-              }}
-            >
+            <h1 className="font-heading font-black uppercase leading-none subpixel-antialiased break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-tighter">
               {LANDING.name}
             </h1>
             <div className="mt-3 flex items-center gap-3">
@@ -420,7 +415,7 @@ function Landing() {
 function ProjectCard({ project }: { project: LandingProject }) {
   const hasBounty = !!project.nearnListing;
   return (
-    <Card className="flex flex-col border-2 border-foreground">
+    <Card className="flex flex-col">
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
         <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
           <span className="truncate">@{project.slug}</span>
@@ -445,7 +440,7 @@ function ProjectCard({ project }: { project: LandingProject }) {
 
 function ProjectCardSkeleton() {
   return (
-    <Card className="flex flex-col border-2 border-foreground">
+    <Card className="flex flex-col">
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <Skeleton className="h-3 w-24" />
@@ -484,7 +479,7 @@ function StackCard({
   host: string;
 }) {
   return (
-    <Card className="flex flex-col border-2 border-foreground">
+    <Card className="flex flex-col">
       <CardContent className="p-4 flex-1 flex flex-col gap-4">
         <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
           <span>{label}</span>

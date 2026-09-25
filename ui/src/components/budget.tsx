@@ -52,7 +52,7 @@ export function SubcontractorSpend({ rows, title }: { rows: PayingDaoSpend[]; ti
 function Tile({ label, value }: { label: string; value: string }) {
   const isNegative = value.trim().startsWith("-");
   return (
-    <Card className={isNegative ? "border-destructive/60" : undefined}>
+    <Card variant={isNegative ? "destructive" : "default"}>
       <CardContent className="p-4 space-y-1">
         <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
         <div

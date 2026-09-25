@@ -186,7 +186,7 @@ function RoleCard({
             </div>
             <div className="flex flex-wrap gap-1">
               {role.permissions.map((p) => (
-                <Badge key={p} variant="outline" className="border-foreground/40">
+                <Badge key={p} variant="outline" className="">
                   {p}
                 </Badge>
               ))}
@@ -257,7 +257,7 @@ function MemberDetailDialog({
               </div>
               <div className="flex flex-wrap gap-1">
                 {openRoles.map((r) => (
-                  <Badge key={r.name} variant="outline" className="border-foreground/30">
+                  <Badge key={r.name} variant="outline" className="">
                     {r.name}
                   </Badge>
                 ))}
@@ -275,7 +275,7 @@ function MemberDetailDialog({
             ) : (
               <div className="flex flex-wrap gap-1">
                 {permissions.map((p) => (
-                  <Badge key={p} variant="outline" className="border-foreground/40">
+                  <Badge key={p} variant="outline" className="">
                     {p}
                   </Badge>
                 ))}

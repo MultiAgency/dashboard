@@ -48,6 +48,12 @@
         "shadcn/no-arbitrary-values": "off",
         "shadcn/require-static-classes": "off"
       }
+    },
+    {
+      "files": ["src/routes/__root.tsx", "src/components/ui/chart.tsx"],
+      "rules": {
+        "shadcn/no-inline-styles": "off"
+      }
     }
   ]
 }

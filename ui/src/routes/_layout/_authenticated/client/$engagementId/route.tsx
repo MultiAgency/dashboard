@@ -94,7 +94,7 @@ function EngagementLayout() {
           >
             {section.label}
             {section.to === planSection && awaiting > 0 && (
-              <Badge variant="default" className="ml-1 px-1.5 py-0">
+              <Badge size="counter" className="ml-1">
                 {awaiting}
               </Badge>
             )}

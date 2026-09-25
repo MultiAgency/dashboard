@@ -7,26 +7,25 @@ const source = readFileSync(
   "utf8",
 );
 
-describe("proposals-list — STATUS_ROW_TINT map covers every status with the expected class", () => {
-  test("Failed maps to bg-destructive/5 (action-worthy: technical execution failure)", () => {
-    expect(source).toMatch(/Failed:\s*"bg-destructive\/5"/);
+describe("proposals-list — STATUS_ROW_VARIANT map covers every status with the expected row variant", () => {
+  test("Failed maps to the destructive row (action-worthy: technical execution failure)", () => {
+    expect(source).toMatch(/Failed:\s*"destructive"/);
   });
 
-  test("Rejected/Removed/Expired/Moved all map to bg-muted/40 (closed-without-execution)", () => {
-    expect(source).toMatch(/Rejected:\s*"bg-muted\/40"/);
-    expect(source).toMatch(/Removed:\s*"bg-muted\/40"/);
-    expect(source).toMatch(/Expired:\s*"bg-muted\/40"/);
-    expect(source).toMatch(/Moved:\s*"bg-muted\/40"/);
+  test("Rejected/Removed/Expired/Moved all map to the muted row (closed-without-execution)", () => {
+    expect(source).toMatch(/Rejected:\s*"muted"/);
+    expect(source).toMatch(/Removed:\s*"muted"/);
+    expect(source).toMatch(/Expired:\s*"muted"/);
+    expect(source).toMatch(/Moved:\s*"muted"/);
   });
 
   test("InProgress and Approved are not tinted (Badge already carries primary status signal)", () => {
-    expect(source).toMatch(/InProgress:\s*""/);
-    expect(source).toMatch(/Approved:\s*""/);
+    expect(source).toMatch(/InProgress:\s*"default"/);
+    expect(source).toMatch(/Approved:\s*"default"/);
   });
 
-  test("tint is applied to the TableRow className via STATUS_ROW_TINT lookup", () => {
-    expect(source).toMatch(/STATUS_ROW_TINT\[proposal\.status\]/);
-    expect(source).toMatch(/STATUS_ROW_TINT\[proposal\.status\]\s*\?\?\s*""/);
+  test("the TableRow variant comes from the STATUS_ROW_VARIANT lookup", () => {
+    expect(source).toMatch(/variant=\{STATUS_ROW_VARIANT\[proposal\.status\]\}/);
   });
 });
 

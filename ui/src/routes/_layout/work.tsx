@@ -181,7 +181,7 @@ function ProjectCard({
   const nearnHref = n ? nearnListingHref(n, nearnSponsor) : null;
   const descriptionPreview = nearnDescriptionPreview(n?.description);
   return (
-    <Card className="flex flex-col border-2 border-foreground">
+    <Card className="flex flex-col">
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
           <span className="truncate">@{project.slug}</span>
@@ -227,7 +227,7 @@ function ProjectCard({
 }
 function ProjectCardSkeleton() {
   return (
-    <Card className="flex flex-col border-2 border-foreground">
+    <Card className="flex flex-col">
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <Skeleton className="h-3 w-24" />
