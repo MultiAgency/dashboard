@@ -16,6 +16,9 @@ import {
   adminProjectsForTokenQueryKey,
   adminProjectsListQueryKey,
   adminSettingsQueryOptions,
+  allocationPlanQueryOptions,
+  awaitingChangeOrdersQueryOptions,
+  changeOrdersListQueryOptions,
   clientBillingsQueryKey,
   clientPortalDashboardSummaryQueryOptions,
   clientPortalProjectBudgetQueryOptions,
@@ -167,17 +170,31 @@ describe("refreshAfter", () => {
     expect(stale()).toEqual(["clientProjects", "detail", "list", "roles"]);
   });
 
-  it("prepayments refresh Prepayments and Prepaid balances, and nothing else", async () => {
-    const { queryClient, stale } = cacheWith({
-      list: prepaymentsListQueryOptions(api, "e1").queryKey,
-      balance: prepaidBalanceQueryOptions(api, "e1").queryKey,
-      engagement: engagementDetailQueryOptions(api, "e1").queryKey,
-      clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "e1").queryKey,
-    });
+  it("prepayments and Change orders refresh balances, the plan and the budgets they apply", async () => {
+    for (const type of ["prepayments", "changeOrders"] as const) {
+      const { queryClient, stale } = cacheWith({
+        list: prepaymentsListQueryOptions(api, "e1").queryKey,
+        balance: prepaidBalanceQueryOptions(api, "e1").queryKey,
+        plan: allocationPlanQueryOptions(api, "e1").queryKey,
+        changeOrders: changeOrdersListQueryOptions(api, "e1").queryKey,
+        awaiting: awaitingChangeOrdersQueryOptions(api).queryKey,
+        budget: adminProjectBudgetQueryOptions(api, "a").queryKey,
+        engagement: engagementDetailQueryOptions(api, "e1").queryKey,
+        clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "e1").queryKey,
+      });
 
-    await refreshAfter(queryClient, { type: "prepayments" });
+      await refreshAfter(queryClient, { type });
 
-    expect(stale()).toEqual(["balance", "list"]);
+      expect(stale()).toEqual([
+        "awaiting",
+        "balance",
+        "budget",
+        "changeOrders",
+        "clientDashboard",
+        "list",
+        "plan",
+      ]);
+    }
   });
 });
 

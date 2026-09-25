@@ -349,6 +349,77 @@ const prepaidBalance = z.object({
   balance: z.string(),
 });
 
+const changeOrderStatus = z.enum([
+  "proposed",
+  "approved",
+  "applied",
+  "rejected",
+  "withdrawn",
+  "failed",
+]);
+
+const changeOrderItem = z.object({
+  projectId: z.string().min(1).nullable(),
+  tokenId,
+  kind: z.enum(["plan_change", "one_off_move"]),
+  amount: z
+    .string()
+    .regex(/^-?[1-9]\d*$/, "non-zero integer string in the token's smallest unit")
+    .max(81),
+});
+
+const changeOrder = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  proposedBy: z.object({
+    side: z.enum(["agency", "client"]),
+    organizationId: z.string(),
+    userId: z.string(),
+  }),
+  status: changeOrderStatus,
+  effective: z.enum(["next_period", "now"]),
+  effectivePeriod: z.string().nullable(),
+  note: z.string().nullable(),
+  items: z.array(changeOrderItem),
+  decidedByUserId: z.string().nullable(),
+  decidedAt: z.date().nullable(),
+  appliedAt: z.date().nullable(),
+  failureReason: z.string().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+  canDecide: z.boolean(),
+  canWithdraw: z.boolean(),
+});
+
+const allocationPlan = z.object({
+  engagementId: z.string(),
+  nextPeriod: z.string(),
+  lines: z.array(
+    z.object({
+      projectId: z.string(),
+      tokenId: z.string(),
+      amount: z.string(),
+      effectiveFrom: z.string(),
+    }),
+  ),
+  applications: z.array(
+    z.object({
+      period: z.string(),
+      appliedAt: z.date(),
+      shortfall: z.array(
+        z.object({
+          projectId: z.string(),
+          tokenId: z.string(),
+          amount: z.string(),
+          reason: z.string(),
+        }),
+      ),
+    }),
+  ),
+});
+
+const changeOrderIdInput = z.object({ id: z.string().min(1) });
+
 const billing = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -783,6 +854,56 @@ export const contract = oc.router({
       .route({ method: "DELETE", path: "/prepayments/{id}" })
       .input(z.object({ id: z.string().min(1) }))
       .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  changeOrders: {
+    list: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/change-orders" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(z.object({ data: z.array(changeOrder) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    awaiting: oc
+      .route({ method: "GET", path: "/change-orders/awaiting" })
+      .output(z.object({ data: z.array(changeOrder) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    plan: oc
+      .route({ method: "GET", path: "/engagements/{engagementId}/allocation-plan" })
+      .input(z.object({ engagementId: z.string().min(1) }))
+      .output(allocationPlan)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    propose: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/change-orders" })
+      .input(
+        z.object({
+          engagementId: z.string().min(1),
+          effective: z.enum(["next_period", "now"]).default("next_period"),
+          note: z.string().trim().max(500).optional(),
+          items: z.array(changeOrderItem).min(1).max(100),
+        }),
+      )
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    withdraw: oc
+      .route({ method: "POST", path: "/change-orders/{id}/withdraw" })
+      .input(changeOrderIdInput)
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    approve: oc
+      .route({ method: "POST", path: "/change-orders/{id}/approve" })
+      .input(changeOrderIdInput)
+      .output(changeOrder)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    reject: oc
+      .route({ method: "POST", path: "/change-orders/{id}/reject" })
+      .input(changeOrderIdInput)
+      .output(changeOrder)
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 

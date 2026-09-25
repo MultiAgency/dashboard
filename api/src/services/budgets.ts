@@ -10,6 +10,12 @@ import {
   engagements,
   organizationDaos,
 } from "../db/schema";
+import {
+  type BillingStatuses,
+  type ChainStatusFetcher,
+  prefetchBillingStatuses,
+  projectSpend,
+} from "./ledger";
 import type { TreasuryScope } from "./organization-access";
 import { lockEngagement, prepaidBalances } from "./prepaid-balance";
 import type { ProjectDirectory } from "./project-directory";
@@ -35,7 +41,8 @@ export type EngagementBudgetReason =
   | "NO_AGENCY_DAO"
   | "NOT_SHARED"
   | "PREPAID_BALANCE_EXCEEDED"
-  | "ATTRIBUTED_BUDGET_EXCEEDED";
+  | "ATTRIBUTED_BUDGET_EXCEEDED"
+  | "REMAINING_EXCEEDED";
 
 export class EngagementBudgetError extends Error {
   constructor(
@@ -247,10 +254,34 @@ export type EngagementEntryInput = {
   note: string | null;
 };
 
+export async function prefetchEngagementStatuses(
+  db: Database,
+  engagementId: string,
+  entries: { projectId: string | null; amount: string }[],
+  fetchStatus?: ChainStatusFetcher,
+): Promise<BillingStatuses> {
+  const projectIds = entries.flatMap((entry) =>
+    entry.projectId !== null && BigInt(entry.amount) < 0n ? [entry.projectId] : [],
+  );
+  if (projectIds.length === 0) return new Map();
+  const [dao] = await db
+    .select({ daoAccountId: organizationDaos.daoAccountId })
+    .from(engagements)
+    .innerJoin(
+      organizationDaos,
+      eq(organizationDaos.organizationId, engagements.agencyOrganizationId),
+    )
+    .where(eq(engagements.id, engagementId))
+    .limit(1);
+  if (!dao) return new Map();
+  return prefetchBillingStatuses(db, { daoAccountId: dao.daoAccountId, projectIds }, fetchStatus);
+}
+
 async function checkEngagementEntries(
   tx: Database,
   engagementId: string,
   entries: EngagementEntryInput[],
+  statuses: BillingStatuses,
 ): Promise<string> {
   const engagement = await lockEngagement(tx, engagementId);
   if (!engagement) {
@@ -295,7 +326,8 @@ async function checkEngagementEntries(
     const current = byProjectToken.get(key);
     byProjectToken.set(key, { ...entry, delta: (current?.delta ?? 0n) + BigInt(entry.amount) });
   }
-  for (const { projectId, tokenId, delta } of byProjectToken.values()) {
+  const ordered = [...byProjectToken.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
+  for (const [, { projectId, tokenId, delta }] of ordered) {
     const sums = await lockedBudgetSums(tx, projectId, tokenId);
     if ((sums.byEngagement.get(engagementId) ?? 0n) + delta < 0n) {
       throw new EngagementBudgetError(
@@ -305,6 +337,20 @@ async function checkEngagementEntries(
     }
     if (sums.total + delta < 0n) {
       throw new BudgetInsufficientError(projectId, tokenId, sums.total, delta);
+    }
+    if (delta < 0n) {
+      const spent = await projectSpend(tx, {
+        projectId,
+        tokenId,
+        payingDaoAccountId: dao.daoAccountId,
+        statuses,
+      });
+      if (sums.total - spent + delta < 0n) {
+        throw new EngagementBudgetError(
+          "REMAINING_EXCEEDED",
+          `Only ${(sums.total - spent).toString()} of this Project's ${tokenId} budget is not yet Allocated, Committed or Paid.`,
+        );
+      }
     }
   }
   const balances = await prepaidBalances(tx, engagementId);
@@ -321,7 +367,12 @@ async function checkEngagementEntries(
 
 export async function writeEngagementEntries(
   db: Database,
-  input: { engagementId: string; actorAccountId: string; entries: EngagementEntryInput[] },
+  input: {
+    engagementId: string;
+    actorAccountId: string;
+    entries: EngagementEntryInput[];
+    statuses: BillingStatuses;
+  },
 ): Promise<Budget[]> {
   if (input.entries.length === 0) return [];
   return db.transaction(async (tx) => {
@@ -329,6 +380,7 @@ export async function writeEngagementEntries(
       tx as Database,
       input.engagementId,
       input.entries,
+      input.statuses,
     );
     const createdAt = new Date();
     return tx

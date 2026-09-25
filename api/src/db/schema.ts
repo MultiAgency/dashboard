@@ -291,6 +291,110 @@ export const prepayments = pgTable(
 
 export type PrepaymentRow = typeof prepayments.$inferSelect;
 
+export const CHANGE_ORDER_STATUSES = [
+  "proposed",
+  "approved",
+  "applied",
+  "rejected",
+  "withdrawn",
+  "failed",
+] as const;
+export const CHANGE_ORDER_EFFECTS = ["next_period", "now"] as const;
+export const CHANGE_ORDER_ITEM_KINDS = ["plan_change", "one_off_move"] as const;
+
+export const changeOrders = pgTable(
+  "change_orders",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    proposedByOrganizationId: text("proposed_by_organization_id").notNull(),
+    proposedByUserId: text("proposed_by_user_id").notNull(),
+    status: text("status", { enum: CHANGE_ORDER_STATUSES }).notNull(),
+    effective: text("effective", { enum: CHANGE_ORDER_EFFECTS }).notNull(),
+    effectivePeriod: text("effective_period"),
+    note: text("note"),
+    decidedByUserId: text("decided_by_user_id"),
+    decidedAt: timestamp("decided_at", { withTimezone: false }),
+    appliedAt: timestamp("applied_at", { withTimezone: false }),
+    failureReason: text("failure_reason"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("change_orders_engagement").on(t.engagementId, t.createdAt),
+  }),
+);
+
+export type ChangeOrderRow = typeof changeOrders.$inferSelect;
+
+export const changeOrderItems = pgTable(
+  "change_order_items",
+  {
+    id: text("id").primaryKey(),
+    changeOrderId: text("change_order_id")
+      .notNull()
+      .references(() => changeOrders.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    projectId: text("project_id"),
+    tokenId: text("token_id").notNull(),
+    kind: text("kind", { enum: CHANGE_ORDER_ITEM_KINDS }).notNull(),
+    amount: text("amount").notNull(),
+  },
+  (t) => ({
+    changeOrderIdx: index("change_order_items_change_order").on(t.changeOrderId, t.position),
+  }),
+);
+
+export type ChangeOrderItemRow = typeof changeOrderItems.$inferSelect;
+
+export const allocationPlanLines = pgTable(
+  "allocation_plan_lines",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    projectId: text("project_id").notNull(),
+    tokenId: text("token_id").notNull(),
+    amount: text("amount").notNull(),
+    position: integer("position").notNull(),
+    effectiveFrom: text("effective_from").notNull(),
+    changeOrderId: text("change_order_id")
+      .notNull()
+      .references(() => changeOrders.id),
+    supersededBy: text("superseded_by").references(() => changeOrders.id),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("allocation_plan_lines_engagement").on(t.engagementId, t.position),
+    current: uniqueIndex("allocation_plan_lines_current")
+      .on(t.engagementId, t.projectId, t.tokenId)
+      .where(sql`${t.supersededBy} IS NULL`),
+  }),
+);
+
+export type AllocationPlanLineRow = typeof allocationPlanLines.$inferSelect;
+
+export const allocationPlanApplications = pgTable(
+  "allocation_plan_applications",
+  {
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    period: text("period").notNull(),
+    prepaymentId: text("prepayment_id"),
+    shortfall: text("shortfall").notNull().default("[]"),
+    appliedAt: timestamp("applied_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.engagementId, t.period] }),
+  }),
+);
+
+export type AllocationPlanApplicationRow = typeof allocationPlanApplications.$inferSelect;
+
 export const billings = pgTable(
   "billings",
   {

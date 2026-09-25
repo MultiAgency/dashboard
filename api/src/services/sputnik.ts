@@ -610,6 +610,17 @@ export async function getTreasuryBalances(
   return result;
 }
 
+export async function persistedProposalStatus(
+  db: Database,
+  daoAccountId: string,
+  proposalId: string,
+): Promise<DaoProposalStatus | null> {
+  const id = Number.parseInt(proposalId, 10);
+  if (Number.isNaN(id)) return null;
+  const persisted = await readProposalFromDb(db, daoAccountId, id);
+  return persisted ? (persisted.status as DaoProposalStatus) : null;
+}
+
 export async function enrichWithChainStatus<T extends { proposalId: string }>(
   db: Database,
   b: T,

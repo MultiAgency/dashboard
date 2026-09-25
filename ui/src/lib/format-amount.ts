@@ -56,6 +56,10 @@ export function formatTokenAmount(amount: string, tokenId: string): string {
   }
 }
 
+export function tokenDecimals(tokenId: string): number | undefined {
+  return KNOWN_TOKENS[tokenId]?.decimals;
+}
+
 export function tokenSymbol(tokenId: string): string {
   return KNOWN_TOKENS[tokenId]?.symbol ?? tokenId;
 }

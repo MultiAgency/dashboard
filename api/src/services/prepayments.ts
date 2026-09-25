@@ -3,6 +3,9 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type EngagementRow, engagements, type PrepaymentRow, prepayments } from "../db/schema";
 import type { OrganizationDirectory } from "../lib/organizations";
+import { applyPlanForPeriod, type PlanApplication, pendingItems } from "./allocation-plan";
+import { prefetchEngagementStatuses } from "./budgets";
+import type { ChainStatusFetcher } from "./ledger";
 import type { NotificationKind, NotificationsService } from "./notifications";
 import { type OrganizationScope, requireTreasury, SHARED_STATUSES } from "./organization-access";
 import { lockEngagement, prepaidBalanceRows, prepaidBalances } from "./prepaid-balance";
@@ -72,6 +75,12 @@ export function createPrepaymentsService(deps: {
   db: Database;
   organizations: OrganizationDirectory;
   notifications: NotificationsService;
+  onPlanApplied?: (
+    scope: OrganizationScope,
+    engagement: EngagementRow,
+    application: PlanApplication,
+  ) => Promise<void>;
+  chainStatus?: ChainStatusFetcher;
   now?: () => Date;
 }) {
   const { db, organizations, notifications } = deps;
@@ -171,7 +180,13 @@ export function createPrepaymentsService(deps: {
     record: async (scope: OrganizationScope, input: RecordPrepaymentInput) => {
       const treasury = requireTreasury(scope);
       requireValid(input);
-      const { engagement, row } = await db.transaction(async (tx) => {
+      const statuses = await prefetchEngagementStatuses(
+        db,
+        input.engagementId,
+        await pendingItems(db, input.engagementId),
+        deps.chainStatus,
+      );
+      const { engagement, row, application } = await db.transaction(async (tx) => {
         const engagement = requireWritable(
           scope,
           await lockEngagement(tx as Database, input.engagementId),
@@ -189,9 +204,17 @@ export function createPrepaymentsService(deps: {
             actorAccountId: scope.actorId,
           })
           .returning();
-        return { engagement, row: row! };
+        const application = await applyPlanForPeriod(tx as Database, engagement, {
+          period: input.period,
+          prepaymentId: row!.id,
+          actorAccountId: scope.actorId,
+          now: now(),
+          statuses,
+        });
+        return { engagement, row: row!, application };
       });
       await tellClient(scope, engagement, "prepayment_recorded", row);
+      if (application) await deps.onPlanApplied?.(scope, engagement, application);
       return view(row);
     },
 

@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -15,6 +16,7 @@ import {
 import { PrepaymentsPanel } from "@/components/admin/prepayments-panel";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
+import { ChangeOrdersPanel, ShortfallWarnings } from "@/components/change-orders";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   EngagementStatusBadge,
@@ -22,11 +24,17 @@ import {
   InvitationStatusBadge,
 } from "@/components/engagement-status";
 import { useEngagementAction } from "@/hooks/use-engagement-action";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
-import { adminProjectsListQueryOptions, engagementDetailQueryOptions } from "@/lib/queries";
+import { awaitingCountFor } from "@/lib/change-orders";
+import {
+  adminProjectsListQueryOptions,
+  awaitingChangeOrdersQueryOptions,
+  engagementDetailQueryOptions,
+} from "@/lib/queries";
 
 const engagementSearchSchema = z.object({
-  tab: z.enum(["projects", "prepayments"]).optional().catch("projects"),
+  tab: z.enum(["projects", "prepayments", "plan"]).optional().catch("projects"),
 });
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/engagements/$engagementId")({
@@ -46,6 +54,12 @@ function EngagementDetailPage() {
   const navigate = Route.useNavigate();
   const apiClient = useApiClient();
   const engagementQuery = useQuery(engagementDetailQueryOptions(apiClient, engagementId));
+  const { canAccessAdmin } = useMeRoles();
+  const projects = useQuery(adminProjectsListQueryOptions(apiClient)).data?.data ?? [];
+  const awaiting = awaitingCountFor(
+    useQuery(awaitingChangeOrdersQueryOptions(apiClient)).data?.data ?? [],
+    engagementId,
+  );
   const [confirmEnd, setConfirmEnd] = useState(false);
   const end = useEngagementAction(
     () => apiClient.engagements.end({ id: engagementId }),
@@ -92,6 +106,13 @@ function EngagementDetailPage() {
         )}
       </header>
 
+      {engagement.status !== "proposed" && tab !== "plan" && (
+        <ShortfallWarnings
+          engagementId={engagement.id}
+          projects={projects.filter((p) => engagement.projectIds.includes(p.id))}
+        />
+      )}
+
       {engagement.status === "active" &&
         engagement.invitation &&
         engagement.invitation.status !== "accepted" && <InvitationPanel engagement={engagement} />}
@@ -103,7 +124,9 @@ function EngagementDetailPage() {
           value={tab ?? "projects"}
           onValueChange={(value) => {
             void navigate({
-              search: { tab: value === "prepayments" ? "prepayments" : undefined },
+              search: {
+                tab: value === "prepayments" || value === "plan" ? value : undefined,
+              },
               replace: true,
             });
           }}
@@ -111,12 +134,30 @@ function EngagementDetailPage() {
           <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.18em]">
             <TabsTrigger value="projects">shared projects</TabsTrigger>
             <TabsTrigger value="prepayments">prepayments</TabsTrigger>
+            <TabsTrigger value="plan">
+              plan & change orders
+              {awaiting > 0 && (
+                <Badge variant="accent" className="ml-1 px-1.5 py-0 font-mono text-[10px]">
+                  {awaiting}
+                </Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="projects" className="mt-6">
             <SharedProjects engagement={engagement} />
           </TabsContent>
           <TabsContent value="prepayments" className="mt-6">
             <PrepaymentsPanel engagement={engagement} />
+          </TabsContent>
+          <TabsContent value="plan" className="mt-6">
+            <ChangeOrdersPanel
+              engagementId={engagement.id}
+              side="agency"
+              names={{ agency: engagement.agency.name, client: engagement.client.name }}
+              projects={projects.filter((p) => engagement.projectIds.includes(p.id))}
+              active={engagement.status === "active"}
+              canManage={canAccessAdmin}
+            />
           </TabsContent>
         </Tabs>
       )}
@@ -246,7 +287,8 @@ function SharedProjects({ engagement }: { engagement: EngagementView }) {
       <h2 className="font-display text-xl uppercase font-extrabold">Shared projects</h2>
       <p className="text-sm text-muted-foreground max-w-2xl">
         The Client's members see these Projects in full, including their budget and every billing. A
-        Project with budget attributed to this Engagement cannot be unshared.
+        Project with budget attributed to this Engagement, or in its Allocation plan, cannot be
+        unshared.
       </p>
       {engagement.projectIds.length === 0 ? (
         <Empty label="Nothing shared yet." />

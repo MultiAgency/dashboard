@@ -7,7 +7,10 @@ import { AdminError } from "@/components/admin-error";
 import { Empty } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
+import { awaitingLink } from "@/lib/change-orders";
+import { formatTokenAmount } from "@/lib/format-amount";
 import {
+  awaitingChangeOrdersQueryOptions,
   invalidateWorkspaceQueries,
   notificationsQueryKey,
   refreshAfter,
@@ -48,6 +51,9 @@ function NotificationsPage() {
     retry: false,
   });
   const items: Notification[] = inbox.data?.pages.flatMap((p) => p.data) ?? [];
+  const awaiting = (useQuery(awaitingChangeOrdersQueryOptions(apiClient)).data?.data ?? []).filter(
+    (changeOrder) => changeOrder.canDecide,
+  );
   const unread = items.filter((n) => !n.readAt);
 
   const markRead = useMutation({
@@ -93,6 +99,42 @@ function NotificationsPage() {
           mark all read
         </Button>
       </header>
+
+      {awaiting.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            Change orders awaiting you
+          </h2>
+          {awaiting.map((changeOrder) => (
+            <Card key={changeOrder.id}>
+              <CardContent className="p-4 flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="accent">to decide</Badge>
+                    <span className="text-sm font-medium">
+                      Change order from the {changeOrder.proposedBy.side}
+                    </span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {changeOrder.note ??
+                      changeOrder.items
+                        .filter((item) => item.projectId !== null)
+                        .map((item) => formatTokenAmount(item.amount, item.tokenId))
+                        .join(", ")}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => router.history.push(awaitingLink(changeOrder))}
+                >
+                  review →
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+      )}
 
       {inbox.isError && <AdminError error={inbox.error} />}
       {inbox.isSuccess && items.length === 0 && (
