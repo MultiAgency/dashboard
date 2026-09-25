@@ -32,14 +32,26 @@ export function ApplicationsAdminSection() {
     retry: false,
   });
 
-  if (applicationsQuery.isError) {
-    return <AdminError error={applicationsQuery.error} />;
-  }
-
   const apps = useMemo(
     () => applicationsQuery.data?.pages.flatMap((p) => p.data) ?? [],
     [applicationsQuery.data],
   );
+
+  if (applicationsQuery.isError) {
+    if (isForbidden(applicationsQuery.error)) {
+      return (
+        <Card>
+          <CardContent className="p-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              Applications are reviewed by the MultiAgency team.
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
+    return <AdminError error={applicationsQuery.error} />;
+  }
+
   const filtersActive = filterKind !== "" || filterStatus !== "new";
 
   const columns: ColumnDef<Application>[] = [
@@ -185,6 +197,14 @@ export function ApplicationsAdminSection() {
         </div>
       )}
     </div>
+  );
+}
+
+function isForbidden(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "FORBIDDEN"
   );
 }
 
