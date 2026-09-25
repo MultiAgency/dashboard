@@ -34,10 +34,10 @@ type ClientBreakdownCsvRow = {
   spent: string;
 };
 
-const SECTION_TITLE = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground";
+const SECTION_TITLE = "font-mono text-xs uppercase tracking-widest text-muted-foreground";
 
 const TOKEN_TH =
-  "font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 py-2 text-left border-b border-border";
+  "font-mono text-xs uppercase tracking-widest text-muted-foreground px-3 py-2 text-left border-b border-border";
 const TOKEN_TD = "px-3 py-2 text-sm border-b border-border";
 
 function groupByClient(breakdown: ClientBreakdownItem[]): ClientGroup[] {
@@ -223,9 +223,7 @@ export function ClientBreakdownSection({ breakdown }: ClientBreakdownSectionProp
               className="rounded-sm border border-border overflow-hidden"
             >
               <header className="px-4 py-3 border-b border-border bg-muted/30">
-                <h3 className="font-display text-lg font-black uppercase tracking-tight">
-                  {group.clientName}
-                </h3>
+                <h3 className="text-lg font-black uppercase tracking-tight">{group.clientName}</h3>
                 <p className="text-xs text-muted-foreground font-mono mt-0.5">
                   {group.projects.length} project{group.projects.length === 1 ? "" : "s"}
                 </p>
@@ -239,7 +237,7 @@ export function ClientBreakdownSection({ breakdown }: ClientBreakdownSectionProp
                   >
                     <div>
                       <h4 className="font-medium text-sm">{project.projectTitle}</h4>
-                      <p className="font-mono text-[10px] text-muted-foreground">
+                      <p className="font-mono text-xs text-muted-foreground">
                         @{project.projectSlug}
                       </p>
                     </div>

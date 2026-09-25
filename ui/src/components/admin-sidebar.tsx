@@ -3,11 +3,11 @@ import { useMeRoles } from "@/hooks/use-me-roles";
 import { type NavItem, workspaceNavigation } from "@/lib/navigation";
 
 const LINK_BASE =
-  "font-mono text-[11px] uppercase tracking-[0.18em] px-3 py-2 rounded-sm transition-colors block";
+  "font-mono text-xs uppercase tracking-widest px-3 py-2 rounded-sm transition-colors block";
 const LINK_ACTIVE = "bg-foreground text-background";
 const LINK_INACTIVE = "text-muted-foreground hover:text-foreground hover:bg-muted/40";
 const GROUP_LABEL =
-  "font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70 px-3 pt-3 pb-1 first:pt-0";
+  "font-mono text-xs uppercase tracking-widest text-muted-foreground/70 px-3 pt-3 pb-1 first:pt-0";
 
 export function AdminSidebar() {
   const matchRoute = useMatchRoute();

@@ -61,14 +61,12 @@ export function ApplicationsAdminSection() {
       accessorKey: "name",
       cell: ({ row }) => (
         <div className="space-y-0.5">
-          <div className="font-display text-sm uppercase tracking-tight font-bold">
-            {row.original.name}
-          </div>
-          <div className="font-mono text-[10px] text-muted-foreground break-all">
+          <div className="text-sm uppercase tracking-tight font-bold">{row.original.name}</div>
+          <div className="font-mono text-xs text-muted-foreground break-all">
             {row.original.email}
           </div>
           {row.original.nearAccountId && (
-            <div className="font-mono text-[10px] text-muted-foreground">
+            <div className="font-mono text-xs text-muted-foreground">
               {row.original.nearAccountId}
             </div>
           )}
@@ -245,11 +243,7 @@ function ApplicationActions({ application }: { application: Application }) {
             {convertMutation.isPending ? "converting..." : "convert to builder"}
           </Button>
         )}
-      {application.status === "converted" && (
-        <Badge variant="secondary" className="text-[10px]">
-          converted
-        </Badge>
-      )}
+      {application.status === "converted" && <Badge variant="secondary">converted</Badge>}
       {transitionsFor(application.status).map((t) => (
         <Button
           key={t.to}

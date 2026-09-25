@@ -2,7 +2,15 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Budget, Button, Card, CardContent, Input, SubcontractorSpend } from "@/components";
+import {
+  Budget,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  Input,
+  SubcontractorSpend,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field, selectClass } from "@/components/admin-form";
 import { useBudgetActions } from "@/hooks/use-budget-actions";
@@ -33,7 +41,7 @@ function budgetVerb(amount: string, relatedBudgetId: string | null): string {
 
 function VerbTag({ verb }: { verb: string }) {
   return (
-    <span className="inline-block text-[10px] uppercase tracking-[0.14em] font-mono text-muted-foreground border border-border bg-background px-1.5 py-0.5">
+    <span className="inline-block text-xs uppercase tracking-widest font-mono text-muted-foreground border border-border bg-background px-1.5 py-0.5">
       {verb}
     </span>
   );
@@ -211,7 +219,7 @@ function AgencyAuditLogPanel({
 
   return (
     <section className="space-y-3">
-      <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+      <h2 className="text-2xl uppercase tracking-tight font-extrabold leading-tight">
         Agency audit log
       </h2>
       <p className="text-sm text-muted-foreground max-w-2xl">
@@ -342,8 +350,8 @@ function AgencyAuditLogPanel({
         </>
       ) : (
         <Card>
-          <CardContent className="p-6 text-center text-sm text-muted-foreground">
-            No budget events yet.
+          <CardContent className="p-6">
+            <CardDescription className="text-center">No budget events yet.</CardDescription>
           </CardContent>
         </Card>
       )}
@@ -426,7 +434,7 @@ function TransferPanel({
 
   return (
     <section className="space-y-3">
-      <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+      <h2 className="text-2xl uppercase tracking-tight font-extrabold leading-tight">
         Transfer between projects
       </h2>
       <Card>
@@ -659,13 +667,11 @@ export function ProjectBudgetPanel({
     <div className="space-y-6">
       <section className="space-y-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-            Budget
-          </h2>
+          <h2 className="text-2xl uppercase tracking-tight font-extrabold leading-tight">Budget</h2>
           {showAgencyBudgetLink && (
             <Link
               to="/admin/budgets"
-              className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              className="text-xs font-mono uppercase tracking-wide text-muted-foreground underline underline-offset-2 hover:text-foreground"
             >
               cross-project transfers →
             </Link>
@@ -696,7 +702,7 @@ export function ProjectBudgetPanel({
 
       {!readOnly && !clientPortal && (
         <section className="space-y-3">
-          <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+          <h2 className="text-2xl uppercase tracking-tight font-extrabold leading-tight">
             New budget
           </h2>
           <Card>
@@ -763,7 +769,7 @@ export function ProjectBudgetPanel({
 
       {!clientPortal && (
         <section className="space-y-3">
-          <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+          <h2 className="text-2xl uppercase tracking-tight font-extrabold leading-tight">
             Audit log
           </h2>
           {budgetsQuery.isLoading ? (
@@ -810,8 +816,10 @@ export function ProjectBudgetPanel({
             </>
           ) : (
             <Card>
-              <CardContent className="p-6 text-center text-sm text-muted-foreground">
-                No budget events recorded yet.
+              <CardContent className="p-6">
+                <CardDescription className="text-center">
+                  No budget events recorded yet.
+                </CardDescription>
               </CardContent>
             </Card>
           )}

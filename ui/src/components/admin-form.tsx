@@ -22,10 +22,8 @@ export function Loading({ label }: { label: string }) {
 
 export function Empty({ label }: { label: string }) {
   return (
-    <ShadcnEmpty className="border-2 border-dashed border-border/40">
-      <ShadcnEmptyTitle className="text-sm font-normal text-muted-foreground">
-        {label}
-      </ShadcnEmptyTitle>
+    <ShadcnEmpty>
+      <ShadcnEmptyTitle>{label}</ShadcnEmptyTitle>
     </ShadcnEmpty>
   );
 }
@@ -43,18 +41,9 @@ export function Field({
 }) {
   return (
     <ShadcnField>
-      <ShadcnFieldLabel
-        htmlFor={htmlFor}
-        className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground"
-      >
-        {label}
-      </ShadcnFieldLabel>
+      <ShadcnFieldLabel htmlFor={htmlFor}>{label}</ShadcnFieldLabel>
       {children}
-      {helper && (
-        <ShadcnFieldDescription className="text-xs leading-relaxed">
-          {helper}
-        </ShadcnFieldDescription>
-      )}
+      {helper && <ShadcnFieldDescription>{helper}</ShadcnFieldDescription>}
     </ShadcnField>
   );
 }

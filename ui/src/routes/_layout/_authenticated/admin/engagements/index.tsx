@@ -50,7 +50,7 @@ function EngagementsPage() {
         <Link
           to="/admin/engagements/$engagementId"
           params={{ engagementId: row.original.id }}
-          className="font-display text-sm uppercase font-bold hover:underline"
+          className="text-sm uppercase font-bold hover:underline"
         >
           {row.original.client.name}
         </Link>
@@ -90,10 +90,10 @@ function EngagementsPage() {
   return (
     <div className="space-y-8">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           people · engagements
         </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
           Engagements
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -211,7 +211,7 @@ function NewOrganizationForm({ kind }: { kind: EngagementKind }) {
     <Card>
       <CardContent className="p-5 space-y-4">
         <div className="space-y-1">
-          <h2 className="font-display text-xl uppercase font-extrabold">New {label}</h2>
+          <h2 className="text-xl uppercase font-extrabold">New {label}</h2>
           <p className="text-sm text-muted-foreground">
             Creates the {label}'s Organization and invites its first admin as owner. You do not join
             it: the {label} manages its own team once the invitation is accepted.
@@ -275,7 +275,7 @@ function ProposeForm() {
     <Card>
       <CardContent className="p-5 space-y-4">
         <div className="space-y-1">
-          <h2 className="font-display text-xl uppercase font-extrabold">Existing Organization</h2>
+          <h2 className="text-xl uppercase font-extrabold">Existing Organization</h2>
           <p className="text-sm text-muted-foreground">
             Ask the Organization for its slug (shown on its Settings page) and its exact name. Its
             owners and admins accept or decline your proposal.
@@ -315,7 +315,7 @@ function SubcontractForm() {
     <Card>
       <CardContent className="p-5 space-y-4">
         <div className="space-y-1">
-          <h2 className="font-display text-xl uppercase font-extrabold">Existing Agency</h2>
+          <h2 className="text-xl uppercase font-extrabold">Existing Agency</h2>
           <p className="text-sm text-muted-foreground">
             Ask the Agency for its slug (shown on its Settings page) and its exact name. The
             Subcontract starts at once, with no acceptance, and its owners and admins are told. You

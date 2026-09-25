@@ -184,7 +184,7 @@ export function PrepaymentsPanel({ engagement }: { engagement: EngagementView })
       {writable && (
         <Card>
           <CardContent className="p-5 space-y-3">
-            <h3 className="font-display text-lg uppercase font-extrabold">Record a Prepayment</h3>
+            <h3 className="text-lg uppercase font-extrabold">Record a Prepayment</h3>
             <PrepaymentForm
               key={formKey}
               engagementId={engagement.id}

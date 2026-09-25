@@ -88,7 +88,7 @@ function AcceptInvitationPage() {
           <CardContent className="space-y-4">
             {invitation ? (
               <div className="space-y-1">
-                <div className="font-display text-3xl uppercase tracking-tight font-extrabold leading-tight break-words">
+                <div className="text-3xl uppercase tracking-tight font-extrabold leading-tight break-words">
                   {invitation.organizationName}
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -141,10 +141,10 @@ function Page({ state, children }: { state: PageState | null; children?: ReactNo
   return (
     <div className="mx-auto max-w-xl space-y-8 animate-fade-in">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           organization · invitation
         </div>
-        <h1 className="font-display text-4xl sm:text-5xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-4xl sm:text-5xl font-black uppercase leading-none tracking-tight">
           {state ? TITLES[state] : "Invitation"}
         </h1>
       </header>

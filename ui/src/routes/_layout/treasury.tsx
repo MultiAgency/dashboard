@@ -217,10 +217,10 @@ function TreasuryPage() {
   return (
     <div className="space-y-12 pb-12 animate-fade-in">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           agency · treasury
         </div>
-        <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
           Treasury
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -229,7 +229,7 @@ function TreasuryPage() {
       </header>
 
       <Tabs value={activeTab} onValueChange={(t) => setActiveTab(t as TreasuryTab)}>
-        <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.22em]">
+        <TabsList variant="line">
           <TabsTrigger value="balances">balances</TabsTrigger>
           <TabsTrigger value="payouts">payouts</TabsTrigger>
         </TabsList>
@@ -289,19 +289,15 @@ function BalancesSection({
   }
   if (tokens.length === 0) {
     return (
-      <Empty className="border-2 border-dashed border-border/40">
-        <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
-          no tokens configured
-        </EmptyTitle>
+      <Empty>
+        <EmptyTitle>no tokens configured</EmptyTitle>
       </Empty>
     );
   }
   if (visibleTokens.length === 0) {
     return (
-      <Empty className="border-2 border-dashed border-border/40">
-        <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
-          empty treasury
-        </EmptyTitle>
+      <Empty>
+        <EmptyTitle>empty treasury</EmptyTitle>
       </Empty>
     );
   }
@@ -352,7 +348,7 @@ function BalancesViewToggle({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground mr-1">
+      <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground mr-1">
         view
       </span>
       {(["grid", "table"] as const).map((v) => {
@@ -363,7 +359,7 @@ function BalancesViewToggle({
             type="button"
             onClick={() => onViewChange(v)}
             aria-pressed={active}
-            className={`font-mono text-[10px] uppercase tracking-[0.18em] px-2 py-1 border transition-colors duration-150 cursor-pointer ${
+            className={`font-mono text-xs uppercase tracking-widest px-2 py-1 border transition-colors duration-150 cursor-pointer ${
               active
                 ? "bg-foreground text-background border-foreground"
                 : "bg-transparent text-muted-foreground border-foreground/40 hover:text-foreground hover:border-foreground/70"
@@ -378,7 +374,7 @@ function BalancesViewToggle({
         onClick={onExport}
         disabled={!canExport}
         aria-label="download visible balances as CSV"
-        className="ml-auto font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
+        className="ml-auto font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
       >
         export csv ↓
       </button>
@@ -430,18 +426,10 @@ function BalancesTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[100px]">
-              symbol
-            </TableHead>
-            <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[100px]">
-              network
-            </TableHead>
-            <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] text-right">
-              balance
-            </TableHead>
-            <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em]">
-              contract
-            </TableHead>
+            <TableHead className="w-[100px]">symbol</TableHead>
+            <TableHead className="w-[100px]">network</TableHead>
+            <TableHead className="text-right">balance</TableHead>
+            <TableHead>contract</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -460,10 +448,8 @@ function BalancesTable({
               aria-label={`Open ${token.symbol} details`}
               className="cursor-pointer hover:bg-muted/50 focus:bg-muted/50 focus:outline-none"
             >
-              <TableCell className="font-mono text-xs uppercase tracking-wide">
-                {token.symbol}
-              </TableCell>
-              <TableCell className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              <TableCell className="font-mono text-xs">{token.symbol}</TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
                 {token.network}
               </TableCell>
               <TableCell className="font-mono tabular-nums text-right whitespace-nowrap">
@@ -519,14 +505,14 @@ function TokenCard({
       className="cursor-pointer hover:bg-muted/40 focus:bg-muted/40 focus:outline-none transition-colors duration-150"
     >
       <CardContent className="p-4 space-y-2">
-        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
           <span className="truncate">{token.symbol}</span>
           <span>{token.network}</span>
         </div>
-        <div className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight tabular-nums break-words">
+        <div className="text-2xl uppercase tracking-tight font-extrabold leading-tight tabular-nums break-words">
           {formatTokenAmount(balance, token.tokenId)}
         </div>
-        <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground break-all">
+        <div className="font-mono text-xs uppercase tracking-wide text-muted-foreground break-all">
           {token.name}
         </div>
       </CardContent>
@@ -556,14 +542,12 @@ function TokenDetailDialog({
         {token && (
           <>
             <DialogHeader>
-              <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]">
+              <div className="flex flex-wrap items-center gap-2 font-mono text-xs uppercase tracking-widest">
                 <span className="text-muted-foreground">token</span>
                 <span>{tokenSymbol(token.tokenId)}</span>
                 <Badge variant="outline">{token.network}</Badge>
               </div>
-              <DialogTitle className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight tabular-nums">
-                {formatTokenAmount(balance, token.tokenId)}
-              </DialogTitle>
+              <DialogTitle>{formatTokenAmount(balance, token.tokenId)}</DialogTitle>
               <DialogDescription className="sr-only">
                 {token.symbol} token details and recent treasury transfers
               </DialogDescription>
@@ -585,11 +569,11 @@ function TokenDetailDialog({
               </div>
             </dl>
             <div className="space-y-2">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
                 recent transfers
               </div>
               {tokenTransfers.length === 0 ? (
-                <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground py-2">
+                <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground py-2">
                   no transfers loaded yet
                 </p>
               ) : (
@@ -602,7 +586,7 @@ function TokenDetailDialog({
                             #{p.proposalId}
                           </td>
                           <td className="px-2 py-2">
-                            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                            <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
                               {STATUS_LABEL[p.status] ?? p.status}
                             </span>
                           </td>
@@ -629,7 +613,7 @@ function TokenDetailDialog({
 function TokenMetaField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
       <div className={`${mono ? "font-mono text-xs" : "text-sm"} break-all`}>{value}</div>
@@ -651,7 +635,7 @@ function StorageStatusField({
   const isNative = tokenId === NATIVE_NEAR_TOKEN_ID;
   return (
     <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
         nep-145 storage
       </div>
       {isNative ? (
@@ -662,9 +646,7 @@ function StorageStatusField({
         <Skeleton className="h-4 w-32" />
       ) : status ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary" className="font-mono text-[10px] uppercase tracking-wide">
-            registered
-          </Badge>
+          <Badge variant="secondary">registered</Badge>
           <span className="font-mono text-xs text-muted-foreground tabular-nums">
             total {formatTokenAmount(status.total, "near")} · available{" "}
             {formatTokenAmount(status.available, "near")}
@@ -672,10 +654,8 @@ function StorageStatusField({
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="destructive" className="font-mono text-[10px] uppercase tracking-wide">
-            not registered
-          </Badge>
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          <Badge variant="destructive">not registered</Badge>
+          <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             DAO has not registered for this token
           </span>
         </div>
@@ -857,17 +837,15 @@ function ProposalsList({
   }
   if (isError) {
     return (
-      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
         could not load — try again
       </p>
     );
   }
   if (proposals.length === 0) {
     return (
-      <Empty className="border-2 border-dashed border-border/40">
-        <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
-          no payouts yet
-        </EmptyTitle>
+      <Empty>
+        <EmptyTitle>no payouts yet</EmptyTitle>
       </Empty>
     );
   }
@@ -896,7 +874,7 @@ function ProposalsList({
               <TableRow>
                 <TableCell
                   colSpan={6}
-                  className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground text-center py-8"
+                  className="font-mono text-xs text-muted-foreground text-center py-8"
                 >
                   no matches — clear filters to see all
                 </TableCell>
@@ -916,12 +894,7 @@ function ProposalsList({
       </div>
       {hasNext && (
         <div className="flex justify-center pt-2">
-          <Button
-            onClick={fetchNextPage}
-            disabled={isFetchingNext}
-            variant="outline"
-            className="font-display uppercase tracking-wide"
-          >
+          <Button onClick={fetchNextPage} disabled={isFetchingNext} variant="outline">
             {isFetchingNext ? "loading..." : "load more →"}
           </Button>
         </div>
@@ -970,7 +943,7 @@ function ProposalsFilterBar({
   return (
     <div className="space-y-3 border border-border bg-card/40 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground mr-1">
+        <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground mr-1">
           status
         </span>
         {STATUS_BUCKETS.map((b) => {
@@ -981,7 +954,7 @@ function ProposalsFilterBar({
               type="button"
               onClick={() => onToggleBucket(b.key)}
               aria-pressed={active}
-              className={`font-mono text-[10px] uppercase tracking-[0.18em] px-2 py-1 border transition-colors duration-150 cursor-pointer ${
+              className={`font-mono text-xs uppercase tracking-widest px-2 py-1 border transition-colors duration-150 cursor-pointer ${
                 active
                   ? "bg-foreground text-background border-foreground"
                   : "bg-transparent text-muted-foreground border-foreground/40 hover:text-foreground hover:border-foreground/70"
@@ -994,17 +967,14 @@ function ProposalsFilterBar({
       </div>
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             token
           </div>
           <Select
             value={tokenFilter || ALL_TOKENS_SENTINEL}
             onValueChange={(v) => onTokenChange(v === ALL_TOKENS_SENTINEL ? "" : v)}
           >
-            <SelectTrigger
-              aria-label="filter by token"
-              className="font-mono text-xs uppercase tracking-wide h-8"
-            >
+            <SelectTrigger aria-label="filter by token" className="h-8">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1018,7 +988,7 @@ function ProposalsFilterBar({
           </Select>
         </div>
         <div className="space-y-1 flex-1 min-w-[12rem]">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             receiver
           </div>
           <Input
@@ -1026,18 +996,18 @@ function ProposalsFilterBar({
             onChange={(e) => onReceiverChange(e.target.value)}
             placeholder="search account…"
             aria-label="filter by receiver account"
-            className="font-mono text-xs h-8"
+            className="h-8"
           />
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground tabular-nums">
+          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground tabular-nums">
             {shown === total ? `${total}` : `${shown} of ${total}`}
           </div>
           {hasActiveFilter && (
             <button
               type="button"
               onClick={onClear}
-              className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground cursor-pointer underline-offset-2 hover:underline"
+              className="font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer underline-offset-2 hover:underline"
             >
               clear ✕
             </button>
@@ -1047,7 +1017,7 @@ function ProposalsFilterBar({
             onClick={onExport}
             disabled={!canExport}
             aria-label="download visible rows as CSV"
-            className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
+            className="font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed underline-offset-2 hover:underline"
           >
             export csv ↓
           </button>
@@ -1061,22 +1031,12 @@ function ProposalsTableHeader() {
   return (
     <TableHeader>
       <TableRow>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[80px]">
-          id
-        </TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[110px]">
-          status
-        </TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em]">
-          description
-        </TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] text-right">
-          amount
-        </TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em]">to</TableHead>
-        <TableHead className="font-mono text-[10px] uppercase tracking-[0.18em] w-[120px]">
-          submitted
-        </TableHead>
+        <TableHead className="w-[80px]">id</TableHead>
+        <TableHead className="w-[110px]">status</TableHead>
+        <TableHead>description</TableHead>
+        <TableHead className="text-right">amount</TableHead>
+        <TableHead>to</TableHead>
+        <TableHead className="w-[120px]">submitted</TableHead>
       </TableRow>
     </TableHeader>
   );
@@ -1172,14 +1132,10 @@ function ProposalRow({
             {STATUS_LABEL[proposal.status] ?? proposal.status}
           </Badge>
           {showAttribution && proposal.mapping && (
-            <Badge variant="outline" className="font-mono text-[10px]">
-              @{proposal.mapping.projectSlug}
-            </Badge>
+            <Badge variant="outline">@{proposal.mapping.projectSlug}</Badge>
           )}
           {showAttribution && !proposal.mapping && proposal.status === "Approved" && (
-            <Badge variant="outline" className="font-mono text-[10px] text-muted-foreground">
-              unrecorded
-            </Badge>
+            <Badge variant="outline">unrecorded</Badge>
           )}
         </div>
       </TableCell>
@@ -1218,16 +1174,14 @@ function ProposalDetailDialog({
         {proposal && (
           <>
             <DialogHeader>
-              <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]">
+              <div className="flex flex-wrap items-center gap-2 font-mono text-xs uppercase tracking-widest">
                 <span className="text-muted-foreground">proposal</span>
                 <span>#{proposal.proposalId}</span>
                 <Badge variant={STATUS_VARIANT[proposal.status] ?? "outline"}>
                   {STATUS_LABEL[proposal.status] ?? proposal.status}
                 </Badge>
               </div>
-              <DialogTitle className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
-                {formatTokenAmount(proposal.amount, proposal.tokenId)}
-              </DialogTitle>
+              <DialogTitle>{formatTokenAmount(proposal.amount, proposal.tokenId)}</DialogTitle>
               <DialogDescription className="sr-only">
                 Transfer proposal #{proposal.proposalId} details
               </DialogDescription>
@@ -1243,7 +1197,7 @@ function ProposalDetailDialog({
               <VoteTally votes={proposal.votes} />
               {proposal.description && (
                 <div className="space-y-1">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
                     description
                   </div>
                   <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
@@ -1261,7 +1215,7 @@ function ProposalDetailDialog({
             )}
             <DialogFooter>
               {trezuUrl && (
-                <Button asChild variant="outline" className="font-display uppercase tracking-wide">
+                <Button asChild variant="outline">
                   <a href={trezuUrl} target="_blank" rel="noopener noreferrer">
                     view on trezu <ArrowUpRightIcon className="ml-1 size-3" />
                   </a>
@@ -1328,7 +1282,7 @@ function ProposalBillingSection({
     return (
       <>
         <div className="space-y-2 border-t pt-4">
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             billing
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -1342,7 +1296,7 @@ function ProposalBillingSection({
             <Button
               variant="ghost"
               size="sm"
-              className="ml-auto text-xs"
+              className="ml-auto"
               onClick={() => setConfirmOpen(true)}
               disabled={deleteMutation.isPending}
             >
@@ -1368,7 +1322,7 @@ function ProposalBillingSection({
   if (projects.length === 0) {
     return (
       <div className="space-y-1 border-t pt-4">
-        <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           billing
         </div>
         <p className="text-xs text-muted-foreground">Create a project before recording billings.</p>
@@ -1379,7 +1333,7 @@ function ProposalBillingSection({
   const canRecord = projectId !== "" && !recordMutation.isPending;
   return (
     <div className="space-y-3 border-t pt-4">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
         record billing
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
@@ -1445,9 +1399,7 @@ function VoteTally({ votes }: { votes: Record<string, VoteAction> }) {
   for (const v of entries) counts[v]++;
   return (
     <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-        votes
-      </div>
+      <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">votes</div>
       {entries.length === 0 ? (
         <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
           no tally available
@@ -1474,7 +1426,7 @@ function VoteTally({ votes }: { votes: Record<string, VoteAction> }) {
 function DetailField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+      <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
         {label}
       </div>
       <div className={`${mono ? "font-mono text-xs" : "text-sm"} break-all`}>{value}</div>

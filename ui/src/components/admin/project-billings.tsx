@@ -186,7 +186,7 @@ function BillingRow({
             <Button
               variant="ghost"
               size="sm"
-              className="ml-auto text-xs"
+              className="ml-auto"
               onClick={() => setConfirmOpen(true)}
               disabled={deleteMutation.isPending}
             >

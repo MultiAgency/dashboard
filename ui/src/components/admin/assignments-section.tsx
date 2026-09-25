@@ -79,7 +79,7 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
 
   return (
     <div className="space-y-3">
-      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+      <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
         builders
       </div>
       {assigned.length === 0 ? (
@@ -111,7 +111,7 @@ export function AssignmentsSection({ projectId, readOnly = false }: AssignmentsS
                   {(otherProjectsByContributor.get(a.nearAccount) ?? []).length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-1">
                       {(otherProjectsByContributor.get(a.nearAccount) ?? []).map((p) => (
-                        <Badge key={p.slug} variant="outline" className="font-mono text-[10px]">
+                        <Badge key={p.slug} variant="outline">
                           {p.title}
                         </Badge>
                       ))}

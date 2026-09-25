@@ -107,7 +107,7 @@ function ClientIdeasPage() {
           {ideas.map((idea) => (
             <li key={idea.id} className="rounded-sm border border-border p-3 space-y-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-display text-sm uppercase font-bold">{idea.title}</span>
+                <span className="text-sm uppercase font-bold">{idea.title}</span>
                 <IdeaStatusBadge status={idea.status} />
               </div>
               {idea.description && (
@@ -115,7 +115,7 @@ function ClientIdeasPage() {
                   {idea.description}
                 </p>
               )}
-              <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-3 font-mono text-xs text-muted-foreground">
                 <span>submitted {new Date(idea.createdAt).toISOString().slice(0, 10)}</span>
                 {idea.decidedAt && (
                   <span>decided {new Date(idea.decidedAt).toISOString().slice(0, 10)}</span>

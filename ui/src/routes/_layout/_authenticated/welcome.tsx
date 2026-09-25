@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuthClient } from "@/app";
-import { Card, CardContent } from "@/components";
+import { Card, CardContent, CardDescription } from "@/components";
 import { CreateOrganizationForm } from "@/components/create-organization-form";
 import { PendingInvitationsList } from "@/components/pending-invitations";
 import { landingDestination, WELCOME_PATH } from "@/lib/account";
@@ -41,8 +41,8 @@ function WelcomePage() {
   if (landing.isLoading || (landing.data && landing.data !== WELCOME_PATH)) {
     return (
       <Card>
-        <CardContent className="text-center font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">
-          opening your workspace...
+        <CardContent>
+          <CardDescription className="text-center">opening your workspace...</CardDescription>
         </CardContent>
       </Card>
     );
@@ -51,10 +51,10 @@ function WelcomePage() {
   return (
     <div className="space-y-8 animate-fade-in">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           get · started
         </div>
-        <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
           Welcome
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -65,14 +65,14 @@ function WelcomePage() {
       </header>
 
       <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           pending invitations
         </div>
         <PendingInvitationsList />
       </section>
 
       <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           create an organization
         </div>
         <Card>

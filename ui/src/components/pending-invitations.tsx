@@ -82,7 +82,7 @@ export function PendingInvitationsList() {
           name={invitation.organizationName}
           role={invitation.role}
           details={
-            <span className="font-mono text-[11px] text-muted-foreground">
+            <span className="font-mono text-xs text-muted-foreground">
               expires {new Date(invitation.expiresAt).toISOString().slice(0, 10)}
             </span>
           }

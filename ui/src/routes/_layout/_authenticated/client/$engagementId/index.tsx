@@ -34,7 +34,7 @@ function EngagementOverview() {
         <Card>
           <CardContent className="p-4">
             <div className="text-xs uppercase text-muted-foreground">Shared projects</div>
-            <div className="font-display text-3xl font-black">
+            <div className="text-3xl font-black">
               {summaryQuery.data?.projectCount ?? engagement.projectIds.length}
             </div>
           </CardContent>
@@ -43,7 +43,7 @@ function EngagementOverview() {
           <CardContent className="p-4">
             <div className="text-xs uppercase text-muted-foreground">Budget remaining</div>
             {remaining.length === 0 ? (
-              <div className="font-display text-2xl font-black mt-1">—</div>
+              <div className="text-2xl font-black mt-1">—</div>
             ) : (
               <ul className="mt-2 space-y-1">
                 {remaining.map((row) => (

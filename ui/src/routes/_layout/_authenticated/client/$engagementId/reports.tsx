@@ -126,7 +126,7 @@ function ClientReportsPage() {
       </Card>
 
       <section className="space-y-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           saved reports
         </h2>
         {savedQuery.isError ? (

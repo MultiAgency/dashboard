@@ -34,10 +34,10 @@ function AgenciesPage() {
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           as client · agencies
         </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
           Agencies
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -87,9 +87,7 @@ function EngagementCard({
       <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-display text-lg uppercase font-extrabold">
-              {engagement.agency.name}
-            </span>
+            <span className="text-lg uppercase font-extrabold">{engagement.agency.name}</span>
             <EngagementStatusBadge status={engagement.status} />
             <EngagementKindBadge kind={engagement.kind} />
           </div>

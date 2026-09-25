@@ -83,10 +83,10 @@ function NotificationsPage() {
     <div className="space-y-6 animate-fade-in">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-2">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             you · inbox
           </div>
-          <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
+          <h1 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
             Notifications
           </h1>
         </div>
@@ -102,7 +102,7 @@ function NotificationsPage() {
 
       {awaiting.length > 0 && (
         <section className="space-y-2">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             Change orders awaiting you
           </h2>
           {awaiting.map((changeOrder) => (
@@ -151,7 +151,7 @@ function NotificationsPage() {
                   <span className="text-sm font-medium">{notification.title}</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{notification.body}</p>
-                <p className="font-mono text-[10px] text-muted-foreground">
+                <p className="font-mono text-xs text-muted-foreground">
                   {new Date(notification.createdAt).toISOString().slice(0, 16).replace("T", " ")}
                 </p>
               </div>

@@ -207,7 +207,7 @@ export function IdeasInbox({
 
   return (
     <section className="space-y-3">
-      <h2 className="font-display text-xl uppercase font-extrabold">Ideas</h2>
+      <h2 className="text-xl uppercase font-extrabold">Ideas</h2>
       <p className="text-sm text-muted-foreground max-w-2xl">
         Ideas {engagement.client.name} submitted. They are private Projects of kind idea that you
         own. Accept one to turn it into a Project or scope, or decline it; {engagement.client.name}{" "}
@@ -224,7 +224,7 @@ export function IdeasInbox({
           {ideas.map((idea) => (
             <li key={idea.id} className="rounded-sm border border-border p-3 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-display text-sm uppercase font-bold">{idea.title}</span>
+                <span className="text-sm uppercase font-bold">{idea.title}</span>
                 <IdeaStatusBadge status={idea.status} />
               </div>
               {idea.description && (
@@ -232,7 +232,7 @@ export function IdeasInbox({
                   {idea.description}
                 </p>
               )}
-              <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-3 font-mono text-xs text-muted-foreground">
                 <span>submitted {new Date(idea.createdAt).toISOString().slice(0, 10)}</span>
                 {idea.result && (
                   <>

@@ -16,7 +16,7 @@ export function SharedWithUsSection() {
   return (
     <section className="space-y-3">
       <div className="space-y-1">
-        <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+        <h2 className="text-2xl uppercase tracking-tight font-extrabold leading-tight">
           Shared with us
         </h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -35,7 +35,7 @@ export function SharedWithUsSection() {
               <Link
                 to="/client/$engagementId/projects/$slug"
                 params={{ engagementId: item.engagementId, slug: item.project.slug }}
-                className="font-display text-lg uppercase font-extrabold hover:underline"
+                className="text-lg uppercase font-extrabold hover:underline"
               >
                 {item.project.title}
               </Link>

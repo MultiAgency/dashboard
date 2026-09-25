@@ -102,9 +102,7 @@ function EngagementDetailPage() {
           <EngagementKindBadge kind={engagement.kind} />
           {engagement.invitation && <InvitationStatusBadge invitation={engagement.invitation} />}
         </div>
-        <h1 className="font-display text-3xl font-black uppercase tracking-tight">
-          {engagement.client.name}
-        </h1>
+        <h1 className="text-3xl font-black uppercase tracking-tight">{engagement.client.name}</h1>
         <p className="font-mono text-xs text-muted-foreground">@{engagement.client.slug}</p>
         {engagement.status === "ended" && (
           <p className="text-sm text-muted-foreground">
@@ -144,13 +142,13 @@ function EngagementDetailPage() {
             });
           }}
         >
-          <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.18em]">
+          <TabsList variant="line">
             <TabsTrigger value="projects">shared projects</TabsTrigger>
             <TabsTrigger value="prepayments">prepayments</TabsTrigger>
             <TabsTrigger value="plan">
               plan & change orders
               {awaiting > 0 && (
-                <Badge variant="default" className="ml-1 px-1.5 py-0 font-mono text-[10px]">
+                <Badge variant="default" className="ml-1 px-1.5 py-0">
                   {awaiting}
                 </Badge>
               )}
@@ -236,7 +234,7 @@ function InvitationPanel({ engagement }: { engagement: EngagementView }) {
     <Card>
       <CardContent className="p-5 space-y-4">
         <div className="space-y-1">
-          <h2 className="font-display text-xl uppercase font-extrabold">First admin</h2>
+          <h2 className="text-xl uppercase font-extrabold">First admin</h2>
           <p className="text-sm text-muted-foreground">
             <span className="font-mono">{invitation.email}</span> is invited as owner of{" "}
             {engagement.client.name}
@@ -307,7 +305,7 @@ function SharedProjects({ engagement }: { engagement: EngagementView }) {
 
   return (
     <section className="space-y-3">
-      <h2 className="font-display text-xl uppercase font-extrabold">Shared projects</h2>
+      <h2 className="text-xl uppercase font-extrabold">Shared projects</h2>
       <p className="text-sm text-muted-foreground max-w-2xl">
         {engagement.kind === "subcontract"
           ? "Your Subcontractor sees these Projects, assigns its own builders and bills them from its own Agency DAO. It cannot edit them, publish listings or touch your budget, and never sees your Clients' Engagements."

@@ -124,7 +124,7 @@ export function AgentLinksPanel({
 
   return (
     <section className="space-y-3">
-      <h2 className="font-display text-xl uppercase font-extrabold">Agent links</h2>
+      <h2 className="text-xl uppercase font-extrabold">Agent links</h2>
       <p className="text-sm text-muted-foreground max-w-2xl">
         Links to the agents {engagement.client.name} can use through this Engagement. Its members
         see them on their dashboard.
@@ -155,7 +155,7 @@ export function AgentLinksPanel({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
                     <AgentLinkAnchor link={link} />
-                    <div className="font-mono text-[11px] text-muted-foreground break-all">
+                    <div className="font-mono text-xs text-muted-foreground break-all">
                       {link.url}
                     </div>
                   </div>

@@ -136,22 +136,22 @@ function DocPage() {
   return (
     <div className="w-full max-w-3xl mx-auto px-1 sm:px-0 space-y-4 animate-fade-in">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           {eyebrow}
         </div>
         {showRegistryTitle && (
-          <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-black uppercase leading-none tracking-tight">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-black uppercase leading-none tracking-tight">
             {doc.title}
           </h1>
         )}
       </header>
 
       {error ? (
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           could not load — try again
         </p>
       ) : !content ? (
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           loading…
         </p>
       ) : (
@@ -161,22 +161,22 @@ function DocPage() {
             rehypePlugins={[rehypeHighlight]}
             components={{
               h1: ({ children }) => (
-                <h1 className="font-display text-4xl sm:text-5xl md:text-6xl font-black uppercase leading-none tracking-tight mt-0 mb-3">
+                <h1 className="text-4xl sm:text-5xl md:text-6xl font-black uppercase leading-none tracking-tight mt-0 mb-3">
                   {children}
                 </h1>
               ),
               h2: ({ children }) => (
-                <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-bold leading-tight mt-10 mb-3 border-b border-border pb-2">
+                <h2 className="text-2xl sm:text-3xl uppercase tracking-tight font-bold leading-tight mt-10 mb-3 border-b border-border pb-2">
                   {children}
                 </h2>
               ),
               h3: ({ children }) => (
-                <h3 className="font-display text-lg sm:text-xl uppercase tracking-tight font-bold leading-tight mt-8 mb-2">
+                <h3 className="text-lg sm:text-xl uppercase tracking-tight font-bold leading-tight mt-8 mb-2">
                   {children}
                 </h3>
               ),
               h4: ({ children }) => (
-                <h4 className="font-display text-base uppercase tracking-tight font-semibold mt-6 mb-2">
+                <h4 className="text-base uppercase tracking-tight font-semibold mt-6 mb-2">
                   {children}
                 </h4>
               ),
@@ -232,7 +232,7 @@ function DocPage() {
                 const isInline = !className;
                 if (isInline) {
                   return (
-                    <code className="font-mono text-[0.875em] bg-muted px-1.5 py-0.5 border border-border rounded-sm">
+                    <code className="font-mono text-sm bg-muted px-1.5 py-0.5 border border-border rounded-sm">
                       {children}
                     </code>
                   );
@@ -274,7 +274,7 @@ function DocPage() {
                 </div>
               ),
               th: ({ children }) => (
-                <th className="font-mono text-[11px] uppercase tracking-wide border border-border bg-muted px-3 py-2 text-left">
+                <th className="font-mono text-xs uppercase tracking-wide border border-border bg-muted px-3 py-2 text-left">
                   {children}
                 </th>
               ),

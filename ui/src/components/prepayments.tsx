@@ -32,7 +32,7 @@ export function PrepaidBalanceCard({ engagementId }: { engagementId: string }) {
         {balanceQuery.isError ? (
           <AdminError error={balanceQuery.error} />
         ) : rows.length === 0 ? (
-          <div className="font-display text-2xl font-black">—</div>
+          <div className="text-2xl font-black">—</div>
         ) : (
           <ul className="space-y-1">
             {rows.map((row) => (

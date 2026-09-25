@@ -10,7 +10,7 @@ export function BuilderAvatar({
   const label = (name?.trim() || nearAccount).slice(0, 2).toUpperCase();
   return (
     <div
-      className={`${className} rounded-full bg-muted border border-border flex items-center justify-center font-display text-lg font-black uppercase shrink-0`}
+      className={`${className} rounded-full bg-muted border border-border flex items-center justify-center text-lg font-black uppercase shrink-0`}
       aria-hidden
     >
       {label}

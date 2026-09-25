@@ -84,15 +84,15 @@ function WorkIndex() {
       <header className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="space-y-2">
-            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               agency · work
             </div>
-            <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
+            <h1 className="text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
               Our Work
             </h1>
           </div>
           {nearnUrl && (
-            <Button asChild variant="outline" className="font-display uppercase tracking-wide">
+            <Button asChild variant="outline">
               <a href={nearnUrl} target="_blank" rel="noopener noreferrer">
                 nearn →
               </a>
@@ -134,15 +134,10 @@ function PublicProjects({
     return (
       <div
         role="alert"
-        className="flex items-center gap-4 font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground"
+        className="flex items-center gap-4 font-mono text-xs uppercase tracking-widest text-muted-foreground"
       >
         <span>could not load</span>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => projectsQuery.refetch()}
-          className="font-display uppercase tracking-wide"
-        >
+        <Button type="button" variant="outline" onClick={() => projectsQuery.refetch()}>
           try again
         </Button>
       </div>
@@ -158,15 +153,11 @@ function PublicProjects({
     );
   }
   return (
-    <Empty className="border-2 border-dashed border-border/40">
-      <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
-        no public projects yet
-      </EmptyTitle>
-      <EmptyDescription className="font-mono text-xs uppercase tracking-wide">
-        check back as the agency boots up.
-      </EmptyDescription>
+    <Empty>
+      <EmptyTitle>no public projects yet</EmptyTitle>
+      <EmptyDescription>check back as the agency boots up.</EmptyDescription>
       <EmptyContent>
-        <Button asChild className="font-display uppercase tracking-wide">
+        <Button asChild>
           <Link to="/apply">apply →</Link>
         </Button>
       </EmptyContent>
@@ -187,7 +178,7 @@ function ProjectCard({
   return (
     <Card className="flex flex-col border-2 border-foreground">
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="flex items-center justify-between gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
           <span className="truncate">@{project.slug}</span>
           <div className="flex items-center gap-1.5">
             {n?.type && <Badge variant="outline">{n.type}</Badge>}
@@ -198,7 +189,7 @@ function ProjectCard({
             )}
           </div>
         </div>
-        <h2 className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
+        <h2 className="text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
           {project.title}
         </h2>
         {descriptionPreview && (
@@ -206,7 +197,7 @@ function ProjectCard({
             {descriptionPreview}
           </p>
         )}
-        <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground space-y-1">
+        <div className="font-mono text-xs uppercase tracking-wide text-muted-foreground space-y-1">
           {n && <div>reward · {formatNearnReward(n)}</div>}
           {n?.totalWinnersSelected != null && n.totalWinnersSelected > 0 && (
             <div>
@@ -217,11 +208,7 @@ function ProjectCard({
         </div>
         {nearnHref && (
           <div className="mt-auto pt-2">
-            <Button
-              asChild
-              variant="outline"
-              className="w-full font-display uppercase tracking-wide"
-            >
+            <Button asChild variant="outline" className="w-full">
               <a href={nearnHref} target="_blank" rel="noopener noreferrer">
                 open →
               </a>
