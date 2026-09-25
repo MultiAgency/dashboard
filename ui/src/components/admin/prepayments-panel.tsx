@@ -1,17 +1,27 @@
+import { InfoIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
+  Alert,
+  AlertDescription,
   Button,
   Card,
   CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
+  Field,
+  FieldLabel,
   Input,
 } from "@/components";
-import { Field } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
 import type { EngagementView } from "@/components/engagement-status";
@@ -91,20 +101,19 @@ function PrepaymentForm({
   const { value: amountInBase, error: amountError } = deriveBaseAmount(amount, knownToken);
   const positive = amountInBase !== "" && BigInt(amountInBase) > 0n;
   const canSubmit = tokenId !== "" && positive && !amountError && /^\d{4}-\d{2}$/.test(period);
+  const reason =
+    tokenId === ""
+      ? "Enter a token ID."
+      : amount.trim() === ""
+        ? "Enter an amount."
+        : !positive && !amountError
+          ? "The amount must be above zero."
+          : !/^\d{4}-\d{2}$/.test(period)
+            ? "Choose a month."
+            : null;
 
-  return (
-    <form
-      className="grid gap-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (canSubmit) {
-          save.mutate(
-            { tokenId, amount: amountInBase, period, transferReference: transferReference.trim() },
-            { onSuccess: onSaved },
-          );
-        }
-      }}
-    >
+  const fields = (
+    <div className="flex flex-col gap-4">
       <TokenAmountFields
         idPrefix={idPrefix}
         tokens={tokens}
@@ -117,8 +126,9 @@ function PrepaymentForm({
         amountError={amountError}
         disabled={pending}
       />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="period (month)" htmlFor={`${idPrefix}-period`}>
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor={`${idPrefix}-period`}>Month</FieldLabel>
           <Input
             id={`${idPrefix}-period`}
             type="month"
@@ -127,7 +137,8 @@ function PrepaymentForm({
             disabled={pending}
           />
         </Field>
-        <Field label="transfer link or hash (optional)" htmlFor={`${idPrefix}-transfer`}>
+        <Field>
+          <FieldLabel htmlFor={`${idPrefix}-transfer`}>Transfer link or hash (optional)</FieldLabel>
           <Input
             id={`${idPrefix}-transfer`}
             value={transferReference}
@@ -138,15 +149,59 @@ function PrepaymentForm({
         </Field>
       </div>
       {knownToken && positive && (
-        <p className="font-mono text-xs text-muted-foreground">
-          {formatTokenAmount(amountInBase, tokenId)} = {amountInBase}
+        <p className="text-xs text-muted-foreground tabular-nums">
+          {formatTokenAmount(amountInBase, tokenId)} is {amountInBase} in base units.
         </p>
       )}
-      <div>
-        <Button type="submit" size="sm" disabled={!canSubmit || pending}>
-          {prepayment ? "save correction" : "record prepayment"}
-        </Button>
-      </div>
+    </div>
+  );
+
+  const submit = (
+    <Button type="submit" disabled={!canSubmit || pending}>
+      {prepayment
+        ? pending
+          ? "Saving…"
+          : "Save correction"
+        : pending
+          ? "Recording…"
+          : "Record Prepayment"}
+    </Button>
+  );
+
+  return (
+    <form
+      className={prepayment ? "flex flex-col gap-4" : "contents"}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (canSubmit) {
+          save.mutate(
+            { tokenId, amount: amountInBase, period, transferReference: transferReference.trim() },
+            { onSuccess: onSaved },
+          );
+        }
+      }}
+    >
+      {prepayment ? (
+        <>
+          {fields}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
+            {submit}
+          </DialogFooter>
+        </>
+      ) : (
+        <>
+          <CardContent>{fields}</CardContent>
+          <CardFooter className="flex-wrap justify-end gap-3">
+            {reason && <p className="mr-auto text-xs text-muted-foreground">{reason}</p>}
+            {submit}
+          </CardFooter>
+        </>
+      )}
     </form>
   );
 }
@@ -170,46 +225,54 @@ export function PrepaymentsPanel({ engagement }: { engagement: EngagementView })
   );
 
   return (
-    <section className="space-y-4">
-      <p className="text-sm text-muted-foreground max-w-2xl">
-        Prepayments {engagement.client.name} made to reserve capacity, paid into your Agency DAO.
-        The Prepaid balance is what they prepaid minus the Budget entries attributed to this
-        Engagement, and it rolls over between months. {engagement.client.name}'s members see every
-        Prepayment and the balance.
-      </p>
+    <div className="flex flex-col gap-6">
       <div className="grid gap-4 sm:grid-cols-2">
         <PrepaidBalanceCard engagementId={engagement.id} />
       </div>
+      {!active && (
+        <Alert>
+          <InfoIcon aria-hidden />
+          <AlertDescription>
+            This Engagement is not active, so its Prepayments are read-only.
+          </AlertDescription>
+        </Alert>
+      )}
       {active && canAccessAdmin && agencyDao === null && <ConnectTreasuryPrompt />}
       {writable && (
         <Card>
-          <CardContent className="p-5 space-y-3">
-            <h3 className="text-lg uppercase font-extrabold">Record a Prepayment</h3>
-            <PrepaymentForm
-              key={formKey}
-              engagementId={engagement.id}
-              tokens={tokens}
-              onSaved={() => setFormKey((k) => k + 1)}
-            />
-          </CardContent>
+          <CardHeader>
+            <CardTitle>Record a Prepayment</CardTitle>
+            <CardDescription>
+              What {engagement.client.name} paid into your Agency DAO to reserve capacity. Their
+              members see it too.
+            </CardDescription>
+          </CardHeader>
+          <PrepaymentForm
+            key={formKey}
+            engagementId={engagement.id}
+            tokens={tokens}
+            onSaved={() => setFormKey((k) => k + 1)}
+          />
         </Card>
-      )}
-      {!active && (
-        <p className="text-sm text-muted-foreground">
-          Prepayments of an Engagement that is not active are read-only.
-        </p>
       )}
       <PrepaymentTable
         engagementId={engagement.id}
+        description="The Prepaid balance is what was prepaid minus the budget taken from it. It rolls over between months."
         actions={
           writable
             ? (prepayment) => (
-                <div className="flex justify-end gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setCorrecting(prepayment)}>
-                    correct
+                <div className="flex justify-end gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => setCorrecting(prepayment)}>
+                    <PencilSimpleIcon data-icon="inline-start" aria-hidden />
+                    Correct
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setRemoving(prepayment)}>
-                    remove
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Remove the Prepayment for ${prepayment.period}`}
+                    onClick={() => setRemoving(prepayment)}
+                  >
+                    <TrashIcon aria-hidden />
                   </Button>
                 </div>
               )
@@ -252,12 +315,13 @@ export function PrepaymentsPanel({ engagement }: { engagement: EngagementView })
             ? `${formatTokenAmount(removing.amount, removing.tokenId)} for ${removing.period}. Removing is refused if the Prepaid balance would go below zero. ${engagement.client.name} is notified.`
             : undefined
         }
-        confirmLabel="remove"
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
         destructive
         onConfirm={async () => {
           if (removing) await remove.mutateAsync(removing.id);
         }}
       />
-    </section>
+    </div>
   );
 }
