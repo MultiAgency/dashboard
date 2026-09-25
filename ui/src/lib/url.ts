@@ -22,3 +22,19 @@ export function isHttpUrl(value: string): boolean {
     return false;
   }
 }
+
+const REPOSITORY_REQUIRED = "REPOSITORY_REQUIRED";
+
+export function repositoryUrlError(
+  value: string,
+  options: { submitted: boolean; error?: unknown },
+): string | null {
+  const trimmed = value.trim();
+  if (trimmed && !isHttpUrl(trimmed)) return "Enter a full http(s) URL";
+  const refusal = options.error as { message?: string; data?: { reason?: unknown } } | null;
+  if (refusal?.data?.reason === REPOSITORY_REQUIRED) {
+    return refusal.message || "Enter the repository URL for the new Project";
+  }
+  if (!trimmed && options.submitted) return "Enter the repository URL for the new Project";
+  return null;
+}

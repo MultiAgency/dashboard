@@ -11,7 +11,7 @@ import { IdeaStatusBadge, type IdeaView } from "@/components/idea-status";
 import { useApiClient } from "@/lib/api";
 import { adminProjectsListQueryOptions, ideasListQueryOptions, refreshAfter } from "@/lib/queries";
 import { isSlugTakenError, isValidSlug, slugify } from "@/lib/slugify";
-import { isHttpUrl } from "@/lib/url";
+import { isHttpUrl, repositoryUrlError } from "@/lib/url";
 
 type AcceptFields = {
   kind: "project" | "scope";
@@ -39,12 +39,16 @@ function AcceptIdeaForm({
   idea,
   clientName,
   pending,
+  error,
+  onEdit,
   onSubmit,
   onCancel,
 }: {
   idea: IdeaView;
   clientName: string;
   pending: boolean;
+  error: unknown;
+  onEdit: () => void;
   onSubmit: (fields: AcceptFields) => void;
   onCancel: () => void;
 }) {
@@ -58,8 +62,10 @@ function AcceptIdeaForm({
   const [parentSlug, setParentSlug] = useState("");
   const [repository, setRepository] = useState("");
   const [share, setShare] = useState(true);
+  const [submitted, setSubmitted] = useState(false);
   const repositoryTrimmed = repository.trim();
   const repositoryOk = isHttpUrl(repositoryTrimmed);
+  const repositoryError = repositoryUrlError(repository, { submitted, error });
   const canSubmit =
     title.trim() !== "" &&
     isValidSlug(slug) &&
@@ -68,9 +74,11 @@ function AcceptIdeaForm({
 
   return (
     <form
+      noValidate
       className="grid gap-3 sm:grid-cols-2"
       onSubmit={(e) => {
         e.preventDefault();
+        setSubmitted(true);
         if (!canSubmit) return;
         onSubmit({
           kind,
@@ -100,6 +108,7 @@ function AcceptIdeaForm({
             value={parentSlug}
             onChange={(e) => setParentSlug(e.target.value)}
             className={selectClass}
+            aria-invalid={submitted && parentSlug === ""}
           >
             <option value="">choose a project</option>
             {parents.map((p) => (
@@ -108,6 +117,9 @@ function AcceptIdeaForm({
               </option>
             ))}
           </select>
+          {submitted && parentSlug === "" && (
+            <p className="text-xs text-destructive">Choose the Project this scope belongs to</p>
+          )}
         </Field>
       )}
       {kind === "project" && (
@@ -119,15 +131,16 @@ function AcceptIdeaForm({
           <Input
             id={`${prefix}-repository`}
             value={repository}
-            onChange={(e) => setRepository(e.target.value)}
+            onChange={(e) => {
+              setRepository(e.target.value);
+              onEdit();
+            }}
             placeholder="https://github.com/org/repo"
-            aria-invalid={repositoryTrimmed !== "" && !repositoryOk}
+            aria-invalid={repositoryError !== null}
             disabled={pending}
             required
           />
-          {repositoryTrimmed && !repositoryOk && (
-            <p className="text-xs text-destructive">Enter a full http(s) URL</p>
-          )}
+          {repositoryError && <p className="text-xs text-destructive">{repositoryError}</p>}
         </Field>
       )}
       <Field label="title" htmlFor={`${prefix}-title`}>
@@ -136,8 +149,12 @@ function AcceptIdeaForm({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           maxLength={200}
+          aria-invalid={submitted && title.trim() === ""}
           disabled={pending}
         />
+        {submitted && title.trim() === "" && (
+          <p className="text-xs text-destructive">Enter a title</p>
+        )}
       </Field>
       <Field label="slug" htmlFor={`${prefix}-slug`}>
         <Input
@@ -145,16 +162,19 @@ function AcceptIdeaForm({
           value={slug}
           onChange={(e) => setSlug(e.target.value)}
           maxLength={80}
-          aria-invalid={slug !== "" && !isValidSlug(slug)}
+          aria-invalid={(submitted || slug !== "") && !isValidSlug(slug)}
           disabled={pending}
         />
+        {(submitted || slug !== "") && !isValidSlug(slug) && (
+          <p className="text-xs text-destructive">Invalid slug format</p>
+        )}
       </Field>
       <label className="flex items-center gap-2 text-sm sm:col-span-2">
         <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} />
         Share it with {clientName} through this Engagement
       </label>
       <div className="flex gap-2 sm:col-span-2">
-        <Button type="submit" size="sm" disabled={!canSubmit || pending}>
+        <Button type="submit" size="sm" disabled={pending}>
           {pending ? "accepting..." : "accept"}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={onCancel}>
@@ -231,7 +251,13 @@ export function IdeasInbox({
               </div>
               {decidable && idea.status === "new" && accepting !== idea.id && (
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={() => setAccepting(idea.id)}>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      accept.reset();
+                      setAccepting(idea.id);
+                    }}
+                  >
                     accept
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => setDeclining(idea)}>
@@ -244,7 +270,14 @@ export function IdeasInbox({
                   idea={idea}
                   clientName={engagement.client.name}
                   pending={accept.isPending}
-                  onCancel={() => setAccepting(null)}
+                  error={accept.error}
+                  onEdit={() => {
+                    if (accept.error) accept.reset();
+                  }}
+                  onCancel={() => {
+                    accept.reset();
+                    setAccepting(null);
+                  }}
                   onSubmit={(fields) =>
                     accept.mutate(
                       { id: idea.id, ...fields },
