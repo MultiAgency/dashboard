@@ -17,6 +17,7 @@ import {
 import { useNearSignIn } from "@/hooks/use-near-sign-in";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
+import { formatCount } from "@/lib/format-count";
 import { nearProfileQueryOptions } from "@/lib/near-profile";
 import { meRolesQueryOptions } from "@/lib/queries";
 
@@ -64,7 +65,7 @@ export function UserNav() {
   if (!user) {
     return (
       <div className="flex items-center gap-2">
-        <Button asChild variant="ghost" className="px-3 py-1.5 text-xs font-medium rounded-md">
+        <Button asChild variant="ghost" size="sm">
           <Link to="/sign-in">sign in</Link>
         </Button>
         <ConnectButton connect={connectMutation} />
@@ -76,34 +77,33 @@ export function UserNav() {
   return (
     <div className="flex items-center gap-2">
       {invitationCount > 0 && (
-        <Link
-          to="/profile"
-          hash="invitations"
-          aria-label={`${invitationCount} pending invitation${invitationCount === 1 ? "" : "s"}`}
-          title="pending invitations"
-          className="flex items-center gap-1 rounded-sm text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <EnvelopeIcon className="size-4" />
-          <Badge variant="default" className="px-1.5 py-0 font-mono text-[10px]">
-            {invitationCount}
-          </Badge>
-        </Link>
+        <Button asChild variant="ghost" size="icon-sm" className="relative">
+          <Link
+            to="/profile"
+            hash="invitations"
+            aria-label={`${invitationCount} pending invitation${invitationCount === 1 ? "" : "s"}`}
+            title="pending invitations"
+          >
+            <EnvelopeIcon aria-hidden />
+            <Badge size="counter" className="absolute -top-1 -right-1" aria-hidden>
+              {formatCount(invitationCount)}
+            </Badge>
+          </Link>
+        </Button>
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="cursor-pointer rounded-sm hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             title={identifier}
             aria-label={`Signed in as ${identifier}`}
           >
-            <Avatar className="size-8 rounded-full ring-1 ring-primary/60">
+            <Avatar size="sm">
               {avatarUrl && <AvatarImage src={avatarUrl} alt={identifier} />}
-              <AvatarFallback className="bg-muted text-foreground border-0 text-xs font-medium">
-                {identifier.charAt(0).toUpperCase()}
-              </AvatarFallback>
+              <AvatarFallback>{identifier.charAt(0).toUpperCase()}</AvatarFallback>
             </Avatar>
-          </button>
+          </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel>
@@ -114,39 +114,27 @@ export function UserNav() {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link to="/profile" className="font-mono text-xs uppercase tracking-wide">
-              profile
-            </Link>
+            <Link to="/profile">profile</Link>
           </DropdownMenuItem>
           {orgRole && (
             <DropdownMenuItem asChild>
-              <Link to="/admin/projects" className="font-mono text-xs uppercase tracking-wide">
-                organization dashboard
-              </Link>
+              <Link to="/admin/projects">organization dashboard</Link>
             </DropdownMenuItem>
           )}
           {orgRole && hasClientSections && (
             <DropdownMenuItem asChild>
-              <Link to="/client" className="font-mono text-xs uppercase tracking-wide">
-                agencies
-              </Link>
+              <Link to="/client">agencies</Link>
             </DropdownMenuItem>
           )}
           <DropdownMenuItem asChild>
-            <Link to="/dashboard" className="font-mono text-xs uppercase tracking-wide">
-              my work
-            </Link>
+            <Link to="/dashboard">my work</Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link to="/notifications" className="font-mono text-xs uppercase tracking-wide">
-              notifications
-            </Link>
+            <Link to="/notifications">notifications</Link>
           </DropdownMenuItem>
           {isSuperAdmin && (
             <DropdownMenuItem asChild>
-              <Link to="/platform" className="font-mono text-xs uppercase tracking-wide">
-                platform
-              </Link>
+              <Link to="/platform">platform</Link>
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
@@ -157,7 +145,6 @@ export function UserNav() {
               signOutMutation.mutate();
             }}
             disabled={signOutMutation.isPending}
-            className="font-mono text-xs uppercase tracking-wide"
           >
             {signOutMutation.isPending ? "signing out..." : "sign out"}
           </DropdownMenuItem>
@@ -172,7 +159,7 @@ function ConnectButton({ connect }: { connect: { mutate: () => void; isPending: 
   return (
     <Button
       variant="outline"
-      className="px-3 py-1.5 text-xs font-medium rounded-md"
+      size="sm"
       onClick={() => connect.mutate()}
       disabled={connect.isPending}
     >
