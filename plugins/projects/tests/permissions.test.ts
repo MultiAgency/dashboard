@@ -64,6 +64,7 @@ describe("projects plugin permissions", () => {
   let clientFor: (caller: Caller) => any;
   let trustedClientFor: (caller: Caller) => any;
   let anonymousClient: () => any;
+  let pluginClient: (context: Record<string, unknown>) => any;
 
   beforeAll(async () => {
     runtime = createPluginRuntime({ registry: { [PLUGIN_ID]: { module: Plugin } } } as any);
@@ -74,6 +75,7 @@ describe("projects plugin permissions", () => {
     clientFor = (caller) => plugin.createClient(contextOf(caller));
     trustedClientFor = (caller) => plugin.createClient({ ...contextOf(caller), trusted: true });
     anonymousClient = () => plugin.createClient({});
+    pluginClient = (context) => plugin.createClient(context);
   });
 
   afterAll(async () => {
@@ -187,6 +189,64 @@ describe("projects plugin permissions", () => {
     expect((await clientFor(acmeOwner).getProject({ id: target.id })).data).toMatchObject({
       title: "Project",
       visibility: "private",
+    });
+  });
+
+  describe("trusted idea create", () => {
+    const submitter = "client-user";
+    const ideaContext = (organizationId: string, trusted: boolean) => ({
+      userId: submitter,
+      trusted,
+      organization: {
+        activeOrganizationId: organizationId,
+        organization: { id: organizationId, metadata: {} },
+        member: { role: "member" },
+      },
+    });
+    const idea = (input: Record<string, unknown> = {}) => ({
+      kind: "idea",
+      title: "Idea",
+      slug: nextSlug(),
+      content: "# Idea",
+      visibility: "private",
+      organizationId: "acme",
+      ...input,
+    });
+    const createIn = (context: Record<string, unknown>, input: Record<string, unknown>) =>
+      pluginClient(context).createProject(input);
+
+    test("lets the API file a private idea in the Agency for a Client's user", async () => {
+      const created = await createIn(ideaContext("acme", true), idea());
+
+      expect(created).toMatchObject({
+        kind: "idea",
+        visibility: "private",
+        organizationId: "acme",
+        ownerId: submitter,
+      });
+      expect((await clientFor(acmeMember).getProject({ id: created.id })).data.id).toBe(created.id);
+    });
+
+    test.each<[string, Record<string, unknown>, Record<string, unknown>]>([
+      ["an untrusted create", ideaContext("acme", false), idea()],
+      [
+        "an untrusted create for another Organization",
+        ideaContext("rival", false),
+        idea({ organizationId: "rival" }),
+      ],
+      [
+        "a trusted create for another Organization",
+        ideaContext("acme", true),
+        idea({ organizationId: "rival" }),
+      ],
+      [
+        "a trusted create of something other than an idea",
+        ideaContext("acme", true),
+        idea({ kind: "project", repository: "https://github.com/example/repo" }),
+      ],
+      ["a trusted public idea", ideaContext("acme", true), idea({ visibility: "public" })],
+    ])("refuses %s without a signed-in user", async (_, context, input) => {
+      await expect(createIn(context, input)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     });
   });
 
