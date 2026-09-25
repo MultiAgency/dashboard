@@ -380,7 +380,9 @@ describe("migrate — runtime migrator", () => {
       const migrations = await seedClient(organization, true);
       if (engagement) await engage(engagement);
 
-      await expect(Effect.runPromise(migrate(driver.db, migrations))).rejects.toThrow();
+      await expect(Effect.runPromise(migrate(driver.db, migrations))).rejects.toThrow(
+        "Legacy clients are not migrated to Engagements yet",
+      );
 
       expect(await legacyLeft()).toEqual([
         { name: "client_id" },
