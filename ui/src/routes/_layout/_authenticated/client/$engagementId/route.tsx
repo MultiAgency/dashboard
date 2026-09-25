@@ -1,6 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet, redirect, useRouterState } from "@tanstack/react-router";
-import { Badge } from "@/components";
+import {
+  Badge,
+  PageHeader,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "@/components";
 import { EngagementKindBadge, EngagementStatusBadge } from "@/components/engagement-status";
 import { useApiClient } from "@/lib/api";
 import { awaitingCountFor } from "@/lib/change-orders";
@@ -24,11 +35,6 @@ export const Route = createFileRoute("/_layout/_authenticated/client/$engagement
   component: EngagementLayout,
 });
 
-const TAB_BASE =
-  "font-mono text-xs uppercase tracking-widest px-3 py-1.5 rounded-sm transition-colors";
-const TAB_ACTIVE = "bg-foreground text-background";
-const TAB_INACTIVE = "text-muted-foreground hover:text-foreground";
-
 function EngagementLayout() {
   const { engagement } = Route.useRouteContext();
   const apiClient = useApiClient();
@@ -48,59 +54,60 @@ function EngagementLayout() {
     to === sections[0]!.to
       ? pathname === to || pathname === `${to}/`
       : pathname === to || pathname.startsWith(`${to}/`);
+  const current = sections.find((section) => isActive(section.to))?.to ?? sections[0]!.to;
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title={engagement.agency.name}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
             <EngagementStatusBadge status={engagement.status} />
             <EngagementKindBadge kind={engagement.kind} />
             {engagement.status === "ended" && <Badge variant="secondary">read-only</Badge>}
-          </div>
-          <h1 className="text-2xl font-black uppercase tracking-tight">{engagement.agency.name}</h1>
-        </div>
-        {others.length > 1 && (
-          <label className="grid gap-1">
-            <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-              agency
-            </span>
-            <select
+          </span>
+        }
+        actions={
+          others.length > 1 && (
+            <Select
               value={engagement.id}
-              onChange={(e) => {
-                void navigate({
-                  to: "/client/$engagementId",
-                  params: { engagementId: e.target.value },
-                });
+              onValueChange={(engagementId) => {
+                void navigate({ to: "/client/$engagementId", params: { engagementId } });
               }}
-              className="rounded-sm border border-input bg-background px-2 py-1.5 font-mono text-xs max-w-[min(100vw-2rem,20rem)]"
             >
-              {others.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.agency.name}
-                  {e.status === "ended" ? " (ended)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-      </header>
-      <nav className="flex items-center gap-1 border-b border-border pb-px flex-wrap">
-        {sections.map((section) => (
-          <Link
-            key={section.to}
-            to={section.to}
-            className={`${TAB_BASE} ${isActive(section.to) ? TAB_ACTIVE : TAB_INACTIVE}`}
-          >
-            {section.label}
-            {section.to === planSection && awaiting > 0 && (
-              <Badge size="counter" className="ml-1">
-                {awaiting}
-              </Badge>
-            )}
-          </Link>
-        ))}
-      </nav>
+              <SelectTrigger aria-label="Switch Agency" className="w-full sm:w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {others.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>
+                    {e.agency.name}
+                    {e.status === "ended" ? " (ended)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )
+        }
+      />
+      <Tabs value={current} activationMode="manual">
+        <div className="-mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+          <TabsList variant="line" aria-label="Engagement sections">
+            {sections.map((section) => (
+              <TabsTrigger key={section.to} value={section.to} asChild>
+                <Link to={section.to}>
+                  {section.label}
+                  {section.to === planSection && awaiting > 0 && (
+                    <Badge size="counter" aria-label={`${awaiting} awaiting you`}>
+                      {awaiting}
+                    </Badge>
+                  )}
+                </Link>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+      </Tabs>
       <Outlet />
     </div>
   );

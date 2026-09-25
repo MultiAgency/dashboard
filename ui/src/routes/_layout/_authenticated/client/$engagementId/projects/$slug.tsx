@@ -1,7 +1,17 @@
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { Badge } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  SectionHeader,
+  Skeleton,
+} from "@/components";
 import { AssignmentsSection } from "@/components/admin/assignments-section";
 import { BillingsAdminSection } from "@/components/admin/billings-section";
 import { ProjectBillingsSection } from "@/components/admin/project-billings";
@@ -29,7 +39,14 @@ function SharedProjectPage() {
   const working = subcontract && engagement.status === "active";
 
   if (projectQuery.isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading project…</p>;
+    return (
+      <div className="flex flex-col gap-4" aria-busy="true">
+        <span className="sr-only">Loading Project</span>
+        <Skeleton className="h-7 w-32" />
+        <Skeleton className="h-10 w-2/3" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
   }
   if (projectQuery.isError || !projectQuery.data) {
     throw notFound();
@@ -38,52 +55,56 @@ function SharedProjectPage() {
   const { project, contributors } = projectQuery.data;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <Link
-          to="/client/$engagementId/projects"
-          params={{ engagementId: engagement.id }}
-          className="inline-flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeftIcon data-icon="inline-start" aria-hidden />
-          shared projects
-        </Link>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3">
+        <Button asChild size="sm" variant="ghost" className="w-fit">
+          <Link to="/client/$engagementId/projects" params={{ engagementId: engagement.id }}>
+            <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+            Shared Projects
+          </Link>
+        </Button>
+        <SectionHeader
+          title={project.title}
+          description={
+            <span className="flex flex-wrap items-center gap-2">
+              <span>@{project.slug}</span>
+              <Badge variant="outline">{project.status}</Badge>
+              <Badge variant="outline">{project.kind}</Badge>
+            </span>
+          }
+        />
       </div>
 
-      <header className="space-y-2">
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline">{project.status}</Badge>
-          <Badge variant="outline">{project.kind}</Badge>
-        </div>
-        <h1 className="text-2xl font-semibold">{project.title}</h1>
-        <div className="font-mono text-xs text-muted-foreground">@{project.slug}</div>
-      </header>
-
       {project.description && (
-        <section>
-          <h2 className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Notes</h2>
-          <p className="text-sm whitespace-pre-wrap">{project.description}</p>
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle>Notes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm whitespace-pre-wrap">{project.description}</p>
+          </CardContent>
+        </Card>
       )}
 
-      {subcontract && (
-        <section className="space-y-3">
-          <AssignmentsSection projectId={project.id} readOnly={!working} />
-        </section>
-      )}
+      {subcontract && <AssignmentsSection projectId={project.id} readOnly={!working} />}
 
       {!subcontract && contributors && contributors.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Builders</h2>
-          <ul className="space-y-1 text-sm">
-            {contributors.map((c) => (
-              <li key={c.nearAccount}>
-                {c.name}
-                {c.role ? <span className="text-muted-foreground"> · {c.role}</span> : null}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle>Builders</CardTitle>
+            <CardDescription>Who works on this Project.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col gap-2">
+              {contributors.map((c) => (
+                <li key={c.nearAccount} className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-medium">{c.name}</span>
+                  {c.role && <span className="text-muted-foreground">{c.role}</span>}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       )}
 
       <ProjectBudgetPanel projectId={project.id} readOnly engagementId={engagement.id} />
