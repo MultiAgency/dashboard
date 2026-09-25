@@ -61,6 +61,13 @@ export async function refreshAccountQueries(queryClient: QueryClient) {
   ]);
 }
 
+export async function refreshAfterAccountChange(queryClient: QueryClient, authClient: AuthClient) {
+  queryClient.clear();
+  return queryClient.fetchQuery(
+    sessionQueryOptions(authClient, undefined, { disableCookieCache: true }),
+  );
+}
+
 export async function landingDestination(deps: {
   authClient: AuthClient;
   apiClient: ApiClient;

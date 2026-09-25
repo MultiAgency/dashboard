@@ -7,7 +7,8 @@ import { Badge, Button, Card, CardContent } from "@/components";
 import { LoadingCard } from "@/components/loading-card";
 import { useInvitationActions } from "@/components/pending-invitations";
 import { ResendVerificationButton } from "@/components/resend-verification-button";
-import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
+import { refreshAfterAccountChange } from "@/lib/account";
+import { sessionQueryOptions } from "@/lib/auth";
 import { classifyInvitation, type InvitationState } from "@/lib/invitations";
 import { realEmail } from "@/lib/membership";
 
@@ -215,8 +216,7 @@ function WrongEmail({ email, redirect }: { email: string | null; redirect: strin
       await authClient.near.disconnect().catch(() => {});
     },
     onSuccess: async () => {
-      queryClient.setQueryData(sessionQueryKey, null);
-      await queryClient.invalidateQueries();
+      await refreshAfterAccountChange(queryClient, authClient);
       navigate({ to: "/sign-in", search: { redirect }, replace: true });
     },
     onError: (e: Error) => toast.error(e.message),
