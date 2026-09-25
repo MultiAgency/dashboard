@@ -2,8 +2,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Button, Card, CardContent, Input } from "@/components";
-import { Field, selectClass, textareaClass } from "@/components/admin-form";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  FieldError,
+  FieldGroup,
+  Input,
+  Textarea,
+} from "@/components";
+import { ChoiceSelect, Field } from "@/components/admin-form";
 import { useApiClient } from "@/lib/api";
 import { nearnListingHref } from "@/lib/nearn";
 import {
@@ -147,12 +159,7 @@ export function ProjectForm({
   const nearnHelper = !nearnSlug ? (
     "Mainnet NEARN bounties only. Enter the listing slug."
   ) : resolvedNearnHref ? (
-    <a
-      href={resolvedNearnHref}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="underline break-all text-foreground hover:text-muted-foreground"
-    >
+    <a href={resolvedNearnHref} target="_blank" rel="noopener noreferrer" className="break-all">
       {resolvedNearnHref}
     </a>
   ) : nearnListingQuery.isFetching ? (
@@ -163,190 +170,223 @@ export function ProjectForm({
     "Public link unavailable — check the slug or NEARN sponsor in settings."
   );
 
+  const statusOptions = [
+    { value: "active", label: "Active" },
+    { value: "paused", label: "Paused" },
+    { value: "archived", label: "Archived" },
+  ];
+  const visibilityOptions = [
+    { value: "private", label: "Private" },
+    { value: "unlisted", label: "Unlisted" },
+    { value: "public", label: "Public" },
+  ];
+
   return (
     <Card>
-      <CardContent className="p-5 grid gap-4">
-        <Field label="title" htmlFor={`project-title-${mode}`}>
-          <Input
-            id={`project-title-${mode}`}
-            value={title}
-            onChange={(e) => handleTitleChange(e.target.value)}
-            disabled={isPending}
-          />
-        </Field>
-        <Field
-          label="slug"
-          htmlFor={`project-slug-${mode}`}
-          helper={mode === "create" ? "Auto-generated from the title." : undefined}
-        >
-          <Input
-            id={`project-slug-${mode}`}
-            value={slug}
-            onChange={(e) => {
-              setSlugTouched(true);
-              mutation.reset();
-              setSlug(
-                e.target.value
-                  .toLowerCase()
-                  .replace(/\s+/g, "-")
-                  .replace(/[^a-z0-9-]/g, ""),
-              );
-            }}
-            placeholder="lowercase-with-hyphens"
-            disabled={isPending || mode === "edit"}
-          />
-          {mode === "create" && slugTrimmed && !isValidSlug(slugTrimmed) && (
-            <p className="text-xs text-destructive">Invalid slug format</p>
-          )}
-          {isSlugTakenError(mutation.error) && (
-            <p className="text-xs text-destructive">
-              “{slugTrimmed}” is already taken.{" "}
-              <button
-                type="button"
-                className="underline text-foreground"
-                onClick={() => {
-                  setSlug(suggestSlug(slugTrimmed));
-                  mutation.reset();
-                }}
-              >
-                Try “{suggestSlug(slugTrimmed)}”
-              </button>
-            </p>
-          )}
-        </Field>
-        <Field label="notes" htmlFor={`project-desc-${mode}`}>
-          <textarea
-            id={`project-desc-${mode}`}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            disabled={isPending}
-            className={textareaClass}
-          />
-        </Field>
-        {mode === "create" && (
-          <>
-            <Field label="kind" htmlFor={`project-kind-${mode}`}>
-              <select
-                id={`project-kind-${mode}`}
-                value={kind}
-                onChange={(e) => setKind(e.target.value as ProjectKind)}
-                disabled={isPending}
-                className={selectClass}
-              >
-                <option value="project">project</option>
-                <option value="idea">idea</option>
-                <option value="scope">scope</option>
-                <option value="result">result</option>
-              </select>
-            </Field>
-            {(kind === "scope" || kind === "result") && (
+      <CardHeader>
+        <CardTitle>
+          <h2>{mode === "create" ? "New project" : "Project details"}</h2>
+        </CardTitle>
+        <CardDescription>
+          {mode === "create"
+            ? "Projects hold the team, budget and billings for work you deliver."
+            : "Title, notes, repository, NEARN link, status and visibility."}
+        </CardDescription>
+      </CardHeader>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSubmit();
+        }}
+      >
+        <CardContent>
+          <FieldGroup>
+            <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+              <Field label="Title" htmlFor={`project-title-${mode}`}>
+                <Input
+                  id={`project-title-${mode}`}
+                  value={title}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  disabled={isPending}
+                />
+              </Field>
               <Field
-                label={kind === "scope" ? "parent project slug" : "parent scope slug"}
-                htmlFor={`project-parent-${mode}`}
+                label="Slug"
+                htmlFor={`project-slug-${mode}`}
                 helper={
-                  kind === "scope"
-                    ? "Scope must mention its parent project."
-                    : "Result must mention its parent scope."
+                  mode === "create" ? "Generated from the title." : "The slug can't be changed."
                 }
               >
-                <select
-                  id={`project-parent-${mode}`}
-                  value={parentSlug}
-                  onChange={(e) => setParentSlug(e.target.value)}
-                  className={selectClass}
-                  disabled={isPending}
-                >
-                  <option value="">Select parent…</option>
-                  {parentOptions.map((p) => (
-                    <option key={p.id} value={p.slug}>
-                      {p.title} (@{p.slug})
-                    </option>
-                  ))}
-                </select>
+                <Input
+                  id={`project-slug-${mode}`}
+                  value={slug}
+                  onChange={(e) => {
+                    setSlugTouched(true);
+                    mutation.reset();
+                    setSlug(
+                      e.target.value
+                        .toLowerCase()
+                        .replace(/\s+/g, "-")
+                        .replace(/[^a-z0-9-]/g, ""),
+                    );
+                  }}
+                  placeholder="lowercase-with-hyphens"
+                  disabled={isPending || mode === "edit"}
+                  aria-invalid={
+                    (mode === "create" && slugTrimmed && !isValidSlug(slugTrimmed)) ||
+                    isSlugTakenError(mutation.error)
+                      ? true
+                      : undefined
+                  }
+                />
+                {mode === "create" && slugTrimmed && !isValidSlug(slugTrimmed) && (
+                  <FieldError>Invalid slug format</FieldError>
+                )}
+                {isSlugTakenError(mutation.error) && (
+                  <FieldError>
+                    “{slugTrimmed}” is already taken.{" "}
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="xs"
+                      onClick={() => {
+                        setSlug(suggestSlug(slugTrimmed));
+                        mutation.reset();
+                      }}
+                    >
+                      Try “{suggestSlug(slugTrimmed)}”
+                    </Button>
+                  </FieldError>
+                )}
               </Field>
+            </div>
+            <Field label="Notes" htmlFor={`project-desc-${mode}`}>
+              <Textarea
+                id={`project-desc-${mode}`}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                disabled={isPending}
+              />
+            </Field>
+            {mode === "create" && (
+              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+                <Field label="Kind" htmlFor={`project-kind-${mode}`}>
+                  <ChoiceSelect
+                    id={`project-kind-${mode}`}
+                    value={kind}
+                    onValueChange={(value) => setKind(value as ProjectKind)}
+                    disabled={isPending}
+                    options={[
+                      { value: "project", label: "Project" },
+                      { value: "idea", label: "Idea" },
+                      { value: "scope", label: "Scope" },
+                      { value: "result", label: "Result" },
+                    ]}
+                  />
+                </Field>
+                {(kind === "scope" || kind === "result") && (
+                  <Field
+                    label={kind === "scope" ? "Parent project" : "Parent scope"}
+                    htmlFor={`project-parent-${mode}`}
+                    helper={
+                      kind === "scope"
+                        ? "A scope belongs to a parent project."
+                        : "A result belongs to a parent scope."
+                    }
+                  >
+                    <ChoiceSelect
+                      id={`project-parent-${mode}`}
+                      value={parentSlug}
+                      onValueChange={setParentSlug}
+                      disabled={isPending}
+                      placeholder="Select a parent"
+                      options={parentOptions.map((p) => ({
+                        value: p.slug,
+                        label: `${p.title} (@${p.slug})`,
+                      }))}
+                    />
+                  </Field>
+                )}
+              </div>
             )}
-          </>
-        )}
-        <Field
-          label="repository url"
-          htmlFor={`project-repo-${mode}`}
-          helper={
-            repositoryRequired
-              ? "Required. Must start with http:// or https://."
-              : "Optional for idea/scope/result."
-          }
-        >
-          <Input
-            id={`project-repo-${mode}`}
-            value={repository}
-            onChange={(e) => setRepository(e.target.value)}
-            placeholder="https://github.com/org/repo"
-            disabled={isPending}
-            required={repositoryRequired}
-          />
-          {repositoryRequired && repositoryTrimmed && !repositoryOk && (
-            <p className="text-xs text-destructive">Enter a full http(s) URL</p>
-          )}
-        </Field>
-        <Field
-          label="nearn listing slug (optional)"
-          htmlFor={`project-nearn-${mode}`}
-          helper={nearnHelper}
-        >
-          <Input
-            id={`project-nearn-${mode}`}
-            value={nearnListingId}
-            onChange={(e) => setNearnListingId(e.target.value)}
-            placeholder="e.g. june2026"
-            disabled={isPending}
-          />
-        </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="status" htmlFor={`project-status-${mode}`}>
-            <select
-              id={`project-status-${mode}`}
-              value={status}
-              onChange={(e) => setStatus(e.target.value as ProjectStatus)}
-              disabled={isPending}
-              className={selectClass}
-            >
-              <option value="active">active</option>
-              <option value="paused">paused</option>
-              <option value="archived">archived</option>
-            </select>
-          </Field>
-          <Field label="visibility" htmlFor={`project-vis-${mode}`}>
-            <select
-              id={`project-vis-${mode}`}
-              value={vis}
-              onChange={(e) => setVis(e.target.value as Visibility)}
-              disabled={isPending}
-              className={selectClass}
-            >
-              <option value="private">private</option>
-              <option value="unlisted">unlisted</option>
-              <option value="public">public</option>
-            </select>
-          </Field>
-        </div>
-        <div className="flex gap-2">
-          <Button type="button" onClick={handleSubmit} disabled={!canSubmit}>
-            {isPending
-              ? mode === "create"
-                ? "creating..."
-                : "saving..."
-              : mode === "create"
-                ? "create project"
-                : "save changes"}
-          </Button>
+            <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+              <Field
+                label="Repository URL"
+                htmlFor={`project-repo-${mode}`}
+                helper={
+                  repositoryRequired
+                    ? "Required. Starts with http:// or https://."
+                    : "Optional for ideas, scopes and results."
+                }
+              >
+                <Input
+                  id={`project-repo-${mode}`}
+                  value={repository}
+                  onChange={(e) => setRepository(e.target.value)}
+                  placeholder="https://github.com/org/repo"
+                  disabled={isPending}
+                  required={repositoryRequired}
+                  aria-invalid={
+                    repositoryRequired && repositoryTrimmed && !repositoryOk ? true : undefined
+                  }
+                />
+                {repositoryRequired && repositoryTrimmed && !repositoryOk && (
+                  <FieldError>Enter a full http(s) URL</FieldError>
+                )}
+              </Field>
+              <Field
+                label="NEARN listing slug"
+                htmlFor={`project-nearn-${mode}`}
+                helper={nearnHelper}
+              >
+                <Input
+                  id={`project-nearn-${mode}`}
+                  value={nearnListingId}
+                  onChange={(e) => setNearnListingId(e.target.value)}
+                  placeholder="Optional, e.g. june2026"
+                  disabled={isPending}
+                />
+              </Field>
+              <Field label="Status" htmlFor={`project-status-${mode}`}>
+                <ChoiceSelect
+                  id={`project-status-${mode}`}
+                  value={status}
+                  onValueChange={(value) => setStatus(value as ProjectStatus)}
+                  disabled={isPending}
+                  options={statusOptions}
+                />
+              </Field>
+              <Field label="Visibility" htmlFor={`project-vis-${mode}`}>
+                <ChoiceSelect
+                  id={`project-vis-${mode}`}
+                  value={vis}
+                  onValueChange={(value) => setVis(value as Visibility)}
+                  disabled={isPending}
+                  options={visibilityOptions}
+                />
+              </Field>
+            </div>
+          </FieldGroup>
+        </CardContent>
+        <CardFooter className="justify-end gap-2">
           {onDone && (
             <Button type="button" onClick={onDone} variant="outline" disabled={isPending}>
-              cancel
+              Cancel
             </Button>
           )}
-        </div>
-      </CardContent>
+          <Button type="submit" disabled={!canSubmit}>
+            {isPending
+              ? mode === "create"
+                ? "Creating…"
+                : "Saving…"
+              : mode === "create"
+                ? "Create project"
+                : "Save changes"}
+          </Button>
+        </CardFooter>
+      </form>
     </Card>
   );
 }
