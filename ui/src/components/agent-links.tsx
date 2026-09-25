@@ -1,5 +1,6 @@
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components";
+import { Card, CardContent, CardDescription, CardHeader, Skeleton } from "@/components";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { agentLinksListQueryOptions } from "@/lib/queries";
@@ -9,34 +10,46 @@ export type AgentLinkView = Awaited<ReturnType<ApiClient["agentLinks"]["list"]>>
 
 export function AgentLinkAnchor({ link }: { link: AgentLinkView }) {
   const href = safeHttpHref(link.url);
-  if (!href) return <span className="text-sm">{link.label}</span>;
+  if (!href) return <span className="text-sm font-medium">{link.label}</span>;
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm underline">
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-sm font-medium underline-offset-4 hover:underline"
+    >
       {link.label}
+      <ArrowSquareOutIcon aria-hidden className="size-3.5 text-muted-foreground" />
     </a>
   );
 }
 
 export function AgentLinksCard({ engagementId }: { engagementId: string }) {
   const apiClient = useApiClient();
-  const links = useQuery(agentLinksListQueryOptions(apiClient, engagementId)).data?.data ?? [];
+  const linksQuery = useQuery(agentLinksListQueryOptions(apiClient, engagementId));
+  const links = linksQuery.data?.data ?? [];
 
   return (
     <Card>
-      <CardContent className="p-4">
-        <div className="text-xs uppercase text-muted-foreground">Agents</div>
-        {links.length === 0 ? (
-          <div className="text-2xl font-black mt-1">—</div>
-        ) : (
-          <ul className="mt-2 space-y-1">
+      <CardHeader>
+        <CardDescription>Agents</CardDescription>
+        {linksQuery.isLoading ? (
+          <Skeleton className="h-8 w-32" />
+        ) : links.length === 0 ? (
+          <div className="font-heading text-2xl font-semibold text-muted-foreground">—</div>
+        ) : null}
+      </CardHeader>
+      {links.length > 0 && (
+        <CardContent>
+          <ul className="flex flex-col gap-1.5">
             {links.map((link) => (
               <li key={link.id}>
                 <AgentLinkAnchor link={link} />
               </li>
             ))}
           </ul>
-        )}
-      </CardContent>
+        </CardContent>
+      )}
     </Card>
   );
 }
