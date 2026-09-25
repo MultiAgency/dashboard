@@ -78,12 +78,12 @@ function ReactionDiffusionField({
       const d = probeCtx.getImageData(0, 0, 1, 1).data;
       return [d[0], d[1], d[2]];
     };
-    let bg = readToken("--paper");
-    let fg = readToken("--ink");
+    let bg = readToken("--background");
+    let fg = readToken("--foreground");
 
     const themeObserver = new MutationObserver(() => {
-      bg = readToken("--paper");
-      fg = readToken("--ink");
+      bg = readToken("--background");
+      fg = readToken("--foreground");
     });
     themeObserver.observe(document.documentElement, {
       attributes: true,
@@ -217,7 +217,7 @@ function Landing() {
         <div className="relative flex flex-col items-start space-y-6 text-left">
           <div className="w-full pl-3 pr-3">
             <h1
-              className="font-brand font-black uppercase leading-[0.88] break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-[-0.04em]"
+              className="font-heading font-black uppercase leading-[0.88] break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-[-0.04em]"
               style={{
                 fontFeatureSettings: '"kern", "liga"',
                 WebkitFontSmoothing: "subpixel-antialiased",
@@ -228,11 +228,11 @@ function Landing() {
               {LANDING.name}
             </h1>
             <div className="mt-3 flex items-center gap-3">
-              <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-[0.22em] text-accent-strong">
+              <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-[0.22em] text-primary">
                 Build Agencies Together
               </span>
-              <div className="flex-1 h-px bg-accent-strong/80" />
-              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] text-accent-strong tabular-nums">
+              <div className="flex-1 h-px bg-primary/80" />
+              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] text-primary tabular-nums">
                 v0.1
               </span>
             </div>
@@ -244,7 +244,7 @@ function Landing() {
             <Button asChild variant="outline" className="font-display uppercase tracking-wide">
               <Link to="/apply">join →</Link>
             </Button>
-            <Button asChild variant="primary" className="font-display uppercase tracking-wide">
+            <Button asChild className="font-display uppercase tracking-wide">
               <Link to="/contact">hire →</Link>
             </Button>
           </div>
@@ -258,7 +258,7 @@ function Landing() {
               <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-background/70">
                 agency · template
               </span>
-              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] bg-accent text-accent-foreground px-2 py-0.5">
+              <span className="font-mono font-semibold text-[10px] uppercase tracking-[0.22em] bg-primary text-primary-foreground px-2 py-0.5">
                 coming soon
               </span>
             </div>
@@ -270,13 +270,13 @@ function Landing() {
               Same blueprint. One command. Your business.
             </p>
             <div className="pt-2">
-              <Button asChild variant="primary" className="font-display uppercase tracking-wide">
+              <Button asChild className="font-display uppercase tracking-wide">
                 <Link to="/register">register →</Link>
               </Button>
             </div>
           </div>
           <div className="border-2 border-background">
-            <div className="border-b-2 border-background bg-accent text-accent-foreground px-4 py-2 font-mono font-semibold text-[11px] uppercase tracking-[0.22em]">
+            <div className="border-b-2 border-background bg-primary text-primary-foreground px-4 py-2 font-mono font-semibold text-[11px] uppercase tracking-[0.22em]">
               standard issue
             </div>
             <div className="divide-y-2 divide-background">
@@ -409,7 +409,7 @@ function ProjectCard({ project }: { project: LandingProject }) {
         <h3 className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
           {project.title}
         </h3>
-        {hasBounty && <Badge variant="accent">bounty</Badge>}
+        {hasBounty && <Badge variant="default">bounty</Badge>}
         <div className="mt-auto pt-2">
           <Button asChild variant="outline" className="w-full font-display uppercase tracking-wide">
             <Link to="/work">open →</Link>

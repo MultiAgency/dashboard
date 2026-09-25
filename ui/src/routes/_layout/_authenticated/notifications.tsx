@@ -110,7 +110,7 @@ function NotificationsPage() {
               <CardContent className="p-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="accent">to decide</Badge>
+                    <Badge variant="default">to decide</Badge>
                     <span className="text-sm font-medium">
                       Change order from the {changeOrder.proposedBy.side}
                     </span>
@@ -147,7 +147,7 @@ function NotificationsPage() {
             <CardContent className="p-4 flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  {!notification.readAt && <Badge variant="accent">new</Badge>}
+                  {!notification.readAt && <Badge variant="default">new</Badge>}
                   <span className="text-sm font-medium">{notification.title}</span>
                 </div>
                 <p className="text-sm text-muted-foreground">{notification.body}</p>

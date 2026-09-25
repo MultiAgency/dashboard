@@ -1,4 +1,11 @@
 import {
+  ArrowDownIcon,
+  ArrowsDownUpIcon,
+  ArrowUpIcon,
+  ColumnsIcon,
+  MagnifyingGlassIcon,
+} from "@phosphor-icons/react";
+import {
   type ColumnDef,
   type ColumnFiltersState,
   flexRender,
@@ -10,7 +17,6 @@ import {
   useReactTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, Input, Skeleton } from "@/components";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
@@ -85,11 +91,11 @@ function SortHeader({
     <button type="button" onClick={onToggle} className={SORT_BTN_CLS}>
       {label}
       {sorted === "asc" ? (
-        <ArrowDown className="size-3" />
+        <ArrowDownIcon className="size-3" />
       ) : sorted === "desc" ? (
-        <ArrowUp className="size-3" />
+        <ArrowUpIcon className="size-3" />
       ) : (
-        <ArrowUpDown className="size-3 opacity-40" />
+        <ArrowsDownUpIcon className="size-3 opacity-40" />
       )}
     </button>
   );
@@ -197,7 +203,7 @@ export function DataTable<TData, TValue>({
         <div className="flex flex-wrap items-center gap-2">
           {enableSearch && (
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+              <MagnifyingGlassIcon className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
               <Input
                 value={globalFilter}
                 onChange={(e) => setGlobalFilter(e.target.value)}
@@ -214,7 +220,7 @@ export function DataTable<TData, TValue>({
                 onClick={() => setColsOpen((v) => !v)}
                 className="gap-1.5"
               >
-                <Columns3 className="size-3.5" />
+                <ColumnsIcon className="size-3.5" />
                 columns
               </Button>
               {colsOpen && (

@@ -4,7 +4,7 @@ import type { ApiClient } from "@/lib/api";
 export type EngagementView = Awaited<ReturnType<ApiClient["engagements"]["get"]>>;
 
 const VARIANT = {
-  proposed: "accent",
+  proposed: "default",
   active: "outline",
   declined: "secondary",
   ended: "secondary",
@@ -24,7 +24,7 @@ export function InvitationStatusBadge({
   invitation: NonNullable<EngagementView["invitation"]>;
 }) {
   return (
-    <Badge variant={invitation.status === "pending" ? "accent" : "secondary"}>
+    <Badge variant={invitation.status === "pending" ? "default" : "secondary"}>
       invite {invitation.status}
     </Badge>
   );

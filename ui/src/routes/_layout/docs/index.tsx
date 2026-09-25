@@ -59,7 +59,7 @@ function DocsIndex() {
                 key={d.slug}
                 to="/docs/$slug"
                 params={{ slug: d.slug }}
-                className="border-2 border-border flex flex-col bg-card hover:bg-accent/20 transition-colors"
+                className="border-2 border-border flex flex-col bg-card hover:bg-muted transition-colors"
               >
                 <div className="p-4 flex-1 flex flex-col gap-3">
                   <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">

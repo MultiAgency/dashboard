@@ -1,6 +1,6 @@
+import { ArrowUpRightIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowUpRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -1092,9 +1092,9 @@ const STATUS_LABEL: Record<ProposalStatus, string> = {
   Failed: "failed",
 };
 
-type BadgeVariantLocal = "default" | "secondary" | "accent" | "destructive" | "outline";
+type BadgeVariantLocal = "default" | "secondary" | "destructive" | "outline";
 const STATUS_VARIANT: Record<ProposalStatus, BadgeVariantLocal> = {
-  InProgress: "default",
+  InProgress: "outline",
   Approved: "secondary",
   Rejected: "outline",
   Removed: "outline",
@@ -1263,7 +1263,7 @@ function ProposalDetailDialog({
               {trezuUrl && (
                 <Button asChild variant="outline" className="font-display uppercase tracking-wide">
                   <a href={trezuUrl} target="_blank" rel="noopener noreferrer">
-                    view on trezu <ArrowUpRight className="ml-1 size-3" />
+                    view on trezu <ArrowUpRightIcon className="ml-1 size-3" />
                   </a>
                 </Button>
               )}

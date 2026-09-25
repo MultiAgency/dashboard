@@ -1,5 +1,5 @@
+import { GlobeIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Globe } from "lucide-react";
 import { useAuthClient } from "@/app";
 import { sessionQueryOptions } from "@/lib/auth";
 
@@ -28,7 +28,7 @@ export function NetworkToggle() {
           }`}
         >
           <span className="flex items-center gap-1.5">
-            <Globe className="h-3 w-3" />
+            <GlobeIcon className="h-3 w-3" />
             {network === "mainnet" ? "Mainnet" : "Testnet"}
           </span>
         </button>

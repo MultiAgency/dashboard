@@ -1,6 +1,6 @@
+import { EnvelopeIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Mail } from "lucide-react";
 import { useAuthClient } from "@/app";
 import { usePendingInvitations } from "@/components/pending-invitations";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -83,8 +83,8 @@ export function UserNav() {
           title="pending invitations"
           className="flex items-center gap-1 rounded-sm text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Mail className="size-4" />
-          <Badge variant="accent" className="px-1.5 py-0 font-mono text-[10px]">
+          <EnvelopeIcon className="size-4" />
+          <Badge variant="default" className="px-1.5 py-0 font-mono text-[10px]">
             {invitationCount}
           </Badge>
         </Link>
@@ -97,7 +97,7 @@ export function UserNav() {
             title={identifier}
             aria-label={`Signed in as ${identifier}`}
           >
-            <Avatar className="size-8 rounded-full ring-1 ring-accent/60">
+            <Avatar className="size-8 rounded-full ring-1 ring-primary/60">
               {avatarUrl && <AvatarImage src={avatarUrl} alt={identifier} />}
               <AvatarFallback className="bg-muted text-foreground border-0 text-xs font-medium">
                 {identifier.charAt(0).toUpperCase()}

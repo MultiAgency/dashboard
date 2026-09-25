@@ -1,6 +1,6 @@
+import { ArrowUpRightIcon, WarningIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -338,7 +338,7 @@ function BillingCreateForm({
                 rel="noopener noreferrer"
                 className="inline-flex items-center"
               >
-                open prefilled in trezu <ArrowUpRight className="ml-1 size-3" />
+                open prefilled in trezu <ArrowUpRightIcon className="ml-1 size-3" />
               </a>
             </Button>
             <p className="text-xs text-muted-foreground">
@@ -385,7 +385,7 @@ function BillingCreateForm({
         </Field>
         {showBuilderWarning && (
           <Alert>
-            <AlertTriangle />
+            <WarningIcon />
             <AlertTitle>Not registered as a builder: {targetContributorName}</AlertTitle>
             <AlertDescription>
               Convert the contributor application to a builder profile, or add them as a builder,

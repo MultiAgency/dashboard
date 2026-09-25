@@ -58,7 +58,7 @@ export type ChangeOrdersPanelProps = {
 };
 
 const STATUS_VARIANT = {
-  proposed: "accent",
+  proposed: "default",
   approved: "outline",
   applied: "outline",
   rejected: "secondary",

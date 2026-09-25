@@ -80,7 +80,7 @@ function ApplyPage() {
   if (submitted) {
     return (
       <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
-        <Card variant="hi-vis">
+        <Card variant="highlight">
           <CardContent className="p-8 space-y-4 text-center">
             <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
               agency · contacted
@@ -239,7 +239,6 @@ function ApplyPage() {
             </form.Field>
             <Button
               type="submit"
-              variant="primary"
               disabled={isPending}
               className="w-full font-display uppercase tracking-wide"
             >

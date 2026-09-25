@@ -159,7 +159,7 @@ function MethodRow({
         <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
           {label}
         </span>
-        <Badge variant={active ? "accent" : "outline"} className="text-[10px]">
+        <Badge variant={active ? "default" : "outline"} className="text-[10px]">
           {status}
         </Badge>
       </div>
