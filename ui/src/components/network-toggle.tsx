@@ -1,6 +1,6 @@
-import { GlobeIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthClient } from "@/app";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { sessionQueryOptions } from "@/lib/auth";
 
 export function NetworkToggle() {
@@ -13,26 +13,23 @@ export function NetworkToggle() {
   if (supportedNetworks.length <= 1) return null;
 
   return (
-    <div className="flex h-7 items-center gap-0.5 border border-border bg-muted/30 p-0.5">
+    <ToggleGroup
+      type="single"
+      variant="outline"
+      size="sm"
+      spacing={0}
+      value={currentNetwork}
+      onValueChange={(network) => {
+        if (network) auth.near.setNetwork(network as typeof currentNetwork);
+      }}
+      aria-label="NEAR network"
+    >
       {supportedNetworks.map((network) => (
-        <button
-          type="button"
-          key={network}
-          onClick={() => {
-            auth.near.setNetwork(network);
-          }}
-          aria-pressed={currentNetwork === network}
-          className={`flex h-full items-center gap-1.5 px-2 text-xs font-medium leading-none transition-colors ${
-            currentNetwork === network
-              ? "bg-background text-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <GlobeIcon aria-hidden className="hidden size-3 sm:block" />
+        <ToggleGroupItem key={network} value={network} aria-label={network}>
           <span className="sm:hidden">{network === "mainnet" ? "Main" : "Test"}</span>
           <span className="hidden sm:inline">{network === "mainnet" ? "Mainnet" : "Testnet"}</span>
-        </button>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }

@@ -1,4 +1,11 @@
-import { ArrowLeftIcon, ListIcon } from "@phosphor-icons/react";
+import {
+  ArrowClockwiseIcon,
+  ArrowLeftIcon,
+  CompassIcon,
+  FileXIcon,
+  ListIcon,
+  WarningCircleIcon,
+} from "@phosphor-icons/react";
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import type * as React from "react";
 import type { ReactNode } from "react";
@@ -6,6 +13,8 @@ import { AuthHashToasts } from "@/components/auth-hash-toasts";
 import { NetworkToggle } from "@/components/network-toggle";
 import { NotificationsBell } from "@/components/notifications-bell";
 import { OrgSwitcher } from "@/components/org-switcher";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,6 +22,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { UserNav } from "@/components/user-nav";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { cn } from "@/lib/utils";
@@ -38,9 +55,9 @@ function Logo({ className, ...props }: React.ComponentProps<"svg">) {
 type NavItem = { to: string; label: string };
 
 const PRIMARY_NAV: NavItem[] = [
-  { to: "/work", label: "work" },
-  { to: "/treasury", label: "treasury" },
-  { to: "/docs", label: "docs" },
+  { to: "/work", label: "Work" },
+  { to: "/treasury", label: "Treasury" },
+  { to: "/docs", label: "Docs" },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -49,154 +66,160 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const brandName = "MultiAgency";
 
-  const linkActive = (to: string) =>
-    Boolean(
-      matchRoute({
-        to,
-        fuzzy: true,
-      }),
-    );
+  const linkActive = (to: string) => Boolean(matchRoute({ to, fuzzy: true }));
 
   return (
-    <div className="min-h-screen w-full flex bg-background text-foreground">
+    <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
       <AuthHashToasts />
-      <div className="flex-1 flex flex-col min-w-0">
-        <a
-          href="#main"
-          className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-2 focus:bg-foreground focus:text-background text-xs"
-        >
-          Skip to content
-        </a>
-        <header className="shrink-0 bg-card/50">
-          <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-6">
-            <Link
-              to="/"
-              aria-label={`${brandName} home`}
-              className="flex size-7 shrink-0 items-center hover:opacity-70 transition-opacity duration-150"
-            >
-              <Logo />
-            </Link>
-
-            <nav aria-label="Primary" className="hidden sm:flex items-center gap-1">
-              {PRIMARY_NAV.map((item) => (
-                <NavLink key={item.to} item={item} active={linkActive(item.to)} />
-              ))}
-            </nav>
-
-            <div className="flex shrink-0 items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="sm:hidden"
-                    aria-label="Open menu"
-                  >
-                    <ListIcon aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  {PRIMARY_NAV.map((item) => (
-                    <DropdownMenuItem key={item.to} asChild>
-                      <Link to={item.to}>{item.label}</Link>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {isAuthenticated && <OrgSwitcher />}
-              {isAuthenticated && <NotificationsBell />}
-              <NetworkToggle />
-              <UserNav />
-            </div>
-          </div>
-        </header>
-
-        <main id="main" className="w-full flex-1">
-          <div
-            className={`w-full mx-auto px-4 sm:px-6 py-6 sm:py-10 animate-fade-in-up ${isAuthenticated ? "max-w-5xl" : "max-w-4xl"}`}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-foreground focus:px-3 focus:py-2 focus:text-xs focus:text-background"
+      >
+        Skip to content
+      </a>
+      <header className="sticky top-0 z-40 shrink-0 border-b bg-background">
+        <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-2 px-4 sm:gap-4 sm:px-6">
+          <Link
+            to="/"
+            aria-label={`${brandName} home`}
+            className="flex shrink-0 items-center gap-2 transition-opacity hover:opacity-70"
           >
-            {children}
+            <span className="flex size-6">
+              <Logo />
+            </span>
+            <span className="hidden font-heading text-sm font-semibold tracking-tight md:inline">
+              {brandName}
+            </span>
+          </Link>
+
+          <nav aria-label="Primary" className="hidden items-center gap-1 sm:flex">
+            {PRIMARY_NAV.map((item) => (
+              <NavLink key={item.to} item={item} active={linkActive(item.to)} />
+            ))}
+          </nav>
+
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+            {isAuthenticated && <OrgSwitcher />}
+            {isAuthenticated && <NotificationsBell />}
+            <NetworkToggle />
+            <ThemeToggle />
+            <UserNav />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" className="sm:hidden" aria-label="Open menu">
+                  <ListIcon aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                {PRIMARY_NAV.map((item) => (
+                  <DropdownMenuItem key={item.to} asChild>
+                    <Link to={item.to} aria-current={linkActive(item.to) ? "page" : undefined}>
+                      {item.label}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </main>
-      </div>
+        </div>
+      </header>
+
+      <main id="main" className="w-full flex-1">
+        <div className="mx-auto w-full max-w-5xl animate-fade-in-up px-4 py-8 sm:px-6 sm:py-10">
+          {children}
+        </div>
+      </main>
     </div>
   );
 }
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   return (
-    <Link
-      to={item.to}
-      aria-current={active ? "page" : undefined}
-      className={`inline-flex h-7 items-center px-2 text-xs font-medium leading-none transition-colors duration-150 ${active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-    >
-      {item.label}
-    </Link>
+    <Button asChild variant={active ? "secondary" : "ghost"} size="sm">
+      <Link to={item.to} aria-current={active ? "page" : undefined}>
+        {item.label}
+      </Link>
+    </Button>
   );
 }
 
-type SignTextProps = {
-  eyebrow: string;
-  headline: string;
-  body: string;
-  ctaLabel: string;
-  ctaTo?: string;
+type StatusPageProps = {
+  icon: ReactNode;
+  code: string;
+  title: string;
+  description: string;
+  action: ReactNode;
 };
 
-function SignText({ eyebrow, headline, body, ctaLabel, ctaTo = "/" }: SignTextProps) {
+function StatusPage({ icon, code, title, description, action }: StatusPageProps) {
   return (
-    <div className="min-h-[70vh] flex items-center justify-center">
-      <div className="text-center space-y-6 max-w-md">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          {eyebrow}
-        </div>
-        <h1 className="text-5xl sm:text-6xl font-black uppercase leading-none tracking-tight">
-          {headline}
-        </h1>
-        <p className="text-base leading-relaxed text-muted-foreground">{body}</p>
-        <div className="pt-2">
-          <Button asChild variant="outline">
-            <Link to={ctaTo}>
-              <ArrowLeftIcon data-icon="inline-start" aria-hidden />
-              {ctaLabel}
-            </Link>
-          </Button>
-        </div>
-      </div>
-    </div>
+    <Empty className="min-h-96">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">{icon}</EmptyMedia>
+        <Badge variant="outline">{code}</Badge>
+        <EmptyTitle>
+          <h1>{title}</h1>
+        </EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>{action}</EmptyContent>
+    </Empty>
+  );
+}
+
+function BackLink({ to, label }: { to: "/" | "/docs"; label: string }) {
+  return (
+    <Button asChild variant="outline">
+      <Link to={to}>
+        <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+        {label}
+      </Link>
+    </Button>
   );
 }
 
 export function AppNotFound() {
   return (
-    <SignText
-      eyebrow="agency · 404"
-      headline="no record"
-      body="That route isn't wired. Head back to home."
-      ctaLabel="back to home"
+    <StatusPage
+      icon={<CompassIcon aria-hidden />}
+      code="404"
+      title="Page not found"
+      description="This page doesn't exist or has moved."
+      action={<BackLink to="/" label="Back to home" />}
     />
   );
 }
 
-export function AppRouteError() {
+export function AppRouteError({ onRetry }: { onRetry?: () => void }) {
   return (
-    <SignText
-      eyebrow="agency · error"
-      headline="off the rails"
-      body="Something went wrong loading this page. Head back to home and try again."
-      ctaLabel="back to home"
+    <StatusPage
+      icon={<WarningCircleIcon aria-hidden />}
+      code="Error"
+      title="Something went wrong"
+      description="This page failed to load. Try again, or head back to home."
+      action={
+        <div className="flex flex-wrap justify-center gap-2">
+          {onRetry && (
+            <Button type="button" onClick={onRetry}>
+              <ArrowClockwiseIcon data-icon="inline-start" aria-hidden />
+              Try again
+            </Button>
+          )}
+          <BackLink to="/" label="Back to home" />
+        </div>
+      }
     />
   );
 }
 
 export function UnknownDoc() {
   return (
-    <SignText
-      eyebrow="agency · 404"
-      headline="unknown doc"
-      body="That entry isn't in the docs. Browse the index."
-      ctaLabel="all docs"
-      ctaTo="/docs"
+    <StatusPage
+      icon={<FileXIcon aria-hidden />}
+      code="404"
+      title="Doc not found"
+      description="That entry isn't in the docs. Browse the index instead."
+      action={<BackLink to="/docs" label="All docs" />}
     />
   );
 }

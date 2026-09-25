@@ -64,9 +64,9 @@ export function UserNav() {
 
   if (!user) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
         <Button asChild variant="ghost" size="sm">
-          <Link to="/sign-in">sign in</Link>
+          <Link to="/sign-in">Sign in</Link>
         </Button>
         <ConnectButton connect={connectMutation} />
       </div>
@@ -75,14 +75,14 @@ export function UserNav() {
 
   const identifier = user.name || user.email || user.id;
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1 sm:gap-2">
       {invitationCount > 0 && (
         <Button asChild variant="ghost" size="icon-sm" className="relative">
           <Link
             to="/profile"
             hash="invitations"
             aria-label={`${invitationCount} pending invitation${invitationCount === 1 ? "" : "s"}`}
-            title="pending invitations"
+            title="Pending invitations"
           >
             <EnvelopeIcon aria-hidden />
             <Badge size="counter" className="absolute -top-1 -right-1" aria-hidden>
@@ -107,34 +107,34 @@ export function UserNav() {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel>
-            <div className="space-y-0.5">
-              <p className="text-xs text-muted-foreground">signed in as</p>
-              <p className="truncate text-sm font-medium">{identifier}</p>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-normal text-muted-foreground">Signed in as</span>
+              <span className="truncate text-sm font-medium text-foreground">{identifier}</span>
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link to="/profile">profile</Link>
+            <Link to="/profile">Profile</Link>
           </DropdownMenuItem>
           {orgRole && (
             <DropdownMenuItem asChild>
-              <Link to="/admin/projects">organization dashboard</Link>
+              <Link to="/admin/projects">Organization dashboard</Link>
             </DropdownMenuItem>
           )}
           {orgRole && hasClientSections && (
             <DropdownMenuItem asChild>
-              <Link to="/client">agencies</Link>
+              <Link to="/client">Agencies</Link>
             </DropdownMenuItem>
           )}
           <DropdownMenuItem asChild>
-            <Link to="/dashboard">my work</Link>
+            <Link to="/dashboard">My work</Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link to="/notifications">notifications</Link>
+            <Link to="/notifications">Notifications</Link>
           </DropdownMenuItem>
           {isSuperAdmin && (
             <DropdownMenuItem asChild>
-              <Link to="/platform">platform</Link>
+              <Link to="/platform">Platform</Link>
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
@@ -146,7 +146,7 @@ export function UserNav() {
             }}
             disabled={signOutMutation.isPending}
           >
-            {signOutMutation.isPending ? "signing out..." : "sign out"}
+            {signOutMutation.isPending ? "Signing out…" : "Sign out"}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -155,7 +155,7 @@ export function UserNav() {
 }
 
 function ConnectButton({ connect }: { connect: { mutate: () => void; isPending: boolean } }) {
-  const label = connect.isPending ? "connecting..." : "connect";
+  const label = connect.isPending ? "Connecting…" : "Connect";
   return (
     <Button
       variant="outline"
