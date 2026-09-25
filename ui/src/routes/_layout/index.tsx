@@ -49,7 +49,10 @@ import { Route as RootRoute } from "../__root";
 
 const RD_W = 200;
 const RD_H = 130;
-const RD_STEPS_PER_FRAME = 6;
+const RD_STEPS_PER_FRAME = 10;
+const RD_SETTLE_STEPS = 1800;
+const DOT_STRIDE = 2;
+const DOT_LEVELS = 5;
 
 const RD_PRESETS = {
   worms: { du: 0.16, dv: 0.08, f: 0.06, k: 0.062 },
@@ -78,10 +81,8 @@ function ReactionDiffusionField({
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    canvas.width = RD_W;
-    canvas.height = RD_H;
     const N = RD_W * RD_H;
 
     let u = new Float32Array(N).fill(1);
@@ -89,15 +90,15 @@ function ReactionDiffusionField({
     let un = new Float32Array(N).fill(1);
     let vn = new Float32Array(N).fill(0);
 
-    for (let s = 0; s < 14; s++) {
-      const cx = 20 + Math.floor(Math.random() * (RD_W - 40));
-      const cy = 20 + Math.floor(Math.random() * (RD_H - 40));
-      const r = 4 + Math.floor(Math.random() * 4);
+    for (let s = 0; s < 48; s++) {
+      const cx = 6 + Math.floor(Math.random() * (RD_W - 12));
+      const cy = 6 + Math.floor(Math.random() * (RD_H - 12));
+      const r = 2 + Math.floor(Math.random() * 3);
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           const x = cx + dx;
           const y = cy + dy;
-          if (x >= 0 && x < RD_W && y >= 0 && y < RD_H) {
+          if (dx * dx + dy * dy <= r * r && x >= 0 && x < RD_W && y >= 0 && y < RD_H) {
             u[y * RD_W + x] = 0.25 + Math.random() * 0.1;
             v[y * RD_W + x] = 0.5 + Math.random() * 0.1;
           }
@@ -108,27 +109,39 @@ function ReactionDiffusionField({
     const probe = document.createElement("canvas");
     probe.width = probe.height = 1;
     const probeCtx = probe.getContext("2d", { willReadFrequently: true });
-    const readToken = (varName: string): [number, number, number] => {
+    const readToken = (varName: string): string => {
       const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-      if (!probeCtx || !raw) return [0, 0, 0];
+      if (!probeCtx || !raw) return "rgb(0 0 0)";
+      probeCtx.clearRect(0, 0, 1, 1);
       probeCtx.fillStyle = raw;
       probeCtx.fillRect(0, 0, 1, 1);
-      const d = probeCtx.getImageData(0, 0, 1, 1).data;
-      return [d[0], d[1], d[2]];
+      const [r, g, b] = probeCtx.getImageData(0, 0, 1, 1).data;
+      return `rgb(${r} ${g} ${b})`;
     };
-    let bg = readToken("--background");
-    let fg = readToken("--foreground");
+    let dotColor = readToken("--muted-foreground");
+    let peakColor = readToken("--primary");
 
     const themeObserver = new MutationObserver(() => {
-      bg = readToken("--background");
-      fg = readToken("--foreground");
+      dotColor = readToken("--muted-foreground");
+      peakColor = readToken("--primary");
+      if (!running) render();
     });
     themeObserver.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["class"],
+      attributeFilter: ["class", "style", "data-theme"],
     });
 
-    const img = ctx.createImageData(RD_W, RD_H);
+    const cols = Math.floor(RD_W / DOT_STRIDE);
+    const rows = Math.floor(RD_H / DOT_STRIDE);
+    let cell = 1;
+    const resize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const { width, height } = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(width * dpr));
+      canvas.height = Math.max(1, Math.round(height * dpr));
+      cell = Math.max(canvas.width / cols, canvas.height / rows);
+      if (!running) render();
+    };
 
     const step = () => {
       for (let y = 1; y < RD_H - 1; y++) {
@@ -158,32 +171,73 @@ function ReactionDiffusionField({
       [v, vn] = [vn, v];
     };
 
+    const buckets: number[][] = Array.from({ length: DOT_LEVELS }, () => []);
     const render = () => {
-      const data = img.data;
-      const [bgR, bgG, bgB] = bg;
-      const [fgR, fgG, fgB] = fg;
-      for (let i = 0; i < N; i++) {
-        const vi = Math.min(1, Math.max(0, v[i] * 1.2));
-        const idx = i * 4;
-        data[idx] = bgR + (fgR - bgR) * vi;
-        data[idx + 1] = bgG + (fgG - bgG) * vi;
-        data[idx + 2] = bgB + (fgB - bgB) * vi;
-        data[idx + 3] = 255;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const bucket of buckets) bucket.length = 0;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const level = Math.floor(
+            Math.min(0.999, v[r * DOT_STRIDE * RD_W + c * DOT_STRIDE] * 2.05) * DOT_LEVELS,
+          );
+          if (level > 0) buckets[level]!.push(c, r);
+        }
       }
-      ctx.putImageData(img, 0, 0);
+      for (let level = 1; level < DOT_LEVELS; level++) {
+        const bucket = buckets[level]!;
+        if (bucket.length === 0) continue;
+        const peak = level === DOT_LEVELS - 1;
+        const size = cell * (0.25 + 0.5 * (level / (DOT_LEVELS - 1)));
+        const offset = (cell - size) / 2;
+        ctx.fillStyle = peak ? peakColor : dotColor;
+        ctx.globalAlpha = peak ? 0.9 : 0.25 + 0.2 * level;
+        for (let i = 0; i < bucket.length; i += 2) {
+          ctx.fillRect(bucket[i]! * cell + offset, bucket[i + 1]! * cell + offset, size, size);
+        }
+      }
+      ctx.globalAlpha = 1;
     };
 
+    let running = false;
+    let visible = true;
     let rafId = 0;
     const tick = () => {
       for (let s = 0; s < RD_STEPS_PER_FRAME; s++) step();
       render();
       rafId = requestAnimationFrame(tick);
     };
-    rafId = requestAnimationFrame(tick);
+    const sync = () => {
+      const shouldRun = !reducedMotion && visible && document.visibilityState === "visible";
+      if (shouldRun && !running) {
+        running = true;
+        rafId = requestAnimationFrame(tick);
+      } else if (!shouldRun && running) {
+        running = false;
+        cancelAnimationFrame(rafId);
+      }
+    };
+
+    if (reducedMotion) {
+      for (let s = 0; s < RD_SETTLE_STEPS; s++) step();
+    }
+    resize();
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(canvas);
+    const intersectionObserver = new IntersectionObserver(([entry]) => {
+      visible = entry?.isIntersecting ?? true;
+      sync();
+    });
+    intersectionObserver.observe(canvas);
+    document.addEventListener("visibilitychange", sync);
+    sync();
 
     return () => {
+      running = false;
       cancelAnimationFrame(rafId);
       themeObserver.disconnect();
+      resizeObserver.disconnect();
+      intersectionObserver.disconnect();
+      document.removeEventListener("visibilitychange", sync);
     };
   }, [DU, DV, F, K]);
 
@@ -191,10 +245,7 @@ function ReactionDiffusionField({
     <canvas
       ref={canvasRef}
       aria-hidden
-      className={cn(
-        "rendering-pixelated",
-        className ?? "pointer-events-none absolute inset-0 size-full opacity-40",
-      )}
+      className={cn(className ?? "pointer-events-none absolute inset-0 size-full")}
     />
   );
 }
