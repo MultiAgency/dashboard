@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import { Button, Card, CardContent, Input } from "@/components";
@@ -8,6 +8,7 @@ import { Field } from "@/components/admin-form";
 import { ResendVerificationButton } from "@/components/resend-verification-button";
 import { useNearSignIn } from "@/hooks/use-near-sign-in";
 import {
+  createRedirectOnce,
   landingDestination,
   refreshAfterAccountChange,
   requestPasswordReset,
@@ -69,21 +70,23 @@ function SignInPage() {
   const mode = search.mode ?? "sign-in";
   const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const refreshSession = async () => {
-    await refreshAfterAccountChange(queryClient, authClient);
-  };
   const finish = usePostSignIn(search.redirect);
-  const nearSignIn = useNearSignIn(() => {});
-  const [redirecting, setRedirecting] = useState(false);
+  const [redirectOnce] = useState(createRedirectOnce);
+  const finishRef = useRef(finish);
+  finishRef.current = finish;
+  const redirect = () => redirectOnce(finishRef.current);
+  const completeSignIn = async () => {
+    const refreshed = await refreshAfterAccountChange(queryClient, authClient);
+    if (!refreshed?.user) throw new Error("Signed in, but the session did not load. Try again.");
+    await redirect();
+  };
+  const nearSignIn = useNearSignIn(redirect);
+  const signedIn = Boolean(session?.user);
 
   useEffect(() => {
-    if (!session?.user || redirecting) return;
-    setRedirecting(true);
-    finish().catch((e: Error) => {
-      toast.error(e.message);
-      setRedirecting(false);
-    });
-  }, [session?.user, redirecting, finish]);
+    if (!signedIn) return;
+    redirectOnce(finishRef.current).catch((e: Error) => toast.error(e.message));
+  }, [signedIn, redirectOnce]);
 
   const setMode = (next: Mode) => {
     setVerificationEmail(null);
@@ -114,7 +117,7 @@ function SignInPage() {
           {mode === "sign-in" && (
             <SignInForm
               defaultEmail={search.email}
-              onSignedIn={refreshSession}
+              onSignedIn={completeSignIn}
               onUnverified={setVerificationEmail}
               onForgot={() => setMode("forgot")}
             />

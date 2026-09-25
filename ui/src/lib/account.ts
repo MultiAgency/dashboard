@@ -89,3 +89,23 @@ export async function landingDestination(deps: {
   const roles = await queryClient.fetchQuery({ ...meRolesQueryOptions(apiClient), staleTime: 0 });
   return organizationHome(roles.capabilities);
 }
+
+export function createRedirectOnce() {
+  let pending: Promise<void> | null = null;
+  let done = false;
+  return (redirect: () => Promise<void>): Promise<void> => {
+    if (done) return Promise.resolve();
+    if (!pending) {
+      pending = redirect().then(
+        () => {
+          done = true;
+        },
+        (error: unknown) => {
+          pending = null;
+          throw error;
+        },
+      );
+    }
+    return pending;
+  };
+}
