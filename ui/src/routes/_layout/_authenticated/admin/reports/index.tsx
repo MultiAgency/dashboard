@@ -1,12 +1,24 @@
+import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Button, Card, CardContent } from "@/components";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  FieldGroup,
+  Input,
+} from "@/components";
 import { ReportPreview, reportOverviewCsvValues } from "@/components/admin/report-preview";
 import { AdminError } from "@/components/admin-error";
-import { Field, selectClass } from "@/components/admin-form";
+import { ChoiceSelect, Field } from "@/components/admin-form";
+import { PageHeader } from "@/components/page-header";
 import { ReportNoteField } from "@/components/report-note-field";
 import { SavedReportsList } from "@/components/saved-reports";
 import { useApiClient } from "@/lib/api";
@@ -113,106 +125,113 @@ function AdminReportsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          money · reports
-        </div>
-        <h1 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Reports
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Generate a tabular summary for clients and internal review — per-token budget, spend, and
-          builder totals. Every generated report is saved with its memo for your team. Download CSV
-          for sharing.
-        </p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Reports"
+        description="Per-token budget, spend and builder totals for clients and internal review. Every generated report is saved with its memo."
+      />
 
       <Card>
-        <CardContent className="p-5 grid gap-4 sm:grid-cols-2">
-          <Field label="client filter (optional)" htmlFor="report-client">
-            <select
-              id="report-client"
-              value={engagementId}
-              onChange={(e) => {
-                setEngagementId(e.target.value);
-                setProjectId("");
-              }}
-              className={selectClass}
-            >
-              <option value="">all clients</option>
-              {engagements.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.client.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="project filter (optional)" htmlFor="report-project">
-            <select
-              id="report-project"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className={selectClass}
-            >
-              <option value="">all projects</option>
-              {projectOptions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <ReportNoteField id="report-note" value={note} onChange={setNote} />
-          <Field label="start date (optional)" htmlFor="report-start">
-            <input
-              id="report-start"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className={selectClass}
-            />
-          </Field>
-          <Field label="end date (optional)" htmlFor="report-end">
-            <input
-              id="report-end"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className={selectClass}
-            />
-          </Field>
-          <div className="sm:col-span-2 flex flex-wrap gap-2">
-            <Button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
-              {generateMutation.isPending ? "generating..." : "generate report"}
+        <CardHeader>
+          <CardTitle>
+            <h2>Generate a report</h2>
+          </CardTitle>
+          <CardDescription>
+            Leave the filters empty to cover every client and project.
+          </CardDescription>
+        </CardHeader>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!generateMutation.isPending) generateMutation.mutate();
+          }}
+        >
+          <CardContent>
+            <FieldGroup>
+              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+                <Field label="Client" htmlFor="report-client">
+                  <ChoiceSelect
+                    id="report-client"
+                    value={engagementId}
+                    onValueChange={(value) => {
+                      setEngagementId(value);
+                      setProjectId("");
+                    }}
+                    emptyLabel="All clients"
+                    options={engagements.map((e) => ({ value: e.id, label: e.client.name }))}
+                  />
+                </Field>
+                <Field label="Project" htmlFor="report-project">
+                  <ChoiceSelect
+                    id="report-project"
+                    value={projectId}
+                    onValueChange={setProjectId}
+                    emptyLabel="All projects"
+                    options={projectOptions.map((p) => ({ value: p.id, label: p.title }))}
+                  />
+                </Field>
+                <Field label="Start date" htmlFor="report-start">
+                  <Input
+                    id="report-start"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </Field>
+                <Field label="End date" htmlFor="report-end">
+                  <Input
+                    id="report-end"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <ReportNoteField id="report-note" value={note} onChange={setNote} />
+            </FieldGroup>
+          </CardContent>
+          <CardFooter className="justify-end">
+            <Button type="submit" disabled={generateMutation.isPending}>
+              {generateMutation.isPending ? "Generating…" : "Generate report"}
             </Button>
-            {report && (
-              <Button variant="outline" onClick={handleDownload}>
-                download summary csv
-              </Button>
-            )}
-          </div>
+          </CardFooter>
+        </form>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Saved reports</h2>
+          </CardTitle>
+          <CardDescription>Open a saved report to preview it and download its CSV.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {savedQuery.isError ? (
+            <AdminError error={savedQuery.error} />
+          ) : (
+            <SavedReportsList
+              reports={savedQuery.data?.data ?? []}
+              selectedId={reportId}
+              onOpen={openReport}
+              describe={(r) => clientNameOf(r.engagementId)}
+            />
+          )}
         </CardContent>
       </Card>
 
-      <section className="space-y-3">
-        <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          saved reports
-        </h2>
-        {savedQuery.isError ? (
-          <AdminError error={savedQuery.error} />
-        ) : (
-          <SavedReportsList
-            reports={savedQuery.data?.data ?? []}
-            selectedId={reportId}
-            onOpen={openReport}
-            describe={(r) => clientNameOf(r.engagementId)}
-          />
-        )}
-      </section>
-
       {openedQuery.isError && <AdminError error={openedQuery.error} />}
-      {report && <ReportPreview report={report} />}
+      {report && (
+        <ReportPreview
+          report={report}
+          actions={
+            <Button variant="outline" size="sm" onClick={handleDownload}>
+              <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+              Summary CSV
+            </Button>
+          }
+        />
+      )}
     </div>
   );
 }
