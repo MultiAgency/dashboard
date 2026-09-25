@@ -47,34 +47,41 @@ import { getRepoUrl } from "@/lib/repo";
 import { cn } from "@/lib/utils";
 import { Route as RootRoute } from "../__root";
 
-const RD_W = 200;
-const RD_H = 130;
-const RD_STEPS_PER_FRAME = 10;
-const RD_SETTLE_STEPS = 1800;
-const DOT_STRIDE = 2;
-const DOT_LEVELS = 5;
+const DOT_CELL = 14;
+const DOT_LEVELS = 6;
+const FIELD_SPEED = 0.00018;
+const RIDGE_AT = 0.9;
+const RIDGE_WIDTH = 0.035;
 
-const RD_PRESETS = {
-  worms: { du: 0.16, dv: 0.08, f: 0.06, k: 0.062 },
-  solitons: { du: 0.16, dv: 0.08, f: 0.0367, k: 0.0649 },
-  mitosis: { du: 0.16, dv: 0.08, f: 0.014, k: 0.054 },
-  spots: { du: 0.16, dv: 0.08, f: 0.062, k: 0.0609 },
-  coral: { du: 0.16, dv: 0.08, f: 0.039, k: 0.058 },
-  waves: { du: 0.16, dv: 0.08, f: 0.026, k: 0.051 },
-  bacteria: { du: 0.16, dv: 0.08, f: 0.078, k: 0.061 },
-} as const;
+function hash(x: number, y: number): number {
+  const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return h - Math.floor(h);
+}
 
-type RdPreset = keyof typeof RD_PRESETS;
+function smoothNoise(x: number, y: number): number {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const xf = x - xi;
+  const yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const a = hash(xi, yi);
+  const b = hash(xi + 1, yi);
+  const c = hash(xi, yi + 1);
+  const d = hash(xi + 1, yi + 1);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
 
-function ReactionDiffusionField({
-  preset = "worms",
-  className,
-}: {
-  preset?: RdPreset;
-  className?: string;
-}) {
+function flowField(x: number, y: number, t: number): number {
+  const warpX = smoothNoise(x * 0.6 + t * 0.7, y * 0.6 - t * 0.4);
+  const warpY = smoothNoise(x * 0.6 - t * 0.5 + 5.2, y * 0.6 + t * 0.6 + 1.3);
+  const base = smoothNoise(x + warpX * 1.6 + t, y + warpY * 1.6 - t * 0.6);
+  const detail = smoothNoise(x * 2.1 - t * 1.3, y * 2.1 + t * 0.9);
+  return base * 0.75 + detail * 0.25;
+}
+
+function DotField({ className }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { du: DU, dv: DV, f: F, k: K } = RD_PRESETS[preset];
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -82,29 +89,6 @@ function ReactionDiffusionField({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const N = RD_W * RD_H;
-
-    let u = new Float32Array(N).fill(1);
-    let v = new Float32Array(N).fill(0);
-    let un = new Float32Array(N).fill(1);
-    let vn = new Float32Array(N).fill(0);
-
-    for (let s = 0; s < 48; s++) {
-      const cx = 6 + Math.floor(Math.random() * (RD_W - 12));
-      const cy = 6 + Math.floor(Math.random() * (RD_H - 12));
-      const r = 2 + Math.floor(Math.random() * 3);
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          const x = cx + dx;
-          const y = cy + dy;
-          if (dx * dx + dy * dy <= r * r && x >= 0 && x < RD_W && y >= 0 && y < RD_H) {
-            u[y * RD_W + x] = 0.25 + Math.random() * 0.1;
-            v[y * RD_W + x] = 0.5 + Math.random() * 0.1;
-          }
-        }
-      }
-    }
 
     const probe = document.createElement("canvas");
     probe.width = probe.height = 1;
@@ -121,89 +105,115 @@ function ReactionDiffusionField({
     let dotColor = readToken("--muted-foreground");
     let peakColor = readToken("--primary");
 
+    let dpr = 1;
+    let cols = 0;
+    let rows = 0;
+    let cell = DOT_CELL;
+    let mask = new Float32Array(0);
+    const pointer = { x: -1, y: -1, strength: 0, target: 0 };
+
+    const resize = () => {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const { width, height } = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.round(width * dpr));
+      canvas.height = Math.max(1, Math.round(height * dpr));
+      cell = DOT_CELL * dpr;
+      cols = Math.ceil(canvas.width / cell);
+      rows = Math.ceil(canvas.height / cell);
+      mask = new Float32Array(cols * rows);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const nx = c / Math.max(1, cols - 1);
+          const ny = r / Math.max(1, rows - 1);
+          const textFade = Math.min(1, Math.max(0, (nx - 0.18) / 0.5));
+          const edgeX = Math.min(nx, 1 - nx) / 0.05;
+          const edgeY = Math.min(ny, 1 - ny) / 0.1;
+          const edge = Math.min(1, edgeX, edgeY);
+          mask[r * cols + c] = textFade * edge * edge * (3 - 2 * edge);
+        }
+      }
+      if (!running) render(performance.now());
+    };
+
+    const buckets: number[][] = Array.from({ length: DOT_LEVELS }, () => []);
+    const ridges: number[] = [];
+    const render = (now: number) => {
+      const t = reducedMotion ? 12 : now * FIELD_SPEED;
+      pointer.strength += (pointer.target - pointer.strength) * 0.08;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const bucket of buckets) bucket.length = 0;
+      ridges.length = 0;
+      const radius = 9;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const m = mask[r * cols + c]!;
+          if (m <= 0.01) continue;
+          let value = flowField(c * 0.085, r * 0.11, t);
+          value = Math.min(1.2, Math.max(0, (value - 0.34) / 0.42));
+          if (pointer.strength > 0.01) {
+            const dx = c - pointer.x;
+            const dy = r - pointer.y;
+            const falloff = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / radius);
+            value += falloff * falloff * 0.55 * pointer.strength;
+          }
+          const vm = value * m;
+          if (Math.abs(vm - RIDGE_AT) < RIDGE_WIDTH) {
+            ridges.push(c, r);
+            continue;
+          }
+          const level = Math.floor(Math.min(0.999, vm * 0.84) * DOT_LEVELS);
+          if (level > 0) buckets[level]!.push(c, r);
+        }
+      }
+      ctx.fillStyle = dotColor;
+      for (let level = 1; level < DOT_LEVELS; level++) {
+        const bucket = buckets[level]!;
+        if (bucket.length === 0) continue;
+        const size = Math.max(dpr, cell * (0.14 + 0.46 * (level / (DOT_LEVELS - 1))));
+        const offset = (cell - size) / 2;
+        ctx.globalAlpha = 0.1 + 0.12 * level;
+        for (let i = 0; i < bucket.length; i += 2) {
+          ctx.fillRect(bucket[i]! * cell + offset, bucket[i + 1]! * cell + offset, size, size);
+        }
+      }
+      if (ridges.length > 0) {
+        const size = cell * 0.5;
+        const offset = (cell - size) / 2;
+        ctx.fillStyle = peakColor;
+        ctx.globalAlpha = 0.95;
+        for (let i = 0; i < ridges.length; i += 2) {
+          ctx.fillRect(ridges[i]! * cell + offset, ridges[i + 1]! * cell + offset, size, size);
+        }
+      }
+      ctx.globalAlpha = 1;
+    };
+
     const themeObserver = new MutationObserver(() => {
       dotColor = readToken("--muted-foreground");
       peakColor = readToken("--primary");
-      if (!running) render();
+      if (!running) render(performance.now());
     });
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["class", "style", "data-theme"],
     });
 
-    const cols = Math.floor(RD_W / DOT_STRIDE);
-    const rows = Math.floor(RD_H / DOT_STRIDE);
-    let cell = 1;
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const { width, height } = canvas.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.round(width * dpr));
-      canvas.height = Math.max(1, Math.round(height * dpr));
-      cell = Math.max(canvas.width / cols, canvas.height / rows);
-      if (!running) render();
+    const host = canvas.parentElement ?? canvas;
+    const onPointerMove = (event: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) * dpr) / cell;
+      pointer.y = ((event.clientY - rect.top) * dpr) / cell;
+      pointer.target = 1;
     };
-
-    const step = () => {
-      for (let y = 1; y < RD_H - 1; y++) {
-        const row = y * RD_W;
-        for (let x = 1; x < RD_W - 1; x++) {
-          const i = row + x;
-          const lu = u[i - 1] + u[i + 1] + u[i - RD_W] + u[i + RD_W] - 4 * u[i];
-          const lv = v[i - 1] + v[i + 1] + v[i - RD_W] + v[i + RD_W] - 4 * v[i];
-          const uvv = u[i] * v[i] * v[i];
-          un[i] = u[i] + DU * lu - uvv + F * (1 - u[i]);
-          vn[i] = v[i] + DV * lv + uvv - (F + K) * v[i];
-        }
-      }
-      for (let x = 0; x < RD_W; x++) {
-        un[x] = u[x];
-        vn[x] = v[x];
-        un[(RD_H - 1) * RD_W + x] = u[(RD_H - 1) * RD_W + x];
-        vn[(RD_H - 1) * RD_W + x] = v[(RD_H - 1) * RD_W + x];
-      }
-      for (let y = 0; y < RD_H; y++) {
-        un[y * RD_W] = u[y * RD_W];
-        vn[y * RD_W] = v[y * RD_W];
-        un[y * RD_W + RD_W - 1] = u[y * RD_W + RD_W - 1];
-        vn[y * RD_W + RD_W - 1] = v[y * RD_W + RD_W - 1];
-      }
-      [u, un] = [un, u];
-      [v, vn] = [vn, v];
-    };
-
-    const buckets: number[][] = Array.from({ length: DOT_LEVELS }, () => []);
-    const render = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const bucket of buckets) bucket.length = 0;
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const level = Math.floor(
-            Math.min(0.999, v[r * DOT_STRIDE * RD_W + c * DOT_STRIDE] * 2.05) * DOT_LEVELS,
-          );
-          if (level > 0) buckets[level]!.push(c, r);
-        }
-      }
-      for (let level = 1; level < DOT_LEVELS; level++) {
-        const bucket = buckets[level]!;
-        if (bucket.length === 0) continue;
-        const peak = level === DOT_LEVELS - 1;
-        const size = cell * (0.25 + 0.5 * (level / (DOT_LEVELS - 1)));
-        const offset = (cell - size) / 2;
-        ctx.fillStyle = peak ? peakColor : dotColor;
-        ctx.globalAlpha = peak ? 0.9 : 0.25 + 0.2 * level;
-        for (let i = 0; i < bucket.length; i += 2) {
-          ctx.fillRect(bucket[i]! * cell + offset, bucket[i + 1]! * cell + offset, size, size);
-        }
-      }
-      ctx.globalAlpha = 1;
+    const onPointerLeave = () => {
+      pointer.target = 0;
     };
 
     let running = false;
     let visible = true;
     let rafId = 0;
-    const tick = () => {
-      for (let s = 0; s < RD_STEPS_PER_FRAME; s++) step();
-      render();
+    const tick = (now: number) => {
+      render(now);
       rafId = requestAnimationFrame(tick);
     };
     const sync = () => {
@@ -217,9 +227,6 @@ function ReactionDiffusionField({
       }
     };
 
-    if (reducedMotion) {
-      for (let s = 0; s < RD_SETTLE_STEPS; s++) step();
-    }
     resize();
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(canvas);
@@ -229,6 +236,10 @@ function ReactionDiffusionField({
     });
     intersectionObserver.observe(canvas);
     document.addEventListener("visibilitychange", sync);
+    if (!reducedMotion) {
+      host.addEventListener("pointermove", onPointerMove);
+      host.addEventListener("pointerleave", onPointerLeave);
+    }
     sync();
 
     return () => {
@@ -238,8 +249,10 @@ function ReactionDiffusionField({
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       document.removeEventListener("visibilitychange", sync);
+      host.removeEventListener("pointermove", onPointerMove);
+      host.removeEventListener("pointerleave", onPointerLeave);
     };
-  }, [DU, DV, F, K]);
+  }, []);
 
   return (
     <canvas
@@ -550,7 +563,7 @@ function Landing() {
 function Hero() {
   return (
     <section className="relative flex min-h-96 flex-col justify-center overflow-hidden border bg-background px-6 py-16 sm:px-10">
-      <ReactionDiffusionField />
+      <DotField />
       <div className="pointer-events-none absolute inset-0 bg-linear-to-r from-background via-background/80 to-background/10" />
       <div className="relative flex max-w-2xl flex-col items-start gap-6">
         <Badge variant="outline">Open books · Open source · Open doors</Badge>
