@@ -25,15 +25,10 @@ export const Route = createFileRoute("/_layout/_authenticated/admin")({
 
 function AdminLayout() {
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-        organization dashboard
-      </div>
-      <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">
-        <AdminSidebar />
-        <div className="min-w-0 flex-1">
-          <Outlet />
-        </div>
+    <div className="flex animate-fade-in flex-col gap-6 lg:flex-row lg:gap-10">
+      <AdminSidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Outlet />
       </div>
     </div>
   );
