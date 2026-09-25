@@ -202,6 +202,38 @@ describe("subcontracting", () => {
       expect(world.emails.at(-1)?.html).toContain('href="https://app.example/accept-invitation/');
     });
 
+    test("a new Subcontractor created with a Project shares it at once, before and after its first admin joins", async () => {
+      const engagement = await world.engagements.createWithClient(await studio(), {
+        name: "New Crew",
+        slug: "new-crew",
+        adminEmail: "lead@newcrew.example",
+        projectIds: ["site"],
+        kind: "subcontract",
+      });
+
+      expect(engagement.projectIds).toEqual(["site"]);
+      expect((await world.engagements.get(await studio(), engagement.id)).projectIds).toEqual([
+        "site",
+      ]);
+      const invitationId = new URL(engagement.invitation!.link, "https://app.example").pathname
+        .split("/")
+        .pop()!;
+      world.organizations.acceptInvitation(invitationId, "new-crew-lead");
+      expect(
+        (
+          await world.engagements.sharedWithUs(
+            await world.manager("new-crew-lead", engagement.client.id),
+          )
+        ).data,
+      ).toEqual([
+        expect.objectContaining({
+          engagementId: engagement.id,
+          readOnly: false,
+          project: expect.objectContaining({ id: "site", title: "Website" }),
+        }),
+      ]);
+    });
+
     test("the hiring Agency may still record a Prepayment for the Subcontractor", async () => {
       const engagement = await subcontract();
 
