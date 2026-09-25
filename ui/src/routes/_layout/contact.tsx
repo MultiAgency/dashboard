@@ -1,11 +1,10 @@
-import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
+import { InquiryForm, InquiryPage, InquirySent, InquiryTextField } from "@/components/inquiry-form";
 import { useApiClient } from "@/lib/api";
 
 export const Route = createFileRoute("/_layout/contact")({
@@ -16,16 +15,18 @@ export const Route = createFileRoute("/_layout/contact")({
 });
 
 const contactSchema = z.object({
-  name: z.string().trim().min(1, "name required").max(200, "too long"),
-  email: z.string().trim().min(1, "email required").email("not a valid email").max(320, "too long"),
-  company: z.string().trim().max(200, "too long").optional(),
-  message: z.string().trim().max(4000, "too long").optional(),
+  name: z.string().trim().min(1, "Enter your name").max(200, "Keep it under 200 characters"),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Enter your email")
+    .email("Enter a valid email")
+    .max(320, "Keep it under 320 characters"),
+  company: z.string().trim().max(200, "Keep it under 200 characters").optional(),
+  message: z.string().trim().max(4000, "Keep it under 4000 characters").optional(),
 });
 
 type ContactValues = z.infer<typeof contactSchema>;
-
-const LABEL_CLS = "font-mono text-xs uppercase tracking-widest text-muted-foreground block";
-const ERROR_CLS = "text-sm text-destructive";
 
 function Contact() {
   const apiClient = useApiClient();
@@ -64,202 +65,78 @@ function Contact() {
 
   if (submitted) {
     return (
-      <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
-        <Card variant="highlight">
-          <CardContent className="p-8 space-y-4 text-center">
-            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-              agency · contacted
-            </div>
-            <h1 className="text-3xl sm:text-4xl uppercase tracking-tight font-extrabold leading-none">
-              Thanks! Let's build.
-            </h1>
-            <p className="font-mono text-xs leading-relaxed text-muted-foreground">
-              Message received. Stay tuned!
-            </p>
-            <Link
-              to="/team"
-              className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Get to know our team
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
-            </Link>
-            <div className="pt-2">
-              <Button asChild variant="outline" size="sm">
-                <Link to="/">
-                  <ArrowLeftIcon data-icon="inline-start" aria-hidden />
-                  back to home
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <InquirySent
+        title="Thanks, let's build."
+        description="We received your message and will follow up by email."
+        next={{ label: "Get to know our team", link: { to: "/team" } }}
+      />
     );
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
-      <header className="space-y-3 text-center">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          agency · inquire
-        </div>
-        <h1 className="text-4xl sm:text-5xl uppercase tracking-tight font-black leading-none">
-          Tell us what you need
-        </h1>
-      </header>
-
-      <Card>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            How can MultiAgency help? We follow up by email.
-          </p>
-
-          <form
-            className="space-y-4"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              await form.validateAllFields("submit");
-              if (form.state.canSubmit) {
-                form.handleSubmit();
-              }
-            }}
-          >
-            <form.Field name="name">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      name
-                    </label>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="your name"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
-                    />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field name="email">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      email
-                    </label>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      type="email"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="email@example.com"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
-                    />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field name="company">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      company
-                    </label>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value ?? ""}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="company or project"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
-                    />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field name="message">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      message
-                    </label>
-                    <Textarea
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value ?? ""}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      rows={5}
-                      placeholder="a few sentences"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
-                    />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <Button type="submit" disabled={isPending} className="w-full">
-              {isPending && <Spinner />}
-              {isPending ? "submitting..." : "send"}
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <InquiryPage
+      title="Hire MultiAgency"
+      description="Tell us what you need. Clients see every Project and Billing, and steer the plan as work moves."
+    >
+      <InquiryForm
+        id="contact-form"
+        title="Your project"
+        description="How can MultiAgency help? We follow up by email."
+        isPending={isPending}
+        onSubmit={async () => {
+          await form.validateAllFields("submit");
+          if (form.state.canSubmit) await form.handleSubmit();
+        }}
+        aside={
+          <Link to="/work" className="underline underline-offset-4 hover:text-foreground">
+            See our work
+          </Link>
+        }
+      >
+        <form.Field name="name">
+          {(field) => (
+            <InquiryTextField
+              field={field}
+              label="Name"
+              placeholder="Your name"
+              disabled={isPending}
+            />
+          )}
+        </form.Field>
+        <form.Field name="email">
+          {(field) => (
+            <InquiryTextField
+              field={field}
+              label="Email"
+              type="email"
+              placeholder="email@example.com"
+              disabled={isPending}
+            />
+          )}
+        </form.Field>
+        <form.Field name="company">
+          {(field) => (
+            <InquiryTextField
+              field={field}
+              label="Company"
+              placeholder="Company or project"
+              description="Optional."
+              disabled={isPending}
+            />
+          )}
+        </form.Field>
+        <form.Field name="message">
+          {(field) => (
+            <InquiryTextField
+              field={field}
+              label="Message"
+              placeholder="A few sentences about what you need"
+              multiline
+              disabled={isPending}
+            />
+          )}
+        </form.Field>
+      </InquiryForm>
+    </InquiryPage>
   );
-}
-
-function fieldErrorMessage(err: unknown): string {
-  if (typeof err === "string") return err;
-  if (err && typeof err === "object" && "message" in err) {
-    const msg = (err as { message?: unknown }).message;
-    return typeof msg === "string" ? msg : "invalid";
-  }
-  return "invalid";
 }
