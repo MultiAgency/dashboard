@@ -1,10 +1,11 @@
 import { createPlugin } from "every-plugin";
 import { Effect, Layer } from "every-plugin/effect";
+import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 import { contract } from "./contract";
 import { DatabaseLive } from "./db/layer";
 import { createAuthMiddleware } from "./lib/auth";
-import { type CallerContext, callerOf } from "./lib/caller";
+import { type CallerContext, callerOf, isTrustedIdeaCreate } from "./lib/caller";
 import { ContextSchema, runEffect } from "./lib/context";
 import { ProjectService, ProjectServiceLive } from "./services/projects";
 
@@ -71,11 +72,16 @@ export default createPlugin({
         return { data: result };
       }),
 
-      createProject: builder.createProject
-        .use(auth.requireAuth)
-        .handler(async ({ input, context }) =>
-          runEffect(services.project.createProject(input, caller(context))),
-        ),
+      createProject: builder.createProject.handler(async ({ input, context }) => {
+        const signedIn = Boolean(context.user && context.userId);
+        if (!signedIn && !isTrustedIdeaCreate(context as CallerContext, input)) {
+          throw new ORPCError("UNAUTHORIZED", {
+            message: "Authentication required",
+            data: { hint: "Sign in to continue" },
+          });
+        }
+        return runEffect(services.project.createProject(input, caller(context)));
+      }),
 
       updateProject: builder.updateProject
         .use(auth.requireAuth)

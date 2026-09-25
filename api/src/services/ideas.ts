@@ -220,10 +220,14 @@ export function createIdeasService(deps: {
     input: { title: string; description?: string },
   ): Promise<Project> {
     const base = slugBase(input.title);
+    const trustedScope = {
+      ...agencyScope,
+      pluginContext: { ...agencyScope.pluginContext, trusted: true },
+    };
     for (let attempt = 1; ; attempt++) {
       try {
         const { project } = await runEffect(
-          agency.createProject(agencyScope, {
+          agency.createProject(trustedScope, {
             kind: "idea",
             visibility: "private",
             title: input.title,

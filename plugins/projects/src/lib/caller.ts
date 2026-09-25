@@ -90,6 +90,21 @@ export function canDelete(caller: Caller, project: OwnedRecord): boolean {
   return caller.platformAdmin || (caller.trusted && canManage(caller, project));
 }
 
+export function isTrustedIdeaCreate(
+  context: CallerContext,
+  input: { kind: string; visibility?: string; organizationId?: string; ownerId?: string },
+): boolean {
+  const caller = callerOf(context);
+  return (
+    caller.trusted &&
+    Boolean(context.userId) &&
+    input.kind === "idea" &&
+    (input.visibility ?? "private") === "private" &&
+    !input.ownerId &&
+    isMemberOf(caller, input.organizationId ?? null)
+  );
+}
+
 export function canPublish(caller: Caller, organizationId: string | null): boolean {
   return caller.platformAdmin || isManagerOf(caller, organizationId);
 }
