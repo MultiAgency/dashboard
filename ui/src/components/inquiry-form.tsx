@@ -104,9 +104,9 @@ export function InquiryTextField({
   const error = fieldErrorMessage(field.state.meta.errors[0]);
   const errorId = `${field.name}-error`;
   const descriptionId = `${field.name}-description`;
-  const describedBy = [description ? descriptionId : null, error ? errorId : null]
-    .filter(Boolean)
-    .join(" ");
+  const describedBy =
+    [description ? descriptionId : null, error ? errorId : null].filter(Boolean).join(" ") ||
+    undefined;
   const controlProps = {
     id: field.name,
     name: field.name,
@@ -114,20 +114,30 @@ export function InquiryTextField({
     onBlur: field.handleBlur,
     placeholder,
     disabled,
-    "aria-invalid": error ? true : undefined,
-    "aria-describedby": describedBy || undefined,
   };
   return (
     <Field data-invalid={error ? true : undefined}>
       <FieldLabel htmlFor={field.name}>{label}</FieldLabel>
       {multiline ? (
-        <Textarea {...controlProps} rows={5} onChange={(e) => field.handleChange(e.target.value)} />
+        <Textarea
+          {...controlProps}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          rows={5}
+          onChange={(e) => field.handleChange(e.target.value)}
+        />
       ) : (
-        <Input {...controlProps} type={type} onChange={(e) => field.handleChange(e.target.value)} />
+        <Input
+          {...controlProps}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          type={type}
+          onChange={(e) => field.handleChange(e.target.value)}
+        />
       )}
       {description && <FieldDescription id={descriptionId}>{description}</FieldDescription>}
       {error && (
-        <FieldError id={errorId} aria-live="polite">
+        <FieldError id={errorId} role="status" aria-live="polite">
           {error}
         </FieldError>
       )}
