@@ -35,7 +35,7 @@ type Invitation = {
   expiresAt: Date | string;
 };
 
-const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
+const LABEL_CLS = "font-mono text-xs uppercase tracking-widest text-muted-foreground block";
 
 function unwrapMembers(res: unknown): Member[] {
   const raw = Array.isArray(res)
@@ -147,7 +147,7 @@ export function MembersAdminSection() {
   return (
     <div className="space-y-8">
       <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           invite team member
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -169,7 +169,7 @@ export function MembersAdminSection() {
       </section>
 
       <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           pending invitations ({pendingInvitations.length})
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -190,7 +190,7 @@ export function MembersAdminSection() {
       </section>
 
       <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           current team ({members.length})
         </div>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -274,11 +274,7 @@ function PendingInvitationsTable({
       accessorKey: "status",
       cell: ({ row }) => {
         const status = invitationStatus(row.original);
-        return (
-          <Badge variant={status === "pending" ? "outline" : "secondary"} className="text-[10px]">
-            {status}
-          </Badge>
-        );
+        return <Badge variant={status === "pending" ? "outline" : "secondary"}>{status}</Badge>;
       },
     },
     {
@@ -428,7 +424,7 @@ function MembersTable({
               updateMutation.mutate({ memberId: member.id, role: newRole });
             }}
             disabled={busy || lastOwner}
-            className="h-7 rounded border border-input bg-background px-2 font-mono text-[11px]"
+            className="h-7 rounded border border-input bg-background px-2 font-mono text-xs"
           >
             {ORGANIZATION_ROLES.map((role) => (
               <option key={role} value={role}>

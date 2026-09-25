@@ -37,7 +37,7 @@ export function ContributorsAdminSection() {
         <Link
           to="/admin/contributors/$nearAccount"
           params={{ nearAccount: row.original.nearAccount }}
-          className="font-display text-sm uppercase tracking-tight font-bold hover:underline"
+          className="text-sm uppercase tracking-tight font-bold hover:underline"
         >
           {row.original.name ?? row.original.nearAccount}
         </Link>
@@ -58,7 +58,7 @@ export function ContributorsAdminSection() {
       cell: ({ row }) => (
         <div className="flex flex-wrap gap-1">
           {row.original.skills.slice(0, 3).map((s) => (
-            <Badge key={s} variant="outline" className="text-[10px]">
+            <Badge key={s} variant="outline">
               {s}
             </Badge>
           ))}
@@ -85,7 +85,7 @@ export function ContributorsAdminSection() {
         <Link
           to="/admin/contributors/$nearAccount"
           params={{ nearAccount: row.original.nearAccount }}
-          className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground hover:underline"
+          className="font-mono text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground hover:underline"
         >
           edit
         </Link>
@@ -96,11 +96,7 @@ export function ContributorsAdminSection() {
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center justify-end gap-3">
-        <Button
-          onClick={() => setCreating((v) => !v)}
-          variant={creating ? "outline" : "default"}
-          className="font-display uppercase tracking-wide"
-        >
+        <Button onClick={() => setCreating((v) => !v)} variant={creating ? "outline" : "default"}>
           {creating ? "cancel" : "+ new builder"}
         </Button>
       </header>
@@ -284,7 +280,7 @@ export function ContributorProfileForm({
   return (
     <Card>
       <CardContent className="p-5 grid gap-4">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           edit profile
           {!contributor.registered && (
             <span className="ml-2 text-muted-foreground/80">(not registered as builder yet)</span>
@@ -344,7 +340,7 @@ export function ContributorProfileForm({
         <Button
           onClick={() => saveMutation.mutate()}
           disabled={saveMutation.isPending}
-          className="w-fit font-display uppercase tracking-wide"
+          className="w-fit"
         >
           {saveMutation.isPending ? "saving..." : "save profile"}
         </Button>

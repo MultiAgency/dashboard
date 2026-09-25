@@ -3,7 +3,7 @@ export { Alert, AlertDescription, AlertTitle } from "./ui/alert";
 export { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 export { Badge } from "./ui/badge";
 export { Button } from "./ui/button";
-export { Card, CardContent } from "./ui/card";
+export { Card, CardContent, CardDescription } from "./ui/card";
 export { DataTable } from "./ui/data-table";
 export {
   Dialog,

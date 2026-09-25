@@ -115,10 +115,10 @@ function AdminReportsPage() {
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           money · reports
         </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
           Reports
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -196,7 +196,7 @@ function AdminReportsPage() {
       </Card>
 
       <section className="space-y-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           saved reports
         </h2>
         {savedQuery.isError ? (

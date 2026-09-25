@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_layout/_authenticated/client/$engagement
 });
 
 const TAB_BASE =
-  "font-mono text-[11px] uppercase tracking-[0.18em] px-3 py-1.5 rounded-sm transition-colors";
+  "font-mono text-xs uppercase tracking-widest px-3 py-1.5 rounded-sm transition-colors";
 const TAB_ACTIVE = "bg-foreground text-background";
 const TAB_INACTIVE = "text-muted-foreground hover:text-foreground";
 
@@ -58,13 +58,11 @@ function EngagementLayout() {
             <EngagementKindBadge kind={engagement.kind} />
             {engagement.status === "ended" && <Badge variant="secondary">read-only</Badge>}
           </div>
-          <h1 className="font-display text-2xl font-black uppercase tracking-tight">
-            {engagement.agency.name}
-          </h1>
+          <h1 className="text-2xl font-black uppercase tracking-tight">{engagement.agency.name}</h1>
         </div>
         {others.length > 1 && (
           <label className="grid gap-1">
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               agency
             </span>
             <select
@@ -96,7 +94,7 @@ function EngagementLayout() {
           >
             {section.label}
             {section.to === planSection && awaiting > 0 && (
-              <Badge variant="default" className="ml-1 px-1.5 py-0 font-mono text-[10px]">
+              <Badge variant="default" className="ml-1 px-1.5 py-0">
                 {awaiting}
               </Badge>
             )}

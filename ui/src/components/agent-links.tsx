@@ -26,7 +26,7 @@ export function AgentLinksCard({ engagementId }: { engagementId: string }) {
       <CardContent className="p-4">
         <div className="text-xs uppercase text-muted-foreground">Agents</div>
         {links.length === 0 ? (
-          <div className="font-display text-2xl font-black mt-1">—</div>
+          <div className="text-2xl font-black mt-1">—</div>
         ) : (
           <ul className="mt-2 space-y-1">
             {links.map((link) => (

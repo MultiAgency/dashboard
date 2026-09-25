@@ -156,12 +156,10 @@ function MethodRow({
   return (
     <div className="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-start">
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           {label}
         </span>
-        <Badge variant={active ? "default" : "outline"} className="text-[10px]">
-          {status}
-        </Badge>
+        <Badge variant={active ? "default" : "outline"}>{status}</Badge>
       </div>
       <div className="min-w-0">{children}</div>
     </div>

@@ -17,7 +17,7 @@ export const Route = createFileRoute("/_layout/_authenticated/client")({
 function ClientLayout() {
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+      <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
         organization dashboard
       </div>
       <div className="flex flex-col gap-6 lg:flex-row lg:gap-8">

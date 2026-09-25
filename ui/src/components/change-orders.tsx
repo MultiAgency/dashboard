@@ -227,7 +227,7 @@ function PlanEditor({
     <Card>
       <CardContent className="p-5 space-y-4">
         <div className="space-y-1">
-          <h3 className="font-display text-lg uppercase font-extrabold">Edit the plan</h3>
+          <h3 className="text-lg uppercase font-extrabold">Edit the plan</h3>
           <p className="text-sm text-muted-foreground">
             Set the amount per month for each Project. Saving proposes a Change order; it applies
             once the other side approves it, from the next month's Prepayment.
@@ -356,7 +356,7 @@ function MoveForm({ engagementId, projects }: { engagementId: string; projects: 
     <Card>
       <CardContent className="p-5 space-y-4">
         <div className="space-y-1">
-          <h3 className="font-display text-lg uppercase font-extrabold">Move budget</h3>
+          <h3 className="text-lg uppercase font-extrabold">Move budget</h3>
           <p className="text-sm text-muted-foreground">
             A positive amount puts Prepaid balance into a Project; a negative one pulls unspent
             budget back. Pull-backs cannot exceed what this Engagement put into the Project or what
@@ -613,11 +613,11 @@ export function ChangeOrdersPanel({
     <div className="space-y-8">
       <ShortfallWarnings engagementId={engagementId} projects={projects} />
       <section className="space-y-3">
-        <h2 className="font-display text-xl uppercase font-extrabold">Allocation plan</h2>
+        <h2 className="text-xl uppercase font-extrabold">Allocation plan</h2>
         <AllocationPlanTable engagementId={engagementId} projects={projects} />
       </section>
       <section className="space-y-3">
-        <h2 className="font-display text-xl uppercase font-extrabold">Pending</h2>
+        <h2 className="text-xl uppercase font-extrabold">Pending</h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
           A Change order is decided by an owner or admin of the side that did not propose it:{" "}
           {names[other]} decides yours, you decide theirs.
@@ -636,7 +636,7 @@ export function ChangeOrdersPanel({
         </p>
       )}
       <section className="space-y-3">
-        <h2 className="font-display text-xl uppercase font-extrabold">History</h2>
+        <h2 className="text-xl uppercase font-extrabold">History</h2>
         <ChangeOrderHistory
           engagementId={engagementId}
           names={names}

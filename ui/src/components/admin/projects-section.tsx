@@ -2,7 +2,16 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useState } from "react";
-import { Badge, Button, Card, CardContent, DataTable, Empty, EmptyTitle } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  DataTable,
+  Empty,
+  EmptyTitle,
+} from "@/components";
 import { AssignmentsSection } from "@/components/admin/assignments-section";
 import { type Project, ProjectForm } from "@/components/admin/project-form";
 import { AdminError } from "@/components/admin-error";
@@ -45,10 +54,8 @@ export function ProjectsAdminSection() {
       accessorKey: "title",
       cell: ({ row }) => (
         <div className="space-y-0.5">
-          <div className="font-display text-sm uppercase tracking-tight font-bold">
-            {row.original.title}
-          </div>
-          <div className="font-mono text-[10px] text-muted-foreground">@{row.original.slug}</div>
+          <div className="text-sm uppercase tracking-tight font-bold">{row.original.title}</div>
+          <div className="font-mono text-xs text-muted-foreground">@{row.original.slug}</div>
         </div>
       ),
     },
@@ -111,7 +118,6 @@ export function ProjectsAdminSection() {
             setPrefill(null);
           }}
           variant={creating ? "outline" : "default"}
-          className="font-display uppercase tracking-wide"
         >
           {creating ? "cancel" : "+ new project"}
         </Button>
@@ -255,8 +261,8 @@ function NearnSponsorBountiesPanel({
   if (query.isLoading) {
     return (
       <Card>
-        <CardContent className="p-5 text-sm text-muted-foreground">
-          Checking NEARN for unlinked bounties…
+        <CardContent className="p-5">
+          <CardDescription>Checking NEARN for unlinked bounties…</CardDescription>
         </CardContent>
       </Card>
     );
@@ -265,9 +271,11 @@ function NearnSponsorBountiesPanel({
   if (!query.data.sponsorSlug) {
     return (
       <Card>
-        <CardContent className="p-5 text-sm text-muted-foreground">
-          No NEARN sponsor configured. Set the agency NEARN account in settings to surface unlinked
-          bounties here.
+        <CardContent className="p-5">
+          <CardDescription>
+            No NEARN sponsor configured. Set the agency NEARN account in settings to surface
+            unlinked bounties here.
+          </CardDescription>
         </CardContent>
       </Card>
     );
@@ -276,18 +284,16 @@ function NearnSponsorBountiesPanel({
   return (
     <section className="space-y-3 pt-4">
       <div className="space-y-1">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           nearn · sponsor
         </div>
-        <h2 className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight">
+        <h2 className="text-2xl uppercase tracking-tight font-extrabold leading-tight">
           Unlinked Bounties
         </h2>
       </div>
       {unlinked.length === 0 ? (
-        <Empty className="border-2 border-dashed border-border/40">
-          <EmptyTitle className="font-mono text-sm font-normal text-muted-foreground">
-            All current NEARN bounties are linked.
-          </EmptyTitle>
+        <Empty>
+          <EmptyTitle>All current NEARN bounties are linked.</EmptyTitle>
         </Empty>
       ) : (
         <div className="space-y-2">

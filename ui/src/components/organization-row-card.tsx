@@ -16,13 +16,11 @@ export function OrganizationRowCard({
     <Card>
       <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1 min-w-0">
-          <div className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
+          <div className="text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
             {name}
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono text-[10px] uppercase">
-              {role ?? "member"}
-            </Badge>
+            <Badge variant="outline">{role ?? "member"}</Badge>
             {details}
           </div>
         </div>

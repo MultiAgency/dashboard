@@ -15,7 +15,7 @@ export const Route = createFileRoute("/_layout/_authenticated/platform")({
 });
 
 const TAB_BASE =
-  "font-mono text-[11px] uppercase tracking-[0.18em] px-3 py-1.5 rounded-sm transition-colors";
+  "font-mono text-xs uppercase tracking-widest px-3 py-1.5 rounded-sm transition-colors";
 const TAB_ACTIVE = "bg-foreground text-background";
 const TAB_INACTIVE = "text-muted-foreground hover:text-foreground";
 

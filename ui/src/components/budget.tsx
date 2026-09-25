@@ -56,7 +56,7 @@ function Tile({ label, value }: { label: string; value: string }) {
       <CardContent className="p-4 space-y-1">
         <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
         <div
-          className={`font-display text-lg uppercase tracking-tight font-extrabold tabular-nums break-all ${
+          className={`text-lg uppercase tracking-tight font-extrabold tabular-nums break-all ${
             isNegative ? "text-destructive" : ""
           }`}
         >

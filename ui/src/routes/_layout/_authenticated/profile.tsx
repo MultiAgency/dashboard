@@ -3,7 +3,15 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Avatar, AvatarFallback, AvatarImage, Button, Card, CardContent } from "@/components";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+} from "@/components";
 import { Field } from "@/components/admin-form";
 import { MyOrganizations } from "@/components/my-organizations";
 import { PendingInvitationsList } from "@/components/pending-invitations";
@@ -62,8 +70,8 @@ function ProfilePage() {
   if (!user) {
     return (
       <Card>
-        <CardContent className="text-center font-mono text-xs uppercase tracking-[0.22em] text-muted-foreground">
-          loading profile...
+        <CardContent>
+          <CardDescription className="text-center">loading profile...</CardDescription>
         </CardContent>
       </Card>
     );
@@ -74,24 +82,22 @@ function ProfilePage() {
   return (
     <div className="space-y-8 animate-fade-in">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           your · account
         </div>
-        <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
           Profile
         </h1>
       </header>
 
       <Card variant="highlight">
         <CardContent className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <Avatar className="size-16 rounded-full shrink-0">
+          <Avatar className="size-16 shrink-0">
             {avatarUrl && <AvatarImage src={avatarUrl} alt={displayName} />}
-            <AvatarFallback className="bg-muted text-foreground text-2xl font-display">
-              {fallbackInitial}
-            </AvatarFallback>
+            <AvatarFallback>{fallbackInitial}</AvatarFallback>
           </Avatar>
           <div className="space-y-1 min-w-0">
-            <div className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight break-words">
+            <div className="text-2xl uppercase tracking-tight font-extrabold leading-tight break-words">
               {displayName}
             </div>
             {profile?.description && (
@@ -122,17 +128,17 @@ function ProfilePage() {
 
       <section className="space-y-3">
         <div className="space-y-1">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             display
           </div>
-          <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-[0.95]">
+          <h2 className="text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-none">
             Theme
           </h2>
         </div>
         <Card>
           <CardContent className="flex items-center gap-3">
             <ThemeToggle />
-            <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            <span className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               toggle light · dark
             </span>
           </CardContent>
@@ -144,7 +150,6 @@ function ProfilePage() {
           onClick={() => signOutMutation.mutate()}
           disabled={signOutMutation.isPending}
           variant="outline"
-          className="font-display uppercase tracking-wide"
         >
           {signOutMutation.isPending ? "signing out..." : "sign out →"}
         </Button>
@@ -167,10 +172,10 @@ function ProfileSection({
   return (
     <section id={id} className="space-y-3 scroll-mt-24">
       <div className="space-y-1">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           {eyebrow}
         </div>
-        <h2 className="font-display text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-[0.95]">
+        <h2 className="text-2xl sm:text-3xl uppercase tracking-tight font-extrabold leading-none">
           {title}
         </h2>
       </div>

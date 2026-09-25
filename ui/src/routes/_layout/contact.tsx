@@ -23,7 +23,7 @@ const contactSchema = z.object({
 
 type ContactValues = z.infer<typeof contactSchema>;
 
-const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
+const LABEL_CLS = "font-mono text-xs uppercase tracking-widest text-muted-foreground block";
 const ERROR_CLS = "text-sm text-destructive";
 
 function Contact() {
@@ -66,10 +66,10 @@ function Contact() {
       <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
         <Card variant="highlight">
           <CardContent className="p-8 space-y-4 text-center">
-            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               agency · contacted
             </div>
-            <h1 className="font-display text-3xl sm:text-4xl uppercase tracking-tight font-extrabold leading-[0.95]">
+            <h1 className="text-3xl sm:text-4xl uppercase tracking-tight font-extrabold leading-none">
               Thanks! Let's build.
             </h1>
             <p className="font-mono text-xs leading-relaxed text-muted-foreground">
@@ -77,17 +77,12 @@ function Contact() {
             </p>
             <Link
               to="/team"
-              className="inline-block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-block font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
             >
               Get to know our team →
             </Link>
             <div className="pt-2">
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="font-display uppercase tracking-wide"
-              >
+              <Button asChild variant="outline" size="sm">
                 <Link to="/">← back to home</Link>
               </Button>
             </div>
@@ -100,10 +95,10 @@ function Contact() {
   return (
     <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
       <header className="space-y-3 text-center">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           agency · inquire
         </div>
-        <h1 className="font-display text-4xl sm:text-5xl uppercase tracking-tight font-black leading-[0.95]">
+        <h1 className="text-4xl sm:text-5xl uppercase tracking-tight font-black leading-none">
           Tell us what you need
         </h1>
       </header>
@@ -243,11 +238,7 @@ function Contact() {
                 );
               }}
             </form.Field>
-            <Button
-              type="submit"
-              disabled={isPending}
-              className="w-full font-display uppercase tracking-wide"
-            >
+            <Button type="submit" disabled={isPending} className="w-full">
               {isPending && <Spinner />}
               {isPending ? "submitting..." : "send →"}
             </Button>

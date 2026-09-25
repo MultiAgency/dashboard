@@ -49,7 +49,7 @@ type BuilderRow = {
   amounts: TokenAmount[];
 };
 
-const SECTION_TITLE = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground";
+const SECTION_TITLE = "font-mono text-xs uppercase tracking-widest text-muted-foreground";
 
 function buildTokenSummaryRows(budget: TokenAmount[], billed: TokenAmount[]): TokenSummaryRow[] {
   return collectReportTokenIds(budget, billed).map((tokenId) => ({
@@ -107,7 +107,7 @@ function useBuilderColumns(tokenIds: string[]): ColumnDef<BuilderRow>[] {
         cell: ({ row }) => (
           <div>
             <div className="font-medium">{row.original.name}</div>
-            <div className="font-mono text-[10px] text-muted-foreground">
+            <div className="font-mono text-xs text-muted-foreground">
               {row.original.nearAccount}
             </div>
           </div>
@@ -186,7 +186,7 @@ export function ReportPreview({ report, showBuilders = true }: ReportPreviewProp
         <dl className="grid gap-3 sm:grid-cols-3 text-sm mb-2">
           <div className="rounded-sm border border-border px-3 py-2">
             <dt className="text-xs text-muted-foreground">Projects</dt>
-            <dd className="font-display text-2xl font-black">{report.overview.projectCount}</dd>
+            <dd className="text-2xl font-black">{report.overview.projectCount}</dd>
           </div>
           <div className="rounded-sm border border-border px-3 py-2 sm:col-span-2">
             <dt className="text-xs text-muted-foreground">Period</dt>

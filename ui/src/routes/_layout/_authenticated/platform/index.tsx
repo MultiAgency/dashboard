@@ -18,7 +18,7 @@ export const Route = createFileRoute("/_layout/_authenticated/platform/")({
 
 type PlatformOrg = Organization;
 
-const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
+const LABEL_CLS = "font-mono text-xs uppercase tracking-widest text-muted-foreground block";
 
 function PlatformOrgs() {
   const authClient = useAuthClient();
@@ -66,7 +66,7 @@ function PlatformOrgs() {
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <h2 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
+        <h2 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
           Workspaces
         </h2>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -76,14 +76,14 @@ function PlatformOrgs() {
       </div>
 
       <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           create organization
         </div>
         <CreateAgencyForm onCreated={invalidate} />
       </section>
 
       <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           all workspaces ({orgs.length})
         </div>
         {orgsQuery.isError ? (
@@ -241,7 +241,7 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
                 placeholder="acme-agency"
                 disabled={isPending}
               />
-              <p className="font-mono text-[10px] text-muted-foreground">
+              <p className="font-mono text-xs text-muted-foreground">
                 auto-generated from name, but you can override.
               </p>
             </div>
@@ -259,7 +259,7 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
               placeholder="your-org.sputnik-dao.near"
               disabled={isPending}
             />
-            <p className="font-mono text-[10px] text-muted-foreground">
+            <p className="font-mono text-xs text-muted-foreground">
               connects a Sputnik DAO for money features. It must exist on the current network.
             </p>
           </div>
@@ -277,16 +277,12 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
               placeholder="admin@example.com"
               disabled={isPending}
             />
-            <p className="font-mono text-[10px] text-muted-foreground">
+            <p className="font-mono text-xs text-muted-foreground">
               invited as admin. You (the creator) are added as owner automatically — this email is
               for the person who will run the agency day-to-day.
             </p>
           </div>
-          <Button
-            type="submit"
-            disabled={!canSubmit || isPending}
-            className="w-full font-display uppercase tracking-wide"
-          >
+          <Button type="submit" disabled={!canSubmit || isPending} className="w-full">
             {isPending ? "creating…" : "create organization →"}
           </Button>
         </form>

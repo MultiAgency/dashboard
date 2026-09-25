@@ -98,10 +98,10 @@ function SignInPage() {
   return (
     <div className="mx-auto max-w-md space-y-8 animate-fade-in">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           your · account
         </div>
-        <h1 className="font-display text-4xl sm:text-5xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-4xl sm:text-5xl font-black uppercase leading-none tracking-tight">
           {verificationEmail ? "Check your email" : MODE_TITLES[mode]}
         </h1>
       </header>
@@ -131,7 +131,7 @@ function SignInPage() {
           )}
           {mode === "forgot" && <ForgotPasswordForm defaultEmail={search.email} />}
 
-          <div className="flex flex-wrap gap-x-4 gap-y-2 font-mono text-[11px] uppercase tracking-[0.18em]">
+          <div className="flex flex-wrap gap-x-4 gap-y-2 font-mono text-xs uppercase tracking-widest">
             {mode !== "sign-in" && (
               <button
                 type="button"
@@ -153,12 +153,12 @@ function SignInPage() {
           </div>
 
           <section className="space-y-3">
-            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               or
             </div>
             <Button
               variant="outline"
-              className="w-full font-display uppercase tracking-wide"
+              className="w-full"
               onClick={() => nearSignIn.mutate()}
               disabled={nearSignIn.isPending}
             >
@@ -241,7 +241,7 @@ function SignInForm({
           <div className="flex items-center justify-between gap-3">
             <button
               type="button"
-              className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground underline underline-offset-2"
+              className="font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground underline underline-offset-2"
               onClick={onForgot}
             >
               forgot password?
@@ -379,7 +379,7 @@ function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) {
   if (sent) {
     return (
       <Card variant="highlight">
-        <CardContent className="text-sm leading-relaxed">
+        <CardContent>
           If an account exists for <span className="font-mono">{email.trim()}</span>, a link to set
           a new password is on its way.
         </CardContent>

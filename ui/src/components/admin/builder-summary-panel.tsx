@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Card, CardContent } from "@/components";
+import { Card, CardContent, CardDescription } from "@/components";
 import { TokenAmountCell } from "@/components/token-amounts";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { tokenDisplayName } from "@/lib/report-amounts";
@@ -27,7 +27,7 @@ type TokenTotalRow = {
 };
 
 const SECTION_LABEL =
-  "font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 py-2 text-left border-b border-border";
+  "font-mono text-xs uppercase tracking-widest text-muted-foreground px-3 py-2 text-left border-b border-border";
 const CELL = "px-3 py-2 text-sm border-b border-border";
 
 function buildTokenTotals(billings: BillingRow[]): TokenTotalRow[] {
@@ -90,7 +90,7 @@ export function BuilderSummaryPanel({ billings, projectCount }: BuilderSummaryPa
 
   return (
     <section className="space-y-3">
-      <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+      <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
         payment summary
       </h2>
 
@@ -98,33 +98,33 @@ export function BuilderSummaryPanel({ billings, projectCount }: BuilderSummaryPa
         <Card>
           <CardContent className="px-4 py-3">
             <dt className="text-xs text-muted-foreground">Billing entries</dt>
-            <dd className="font-display text-2xl font-black">{billings.length}</dd>
+            <dd className="text-2xl font-black">{billings.length}</dd>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="px-4 py-3">
             <dt className="text-xs text-muted-foreground">Approved</dt>
-            <dd className="font-display text-2xl font-black">{approvedCount}</dd>
+            <dd className="text-2xl font-black">{approvedCount}</dd>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="px-4 py-3">
             <dt className="text-xs text-muted-foreground">Outstanding</dt>
-            <dd className="font-display text-2xl font-black">{pendingCount}</dd>
+            <dd className="text-2xl font-black">{pendingCount}</dd>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="px-4 py-3">
             <dt className="text-xs text-muted-foreground">Projects</dt>
-            <dd className="font-display text-2xl font-black">{projectCount}</dd>
+            <dd className="text-2xl font-black">{projectCount}</dd>
           </CardContent>
         </Card>
       </dl>
 
       {tokenTotals.length === 0 ? (
         <Card>
-          <CardContent className="px-4 py-6 text-sm text-muted-foreground text-center">
-            No billings yet.
+          <CardContent className="px-4 py-6">
+            <CardDescription className="text-center">No billings yet.</CardDescription>
           </CardContent>
         </Card>
       ) : (

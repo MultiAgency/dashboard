@@ -51,17 +51,17 @@ function ResetPasswordPage() {
   return (
     <div className="mx-auto max-w-md space-y-8 animate-fade-in">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           your · account
         </div>
-        <h1 className="font-display text-4xl sm:text-5xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-4xl sm:text-5xl font-black uppercase leading-none tracking-tight">
           New password
         </h1>
       </header>
 
       {error || !token ? (
         <Card variant="highlight">
-          <CardContent className="space-y-4 text-sm leading-relaxed">
+          <CardContent className="space-y-4">
             <p>This reset link is invalid or has expired. Request a new one.</p>
             <Button asChild variant="outline">
               <Link to="/sign-in" search={{ mode: "forgot" }}>

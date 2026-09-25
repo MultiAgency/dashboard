@@ -51,10 +51,10 @@ function Team() {
   return (
     <div className="space-y-12 pb-12 animate-fade-in">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           agency · team
         </div>
-        <h1 className="font-display text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-4xl sm:text-6xl font-black uppercase leading-none tracking-tight">
           Team
         </h1>
         <p className="text-sm text-muted-foreground max-w-2xl">
@@ -94,7 +94,7 @@ function PublicRoles({
   }
   if (teamQuery.isError) {
     return (
-      <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
         could not load — try again
       </p>
     );
@@ -109,10 +109,8 @@ function PublicRoles({
     );
   }
   return (
-    <Empty className="border-2 border-dashed border-border/40">
-      <EmptyTitle className="font-display text-2xl uppercase tracking-tight text-muted-foreground">
-        no roles defined
-      </EmptyTitle>
+    <Empty>
+      <EmptyTitle>no roles defined</EmptyTitle>
     </Empty>
   );
 }
@@ -150,7 +148,7 @@ function RoleCard({
   return (
     <Card className="flex flex-col">
       <CardContent className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
           <span className="truncate">{role.name}</span>
           <span>
             {role.isEveryone
@@ -183,16 +181,12 @@ function RoleCard({
         )}
         {role.permissions.length > 0 && (
           <div className="space-y-1 pt-2 border-t border-foreground/20">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               permissions
             </div>
             <div className="flex flex-wrap gap-1">
               {role.permissions.map((p) => (
-                <Badge
-                  key={p}
-                  variant="outline"
-                  className="font-mono text-[10px] uppercase tracking-wide border-foreground/40 text-muted-foreground"
-                >
+                <Badge key={p} variant="outline" className="border-foreground/40">
                   {p}
                 </Badge>
               ))}
@@ -226,22 +220,20 @@ function MemberDetailDialog({
     <Dialog open={!!accountId} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-[0.18em]">
+          <div className="flex flex-wrap items-center gap-2 font-mono text-xs uppercase tracking-widest">
             <span className="text-muted-foreground">member</span>
             <Badge variant="outline">
               {heldRoles.length} role{heldRoles.length === 1 ? "" : "s"}
             </Badge>
           </div>
-          <DialogTitle className="font-display text-2xl uppercase tracking-tight font-extrabold leading-tight break-all">
-            {accountId}
-          </DialogTitle>
+          <DialogTitle className="break-all">{accountId}</DialogTitle>
           <DialogDescription className="sr-only">
             DAO roles and permissions for {accountId}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               roles held
             </div>
             {heldRoles.length === 0 ? (
@@ -251,11 +243,7 @@ function MemberDetailDialog({
             ) : (
               <div className="flex flex-wrap gap-1">
                 {heldRoles.map((r) => (
-                  <Badge
-                    key={r.name}
-                    variant="outline"
-                    className="font-mono text-[10px] uppercase tracking-wide"
-                  >
+                  <Badge key={r.name} variant="outline">
                     {r.name}
                   </Badge>
                 ))}
@@ -264,16 +252,12 @@ function MemberDetailDialog({
           </div>
           {openRoles.length > 0 && (
             <div className="space-y-2">
-              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
                 open roles
               </div>
               <div className="flex flex-wrap gap-1">
                 {openRoles.map((r) => (
-                  <Badge
-                    key={r.name}
-                    variant="outline"
-                    className="font-mono text-[10px] uppercase tracking-wide border-foreground/30 text-muted-foreground"
-                  >
+                  <Badge key={r.name} variant="outline" className="border-foreground/30">
                     {r.name}
                   </Badge>
                 ))}
@@ -281,7 +265,7 @@ function MemberDetailDialog({
             </div>
           )}
           <div className="space-y-2">
-            <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               permissions
             </div>
             {permissions.length === 0 ? (
@@ -291,11 +275,7 @@ function MemberDetailDialog({
             ) : (
               <div className="flex flex-wrap gap-1">
                 {permissions.map((p) => (
-                  <Badge
-                    key={p}
-                    variant="outline"
-                    className="font-mono text-[10px] uppercase tracking-wide border-foreground/40 text-muted-foreground"
-                  >
+                  <Badge key={p} variant="outline" className="border-foreground/40">
                     {p}
                   </Badge>
                 ))}

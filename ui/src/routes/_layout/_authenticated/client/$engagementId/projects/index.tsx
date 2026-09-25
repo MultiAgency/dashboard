@@ -24,7 +24,7 @@ function SharedProjectsPage() {
         <Link
           to="/client/$engagementId/projects/$slug"
           params={{ engagementId: engagement.id, slug: row.original.slug }}
-          className="font-display text-sm uppercase font-bold hover:underline"
+          className="text-sm uppercase font-bold hover:underline"
         >
           {row.original.title}
         </Link>

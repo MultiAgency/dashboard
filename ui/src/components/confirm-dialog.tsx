@@ -46,25 +46,17 @@ export function ConfirmDialog({
     <Dialog open={open} onOpenChange={(next) => !pending && onOpenChange(next)}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-display text-xl uppercase tracking-tight font-extrabold leading-tight">
-            {title}
-          </DialogTitle>
-          {description && <DialogDescription className="text-sm">{description}</DialogDescription>}
+          <DialogTitle>{title}</DialogTitle>
+          {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={pending}
-            className="font-display uppercase tracking-wide"
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
             {cancelLabel}
           </Button>
           <Button
             variant={destructive ? "destructive" : "default"}
             onClick={handleConfirm}
             disabled={pending}
-            className="font-display uppercase tracking-wide"
           >
             {pending ? "working..." : confirmLabel}
           </Button>

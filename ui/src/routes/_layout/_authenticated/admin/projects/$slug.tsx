@@ -212,9 +212,7 @@ function NearnSubmissionsSection({ slug }: { slug: string }) {
                 <span className="font-mono text-muted-foreground">@{s.user.username}</span>
               )}
               {s.user.publicKey && (
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  {s.user.publicKey}
-                </span>
+                <span className="font-mono text-xs text-muted-foreground">{s.user.publicKey}</span>
               )}
               {s.user.publicKey &&
                 contributorsQuery.isSuccess &&

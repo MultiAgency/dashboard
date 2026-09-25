@@ -36,22 +36,22 @@ function AdminSettingsPage() {
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           admin · settings
         </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
+        <h1 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
           Settings
         </h1>
       </header>
       <OrganizationIdentity />
       <section id="treasury" className="space-y-3 scroll-mt-24">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           treasury
         </div>
         <TreasurySettings />
       </section>
       <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           organization
         </div>
         <AdminSettings />
@@ -70,7 +70,7 @@ function OrganizationIdentity() {
   return (
     <Card>
       <CardContent className="p-5 space-y-1">
-        <div className="font-display text-xl uppercase font-extrabold">{active.name}</div>
+        <div className="text-xl uppercase font-extrabold">{active.name}</div>
         <p className="text-sm text-muted-foreground">
           Slug <span className="font-mono text-foreground">{active.slug}</span>. An Agency needs
           this slug and the exact name to propose an Engagement to your Organization.
@@ -102,7 +102,7 @@ const settingsFormSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 
-const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
+const LABEL_CLS = "font-mono text-xs uppercase tracking-widest text-muted-foreground block";
 const ERROR_CLS = "text-sm text-destructive";
 
 function fieldErrorMessage(err: unknown): string {
@@ -122,7 +122,7 @@ function AdminSettings() {
   if (settingsQuery.isLoading) {
     return (
       <section className="space-y-6">
-        <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           loading…
         </p>
       </section>
@@ -188,7 +188,7 @@ function SettingsForm({
       <Card>
         <CardContent className="space-y-4">
           <div className="space-y-1">
-            <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
+            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
               editable
             </div>
             <p className="text-sm text-muted-foreground">
@@ -355,17 +355,13 @@ function SettingsForm({
                 );
               }}
             </form.Field>
-            <Button
-              type="submit"
-              disabled={isPending}
-              className="w-full font-display uppercase tracking-wide"
-            >
+            <Button type="submit" disabled={isPending} className="w-full">
               {isPending && <Spinner />}
               {isPending ? "saving…" : "save →"}
             </Button>
           </form>
           {data.audit && (
-            <div className="space-y-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <div className="space-y-1 font-mono text-xs uppercase tracking-widest text-muted-foreground">
               <p>
                 created by {data.audit.createdBy} on {data.audit.createdAt.slice(0, 10)}
               </p>

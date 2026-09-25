@@ -27,7 +27,7 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/contributors
     if (error.message?.toLowerCase().includes("not found")) {
       return (
         <div className="space-y-3 py-8">
-          <h1 className="font-display text-2xl font-black uppercase">Builder not found</h1>
+          <h1 className="text-2xl font-black uppercase">Builder not found</h1>
           <p className="text-sm text-muted-foreground">
             No builder or assignment exists for this NEAR account.
           </p>
@@ -135,10 +135,10 @@ function ContributorDetailPage() {
       <header className="flex flex-wrap items-start gap-4">
         <BuilderAvatar name={contributor.name} nearAccount={nearAccount} />
         <div className="space-y-2 min-w-0">
-          <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
             people · builders
           </div>
-          <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
+          <h1 className="text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
             {contributor.name ?? nearAccount}
           </h1>
           <p className="font-mono text-sm text-muted-foreground">{nearAccount}</p>
@@ -159,7 +159,7 @@ function ContributorDetailPage() {
       <BuilderSummaryPanel billings={billings} projectCount={assignments.length} />
 
       <section className="space-y-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           projects
         </h2>
         <DataTable
@@ -173,7 +173,7 @@ function ContributorDetailPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+        <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
           billings
         </h2>
         <DataTable
