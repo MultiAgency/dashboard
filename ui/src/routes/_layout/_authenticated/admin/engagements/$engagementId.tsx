@@ -39,7 +39,6 @@ import {
   Skeleton,
   Tabs,
   TabsContent,
-  TabsList,
   TabsTrigger,
 } from "@/components";
 import { AgentLinksPanel } from "@/components/admin/agent-links-panel";
@@ -55,6 +54,7 @@ import {
   InvitationStatusBadge,
 } from "@/components/engagement-status";
 import { PageHeader } from "@/components/page-header";
+import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
 import { useEngagementAction } from "@/hooks/use-engagement-action";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
@@ -200,22 +200,20 @@ function EngagementDetailPage() {
             });
           }}
         >
-          <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-            <TabsList variant="line">
-              <TabsTrigger value="projects">Shared Projects</TabsTrigger>
-              <TabsTrigger value="prepayments">Prepayments</TabsTrigger>
-              <TabsTrigger value="plan">
-                Plan and Change orders
-                {awaiting > 0 && (
-                  <Badge size="counter" aria-label={`${awaiting} awaiting you`}>
-                    {awaiting}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              {acceptsIdeas(engagement.kind) && <TabsTrigger value="ideas">Ideas</TabsTrigger>}
-              <TabsTrigger value="links">Agent links</TabsTrigger>
-            </TabsList>
-          </div>
+          <ScrollableTabsList>
+            <TabsTrigger value="projects">Shared Projects</TabsTrigger>
+            <TabsTrigger value="prepayments">Prepayments</TabsTrigger>
+            <TabsTrigger value="plan">
+              Plan and Change orders
+              {awaiting > 0 && (
+                <Badge size="counter" aria-label={`${awaiting} awaiting you`}>
+                  {awaiting}
+                </Badge>
+              )}
+            </TabsTrigger>
+            {acceptsIdeas(engagement.kind) && <TabsTrigger value="ideas">Ideas</TabsTrigger>}
+            <TabsTrigger value="links">Agent links</TabsTrigger>
+          </ScrollableTabsList>
           <TabsContent value="projects" className="mt-4">
             <SharedProjects engagement={engagement} />
           </TabsContent>
