@@ -69,7 +69,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const linkActive = (to: string) => Boolean(matchRoute({ to, fuzzy: true }));
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
+    <div className="flex min-h-screen w-full flex-col bg-pattern text-foreground">
       <AuthHashToasts />
       <a
         href="#main"
@@ -77,7 +77,7 @@ export function Shell({ children }: { children: ReactNode }) {
       >
         Skip to content
       </a>
-      <header className="sticky top-0 z-40 shrink-0 border-b bg-background">
+      <header className="sticky top-0 z-40 shrink-0 border-b bg-background/75 backdrop-blur-md">
         <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-2 px-4 sm:gap-4 sm:px-6">
           <Link
             to="/"
