@@ -8,8 +8,8 @@ export const Route = createFileRoute("/_layout/_authenticated/client/$engagement
 function EngagementBillings() {
   const { engagement } = Route.useRouteContext();
   return (
-    <section className="space-y-3">
-      <p className="text-sm text-muted-foreground">
+    <section className="flex flex-col gap-4">
+      <p className="max-w-2xl text-sm text-pretty text-muted-foreground">
         Every billing on the Projects {engagement.agency.name} shares with you.
       </p>
       <BillingsAdminSection readOnly engagementId={engagement.id} />

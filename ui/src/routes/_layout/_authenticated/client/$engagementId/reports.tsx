@@ -1,12 +1,27 @@
+import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Button, Card, CardContent } from "@/components";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  Field,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  SectionHeader,
+  Skeleton,
+  Spinner,
+} from "@/components";
 import { ReportPreview, reportOverviewCsvValues } from "@/components/admin/report-preview";
 import { AdminError } from "@/components/admin-error";
-import { Field, selectClass } from "@/components/admin-form";
 import { ReportNoteField } from "@/components/report-note-field";
 import { SavedReportsList } from "@/components/saved-reports";
 import { useApiClient } from "@/lib/api";
@@ -83,53 +98,65 @@ function ClientReportsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col gap-6">
+      <p className="max-w-2xl text-sm text-pretty text-muted-foreground">
         Generate a report of the Projects {engagement.agency.name} shares with you, with their
         budget and billings. Reports are saved with their memo, so everyone on your team can open
         them later.
       </p>
       <Card>
-        <CardContent className="p-5 grid gap-4">
-          <ReportNoteField id="client-report-note" value={note} onChange={setNote} />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="start date (optional)" htmlFor="client-report-start">
-              <input
-                id="client-report-start"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className={selectClass}
-              />
-            </Field>
-            <Field label="end date (optional)" htmlFor="client-report-end">
-              <input
-                id="client-report-end"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className={selectClass}
-              />
-            </Field>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
-              {generateMutation.isPending ? "generating..." : "generate report"}
-            </Button>
-            {report && (
-              <Button variant="outline" onClick={handleDownload}>
-                download summary csv
-              </Button>
-            )}
-          </div>
+        <CardHeader>
+          <CardTitle>Generate a report</CardTitle>
+          <CardDescription>Leave the dates empty to cover the whole Engagement.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FieldGroup>
+            <ReportNoteField id="client-report-note" value={note} onChange={setNote} />
+            <div className="grid items-start gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="client-report-start">Start date (optional)</FieldLabel>
+                <Input
+                  id="client-report-start"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="client-report-end">End date (optional)</FieldLabel>
+                <Input
+                  id="client-report-end"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </Field>
+            </div>
+          </FieldGroup>
         </CardContent>
+        <CardFooter className="flex-wrap justify-end gap-2">
+          {report && (
+            <Button variant="outline" onClick={handleDownload}>
+              <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+              Download summary CSV
+            </Button>
+          )}
+          <Button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
+            {generateMutation.isPending && <Spinner data-icon="inline-start" />}
+            Generate report
+          </Button>
+        </CardFooter>
       </Card>
 
-      <section className="space-y-3">
-        <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          saved reports
-        </h2>
-        {savedQuery.isError ? (
+      <section className="flex flex-col gap-3" aria-labelledby="client-saved-reports">
+        <SectionHeader id="client-saved-reports" title="Saved reports" />
+        {savedQuery.isLoading ? (
+          <div className="flex flex-col gap-2" aria-busy="true">
+            <span className="sr-only">Loading saved reports</span>
+            <Skeleton className="h-14 w-full" />
+            <Skeleton className="h-14 w-full" />
+          </div>
+        ) : savedQuery.isError ? (
           <AdminError error={savedQuery.error} />
         ) : (
           <SavedReportsList

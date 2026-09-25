@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components";
+import { Badge, DataTable } from "@/components";
 import { useApiClient } from "@/lib/api";
 import { clientPortalProjectsListQueryOptions } from "@/lib/queries";
 
@@ -24,7 +24,7 @@ function SharedProjectsPage() {
         <Link
           to="/client/$engagementId/projects/$slug"
           params={{ engagementId: engagement.id, slug: row.original.slug }}
-          className="text-sm uppercase font-bold hover:underline"
+          className="font-medium underline-offset-4 hover:underline"
         >
           {row.original.title}
         </Link>
@@ -34,14 +34,13 @@ function SharedProjectsPage() {
       id: "slug",
       header: "Slug",
       accessorKey: "slug",
-      cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">@{row.original.slug}</span>
-      ),
+      cell: ({ row }) => <span className="text-muted-foreground">@{row.original.slug}</span>,
     },
     {
       id: "status",
       header: "Status",
       accessorKey: "status",
+      cell: ({ row }) => <Badge variant="outline">{row.original.status}</Badge>,
     },
   ];
 
