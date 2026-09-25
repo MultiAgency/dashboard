@@ -1,11 +1,26 @@
-import { ArrowRightIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, EnvelopeSimpleIcon, WalletIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Button, Card, CardContent, Input } from "@/components";
-import { Field } from "@/components/admin-form";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  Spinner,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components";
+import { AuthCardHeader } from "@/components/auth-card-header";
 import { ResendVerificationButton } from "@/components/resend-verification-button";
 import { useNearSignIn } from "@/hooks/use-near-sign-in";
 import {
@@ -43,12 +58,6 @@ export const Route = createFileRoute("/_layout/sign-in")({
   }),
   component: SignInPage,
 });
-
-const MODE_TITLES: Record<Mode, string> = {
-  "sign-in": "Sign in",
-  "sign-up": "Create account",
-  forgot: "Reset password",
-};
 
 function usePostSignIn(redirectTo: string | undefined) {
   const authClient = useAuthClient();
@@ -97,76 +106,65 @@ function SignInPage() {
   const callbackURL = search.redirect ?? WELCOME_PATH;
 
   return (
-    <div className="mx-auto max-w-md space-y-8 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          your · account
-        </div>
-        <h1 className="text-4xl sm:text-5xl font-black uppercase leading-none tracking-tight">
-          {verificationEmail ? "Check your email" : MODE_TITLES[mode]}
-        </h1>
-      </header>
-
+    <div className="mx-auto flex w-full max-w-sm animate-fade-in flex-col gap-6 sm:py-8">
       {verificationEmail ? (
         <VerificationPending
           email={verificationEmail}
           callbackURL={callbackURL}
           onBack={() => setMode("sign-in")}
         />
+      ) : mode === "forgot" ? (
+        <ForgotPasswordCard defaultEmail={search.email} onBack={() => setMode("sign-in")} />
       ) : (
-        <>
-          {mode === "sign-in" && (
-            <SignInForm
-              defaultEmail={search.email}
-              onSignedIn={completeSignIn}
-              onUnverified={setVerificationEmail}
-              onForgot={() => setMode("forgot")}
-            />
-          )}
-          {mode === "sign-up" && (
-            <SignUpForm
-              defaultEmail={search.email}
-              callbackURL={callbackURL}
-              onSignedUp={setVerificationEmail}
-            />
-          )}
-          {mode === "forgot" && <ForgotPasswordForm defaultEmail={search.email} />}
-
-          <div className="flex flex-wrap gap-x-4 gap-y-2 font-mono text-xs uppercase tracking-widest">
-            {mode !== "sign-in" && (
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground underline underline-offset-2"
-                onClick={() => setMode("sign-in")}
-              >
-                have an account? sign in
-              </button>
-            )}
-            {mode !== "sign-up" && (
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground underline underline-offset-2"
-                onClick={() => setMode("sign-up")}
-              >
-                new here? create an account
-              </button>
-            )}
-          </div>
-
-          <section className="space-y-3">
-            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-              or
-            </div>
+        <Card>
+          <AuthCardHeader
+            title={mode === "sign-up" ? "Create your account" : "Sign in to MultiAgency"}
+            description={
+              mode === "sign-up"
+                ? "Use your email and a password, or a NEAR wallet."
+                : "Welcome back. Sign in with your email or a NEAR wallet."
+            }
+          />
+          <CardContent className="flex flex-col gap-6">
+            <Tabs value={mode} onValueChange={(value) => setMode(value as Mode)}>
+              <TabsList className="w-full">
+                <TabsTrigger value="sign-in">Sign in</TabsTrigger>
+                <TabsTrigger value="sign-up">Create account</TabsTrigger>
+              </TabsList>
+              <TabsContent value="sign-in" className="mt-2">
+                <SignInForm
+                  defaultEmail={search.email}
+                  onSignedIn={completeSignIn}
+                  onUnverified={setVerificationEmail}
+                />
+              </TabsContent>
+              <TabsContent value="sign-up" className="mt-2">
+                <SignUpForm
+                  defaultEmail={search.email}
+                  callbackURL={callbackURL}
+                  onSignedUp={setVerificationEmail}
+                />
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+          <CardFooter className="flex-col gap-3">
+            <p className="text-xs text-muted-foreground">Or continue with</p>
             <Button
+              type="button"
               variant="outline"
               className="w-full"
               onClick={() => nearSignIn.mutate()}
               disabled={nearSignIn.isPending}
             >
-              {nearSignIn.isPending ? "connecting..." : "continue with NEAR wallet"}
+              {nearSignIn.isPending ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <WalletIcon data-icon="inline-start" aria-hidden />
+              )}
+              {nearSignIn.isPending ? "Connecting…" : "NEAR wallet"}
             </Button>
-          </section>
-        </>
+          </CardFooter>
+        </Card>
       )}
     </div>
   );
@@ -180,12 +178,10 @@ function SignInForm({
   defaultEmail,
   onSignedIn,
   onUnverified,
-  onForgot,
 }: {
   defaultEmail?: string;
   onSignedIn: () => Promise<void>;
   onUnverified: (email: string) => void;
-  onForgot: () => void;
 }) {
   const authClient = useAuthClient();
   const [email, setEmail] = useState(defaultEmail ?? "");
@@ -216,45 +212,47 @@ function SignInForm({
   };
 
   return (
-    <Card>
-      <CardContent>
-        <form className="grid gap-4" onSubmit={submit}>
-          <Field label="email" htmlFor="sign-in-email">
-            <Input
-              id="sign-in-email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </Field>
-          <Field label="password" htmlFor="sign-in-password">
-            <Input
-              id="sign-in-password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
-          <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              className="font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground underline underline-offset-2"
-              onClick={onForgot}
+    <form onSubmit={submit}>
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="sign-in-email">Email</FieldLabel>
+          <Input
+            id="sign-in-email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </Field>
+        <Field>
+          <div className="flex items-center justify-between gap-2">
+            <FieldLabel htmlFor="sign-in-password">Password</FieldLabel>
+            <Link
+              to="/sign-in"
+              search={(prev) => ({ ...prev, mode: "forgot" })}
+              replace
+              className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             >
-              forgot password?
-            </button>
-            <Button type="submit" disabled={signIn.isPending}>
-              {signIn.isPending ? "signing in..." : "sign in"}
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
-            </Button>
+              Forgot password?
+            </Link>
           </div>
-        </form>
-      </CardContent>
-    </Card>
+          <Input
+            id="sign-in-password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        <Button type="submit" className="w-full" disabled={signIn.isPending}>
+          {signIn.isPending && <Spinner data-icon="inline-start" />}
+          {signIn.isPending ? "Signing in…" : "Sign in"}
+        </Button>
+      </FieldGroup>
+    </form>
   );
 }
 
@@ -292,52 +290,57 @@ function SignUpForm({
   };
 
   return (
-    <Card>
-      <CardContent>
-        <form className="grid gap-4" onSubmit={submit}>
-          <Field label="name" htmlFor="sign-up-name">
-            <Input
-              id="sign-up-name"
-              autoComplete="name"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </Field>
-          <Field
-            label="email"
-            htmlFor="sign-up-email"
-            helper="Use the address your invitation was sent to."
-          >
-            <Input
-              id="sign-up-email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </Field>
-          <Field label="password" htmlFor="sign-up-password" helper="At least 8 characters.">
-            <Input
-              id="sign-up-password"
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
-          <div className="flex justify-end">
-            <Button type="submit" disabled={signUp.isPending}>
-              {signUp.isPending ? "creating..." : "create account"}
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+    <form onSubmit={submit}>
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="sign-up-name">Name</FieldLabel>
+          <Input
+            id="sign-up-name"
+            autoComplete="name"
+            placeholder="Your name"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="sign-up-email">Email</FieldLabel>
+          <Input
+            id="sign-up-email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            aria-describedby="sign-up-email-description"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <FieldDescription id="sign-up-email-description">
+            Invited? Use the address your invitation was sent to.
+          </FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="sign-up-password">Password</FieldLabel>
+          <Input
+            id="sign-up-password"
+            type="password"
+            autoComplete="new-password"
+            aria-describedby="sign-up-password-description"
+            minLength={8}
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <FieldDescription id="sign-up-password-description">
+            At least 8 characters.
+          </FieldDescription>
+        </Field>
+        <Button type="submit" className="w-full" disabled={signUp.isPending}>
+          {signUp.isPending && <Spinner data-icon="inline-start" />}
+          {signUp.isPending ? "Creating account…" : "Create account"}
+        </Button>
+      </FieldGroup>
+    </form>
   );
 }
 
@@ -351,24 +354,42 @@ function VerificationPending({
   onBack: () => void;
 }) {
   return (
-    <Card variant="highlight">
-      <CardContent className="space-y-4">
-        <p className="text-sm leading-relaxed">
-          We sent a verification link to <span className="font-mono">{email}</span>. Open it to
-          confirm your address; it brings you straight back here to continue.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <ResendVerificationButton email={email} callbackURL={callbackURL} label="resend email" />
-          <Button variant="ghost" onClick={onBack}>
-            back to sign in
-          </Button>
-        </div>
-      </CardContent>
+    <Card>
+      <AuthCardHeader
+        icon={<EnvelopeSimpleIcon aria-hidden />}
+        title="Check your email"
+        description={
+          <>
+            We sent a verification link to{" "}
+            <span className="font-medium break-all text-foreground">{email}</span>. Open it to
+            confirm your address and you come straight back here.
+          </>
+        }
+      />
+      <CardFooter className="flex-col gap-2">
+        <ResendVerificationButton
+          email={email}
+          callbackURL={callbackURL}
+          label="Resend email"
+          variant="default"
+          className="w-full"
+        />
+        <Button type="button" variant="ghost" className="w-full" onClick={onBack}>
+          <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+          Back to sign in
+        </Button>
+      </CardFooter>
     </Card>
   );
 }
 
-function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) {
+function ForgotPasswordCard({
+  defaultEmail,
+  onBack,
+}: {
+  defaultEmail?: string;
+  onBack: () => void;
+}) {
   const authClient = useAuthClient();
   const [email, setEmail] = useState(defaultEmail ?? "");
   const [sent, setSent] = useState(false);
@@ -379,13 +400,28 @@ function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const back = (
+    <Button type="button" variant="ghost" className="w-full" onClick={onBack}>
+      <ArrowLeftIcon data-icon="inline-start" aria-hidden />
+      Back to sign in
+    </Button>
+  );
+
   if (sent) {
     return (
-      <Card variant="highlight">
-        <CardContent>
-          If an account exists for <span className="font-mono">{email.trim()}</span>, a link to set
-          a new password is on its way.
-        </CardContent>
+      <Card>
+        <AuthCardHeader
+          icon={<EnvelopeSimpleIcon aria-hidden />}
+          title="Check your email"
+          description={
+            <>
+              If an account exists for{" "}
+              <span className="font-medium break-all text-foreground">{email.trim()}</span>, a link
+              to set a new password is on its way.
+            </>
+          }
+        />
+        <CardFooter>{back}</CardFooter>
       </Card>
     );
   }
@@ -397,26 +433,33 @@ function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) {
 
   return (
     <Card>
+      <AuthCardHeader
+        title="Reset your password"
+        description="Enter your email and we send you a link to choose a new password."
+      />
       <CardContent>
-        <form className="grid gap-4" onSubmit={submit}>
-          <Field label="email" htmlFor="forgot-email">
-            <Input
-              id="forgot-email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </Field>
-          <div className="flex justify-end">
-            <Button type="submit" disabled={request.isPending}>
-              {request.isPending ? "sending..." : "send reset link"}
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
+        <form onSubmit={submit}>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="forgot-email">Email</FieldLabel>
+              <Input
+                id="forgot-email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </Field>
+            <Button type="submit" className="w-full" disabled={request.isPending}>
+              {request.isPending && <Spinner data-icon="inline-start" />}
+              {request.isPending ? "Sending…" : "Send reset link"}
             </Button>
-          </div>
+          </FieldGroup>
         </form>
       </CardContent>
+      <CardFooter>{back}</CardFooter>
     </Card>
   );
 }
