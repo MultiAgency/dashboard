@@ -137,6 +137,10 @@
   }
 }
 
+@utility rendering-pixelated {
+  image-rendering: pixelated;
+}
+
 @keyframes fade-in-up {
   from {
     opacity: 0;

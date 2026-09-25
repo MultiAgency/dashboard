@@ -447,7 +447,7 @@ function BalancesTable({
               tabIndex={0}
               role="button"
               aria-label={`Open ${token.symbol} details`}
-              className="cursor-pointer hover:bg-muted/50 focus:bg-muted/50 focus:outline-none"
+              className="cursor-pointer"
             >
               <TableCell className="font-mono text-xs">{token.symbol}</TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">
@@ -503,7 +503,7 @@ function TokenCard({
       tabIndex={0}
       role="button"
       aria-label={`Open ${token.symbol} details`}
-      className="cursor-pointer hover:bg-muted/40 focus:bg-muted/40 focus:outline-none transition-colors duration-150"
+      variant="interactive"
     >
       <CardContent className="p-4 space-y-2">
         <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
@@ -875,7 +875,7 @@ function ProposalsList({
               <TableRow>
                 <TableCell
                   colSpan={6}
-                  className="font-mono text-xs text-muted-foreground text-center py-8"
+                  className="h-24 font-mono text-xs text-muted-foreground text-center"
                 >
                   no matches — clear filters to see all
                 </TableCell>
@@ -1091,14 +1091,14 @@ function ProposalRowSkeleton() {
   );
 }
 
-const STATUS_ROW_TINT: Record<ProposalStatus, string> = {
-  InProgress: "",
-  Approved: "",
-  Failed: "bg-destructive/5",
-  Rejected: "bg-muted/40",
-  Removed: "bg-muted/40",
-  Expired: "bg-muted/40",
-  Moved: "bg-muted/40",
+const STATUS_ROW_VARIANT: Record<ProposalStatus, "default" | "muted" | "destructive"> = {
+  InProgress: "default",
+  Approved: "default",
+  Failed: "destructive",
+  Rejected: "muted",
+  Removed: "muted",
+  Expired: "muted",
+  Moved: "muted",
 };
 
 function ProposalRow({
@@ -1111,7 +1111,6 @@ function ProposalRow({
   showAttribution: boolean;
 }) {
   const submitted = formatSubmitted(proposal.submissionTime, "date");
-  const tint = STATUS_ROW_TINT[proposal.status] ?? "";
   return (
     <TableRow
       onClick={() => onSelect(proposal)}
@@ -1124,7 +1123,8 @@ function ProposalRow({
       tabIndex={0}
       role="button"
       aria-label={`Open proposal ${proposal.proposalId} details`}
-      className={`cursor-pointer hover:bg-muted/50 focus:bg-muted/50 focus:outline-none ${tint}`}
+      variant={STATUS_ROW_VARIANT[proposal.status]}
+      className="cursor-pointer"
     >
       <TableCell className="font-mono text-xs text-muted-foreground">
         #{proposal.proposalId}

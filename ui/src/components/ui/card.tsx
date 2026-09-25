@@ -8,7 +8,7 @@ function Card({
   ...props
 }: React.ComponentProps<"div"> & {
   size?: "default" | "sm";
-  variant?: "default" | "highlight";
+  variant?: "default" | "highlight" | "destructive" | "muted" | "interactive";
 }) {
   return (
     <div
@@ -16,7 +16,7 @@ function Card({
       data-size={size}
       data-variant={variant}
       className={cn(
-        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-none bg-card py-(--card-spacing) text-xs/relaxed text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-none *:[img:last-child]:rounded-none data-[variant=highlight]:border-l-2 data-[variant=highlight]:border-l-primary",
+        "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-none bg-card py-(--card-spacing) text-xs/relaxed text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-none *:[img:last-child]:rounded-none data-[variant=highlight]:border-l-2 data-[variant=highlight]:border-l-primary data-[variant=destructive]:ring-destructive/60 data-[variant=muted]:opacity-70 data-[variant=interactive]:cursor-pointer data-[variant=interactive]:transition-colors data-[variant=interactive]:hover:bg-muted/40 data-[variant=interactive]:focus-visible:bg-muted/40 data-[variant=interactive]:focus-visible:outline-none",
         className,
       )}
       {...props}

@@ -18,7 +18,8 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import { useEffect, useState } from "react";
-import { Button, Input, Skeleton } from "@/components";
+import { Button, Skeleton } from "@/components";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 
 export type { ColumnDef };
@@ -202,15 +203,16 @@ export function DataTable<TData, TValue>({
       <div className="flex flex-wrap items-center gap-2 justify-between">
         <div className="flex flex-wrap items-center gap-2">
           {enableSearch && (
-            <div className="relative">
-              <MagnifyingGlassIcon className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-              <Input
+            <InputGroup className="w-48 sm:w-64">
+              <InputGroupAddon>
+                <MagnifyingGlassIcon aria-hidden />
+              </InputGroupAddon>
+              <InputGroupInput
                 value={globalFilter}
                 onChange={(e) => setGlobalFilter(e.target.value)}
                 placeholder={searchPlaceholder}
-                className="pl-7 h-8 w-48 sm:w-64"
               />
-            </div>
+            </InputGroup>
           )}
           {!readOnly && (
             <div className="relative">
