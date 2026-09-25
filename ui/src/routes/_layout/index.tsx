@@ -1,10 +1,46 @@
-import { ArrowRightIcon, GithubLogoIcon, XLogoIcon } from "@phosphor-icons/react";
+import type { Icon } from "@phosphor-icons/react";
+import {
+  ArrowRightIcon,
+  ArrowUpRightIcon,
+  BuildingsIcon,
+  CalendarCheckIcon,
+  FolderSimpleIcon,
+  GithubLogoIcon,
+  LightbulbIcon,
+  ListChecksIcon,
+  ReceiptIcon,
+  TreeStructureIcon,
+  UserPlusIcon,
+  UsersThreeIcon,
+  VaultIcon,
+  WalletIcon,
+  XLogoIcon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import trezuLogo from "@/assets/brand/trezu.svg";
 import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
-import { Badge, Button, Card, CardContent, Empty, EmptyTitle, Skeleton } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Separator,
+  Skeleton,
+} from "@/components";
+import { LoadError } from "@/components/load-error";
+import { SectionHeader } from "@/components/page-header";
 import { useApiClient } from "@/lib/api";
 import { projectsListQueryOptions } from "@/lib/queries";
 import { getRepoUrl } from "@/lib/repo";
@@ -157,7 +193,7 @@ function ReactionDiffusionField({
       aria-hidden
       className={cn(
         "rendering-pixelated",
-        className ?? "absolute inset-0 pointer-events-none w-full h-full opacity-55",
+        className ?? "pointer-events-none absolute inset-0 size-full opacity-40",
       )}
     />
   );
@@ -165,16 +201,90 @@ function ReactionDiffusionField({
 
 const LANDING = {
   name: "MultiAgency",
-  headline: "Open Books · Open Source · Open Doors",
-  tagline: "The future of work is near…",
-  description: "Human-led, AI-native agencies for hire.",
+  tagline: "Open books for agency work",
+  description:
+    "Agencies run transparent client work on chain. Clients see and steer where their money goes.",
 };
 
-const STANDARD = [
-  { label: "Website", note: "landing, work, contact" },
-  { label: "Treasury", note: "payouts, permissions, policies" },
-  { label: "Projects", note: "nearn listings, live" },
-  { label: "Dashboard", note: "applications, contributors, billing" },
+type Feature = { icon: Icon; title: string; body: string };
+
+const FOR_CLIENTS: Feature[] = [
+  {
+    icon: UsersThreeIcon,
+    title: "Invite your whole team",
+    body: "Colleagues sign in with email. No wallet needed.",
+  },
+  {
+    icon: ReceiptIcon,
+    title: "See every Project and Billing",
+    body: "Every Project shared with you, and every Billing paid against it.",
+  },
+  {
+    icon: WalletIcon,
+    title: "Prepay capacity",
+    body: "Make a Prepayment and follow your Prepaid balance as work lands.",
+  },
+  {
+    icon: ListChecksIcon,
+    title: "Agree the plan, then steer it",
+    body: "Agree an Allocation plan with your Agency and propose Change orders when priorities move.",
+  },
+  {
+    icon: LightbulbIcon,
+    title: "Ideas, reports and agent links",
+    body: "Submit ideas, generate and save reports, and give your agents a scoped link.",
+  },
+];
+
+const FOR_AGENCIES: Feature[] = [
+  {
+    icon: BuildingsIcon,
+    title: "Create an Organization in seconds",
+    body: "Start with a name. Add members and roles as you grow.",
+  },
+  {
+    icon: VaultIcon,
+    title: "Connect a Trezu treasury",
+    body: "Link your Agency DAO when you're ready for money features.",
+  },
+  {
+    icon: UserPlusIcon,
+    title: "Onboard Clients in one step",
+    body: "One invite gives the Client a shared Engagement with your Agency.",
+  },
+  {
+    icon: CalendarCheckIcon,
+    title: "Prepayments that plan themselves",
+    body: "Record a Prepayment and the Allocation plan applies to each monthly budget.",
+  },
+  {
+    icon: TreeStructureIcon,
+    title: "Subcontract in one step",
+    body: "Hand a Project to another Agency. They pay their contributors from their own DAO.",
+  },
+];
+
+const STEPS = [
+  { title: "Create an Organization", body: "Your Agency's home for members, roles and settings." },
+  {
+    title: "Start an Engagement",
+    body: "Invite a Client and share the Projects you work on together.",
+  },
+  {
+    title: "Agree the plan",
+    body: "Prepayments and an Allocation plan set each month's Budget entries.",
+  },
+  {
+    title: "Work and bill on chain",
+    body: "Each Billing is a transfer proposal from the Agency DAO.",
+  },
+];
+
+const TEMPLATE = [
+  { label: "Website", note: "Landing, work and contact pages" },
+  { label: "Treasury", note: "Payouts, permissions and policies" },
+  { label: "Projects", note: "Live NEARN listings" },
+  { label: "Dashboard", note: "Clients, contributors and billing" },
 ];
 
 export const Route = createFileRoute("/_layout/")({
@@ -202,255 +312,346 @@ type LandingProject = {
 };
 
 function Landing() {
-  const apiClient = useApiClient();
   const loaderData = RootRoute.useLoaderData();
   const assetsUrl = loaderData?.runtimeConfig?.assetsUrl ?? "";
-
-  const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
-
   const repositoryUrl = getRepoUrl();
 
-  const projects = (projectsQuery.data?.data ?? []) as LandingProject[];
-  const visibleProjects = projects.slice(0, 6);
-  const hasMore = projects.length > 6;
-
   return (
-    <div className="space-y-16 pb-12 animate-fade-in">
-      <section className="relative min-h-[70vh] flex flex-col justify-center -mt-6 sm:-mt-10 py-12 sm:py-16 overflow-hidden -mx-4 sm:-mx-6 px-4 sm:px-6">
-        <ReactionDiffusionField />
-        <div className="relative flex flex-col items-start space-y-6 text-left">
-          <div className="w-full pl-3 pr-3">
-            <h1 className="font-heading font-black uppercase leading-none subpixel-antialiased break-words max-w-full text-4xl sm:text-6xl md:text-7xl lg:text-8xl tracking-tighter">
-              {LANDING.name}
-            </h1>
-            <div className="mt-3 flex items-center gap-3">
-              <span className="font-mono font-semibold text-sm sm:text-base uppercase tracking-widest text-primary">
-                Build Agencies Together
-              </span>
-              <div className="flex-1 h-px bg-primary/80" />
-              <span className="font-mono font-semibold text-xs uppercase tracking-widest text-primary tabular-nums">
-                v0.1
-              </span>
-            </div>
-          </div>
-          <p className="max-w-2xl pl-3 text-xl sm:text-2xl uppercase font-extrabold tracking-tight leading-tight">
-            {LANDING.headline}
-          </p>
-          <div className="flex flex-wrap items-center gap-3 pl-3 pt-2">
+    <div className="flex animate-fade-in flex-col gap-16">
+      <Hero />
+
+      <section aria-labelledby="audiences" className="flex flex-col gap-6">
+        <SectionHeader
+          id="audiences"
+          title="One workspace, both sides of the work"
+          description="Clients and Agencies share the same Projects, plans and Billings."
+        />
+        <div className="grid gap-4 md:grid-cols-2">
+          <FeatureCard
+            title="For Clients"
+            description="See and steer where your money goes."
+            features={FOR_CLIENTS}
+          />
+          <FeatureCard
+            title="For Agencies"
+            description="Run transparent client work from one place."
+            features={FOR_AGENCIES}
+          />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-6">
+        <SectionHeader
+          title="How it works"
+          description="Four steps from sign-up to verifiable payouts."
+        />
+        <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {STEPS.map((step, index) => (
+            <li key={step.title} className="flex">
+              <Card size="sm" className="w-full">
+                <CardHeader>
+                  <CardDescription>Step {index + 1}</CardDescription>
+                  <CardTitle>
+                    <h3>{step.title}</h3>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs/relaxed text-muted-foreground">{step.body}</p>
+                </CardContent>
+              </Card>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="flex flex-col gap-6">
+        <SectionHeader
+          title="Open books"
+          description="Billings are DAO transfer proposals, so every payout is verifiable on chain. Every Client of a Project sees its Billings."
+          actions={
             <Button asChild variant="outline">
-              <Link to="/apply">
-                join
+              <Link to="/treasury">
+                View treasury
                 <ArrowRightIcon data-icon="inline-end" aria-hidden />
               </Link>
             </Button>
-            <Button asChild>
-              <Link to="/contact">
-                hire
-                <ArrowRightIcon data-icon="inline-end" aria-hidden />
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <section className="relative -mt-16 bg-foreground text-background -mx-4 sm:-mx-6 px-4 sm:px-6 py-10 sm:py-14">
-        <div className="grid gap-8 lg:grid-cols-2 lg:items-start pl-3 pr-3">
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="font-mono text-xs uppercase tracking-widest text-background/70">
-                agency · template
-              </span>
-              <span className="font-mono font-semibold text-xs uppercase tracking-widest bg-primary text-primary-foreground px-2 py-0.5">
-                coming soon
-              </span>
-            </div>
-            <h2 className="text-4xl sm:text-6xl uppercase tracking-tight font-black leading-none">
-              Launch Your Own Agency
-            </h2>
-            <div className="h-px w-full bg-background/25" />
-            <p className="max-w-md text-base leading-relaxed text-background/80 sm:text-lg">
-              Same blueprint. One command. Your business.
-            </p>
-            <div className="pt-2">
-              <Button asChild>
-                <Link to="/register">
-                  register
-                  <ArrowRightIcon data-icon="inline-end" aria-hidden />
-                </Link>
-              </Button>
-            </div>
-          </div>
-          <div className="border-2 border-background">
-            <div className="border-b-2 border-background bg-primary text-primary-foreground px-4 py-2 font-mono font-semibold text-xs uppercase tracking-widest">
-              standard issue
-            </div>
-            <div className="divide-y-2 divide-background">
-              {STANDARD.map((item, i) => (
-                <div key={item.label} className="flex items-center gap-4 px-4 py-4">
-                  <span className="text-3xl sm:text-4xl font-black tabular-nums leading-none text-background/25 shrink-0 w-12">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <div className="space-y-1">
-                    <div className="text-lg uppercase tracking-tight font-extrabold leading-none">
-                      {item.label}
-                    </div>
-                    <div className="font-mono text-xs uppercase tracking-widest text-background/55">
-                      {item.note}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="space-y-6">
-        <div className="pl-3 pr-3 space-y-2">
-          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            opportunities
-          </div>
-          <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight">Our Work</h2>
-        </div>
-        {projectsQuery.isLoading ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {[0, 1].map((i) => (
-              <ProjectCardSkeleton key={i} />
-            ))}
-          </div>
-        ) : projectsQuery.isError ? (
-          <p
-            role="alert"
-            className="font-mono text-xs uppercase tracking-widest text-muted-foreground"
-          >
-            could not load — try again
-          </p>
-        ) : projects.length === 0 ? (
-          <Empty>
-            <EmptyTitle>no public projects yet</EmptyTitle>
-          </Empty>
-        ) : (
-          <>
-            <div
-              className={`grid gap-4 ${visibleProjects.length > 1 ? "sm:grid-cols-2" : "sm:grid-cols-1 sm:max-w-md"}`}
-            >
-              {visibleProjects.map((p) => (
-                <ProjectCard key={p.id} project={p} />
-              ))}
-            </div>
-            {hasMore && (
-              <div className="flex justify-center pt-2">
-                <Button asChild variant="outline">
-                  <Link to="/work">
-                    explore
-                    <ArrowRightIcon data-icon="inline-end" aria-hidden />
-                  </Link>
-                </Button>
-              </div>
-            )}
-          </>
-        )}
-      </section>
-
-      <section className="space-y-6">
-        <div className="pl-3 pr-3 space-y-2">
-          <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            apparatus
-          </div>
-          <h2 className="text-3xl sm:text-5xl font-black uppercase tracking-tight">Featuring</h2>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+          }
+        />
+        <div className="grid gap-4 md:grid-cols-2">
           <StackCard
-            label="treasury"
-            tag="on-chain"
-            name="Trezu"
-            iconSrc={trezuSymbol}
-            logoSrc={trezuLogo}
-            logoAlt="Trezu"
-            body="Manage your team's capital in minutes from a single dashboard without ever giving up your keys."
+            label="Treasury"
+            tag="On chain"
+            logo={
+              <>
+                <img src={trezuSymbol} alt="" aria-hidden="true" className="size-7 shrink-0" />
+                <img src={trezuLogo} alt="Trezu" className="h-6 w-auto dark:invert" />
+              </>
+            }
+            body="Manage your team's capital from a single dashboard without giving up your keys."
             url="https://trezu.app/"
             host="trezu.app"
           />
           <StackCard
-            label="bounties"
-            tag="live listings"
-            name="NEARN"
-            logoSrc={`${assetsUrl}/static/svg/nearn.svg`}
-            logoAlt="NEARN"
-            logoHeightClass="h-9"
-            body="NEARN connects projects (sponsors) with skilled contributors to complete bounties, projects, and tasks in the NEAR ecosystem."
+            label="Bounties"
+            tag="Live listings"
+            logo={
+              <img
+                src={`${assetsUrl}/static/svg/nearn.svg`}
+                alt="NEARN"
+                className="h-7 w-auto dark:invert"
+              />
+            }
+            body="NEARN connects sponsors with skilled contributors for bounties, projects and tasks in the NEAR ecosystem."
             url="https://nearn.io/"
             host="nearn.io"
           />
         </div>
       </section>
 
-      <footer className="flex flex-wrap items-center justify-center gap-2 border-t border-border pt-8">
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/docs">
-            docs
-            <ArrowRightIcon data-icon="inline-end" aria-hidden />
-          </Link>
-        </Button>
-        <Button asChild variant="ghost" size="icon-sm">
-          <a href={repositoryUrl} target="_blank" rel="noopener noreferrer" aria-label="github">
-            <GithubLogoIcon aria-hidden />
-          </a>
-        </Button>
-        <Button asChild variant="ghost" size="icon-sm">
-          <a
-            href="https://x.com/_multiagency"
-            target="_blank"
-            rel="me noopener noreferrer"
-            aria-label="x"
-          >
-            <XLogoIcon aria-hidden />
-          </a>
-        </Button>
+      <ProjectsSection />
+
+      <section className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>For contributors</h2>
+            </CardTitle>
+            <CardDescription>
+              Work assigned to you shows up in My work, and you get paid through DAO proposals.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="mt-auto flex-wrap gap-2">
+            <Button asChild>
+              <Link to="/apply">
+                Apply to contribute
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
+              </Link>
+            </Button>
+            <Button asChild variant="ghost">
+              <Link to="/dashboard">My work</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+
+        <Card variant="highlight">
+          <CardHeader>
+            <CardTitle>
+              <h2>Launch your own Agency</h2>
+            </CardTitle>
+            <CardDescription>
+              Run your own Organization on the same open-source template.
+            </CardDescription>
+            <CardAction>
+              <Badge variant="secondary">Coming soon</Badge>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col gap-2">
+              {TEMPLATE.map((item) => (
+                <li key={item.label} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                  <span className="font-medium">{item.label}</span>
+                  <span className="text-muted-foreground">{item.note}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+          <CardFooter className="mt-auto">
+            <Button asChild variant="outline">
+              <Link to="/register">
+                Register interest
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
+              </Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      </section>
+
+      <footer className="flex flex-col gap-6">
+        <Separator />
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <span className="text-xs text-muted-foreground">{LANDING.name}</span>
+          <div className="flex items-center gap-1">
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/docs">Docs</Link>
+            </Button>
+            <Button asChild variant="ghost" size="icon-sm">
+              <a href={repositoryUrl} target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+                <GithubLogoIcon aria-hidden />
+              </a>
+            </Button>
+            <Button asChild variant="ghost" size="icon-sm">
+              <a
+                href="https://x.com/_multiagency"
+                target="_blank"
+                rel="me noopener noreferrer"
+                aria-label="X"
+              >
+                <XLogoIcon aria-hidden />
+              </a>
+            </Button>
+          </div>
+        </div>
       </footer>
     </div>
   );
 }
 
-function ProjectCard({ project }: { project: LandingProject }) {
-  const hasBounty = !!project.nearnListing;
+function Hero() {
   return (
-    <Card className="flex flex-col">
-      <CardContent className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          <span className="truncate">@{project.slug}</span>
-          <span>project</span>
+    <section className="relative flex min-h-96 flex-col justify-center overflow-hidden border bg-background px-6 py-16 sm:px-10">
+      <ReactionDiffusionField />
+      <div className="pointer-events-none absolute inset-0 bg-linear-to-r from-background via-background/80 to-background/10" />
+      <div className="relative flex max-w-2xl flex-col items-start gap-6">
+        <Badge variant="outline">Open books · Open source · Open doors</Badge>
+        <div className="flex flex-col gap-3">
+          <h1 className="font-heading text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+            {LANDING.name}
+          </h1>
+          <p className="max-w-xl text-base text-pretty text-muted-foreground sm:text-lg">
+            {LANDING.description}
+          </p>
         </div>
-        <h3 className="text-xl uppercase tracking-tight font-extrabold leading-tight break-words">
-          {project.title}
-        </h3>
-        {hasBounty && <Badge variant="default">bounty</Badge>}
-        <div className="mt-auto pt-2">
-          <Button asChild variant="outline" className="w-full">
-            <Link to="/work">
-              open
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild size="lg">
+            <Link to="/sign-in">
+              Get started
               <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Link>
           </Button>
+          <Button asChild size="lg" variant="outline">
+            <Link to="/work">Explore work</Link>
+          </Button>
         </div>
+      </div>
+    </section>
+  );
+}
+
+function FeatureCard({
+  title,
+  description,
+  features,
+}: {
+  title: string;
+  description: string;
+  features: Feature[];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h3>{title}</h3>
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="flex flex-col gap-4">
+          {features.map(({ icon: FeatureIcon, title: featureTitle, body }) => (
+            <li key={featureTitle} className="flex items-start gap-3">
+              <span className="flex size-8 shrink-0 items-center justify-center bg-muted">
+                <FeatureIcon aria-hidden className="size-4 text-muted-foreground" />
+              </span>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-xs font-medium">{featureTitle}</span>
+                <span className="text-xs/relaxed text-muted-foreground">{body}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
       </CardContent>
+    </Card>
+  );
+}
+
+function ProjectsSection() {
+  const apiClient = useApiClient();
+  const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
+  const projects = (projectsQuery.data?.data ?? []) as LandingProject[];
+  const visibleProjects = projects.slice(0, 6);
+
+  return (
+    <section className="flex flex-col gap-6">
+      <SectionHeader
+        title="Our work"
+        description="Live Projects, with open listings on NEARN."
+        actions={
+          projects.length > 0 && (
+            <Button asChild variant="outline">
+              <Link to="/work">
+                Explore work
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
+              </Link>
+            </Button>
+          )
+        }
+      />
+      {projectsQuery.isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <ProjectCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : projectsQuery.isError ? (
+        <LoadError title="Could not load Projects" onRetry={() => projectsQuery.refetch()} />
+      ) : projects.length === 0 ? (
+        <Empty variant="outline">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <FolderSimpleIcon aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>No public Projects yet</EmptyTitle>
+            <EmptyDescription>Check back soon, or apply to contribute.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {visibleProjects.map((p) => (
+            <ProjectCard key={p.id} project={p} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ProjectCard({ project }: { project: LandingProject }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardDescription>
+          <span className="block truncate">@{project.slug}</span>
+        </CardDescription>
+        <CardTitle>
+          <h3 className="break-words">{project.title}</h3>
+        </CardTitle>
+        {project.nearnListing ? (
+          <CardAction>
+            <Badge variant="secondary">Bounty</Badge>
+          </CardAction>
+        ) : null}
+      </CardHeader>
+      <CardFooter className="mt-auto">
+        <Button asChild variant="outline" className="w-full">
+          <Link to="/work">
+            Open
+            <ArrowRightIcon data-icon="inline-end" aria-hidden />
+          </Link>
+        </Button>
+      </CardFooter>
     </Card>
   );
 }
 
 function ProjectCardSkeleton() {
   return (
-    <Card className="flex flex-col">
-      <CardContent className="p-4 flex-1 flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-3 w-16" />
-        </div>
-        <Skeleton className="h-6 w-3/4" />
-        <div className="mt-auto pt-2">
-          <Skeleton className="h-10 w-full" />
-        </div>
-      </CardContent>
+    <Card>
+      <CardHeader>
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-4 w-3/4" />
+      </CardHeader>
+      <CardFooter>
+        <Skeleton className="h-8 w-full" />
+      </CardFooter>
     </Card>
   );
 }
@@ -458,57 +659,40 @@ function ProjectCardSkeleton() {
 function StackCard({
   label,
   tag,
-  name,
-  iconSrc,
-  logoSrc,
-  logoAlt,
-  logoHeightClass = "h-7",
+  logo,
   body,
   url,
   host,
 }: {
   label: string;
   tag: string;
-  name: string;
-  iconSrc?: string;
-  logoSrc?: string;
-  logoAlt?: string;
-  logoHeightClass?: string;
+  logo: ReactNode;
   body: string;
   url: string;
   host: string;
 }) {
   return (
-    <Card className="flex flex-col">
-      <CardContent className="p-4 flex-1 flex flex-col gap-4">
-        <div className="flex items-center justify-between font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          <span>{label}</span>
-          <span>{tag}</span>
-        </div>
-        {logoSrc ? (
-          <h3 className="h-12 flex items-center gap-3 leading-none">
-            {iconSrc && (
-              <img src={iconSrc} alt="" aria-hidden="true" className="h-12 w-12 shrink-0" />
-            )}
-            <img
-              src={logoSrc}
-              alt={logoAlt ?? name}
-              className={`${logoHeightClass} w-auto dark:invert`}
-            />
-          </h3>
-        ) : (
-          <h3 className="text-2xl uppercase tracking-tight font-extrabold leading-tight">{name}</h3>
-        )}
-        <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
-        <div className="mt-auto pt-2">
-          <Button asChild variant="outline" className="w-full">
-            <a href={url} target="_blank" rel="noopener noreferrer">
-              {host}
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
-            </a>
-          </Button>
-        </div>
+    <Card>
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+        <CardTitle>
+          <h3 className="flex h-8 items-center gap-2">{logo}</h3>
+        </CardTitle>
+        <CardAction>
+          <Badge variant="outline">{tag}</Badge>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs/relaxed text-muted-foreground">{body}</p>
       </CardContent>
+      <CardFooter className="mt-auto">
+        <Button asChild variant="outline" className="w-full">
+          <a href={url} target="_blank" rel="noopener noreferrer">
+            {host}
+            <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
+          </a>
+        </Button>
+      </CardFooter>
     </Card>
   );
 }
