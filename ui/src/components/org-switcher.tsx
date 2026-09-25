@@ -76,48 +76,46 @@ export function OrgSwitcher() {
             aria-label={`Organization: ${activeOrg?.name ?? "none"}`}
           >
             <BankIcon aria-hidden />
-            <span className="hidden sm:inline truncate min-w-0">
-              {activeOrg?.name ?? "organization"}
+            <span className="hidden min-w-0 truncate sm:inline">
+              {activeOrg?.name ?? "Organization"}
             </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
-          <DropdownMenuLabel>organizations</DropdownMenuLabel>
+          <DropdownMenuLabel>Organizations</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {organizations.map((org) => (
             <DropdownMenuItem
               key={org.id}
-              className="flex items-center justify-between cursor-pointer"
-              onClick={() => {
+              onSelect={() => {
                 if (org.id !== activeOrgId) switchMutation.mutate(org.id);
               }}
             >
-              <span className="truncate min-w-0 flex-1">{org.name}</span>
-              <span className="font-mono text-xs uppercase text-muted-foreground">
-                {org.role ?? ""}
-              </span>
-              {org.id === activeOrgId && (
-                <CheckIcon className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
+              <span className="min-w-0 flex-1 truncate">{org.name}</span>
+              {org.role && <span className="text-xs text-muted-foreground">{org.role}</span>}
+              <CheckIcon
+                aria-hidden
+                className={org.id === activeOrgId ? "text-foreground" : "invisible"}
+              />
             </DropdownMenuItem>
           ))}
           {organizations.length === 0 && (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">
               You are not in an Organization yet. Create one, or accept an invitation.
-            </div>
+            </p>
           )}
           <DropdownMenuSeparator />
           {invitationCount > 0 && (
-            <DropdownMenuItem asChild className="cursor-pointer">
+            <DropdownMenuItem asChild>
               <Link to="/profile" hash="invitations">
-                <EnvelopeIcon className="h-3.5 w-3.5" />
+                <EnvelopeIcon aria-hidden />
                 {invitationCount} pending invitation{invitationCount === 1 ? "" : "s"}
               </Link>
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem className="cursor-pointer" onClick={() => setCreating(true)}>
-            <PlusIcon className="h-3.5 w-3.5" />
-            create organization
+          <DropdownMenuItem onSelect={() => setCreating(true)}>
+            <PlusIcon aria-hidden />
+            Create Organization
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
