@@ -1,11 +1,11 @@
-import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
+import { ArrowUpRightIcon } from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { Button, Card, CardContent, Input, Spinner, Textarea } from "@/components";
+import { InquiryForm, InquiryPage, InquirySent, InquiryTextField } from "@/components/inquiry-form";
 import { useApiClient } from "@/lib/api";
 import { isValidNearAccountId } from "@/lib/near-account";
 import { nearnSponsorUrl } from "@/lib/nearn";
@@ -22,20 +22,17 @@ export const Route = createFileRoute("/_layout/apply")({
 });
 
 const applySchema = z.object({
-  name: z.string().trim().min(1, "name required"),
-  email: z.string().trim().min(1, "email required").email("not a valid email"),
+  name: z.string().trim().min(1, "Enter your name"),
+  email: z.string().trim().min(1, "Enter your email").email("Enter a valid email"),
   nearAccountId: z
     .string()
     .trim()
     .optional()
-    .refine((v) => !v || isValidNearAccountId(v), "not a valid NEAR account id"),
+    .refine((v) => !v || isValidNearAccountId(v), "Enter a valid NEAR account ID"),
   message: z.string().trim().optional(),
 });
 
 type ApplyValues = z.infer<typeof applySchema>;
-
-const LABEL_CLS = "font-mono text-xs uppercase tracking-widest text-muted-foreground block";
-const ERROR_CLS = "text-sm text-destructive";
 
 function ApplyPage() {
   const apiClient = useApiClient();
@@ -80,191 +77,89 @@ function ApplyPage() {
 
   if (submitted) {
     return (
-      <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
-        <Card variant="highlight">
-          <CardContent className="p-8 space-y-4 text-center">
-            <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-              agency · contacted
-            </div>
-            <h1 className="text-3xl sm:text-4xl uppercase tracking-tight font-extrabold leading-none">
-              Thanks! Let's build.
-            </h1>
-            <p className="font-mono text-xs leading-relaxed text-muted-foreground">
-              Message received. Stay tuned!
-            </p>
-            <Link
-              to="/docs/$slug"
-              params={{ slug: "contributors" }}
-              className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
-            >
-              how to get involved
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
-            </Link>
-            <div className="pt-2">
-              <Button asChild variant="outline" size="sm">
-                <Link to="/">
-                  <ArrowLeftIcon data-icon="inline-start" aria-hidden />
-                  back to home
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <InquirySent
+        title="Thanks, let's build."
+        description="We received your application and will follow up by email."
+        next={{
+          label: "How to get involved",
+          link: { to: "/docs/$slug", params: { slug: "contributors" } },
+        }}
+      />
     );
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-6 pt-4 animate-fade-in">
-      <header className="space-y-3 text-center">
-        <div className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          agency · join
-        </div>
-        <h1 className="text-4xl sm:text-5xl uppercase tracking-tight font-black leading-none">
-          Tell us about yourself
-        </h1>
-      </header>
-
-      <Card>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            What is your expertise? We follow up by email.
-          </p>
-          <form
-            className="space-y-4"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              await form.validateAllFields("submit");
-              if (form.state.canSubmit) {
-                form.handleSubmit();
-              }
-            }}
-          >
-            <form.Field name="name">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      name
-                    </label>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="your name"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
-                    />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field name="email">
-              {(field) => {
-                const err = field.state.meta.errors[0];
-                const errId = `${field.name}-error`;
-                return (
-                  <div className="space-y-2">
-                    <label htmlFor={field.name} className={LABEL_CLS}>
-                      email
-                    </label>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      type="email"
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      placeholder="email@example.com"
-                      disabled={isPending}
-                      aria-invalid={err ? true : undefined}
-                      aria-describedby={err ? errId : undefined}
-                    />
-                    {err && (
-                      <p id={errId} aria-live="polite" className={ERROR_CLS}>
-                        {fieldErrorMessage(err)}
-                      </p>
-                    )}
-                  </div>
-                );
-              }}
-            </form.Field>
-            <form.Field name="nearAccountId">
-              {(field) => (
-                <div className="space-y-2">
-                  <label htmlFor={field.name} className={LABEL_CLS}>
-                    near account (optional)
-                  </label>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="account.near"
-                    disabled={isPending}
-                  />
-                </div>
-              )}
-            </form.Field>
-            <form.Field name="message">
-              {(field) => (
-                <div className="space-y-2">
-                  <label htmlFor={field.name} className={LABEL_CLS}>
-                    message
-                  </label>
-                  <Textarea
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value ?? ""}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    rows={5}
-                    placeholder="a few sentences"
-                    disabled={isPending}
-                  />
-                </div>
-              )}
-            </form.Field>
-            <Button type="submit" disabled={isPending} className="w-full">
-              {isPending && <Spinner />}
-              {isPending ? "submitting..." : "send"}
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
-            </Button>
-          </form>
-          {nearnUrl && (
+    <InquiryPage
+      title="Join as a contributor"
+      description="Tell us about your expertise. Assigned work shows up in My work, and you get paid through DAO proposals."
+    >
+      <InquiryForm
+        id="apply-form"
+        title="About you"
+        description="We follow up by email."
+        isPending={isPending}
+        onSubmit={async () => {
+          await form.validateAllFields("submit");
+          if (form.state.canSubmit) await form.handleSubmit();
+        }}
+        aside={
+          nearnUrl && (
             <a
               href={nearnUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center gap-1 underline underline-offset-4 hover:text-foreground"
             >
-              if you'd rather browse open work directly
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
+              Browse open work on NEARN
+              <ArrowUpRightIcon aria-hidden className="size-3" />
             </a>
+          )
+        }
+      >
+        <form.Field name="name">
+          {(field) => (
+            <InquiryTextField
+              field={field}
+              label="Name"
+              placeholder="Your name"
+              disabled={isPending}
+            />
           )}
-        </CardContent>
-      </Card>
-    </div>
+        </form.Field>
+        <form.Field name="email">
+          {(field) => (
+            <InquiryTextField
+              field={field}
+              label="Email"
+              type="email"
+              placeholder="email@example.com"
+              disabled={isPending}
+            />
+          )}
+        </form.Field>
+        <form.Field name="nearAccountId">
+          {(field) => (
+            <InquiryTextField
+              field={field}
+              label="NEAR account"
+              placeholder="account.near"
+              description="Optional. Used for payouts."
+              disabled={isPending}
+            />
+          )}
+        </form.Field>
+        <form.Field name="message">
+          {(field) => (
+            <InquiryTextField
+              field={field}
+              label="Message"
+              placeholder="A few sentences about your skills and interests"
+              multiline
+              disabled={isPending}
+            />
+          )}
+        </form.Field>
+      </InquiryForm>
+    </InquiryPage>
   );
-}
-
-function fieldErrorMessage(err: unknown): string {
-  if (typeof err === "string") return err;
-  if (err && typeof err === "object" && "message" in err) {
-    const msg = (err as { message?: unknown }).message;
-    return typeof msg === "string" ? msg : "invalid";
-  }
-  return "invalid";
 }
