@@ -35,6 +35,7 @@ For every Agency DAO mapped in `api_db.organization_daos` it:
 
 1. Sets `organization_id` of the DAO's Projects in `projects_db` to the Organization id. `owner_id` is not changed, so existing `@<ownerId>/<slug>` mentions keep resolving.
 2. Re-keys the DAO's `settings` row in `api_db` to the Organization id, unless the Organization already has one. The API migration `0006_settings_by_organization` does the same at deploy; this step covers mappings added after it ran.
+3. Records the DAO as the funding Agency DAO (`budgets.funding_dao_account_id`, #44) of every Budget entry on the DAO's Projects that has none yet, whether the Project is still keyed by the DAO or already by the Organization. The API migration `0008_prepayments` fills this for entries attributed to an Engagement or a legacy client row; this step covers the Agency's own entries, whose Projects live in `projects_db`.
 
 Projects of DAOs without a mapping are left alone and reported by neither step.
 
@@ -42,7 +43,7 @@ Projects of DAOs without a mapping are left alone and reported by neither step.
 
 | Variable | Meaning |
 | --- | --- |
-| `API_DATABASE_URL` | `api_db`, reads `organization_daos` and updates `settings` |
+| `API_DATABASE_URL` | `api_db`, reads `organization_daos` and updates `settings` and `budgets` |
 | `PROJECTS_DATABASE_URL` | `projects_db`, updates `projects.organization_id` |
 
 ### Run order
@@ -51,6 +52,12 @@ Projects of DAOs without a mapping are left alone and reported by neither step.
 2. Deploy the API and the projects plugin from #42. Until step 4 runs, the API still lists Projects whose `organization_id` is the Organization's Agency DAO, but members only see private Projects of that kind that they created, and the client portal only sees public ones.
 3. `bun run db:migrate:project-ownership --dry-run` and check the report.
 4. `bun run db:migrate:project-ownership` right after the deploy.
+
+### Funding Agency DAO of Budget entries (#44)
+
+1. Deploy the API from #44. Its migrator creates `prepayments` and adds `budgets.funding_dao_account_id`, filled for entries attributed to an Engagement (through the Agency's `organization_daos` row) or to a legacy client row (`clients.agency_dao_account_id`).
+2. `bun run db:migrate:project-ownership --dry-run` and check `fundedBudgets`: the Agency's own Budget entries that still have no funding DAO.
+3. `bun run db:migrate:project-ownership`. Entries of Projects whose Organization has no Agency DAO keep an empty funding DAO; they cannot exist from #44 on, because the Budgets routes require an Agency DAO.
 
 ## Assign an Organization owner
 

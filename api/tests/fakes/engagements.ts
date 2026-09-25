@@ -1,3 +1,4 @@
+import { expect } from "vitest";
 import type { Database } from "../../src/db";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createAgencyService } from "../../src/services/agency";
@@ -9,6 +10,7 @@ import { createListingsService } from "../../src/services/listings";
 import { createNotifications } from "../../src/services/notifications";
 import type { EmailMessage } from "../../src/services/notify";
 import { createOrganizationAccess, ROLE_MATRIX } from "../../src/services/organization-access";
+import { createPrepaymentsService } from "../../src/services/prepayments";
 import type { PluginProject } from "../../src/services/project-directory";
 import { createProjectDirectory } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
@@ -24,6 +26,11 @@ import { inMemoryProjects, project } from "./projects";
 
 export const ORIGIN = "https://app.example";
 export const SPOOFED_ORIGIN = "https://spoofed.example";
+
+export const refused = (promise: Promise<unknown>, reason: string) =>
+  expect(promise).rejects.toMatchObject(
+    reason === "NOT_FOUND" ? { code: reason } : { data: { reason } },
+  );
 
 type Seed = {
   organizations: FakeOrganization[];
@@ -102,6 +109,12 @@ export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
     },
   });
 
+  const prepayments = createPrepaymentsService({
+    db,
+    organizations: organizations.directory,
+    notifications,
+  });
+
   const context = (userId: string, organizationId: string, near?: string) => ({
     ...signedIn(userId, organizationId, near),
     reqHeaders: new Headers({ origin: SPOOFED_ORIGIN, "x-forwarded-host": "spoofed.example" }),
@@ -127,10 +140,13 @@ export async function engagementWorld(db: Database, seed: Seed = STUDIO_SEED) {
     directory,
     notifications,
     engagements,
+    prepayments,
     emails,
     ended,
     context,
     manager,
+    member: (userId: string, organizationId: string) =>
+      access.agencyScope(context(userId, organizationId), ROLE_MATRIX.work),
     activeEngagement,
   };
 }

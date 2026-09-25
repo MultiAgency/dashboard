@@ -42,6 +42,18 @@ export const NOTIFICATION_KINDS = {
     title: `${p.clientName} joined`,
     body: `${p.email} accepted the invitation and now manages ${p.clientName}.`,
   }),
+  prepayment_recorded: (p) => ({
+    title: `${p.agencyName} recorded a Prepayment`,
+    body: `${p.agencyName} recorded a Prepayment of ${p.amount} for ${p.period}. Your Prepaid balance is updated on MultiAgency.`,
+  }),
+  prepayment_corrected: (p) => ({
+    title: `${p.agencyName} corrected a Prepayment`,
+    body: `${p.agencyName} corrected a Prepayment. It is now ${p.amount} for ${p.period}.`,
+  }),
+  prepayment_removed: (p) => ({
+    title: `${p.agencyName} removed a Prepayment`,
+    body: `${p.agencyName} removed the Prepayment of ${p.amount} for ${p.period}.`,
+  }),
 } satisfies Record<string, Template>;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;

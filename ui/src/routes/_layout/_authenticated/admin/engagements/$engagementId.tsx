@@ -1,7 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Button, Card, CardContent, Input } from "@/components";
+import { z } from "zod";
+import {
+  Button,
+  Card,
+  CardContent,
+  Input,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components";
+import { PrepaymentsPanel } from "@/components/admin/prepayments-panel";
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading, selectClass } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -14,7 +25,12 @@ import { useEngagementAction } from "@/hooks/use-engagement-action";
 import { useApiClient } from "@/lib/api";
 import { adminProjectsListQueryOptions, engagementDetailQueryOptions } from "@/lib/queries";
 
+const engagementSearchSchema = z.object({
+  tab: z.enum(["projects", "prepayments"]).optional().catch("projects"),
+});
+
 export const Route = createFileRoute("/_layout/_authenticated/admin/engagements/$engagementId")({
+  validateSearch: engagementSearchSchema,
   head: () => ({
     meta: [
       { title: "Engagement" },
@@ -26,6 +42,8 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/engagements/
 
 function EngagementDetailPage() {
   const { engagementId } = Route.useParams();
+  const { tab } = Route.useSearch();
+  const navigate = Route.useNavigate();
   const apiClient = useApiClient();
   const engagementQuery = useQuery(engagementDetailQueryOptions(apiClient, engagementId));
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -78,7 +96,30 @@ function EngagementDetailPage() {
         engagement.invitation &&
         engagement.invitation.status !== "accepted" && <InvitationPanel engagement={engagement} />}
 
-      <SharedProjects engagement={engagement} />
+      {engagement.status === "proposed" ? (
+        <SharedProjects engagement={engagement} />
+      ) : (
+        <Tabs
+          value={tab ?? "projects"}
+          onValueChange={(value) => {
+            void navigate({
+              search: { tab: value === "prepayments" ? "prepayments" : undefined },
+              replace: true,
+            });
+          }}
+        >
+          <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.18em]">
+            <TabsTrigger value="projects">shared projects</TabsTrigger>
+            <TabsTrigger value="prepayments">prepayments</TabsTrigger>
+          </TabsList>
+          <TabsContent value="projects" className="mt-6">
+            <SharedProjects engagement={engagement} />
+          </TabsContent>
+          <TabsContent value="prepayments" className="mt-6">
+            <PrepaymentsPanel engagement={engagement} />
+          </TabsContent>
+        </Tabs>
+      )}
 
       {endable && (
         <section className="space-y-3 pt-4 border-t border-destructive/30">

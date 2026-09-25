@@ -33,6 +33,7 @@ import { createNearnService } from "./services/nearn";
 import { createNotifications } from "./services/notifications";
 import { resendEmailSender } from "./services/notify";
 import { createOrganizationAccess, ROLE_MATRIX } from "./services/organization-access";
+import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
 import { createReportsService } from "./services/reports";
@@ -123,6 +124,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
         sendEmail,
         appOrigin,
       });
+      const prepayments = createPrepaymentsService({
+        db,
+        organizations: organizationDirectory,
+        notifications,
+      });
       const clientPortal = createClientPortalService(
         access,
         agency,
@@ -154,6 +160,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         listings,
         contributors,
         engagements,
+        prepayments,
         notifications,
         organizationDirectory,
         authPool,
@@ -187,6 +194,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       listings,
       contributors,
       engagements,
+      prepayments,
       notifications,
       organizationDirectory,
       assignments,
@@ -380,6 +388,28 @@ export default createPlugin.withPlugins<PluginsClient>()({
               engagements.changeInvitationEmail(context.scope, input.id, input.email),
             ),
         },
+      },
+
+      prepayments: {
+        list: builder.prepayments.list
+          .use(member)
+          .handler(async ({ context, input }) => prepayments.list(context.scope, input)),
+
+        balance: builder.prepayments.balance
+          .use(member)
+          .handler(async ({ context, input }) => prepayments.balance(context.scope, input)),
+
+        record: builder.prepayments.record
+          .use(manager)
+          .handler(async ({ context, input }) => prepayments.record(context.scope, input)),
+
+        correct: builder.prepayments.correct
+          .use(manager)
+          .handler(async ({ context, input }) => prepayments.correct(context.scope, input)),
+
+        remove: builder.prepayments.remove
+          .use(manager)
+          .handler(async ({ context, input }) => prepayments.remove(context.scope, input)),
       },
 
       clientPortal: {

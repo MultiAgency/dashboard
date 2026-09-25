@@ -23,6 +23,8 @@ import {
   engagementDetailQueryOptions,
   engagementsListQueryOptions,
   meRolesQueryOptions,
+  prepaidBalanceQueryOptions,
+  prepaymentsListQueryOptions,
   projectsListQueryOptions,
   proposalsListQueryKey,
   publicSettingsQueryOptions,
@@ -163,6 +165,19 @@ describe("refreshAfter", () => {
     await refreshAfter(queryClient, { type: "engagements" });
 
     expect(stale()).toEqual(["clientProjects", "detail", "list", "roles"]);
+  });
+
+  it("prepayments refresh Prepayments and Prepaid balances, and nothing else", async () => {
+    const { queryClient, stale } = cacheWith({
+      list: prepaymentsListQueryOptions(api, "e1").queryKey,
+      balance: prepaidBalanceQueryOptions(api, "e1").queryKey,
+      engagement: engagementDetailQueryOptions(api, "e1").queryKey,
+      clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "e1").queryKey,
+    });
+
+    await refreshAfter(queryClient, { type: "prepayments" });
+
+    expect(stale()).toEqual(["balance", "list"]);
   });
 });
 

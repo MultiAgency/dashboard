@@ -182,6 +182,15 @@ export function getTokenMetadataBySymbol(
   return REGISTRY_BY_SYMBOL[network].get(symbol) ?? null;
 }
 
+export function baseUnitsToDisplay(amount: string, tokenId: string): string {
+  const token = getTokenMetadata(tokenId);
+  if (!token) return `${amount} ${tokenId}`;
+  const value = BigInt(amount);
+  const factor = 10n ** BigInt(token.decimals);
+  const fraction = (value % factor).toString().padStart(token.decimals, "0").replace(/0+$/, "");
+  return `${value / factor}${fraction ? `.${fraction}` : ""} ${token.symbol}`;
+}
+
 export function displayToBaseUnits(decimalString: string, decimals: number): bigint {
   if (!/^\d+(\.\d+)?$/.test(decimalString)) {
     throw new Error(`displayToBaseUnits: not a non-negative decimal: ${decimalString}`);
