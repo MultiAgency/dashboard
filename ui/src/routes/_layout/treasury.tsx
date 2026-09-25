@@ -49,7 +49,6 @@ import {
   TableRow,
   Tabs,
   TabsContent,
-  TabsList,
   TabsTrigger,
   ToggleGroup,
   ToggleGroupItem,
@@ -57,6 +56,7 @@ import {
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { LoadError } from "@/components/load-error";
 import { PageHeader } from "@/components/page-header";
+import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Separator } from "@/components/ui/separator";
 import { useMeRoles } from "@/hooks/use-me-roles";
@@ -243,10 +243,10 @@ function TreasuryPage() {
       />
 
       <Tabs value={activeTab} onValueChange={(t) => setActiveTab(t as TreasuryTab)}>
-        <TabsList variant="line">
+        <ScrollableTabsList>
           <TabsTrigger value="balances">Balances</TabsTrigger>
           <TabsTrigger value="payouts">Payouts</TabsTrigger>
-        </TabsList>
+        </ScrollableTabsList>
         <TabsContent value="balances" className="mt-4">
           <BalancesSection
             isLoading={isLoading}

@@ -28,7 +28,6 @@ import {
   TableRow,
   Tabs,
   TabsContent,
-  TabsList,
   TabsTrigger,
 } from "@/components";
 import { AssignmentsSection } from "@/components/admin/assignments-section";
@@ -45,6 +44,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
 import { LoadError } from "@/components/load-error";
 import { PageHeader } from "@/components/page-header";
+import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { nearnListingHref } from "@/lib/nearn";
@@ -155,15 +155,13 @@ function AdminProjectDetail() {
           });
         }}
       >
-        <div className="overflow-x-auto pb-2">
-          <TabsList variant="line">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="budget">Budget</TabsTrigger>
-            <TabsTrigger value="listings">Listings</TabsTrigger>
-            <TabsTrigger value="billings">Billings</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
-          </TabsList>
-        </div>
+        <ScrollableTabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="budget">Budget</TabsTrigger>
+          <TabsTrigger value="listings">Listings</TabsTrigger>
+          <TabsTrigger value="billings">Billings</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
+        </ScrollableTabsList>
 
         <TabsContent value="overview">
           <div className="flex flex-col gap-6">

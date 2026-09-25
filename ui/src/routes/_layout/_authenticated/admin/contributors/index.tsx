@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components";
+import { Tabs, TabsContent, TabsTrigger } from "@/components";
 import { ApplicationsAdminSection } from "@/components/admin/applications-section";
 import { ContributorsAdminSection } from "@/components/admin/contributors-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
 import { PageHeader } from "@/components/page-header";
+import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
 import { adminContributorsListQueryOptions } from "@/lib/queries";
 
 const contributorsSearchSchema = z.object({
@@ -44,12 +45,10 @@ function AdminContributorsPage() {
           });
         }}
       >
-        <div className="pb-2">
-          <TabsList variant="line">
-            <TabsTrigger value="directory">Active</TabsTrigger>
-            <TabsTrigger value="incoming">Applications</TabsTrigger>
-          </TabsList>
-        </div>
+        <ScrollableTabsList>
+          <TabsTrigger value="directory">Active</TabsTrigger>
+          <TabsTrigger value="incoming">Applications</TabsTrigger>
+        </ScrollableTabsList>
         <TabsContent value="directory">
           <ContributorsAdminSection />
         </TabsContent>

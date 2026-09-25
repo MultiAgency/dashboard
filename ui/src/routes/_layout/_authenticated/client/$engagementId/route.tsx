@@ -9,10 +9,10 @@ import {
   SelectTrigger,
   SelectValue,
   Tabs,
-  TabsList,
   TabsTrigger,
 } from "@/components";
 import { EngagementKindBadge, EngagementStatusBadge } from "@/components/engagement-status";
+import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
 import { useApiClient } from "@/lib/api";
 import { awaitingCountFor } from "@/lib/change-orders";
 import { canReadEngagement, clientEngagementSections } from "@/lib/navigation";
@@ -91,22 +91,20 @@ function EngagementLayout() {
         }
       />
       <Tabs value={current} activationMode="manual">
-        <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-          <TabsList variant="line" aria-label="Engagement sections">
-            {sections.map((section) => (
-              <TabsTrigger key={section.to} value={section.to} asChild>
-                <Link to={section.to}>
-                  {section.label}
-                  {section.to === planSection && awaiting > 0 && (
-                    <Badge size="counter" aria-label={`${awaiting} awaiting you`}>
-                      {awaiting}
-                    </Badge>
-                  )}
-                </Link>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
+        <ScrollableTabsList aria-label="Engagement sections">
+          {sections.map((section) => (
+            <TabsTrigger key={section.to} value={section.to} asChild>
+              <Link to={section.to}>
+                {section.label}
+                {section.to === planSection && awaiting > 0 && (
+                  <Badge size="counter" aria-label={`${awaiting} awaiting you`}>
+                    {awaiting}
+                  </Badge>
+                )}
+              </Link>
+            </TabsTrigger>
+          ))}
+        </ScrollableTabsList>
       </Tabs>
       <Outlet />
     </div>
