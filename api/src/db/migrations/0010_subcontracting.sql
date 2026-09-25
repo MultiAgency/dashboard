@@ -1,14 +1,9 @@
 ALTER TABLE "billings" ADD COLUMN IF NOT EXISTS "paying_dao_account_id" text;
 --> statement-breakpoint
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'billings' AND column_name = 'client_id') THEN
-    UPDATE "billings" SET "paying_dao_account_id" = "clients"."agency_dao_account_id"
-    FROM "clients"
-    WHERE "billings"."paying_dao_account_id" IS NULL
-      AND "billings"."client_id" = "clients"."id";
-  END IF;
-END $$;
+UPDATE "billings" SET "paying_dao_account_id" = "clients"."agency_dao_account_id"
+FROM "clients"
+WHERE "billings"."paying_dao_account_id" IS NULL
+  AND "billings"."client_id" = "clients"."id";
 --> statement-breakpoint
 UPDATE "billings" SET "paying_dao_account_id" = "funded"."dao_account_id"
 FROM (
