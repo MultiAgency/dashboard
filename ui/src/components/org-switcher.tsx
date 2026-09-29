@@ -7,12 +7,15 @@ import { useAuthClient } from "@/app";
 import { usePendingInvitations } from "@/components/pending-invitations";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
+import { activeOrganizationKey, myOrganizationsQueryOptions, showWorkspace } from "@/lib/queries";
 import {
-  invalidateWorkspaceQueries,
-  myOrganizationsQueryOptions,
-  setActiveOrganizationKey,
-} from "@/lib/queries";
-import { activeWorkspace, recoveryTarget, switchWorkspace } from "@/lib/workspace";
+  activeWorkspace,
+  announceWorkspace,
+  freshSession,
+  onWorkspaceChange,
+  recoveryTarget,
+  switchWorkspace,
+} from "@/lib/workspace";
 import { CreateOrganizationForm } from "./create-organization-form";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
@@ -42,19 +45,30 @@ export function OrgSwitcher() {
 
   const switchMutation = useMutation({
     mutationFn: (orgId: string) => switchWorkspace(auth, orgId),
-    onSuccess: async (ok, orgId) => {
-      if (!ok) {
+    onSuccess: async (switched, orgId) => {
+      if (!switched) {
         toast.error("Could not switch Organization — try signing out and back in.");
         return;
       }
-      setActiveOrganizationKey(orgId);
-      await queryClient.fetchQuery(sessionQueryOptions(auth));
-      await invalidateWorkspaceQueries(queryClient, router);
+      await showWorkspace(queryClient, router, switched);
+      announceWorkspace(orgId);
     },
     onError: (error: Error) => {
       toast.error(error.message || "Could not switch Organization — try signing out and back in.");
     },
   });
+
+  useEffect(
+    () =>
+      onWorkspaceChange(async () => {
+        const session = await freshSession(auth);
+        const organizationId = session?.session?.activeOrganizationId ?? null;
+        if (organizationId === activeOrganizationKey()) return;
+        await showWorkspace(queryClient, router, session);
+        if (organizationId) toast.info("Your Organization was switched in another tab.");
+      }),
+    [auth, queryClient, router],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
