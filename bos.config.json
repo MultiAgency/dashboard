@@ -13,10 +13,10 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-161-ui-dashboard-multiagency-a412ce63a-ze.zephyrcloud.app",
-      "integrity": "sha384-SSM6jlwB6ETLaF9jfBy0rC7eHLIu87BYY89cRVC4YW46uw9jySPNSAzTvD9t3E0m",
-      "ssr": "https://multiagentic-165-ui-dashboard-multiagency-8cd0868d9-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-9VXeHLLsDgNjLgQj/wWPfXRU/BiedB3HhdrRrmpArTv+lwLtn97RDSyUZ50l6lhV"
+      "production": "https://multiagentic-166-ui-dashboard-multiagency-5c1f7a739-ze.zephyrcloud.app",
+      "integrity": "sha384-yQ8HQfipLh4u5nX5BaJf5DqQJZPF5YXzbsw4ciuW4Pxka2ulfsJXPe4JJlJWIfGi",
+      "ssr": "https://multiagentic-170-ui-dashboard-multiagency-3d5b7cd1b-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-0SsOOmxzQ1C2jVv6xCfw1tzY0g9mMnAvHMz+pRxDTeoXRTJBT9py4it4sWWsQH3c"
     },
     "api": {
       "name": "api",
@@ -36,14 +36,16 @@
         "APP_ORIGIN",
         "FASTNEAR_API_KEY"
       ],
-      "production": "https://multiagentic-164-api-dashboard-multiagency-b685352f2-ze.zephyrcloud.app",
+      "production": "https://multiagentic-169-api-dashboard-multiagency-d406cc723-ze.zephyrcloud.app",
       "integrity": "sha384-axWJzoJ5AN1MlXygXaYeX1oOr8tSrJJ9yjtLuAAq/siHMJrVr0FP1Nm5/3n5QrVr"
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
       "variables": {
         "baseUrl": "https://multiagency.ai",
-        "trustedOrigins": ["http://localhost:3000"],
+        "trustedOrigins": [
+          "http://localhost:3000"
+        ],
         "email": {
           "from": "noreply@multiagency.ai"
         },
@@ -62,7 +64,7 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-163-everything-dev-projects-plugin-d-3beeed8a8-ze.zephyrcloud.app",
+      "production": "https://multiagentic-167-everything-dev-projects-plugin-d-914b5aeb3-ze.zephyrcloud.app",
       "integrity": "sha384-dTbUDrOJ14Li9F/56M3JPp0LlCxq1bZTFfw9h3JYFXqd1bFtnQr3DHHWwnGRFqwl"
     },
     "builders": {
@@ -70,7 +72,7 @@
       "secrets": [
         "BUILDERS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-162-everything-dev-builders-plugin-d-07a39b4f4-ze.zephyrcloud.app",
+      "production": "https://multiagentic-168-everything-dev-builders-plugin-d-d85f828a4-ze.zephyrcloud.app",
       "integrity": "sha384-SxdK807mpmECvN0qkkDaV6yArqmy/6i14CKxmTg8fRDDyw0hWuEeut0ljzTITTK5"
     }
   }
