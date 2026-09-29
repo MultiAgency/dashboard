@@ -42,7 +42,7 @@
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
       "variables": {
-        "baseUrl": "https://multiagency.ai",
+        "baseUrl": "https://dev.multiagency.ai",
         "trustedOrigins": [
           "http://localhost:3000"
         ],
