@@ -4,9 +4,9 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { applications } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
 import type { ContributorsService } from "./contributors";
 import { type NotifyConfig, notifyNewApplication } from "./notify";
+import type { AgencyScope } from "./organization-access";
 import { defaultContactEmail } from "./settings-admin";
 
 export function createApplicationsService(

@@ -47,18 +47,27 @@ function ContributorDetailPage() {
   const apiClient = Route.useRouteContext().apiClient;
   const contributorQuery = useQuery(adminContributorDetailQueryOptions(apiClient, nearAccount));
   const contributor = contributorQuery.data?.contributor;
-  if (contributorQuery.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  if (!contributor) return null;
+  const hasContributor = Boolean(contributor);
 
-  const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
-  const assignmentsQuery = useQuery(adminAssignmentsListQueryOptions(apiClient));
+  const projectsQuery = useQuery({
+    ...adminProjectsListQueryOptions(apiClient),
+    enabled: hasContributor,
+  });
+  const assignmentsQuery = useQuery({
+    ...adminAssignmentsListQueryOptions(apiClient),
+    enabled: hasContributor,
+  });
 
   const billingsQuery = useInfiniteQuery({
     queryKey: adminContributorBillingsQueryKey(nearAccount),
     queryFn: ({ pageParam }) => apiClient.billings.list({ nearAccount, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: hasContributor,
   });
+
+  if (contributorQuery.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (!contributor) return null;
 
   const projectById = new Map((projectsQuery.data?.data ?? []).map((p) => [p.id, p]));
   const assignments = (assignmentsQuery.data?.data ?? []).filter(

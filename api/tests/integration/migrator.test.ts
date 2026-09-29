@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createDatabaseDriver, type DatabaseDriver } from "../../src/db";
-import { migrate } from "../../src/db/migrate";
+import { loadMigrations, migrate } from "../../src/db/migrate";
 
 const probeTable: Migration = {
   idx: 0,
@@ -82,5 +82,27 @@ describe("migrate — runtime migrator", () => {
     );
     const schemas = (rawSchemas as unknown as { rows: { schema_name: string }[] }).rows;
     expect(schemas).toHaveLength(1);
+  });
+
+  test("the organization_daos migration upgrades existing data and allows one Organization per Agency DAO", async () => {
+    const { migrations } = await Effect.runPromise(loadMigrations());
+    const before = migrations.filter((m) => m.tag < "0005");
+    await Effect.runPromise(migrate(driver.db, before));
+    await driver.db.execute(
+      sql`INSERT INTO clients (id, org_id, agency_dao_account_id, name) VALUES ('nf', 'nf-org', 'multiagency.sputnik-dao.near', 'NEAR Foundation')`,
+    );
+
+    await Effect.runPromise(migrate(driver.db, migrations));
+
+    await driver.db.execute(
+      sql`INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ('multiagency', 'multiagency.sputnik-dao.near')`,
+    );
+    await expect(
+      driver.db.execute(
+        sql`INSERT INTO organization_daos (organization_id, dao_account_id) VALUES ('test-copy', 'multiagency.sputnik-dao.near')`,
+      ),
+    ).rejects.toThrow();
+    const rawClients = await driver.db.execute(sql`SELECT id FROM clients`);
+    expect((rawClients as unknown as { rows: { id: string }[] }).rows).toEqual([{ id: "nf" }]);
   });
 });

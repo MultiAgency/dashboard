@@ -4,8 +4,8 @@ import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import { type Budget, budgets } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
 import type { ClientsService } from "./clients";
+import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
 export class BudgetInsufficientError extends Error {

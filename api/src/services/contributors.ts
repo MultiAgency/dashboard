@@ -3,7 +3,7 @@ import { Effect, Either } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
-import type { PluginContext } from "../lib/agency-scope";
+import type { PluginContext } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 
 export type BuilderProfile = {

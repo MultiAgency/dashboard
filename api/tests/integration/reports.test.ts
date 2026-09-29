@@ -5,11 +5,13 @@ import { ORPCError } from "every-plugin/orpc";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { billings, budgets, clientProjects, clients, proposals } from "../../src/db/schema";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
-import { createAgencyService } from "../../src/services/agency";
+import { createProjectDirectory, type ProjectsClient } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
+import { agencyScope } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
 
 const AGENCY = "agency-r.sputnik-dao.near";
+const scope = agencyScope(AGENCY);
 
 type FakeUpstreamProject = {
   id: string;
@@ -85,8 +87,8 @@ describe("reports.generate", () => {
   });
 
   function buildReports(plugins: PluginsClient) {
-    const agency = createAgencyService(db as never, plugins);
-    return createReportsService(db as never, agency, plugins);
+    const directory = createProjectDirectory(() => plugins.projects() as ProjectsClient);
+    return createReportsService(db as never, directory, plugins);
   }
 
   async function insertClient(id: string, name: string) {
@@ -153,7 +155,7 @@ describe("reports.generate", () => {
 
     await expect(
       Effect.runPromise(
-        reports.generate({}, AGENCY, { startDate: "2024-02-01", endDate: "2024-01-01" }),
+        reports.generate(scope, { startDate: "2024-02-01", endDate: "2024-01-01" }),
       ),
     ).rejects.toThrow(/startDate must be on or before endDate/);
   });
@@ -162,7 +164,7 @@ describe("reports.generate", () => {
     const reports = buildReports(createFakePlugins([]));
 
     await expect(
-      Effect.runPromise(reports.generate({}, AGENCY, { clientId: "does-not-exist" })),
+      Effect.runPromise(reports.generate(scope, { clientId: "does-not-exist" })),
     ).rejects.toThrow(/Client not found/);
   });
 
@@ -171,7 +173,7 @@ describe("reports.generate", () => {
       createFakePlugins([makeProject({ id: "project-1", slug: "project-one" })]),
     );
 
-    const result = await Effect.runPromise(reports.generate({}, AGENCY, {}));
+    const result = await Effect.runPromise(reports.generate(scope, {}));
 
     expect(result.overview.period).toBe("all time");
     expect(result.overview.projectCount).toBe(1);
@@ -182,14 +184,10 @@ describe("reports.generate", () => {
       createFakePlugins([makeProject({ id: "project-1", slug: "project-one" })]),
     );
 
-    const startOnly = await Effect.runPromise(
-      reports.generate({}, AGENCY, { startDate: "2024-01-01" }),
-    );
+    const startOnly = await Effect.runPromise(reports.generate(scope, { startDate: "2024-01-01" }));
     expect(startOnly.overview.period).toBe("from 2024-01-01");
 
-    const endOnly = await Effect.runPromise(
-      reports.generate({}, AGENCY, { endDate: "2024-01-31" }),
-    );
+    const endOnly = await Effect.runPromise(reports.generate(scope, { endDate: "2024-01-31" }));
     expect(endOnly.overview.period).toBe("through 2024-01-31");
   });
 
@@ -230,7 +228,7 @@ describe("reports.generate", () => {
       createFakePlugins([makeProject({ id: "project-a", slug: "project-a-slug" })]),
     );
 
-    const result = await Effect.runPromise(reports.generate({}, AGENCY, {}));
+    const result = await Effect.runPromise(reports.generate(scope, {}));
 
     expect(result.overview.budgetByToken).toEqual([
       { tokenId: "near", amount: "1000" },
@@ -276,7 +274,7 @@ describe("reports.generate", () => {
       ]),
     );
 
-    const result = await Effect.runPromise(reports.generate({}, AGENCY, {}));
+    const result = await Effect.runPromise(reports.generate(scope, {}));
 
     expect(result.clientBreakdown).toHaveLength(2);
     expect(result.clientBreakdown).toEqual(
@@ -328,7 +326,7 @@ describe("reports.generate", () => {
       createFakePlugins([makeProject({ id: "project-shared", slug: "project-shared-slug" })]),
     );
 
-    const result = await Effect.runPromise(reports.generate({}, AGENCY, { clientId: "client-a" }));
+    const result = await Effect.runPromise(reports.generate(scope, { clientId: "client-a" }));
 
     expect(result.overview.billedByToken).toEqual([{ tokenId: "near", amount: "100" }]);
     expect(result.contributorStats.map((c) => c.nearAccount)).toEqual(["alice.near"]);
@@ -396,7 +394,7 @@ describe("reports.generate", () => {
       ),
     );
 
-    const result = await Effect.runPromise(reports.generate({}, AGENCY, {}));
+    const result = await Effect.runPromise(reports.generate(scope, {}));
 
     expect(result.contributorStats).toEqual(
       expect.arrayContaining([

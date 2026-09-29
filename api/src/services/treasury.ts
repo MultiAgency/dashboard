@@ -1,6 +1,6 @@
 import { Effect } from "every-plugin/effect";
-import type { AgencyScope } from "../lib/agency-scope";
 import type { ProjectLedgers } from "./ledger";
+import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 import { getDaoTokenIds, getTreasuryBalances } from "./sputnik";
 import { summarizeTreasury } from "./summaries";

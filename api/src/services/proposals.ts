@@ -4,7 +4,7 @@ import type { z } from "every-plugin/zod";
 import type { proposalPublicItem } from "../contract";
 import type { Database } from "../db";
 import { billings } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 import { type DaoProposal, getLastProposalId, getProposals } from "./sputnik";
 import { summarizeProposals } from "./summaries";

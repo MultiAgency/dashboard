@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
 export function createMeService(db: Database, directory: ProjectDirectory) {

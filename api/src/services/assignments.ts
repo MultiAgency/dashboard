@@ -3,7 +3,7 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { projectContributors } from "../db/schema";
-import type { AgencyScope } from "../lib/agency-scope";
+import type { AgencyScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
 
 export function createAssignmentsService(db: Database, directory: ProjectDirectory) {
