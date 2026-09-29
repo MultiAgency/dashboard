@@ -38,7 +38,7 @@ type FakeUpstreamProject = {
 function makeProject(overrides: Partial<FakeUpstreamProject> & { id: string; slug: string }) {
   return {
     ownerId: "owner.near",
-    organizationId: AGENCY,
+    organizationId: "agency-org",
     title: overrides.title ?? overrides.slug,
     description: null,
     repository: null,

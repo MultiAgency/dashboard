@@ -50,13 +50,6 @@ export function toProject(p: PluginProject): Project {
   };
 }
 
-function ownerKeys(scope: AgencyScope): string[] {
-  const legacyDaoKey = scope.agencyDao;
-  return [scope.organizationId, legacyDaoKey].filter(
-    (key, index, keys): key is string => key !== null && keys.indexOf(key) === index,
-  );
-}
-
 const notFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
 
 export function createProjectDirectory(
@@ -66,10 +59,11 @@ export function createProjectDirectory(
 
   function build(scope: AgencyScope): AgencyProjects {
     const client = () => projectsFor(scope.pluginContext);
-    const keys = ownerKeys(scope);
+    const { organizationId } = scope;
     let listing: Promise<Project[]> | undefined;
 
-    async function fetchOwnedBy(organizationId: string): Promise<Project[]> {
+    async function fetchAll(): Promise<Project[]> {
+      if (!organizationId) return [];
       const out: Project[] = [];
       let cursor: string | undefined;
       do {
@@ -78,12 +72,6 @@ export function createProjectDirectory(
         cursor = page.meta.nextCursor ?? undefined;
       } while (cursor);
       return out;
-    }
-
-    async function fetchAll(): Promise<Project[]> {
-      const pages = await Promise.all(keys.map(fetchOwnedBy));
-      const byId = new Map(pages.flat().map((p) => [p.id, p]));
-      return [...byId.values()];
     }
 
     async function fromCacheOr(
@@ -101,7 +89,7 @@ export function createProjectDirectory(
       } catch {
         throw notFound();
       }
-      if (!upstream.organizationId || !keys.includes(upstream.organizationId)) throw notFound();
+      if (!organizationId || upstream.organizationId !== organizationId) throw notFound();
       return toProject(upstream);
     }
 

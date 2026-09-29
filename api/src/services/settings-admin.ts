@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Database } from "../db";
 import { settings as settingsTable } from "../db/schema";
 
@@ -52,14 +52,13 @@ type EditableSettings = {
 export type SettingsOwner = { organizationId: string | null; agencyDao: string | null };
 
 export async function getSettingsRow(db: Database, owner: SettingsOwner) {
-  const legacyDaoKey = owner.agencyDao;
-  const keys = [owner.organizationId, legacyDaoKey].filter((k): k is string => k !== null);
-  if (keys.length === 0) return null;
-  const rows = await db
+  if (!owner.organizationId) return null;
+  const [row] = await db
     .select()
     .from(settingsTable)
-    .where(inArray(settingsTable.orgAccountId, keys));
-  return keys.map((key) => rows.find((row) => row.orgAccountId === key)).find(Boolean) ?? null;
+    .where(eq(settingsTable.orgAccountId, owner.organizationId))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function getResolvedPublicSettings(
