@@ -30,13 +30,12 @@ import { awaitingLink } from "@/lib/change-orders";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   awaitingChangeOrdersQueryOptions,
-  invalidateWorkspaceQueries,
   notificationsQueryKey,
   refreshAfter,
-  setActiveOrganizationKey,
+  showWorkspace,
 } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { switchWorkspace } from "@/lib/workspace";
+import { announceWorkspace, switchWorkspace } from "@/lib/workspace";
 
 export const Route = createFileRoute("/_layout/_authenticated/notifications")({
   head: () => ({
@@ -87,8 +86,8 @@ function NotificationsPage() {
       if (notification.organizationId !== activeOrganizationId) {
         const switched = await switchWorkspace(authClient, notification.organizationId);
         if (!switched) throw new Error("You are no longer a member of that Organization.");
-        setActiveOrganizationKey(notification.organizationId);
-        await invalidateWorkspaceQueries(queryClient, router);
+        await showWorkspace(queryClient, router, switched);
+        announceWorkspace(notification.organizationId);
       }
       return notification.link;
     },

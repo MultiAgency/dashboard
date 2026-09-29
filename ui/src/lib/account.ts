@@ -5,6 +5,7 @@ import { type AuthClient, sessionQueryKey, sessionQueryOptions } from "./auth";
 import { pendingInvitations } from "./invitations";
 import { type OrganizationHome, organizationHome, organizationToActivate } from "./landing";
 import { meRolesQueryKey, meRolesQueryOptions, myOrganizationsQueryKey } from "./queries";
+import { announceWorkspace } from "./workspace";
 
 export const WELCOME_PATH = "/welcome";
 
@@ -88,6 +89,7 @@ async function activateOrganization({
   if (target && target !== activeId) {
     const { error } = await authClient.organization.setActive({ organizationId: target });
     if (error) throw new Error(error.message ?? "Could not open your Organization");
+    announceWorkspace(target);
     await refreshAccountQueries(queryClient);
   }
   return target;

@@ -24,6 +24,7 @@ import {
 } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
+import { announceWorkspace } from "@/lib/workspace";
 
 export function useInvitationActions() {
   const authClient = useAuthClient();
@@ -41,6 +42,7 @@ export function useInvitationActions() {
           organizationId,
         });
         if (activeError) throw new Error(activeError.message ?? "Could not open the Organization");
+        announceWorkspace(organizationId);
       }
       await refreshAfterAccountChange(queryClient, authClient);
       return landingDestination({ authClient, apiClient, queryClient });

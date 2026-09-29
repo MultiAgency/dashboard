@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { landingDestination, refreshAccountQueries } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
 import { availableSlug, isOrganizationSlugTaken, isValidSlug, slugify } from "@/lib/slugify";
+import { announceWorkspace } from "@/lib/workspace";
 
 class SlugTakenError extends Error {
   constructor(readonly suggestion: string | null) {
@@ -52,6 +53,7 @@ export function CreateOrganizationForm({ onCreated }: { onCreated?: () => void }
         organizationId: data.id,
       });
       if (activeError) throw new Error(activeError.message ?? "Could not open the Organization");
+      announceWorkspace(data.id);
       await refreshAccountQueries(queryClient);
       return landingDestination({ authClient, apiClient, queryClient });
     },
