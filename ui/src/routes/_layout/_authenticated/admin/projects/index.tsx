@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ProjectsAdminSection } from "@/components/admin/projects-section";
 import { SharedWithUsSection } from "@/components/admin/shared-with-us-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
+import { PageHeader } from "@/components/page-header";
 import { adminAssignmentsListQueryOptions, adminProjectsListQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/projects/")({
@@ -21,19 +22,11 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/projects/")(
 
 function AdminProjectsPage() {
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          work · projects
-        </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Projects
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Start here — each project holds the team, budget, and billings for work you deliver to
-          clients.
-        </p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Projects"
+        description="Each project holds the team, budget and billings for work you deliver to clients."
+      />
       <ProjectsAdminSection />
       <SharedWithUsSection />
     </div>

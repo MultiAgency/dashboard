@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { budgets } from "../../src/db/schema";
 import type { OrganizationScope } from "../../src/services/organization-access";
-import { engagementWorld, ORIGIN, refused, SPOOFED_ORIGIN } from "../fakes/engagements";
+import {
+  engagementWorld,
+  ORIGIN,
+  refused,
+  SPOOFED_ORIGIN,
+  withOrganizationLookupsFailing,
+} from "../fakes/engagements";
 import { migratedDatabase } from "./_pg";
 
 describe("engagements", () => {
@@ -120,11 +126,31 @@ describe("engagements", () => {
       await refused(world.engagements.end(await studio(), engagement.id), "NOT_ACTIVE");
     });
 
+    test("ending is saved even when naming the Organizations for its notice fails", async () => {
+      const proposed = await proposeTo();
+      await world.engagements.accept(await acme(), proposed.id);
+      const scope = await studio();
+
+      await withOrganizationLookupsFailing(world, () =>
+        world.engagements.end(scope, proposed.id).catch(() => null),
+      );
+      expect((await world.engagements.get(scope, proposed.id)).status).toBe("ended");
+      expect(world.ended).toEqual([proposed.id]);
+    });
+
     test("the Agency withdraws its own pending proposal by ending it", async () => {
       const proposed = await proposeTo();
 
       await refused(world.engagements.end(await acme(), proposed.id), "NOT_ACTIVE");
-      expect((await world.engagements.end(await studio(), proposed.id)).status).toBe("ended");
+      const withdrawn = await world.engagements.end(await studio(), proposed.id);
+      expect(withdrawn.status).toBe("declined");
+      expect(world.ended).toEqual([]);
+      await refused(
+        world.access.sharedWith(world.context("acme-owner", "acme"), proposed.id),
+        "NOT_FOUND",
+      );
+      const [notice] = (await world.notifications.list("acme-owner", { limit: 50 })).data;
+      expect(notice).toMatchObject({ kind: "engagement_withdrawn", link: "/client" });
     });
   });
 

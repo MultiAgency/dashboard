@@ -3,12 +3,16 @@ import type { ApiClient } from "@/lib/api";
 
 export type IdeaView = Awaited<ReturnType<ApiClient["ideas"]["list"]>>["data"][number];
 
-const VARIANT = {
-  new: "accent",
-  accepted: "outline",
-  declined: "secondary",
-} as const;
+const IDEA_STATUS: Record<
+  IdeaView["status"],
+  { label: string; variant: "default" | "outline" | "secondary" }
+> = {
+  new: { label: "New", variant: "default" },
+  accepted: { label: "Accepted", variant: "outline" },
+  declined: { label: "Declined", variant: "secondary" },
+};
 
 export function IdeaStatusBadge({ status }: { status: IdeaView["status"] }) {
-  return <Badge variant={VARIANT[status]}>{status}</Badge>;
+  const { label, variant } = IDEA_STATUS[status];
+  return <Badge variant={variant}>{label}</Badge>;
 }

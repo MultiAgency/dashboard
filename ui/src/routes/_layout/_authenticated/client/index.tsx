@@ -1,9 +1,24 @@
+import { ArrowRightIcon, BuildingsIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Button, Card, CardContent } from "@/components";
+import {
+  Button,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+  PageHeader,
+  Skeleton,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Empty, Loading } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   EngagementKindBadge,
@@ -32,38 +47,65 @@ function AgenciesPage() {
   const engagements = (engagementsQuery.data?.data ?? []).filter((e) => e.side === "client");
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          as client · agencies
-        </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Agencies
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Every Agency your Organization works with, through an Engagement. Open one to follow its
-          shared Projects, billings and reports.
-        </p>
-      </header>
-      {engagementsQuery.isLoading && <Loading label="Loading engagements" />}
-      {engagementsQuery.isError && <AdminError error={engagementsQuery.error} />}
-      {engagementsQuery.isSuccess && engagements.length === 0 && (
-        <Empty label="No Agency works with your Organization yet." />
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Agencies"
+        description="Every Agency your Organization works with, through an Engagement. Open one to follow its shared Projects, billings and reports."
+      />
+      {engagementsQuery.isLoading ? (
+        <AgenciesSkeleton />
+      ) : engagementsQuery.isError ? (
+        <AdminError error={engagementsQuery.error} />
+      ) : engagements.length === 0 ? (
+        <Empty variant="outline">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <BuildingsIcon aria-hidden />
+            </EmptyMedia>
+            <EmptyTitle>No Agencies yet</EmptyTitle>
+            <EmptyDescription>
+              When an Agency proposes to work for your Organization, it shows up here.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <ItemGroup>
+          {engagements.map((engagement) => (
+            <EngagementItem
+              key={engagement.id}
+              engagement={engagement}
+              canDecide={isManager(orgRole)}
+            />
+          ))}
+        </ItemGroup>
       )}
-      <div className="space-y-3">
-        {engagements.map((engagement) => (
-          <EngagementCard
-            key={engagement.id}
-            engagement={engagement}
-            canDecide={isManager(orgRole)}
-          />
-        ))}
-      </div>
     </div>
   );
 }
 
-function EngagementCard({
+function AgenciesSkeleton() {
+  return (
+    <div className="flex flex-col gap-2" aria-busy="true">
+      <span className="sr-only">Loading Agencies</span>
+      {[0, 1, 2].map((i) => (
+        <Skeleton key={i} className="h-16 w-full" />
+      ))}
+    </div>
+  );
+}
+
+function engagementSummary(engagement: EngagementView): string {
+  const count = engagement.projectIds.length;
+  const projects = `${count} ${count === 1 ? "Project" : "Projects"}`;
+  if (engagement.status === "proposed") {
+    return `${engagement.agency.name} proposes to work for your Organization.`;
+  }
+  if (engagement.kind === "subcontract")
+    return `${engagement.agency.name} hired you on ${projects}`;
+  return `${count} shared ${count === 1 ? "Project" : "Projects"}`;
+}
+
+function EngagementItem({
   engagement,
   canDecide,
 }: {
@@ -83,65 +125,58 @@ function EngagementCard({
   );
 
   return (
-    <Card>
-      <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1 min-w-0">
+    <li>
+      <Item variant="outline" size="sm">
+        <ItemContent>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-display text-lg uppercase font-extrabold">
-              {engagement.agency.name}
-            </span>
+            <ItemTitle>{engagement.agency.name}</ItemTitle>
             <EngagementStatusBadge status={engagement.status} />
             <EngagementKindBadge kind={engagement.kind} />
           </div>
-          <p className="text-xs text-muted-foreground">
-            {engagement.status === "proposed"
-              ? `${engagement.agency.name} proposes to work for your Organization.`
-              : engagement.kind === "subcontract"
-                ? `${engagement.agency.name} hired you on ${engagement.projectIds.length} project${engagement.projectIds.length === 1 ? "" : "s"}`
-                : `${engagement.projectIds.length} shared project${engagement.projectIds.length === 1 ? "" : "s"}`}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {canReadEngagement(engagement.status) && (
-            <Button asChild size="sm" variant="outline">
-              <Link to="/client/$engagementId" params={{ engagementId: engagement.id }}>
-                open →
-              </Link>
-            </Button>
-          )}
+          <ItemDescription>{engagementSummary(engagement)}</ItemDescription>
+        </ItemContent>
+        <ItemActions className="flex-wrap">
           {canDecide && engagement.status === "proposed" && (
             <>
-              <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate("accept")}>
-                accept
-              </Button>
               <Button
                 size="sm"
                 variant="outline"
                 disabled={decide.isPending}
                 onClick={() => decide.mutate("decline")}
               >
-                decline
+                Decline
+              </Button>
+              <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate("accept")}>
+                Accept
               </Button>
             </>
           )}
           {canDecide && engagement.status === "active" && (
-            <Button size="sm" variant="outline" onClick={() => setConfirmEnd(true)}>
-              end
+            <Button size="sm" variant="ghost" onClick={() => setConfirmEnd(true)}>
+              End
             </Button>
           )}
-        </div>
-        <ConfirmDialog
-          open={confirmEnd}
-          onOpenChange={setConfirmEnd}
-          title={`End the Engagement with ${engagement.agency.name}?`}
-          description="The Agency can no longer share Projects with you through it. What was shared stays visible as read-only history."
-          confirmLabel="end engagement"
-          destructive
-          onConfirm={async () => {
-            await decide.mutateAsync("end");
-          }}
-        />
-      </CardContent>
-    </Card>
+          {canReadEngagement(engagement.status) && (
+            <Button asChild size="sm" variant="outline">
+              <Link to="/client/$engagementId" params={{ engagementId: engagement.id }}>
+                Open
+                <ArrowRightIcon data-icon="inline-end" aria-hidden />
+              </Link>
+            </Button>
+          )}
+        </ItemActions>
+      </Item>
+      <ConfirmDialog
+        open={confirmEnd}
+        onOpenChange={setConfirmEnd}
+        title={`End the Engagement with ${engagement.agency.name}?`}
+        description="The Agency can no longer share Projects with you through it. What was shared stays visible as read-only history."
+        confirmLabel="End engagement"
+        destructive
+        onConfirm={async () => {
+          await decide.mutateAsync("end");
+        }}
+      />
+    </li>
   );
 }

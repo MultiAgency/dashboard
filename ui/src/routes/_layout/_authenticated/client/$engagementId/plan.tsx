@@ -18,8 +18,8 @@ function EngagementPlan() {
     useQuery(clientPortalProjectsListQueryOptions(apiClient, engagement.id)).data?.data ?? [];
 
   return (
-    <section className="space-y-6">
-      <p className="text-sm text-muted-foreground max-w-2xl">
+    <section className="flex flex-col gap-4">
+      <p className="max-w-2xl text-sm text-pretty text-muted-foreground">
         The Allocation plan is how much of each month's Prepayment goes to each Project. Either side
         proposes a Change order to change the plan or move unspent budget; the other side approves
         it. Anything not in the plan stays in your Prepaid balance and rolls over.

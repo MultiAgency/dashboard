@@ -1,15 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useState } from "react";
-import { Button, Card, CardContent, DataTable, Input } from "@/components";
-import { Field, selectClass } from "@/components/admin-form";
+import { type ReactNode, useState } from "react";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  DataTable,
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components";
 import {
   EngagementKindBadge,
   EngagementStatusBadge,
   type EngagementView,
   InvitationStatusBadge,
 } from "@/components/engagement-status";
+import { PageHeader, SectionHeader } from "@/components/page-header";
+import { Checkbox } from "@/components/ui/checkbox";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { useEngagementAction } from "@/hooks/use-engagement-action";
 import { useApiClient } from "@/lib/api";
 import { adminProjectsListQueryOptions, engagementsListQueryOptions } from "@/lib/queries";
@@ -35,73 +58,64 @@ const KIND_LABEL: Record<EngagementKind, string> = {
   subcontract: "Subcontractor",
 };
 
+const columns: ColumnDef<EngagementView>[] = [
+  {
+    id: "client",
+    header: "Organization",
+    accessorFn: (row) => row.client.name,
+    cell: ({ row }) => (
+      <Link
+        to="/admin/engagements/$engagementId"
+        params={{ engagementId: row.original.id }}
+        className="font-medium underline-offset-4 hover:underline"
+      >
+        {row.original.client.name}
+      </Link>
+    ),
+  },
+  {
+    id: "status",
+    header: "Status",
+    accessorKey: "status",
+    cell: ({ row }) => (
+      <div className="flex flex-wrap gap-1">
+        <EngagementStatusBadge status={row.original.status} />
+        <EngagementKindBadge kind={row.original.kind} />
+        {row.original.invitation && row.original.invitation.status !== "accepted" && (
+          <InvitationStatusBadge invitation={row.original.invitation} />
+        )}
+      </div>
+    ),
+  },
+  {
+    id: "projects",
+    header: "Shared Projects",
+    accessorFn: (row) => row.projectIds.length,
+  },
+  {
+    id: "updatedAt",
+    header: "Updated",
+    accessorFn: (row) => new Date(row.updatedAt).toISOString(),
+    cell: ({ row }) => (
+      <span className="text-muted-foreground">
+        {new Date(row.original.updatedAt).toISOString().slice(0, 10)}
+      </span>
+    ),
+  },
+];
+
 function EngagementsPage() {
   const apiClient = useApiClient();
   const [kind, setKind] = useState<EngagementKind>("client");
   const engagementsQuery = useQuery(engagementsListQueryOptions(apiClient));
   const engagements = (engagementsQuery.data?.data ?? []).filter((e) => e.side === "agency");
 
-  const columns: ColumnDef<EngagementView>[] = [
-    {
-      id: "client",
-      header: "Organization",
-      accessorFn: (row) => row.client.name,
-      cell: ({ row }) => (
-        <Link
-          to="/admin/engagements/$engagementId"
-          params={{ engagementId: row.original.id }}
-          className="font-display text-sm uppercase font-bold hover:underline"
-        >
-          {row.original.client.name}
-        </Link>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      accessorKey: "status",
-      cell: ({ row }) => (
-        <div className="flex flex-wrap gap-1">
-          <EngagementStatusBadge status={row.original.status} />
-          <EngagementKindBadge kind={row.original.kind} />
-          {row.original.invitation && row.original.invitation.status !== "accepted" && (
-            <InvitationStatusBadge invitation={row.original.invitation} />
-          )}
-        </div>
-      ),
-    },
-    {
-      id: "projects",
-      header: "Shared projects",
-      accessorFn: (row) => row.projectIds.length,
-    },
-    {
-      id: "updatedAt",
-      header: "Updated",
-      accessorFn: (row) => new Date(row.updatedAt).toISOString(),
-      cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
-          {new Date(row.original.updatedAt).toISOString().slice(0, 10)}
-        </span>
-      ),
-    },
-  ];
-
   return (
-    <div className="space-y-8">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          people · engagements
-        </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Engagements
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Each Engagement is a Client your Organization works for, or a Subcontractor it hires.
-          Share Projects through it so the Client's team can follow the work, its budget and its
-          billings, or so the Subcontractor can staff and pay its part.
-        </p>
-      </header>
+    <div className="flex flex-col gap-8">
+      <PageHeader
+        title="Engagements"
+        description="The Clients your Organization works for and the Subcontractors it hires. Share Projects through an Engagement so they can follow or staff the work."
+      />
 
       <DataTable
         readOnly
@@ -110,30 +124,46 @@ function EngagementsPage() {
         isLoading={engagementsQuery.isLoading}
         error={engagementsQuery.error}
         onRetry={() => engagementsQuery.refetch()}
-        emptyMessage="No Engagements yet. Add a new Client or propose one to an existing Organization below."
+        emptyMessage="No Engagements yet. Start one below."
         csvFilename="engagements"
         viewId="admin-engagements"
       />
 
-      <section className="space-y-4">
-        <fieldset className="flex flex-wrap items-center gap-2">
-          <legend className="sr-only">engage as</legend>
-          {(Object.keys(KIND_LABEL) as EngagementKind[]).map((option) => (
-            <Button
-              key={option}
-              size="sm"
-              variant={kind === option ? "default" : "outline"}
-              aria-pressed={kind === option}
-              onClick={() => setKind(option)}
+      <section aria-labelledby="start-engagement" className="flex flex-col gap-4">
+        <SectionHeader
+          id="start-engagement"
+          title="Start an Engagement"
+          description="Add a Client you work for, or hire a Subcontractor for your Projects."
+          actions={
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              spacing={0}
+              aria-label="Engagement kind"
+              value={kind}
+              onValueChange={(value) => {
+                if (value === "client" || value === "subcontract") setKind(value);
+              }}
             >
-              {option === "client" ? "add a client" : "hire a subcontractor"}
-            </Button>
-          ))}
-        </fieldset>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <NewOrganizationForm key={kind} kind={kind} />
-          {kind === "client" ? <ProposeForm /> : <SubcontractForm />}
-        </div>
+              <ToggleGroupItem value="client">Client</ToggleGroupItem>
+              <ToggleGroupItem value="subcontract">Subcontractor</ToggleGroupItem>
+            </ToggleGroup>
+          }
+        />
+        <Tabs key={kind} defaultValue="new">
+          <TabsList>
+            <TabsTrigger value="new">New {KIND_LABEL[kind]}</TabsTrigger>
+            <TabsTrigger value="existing">
+              {kind === "client" ? "Existing Organization" : "Existing Agency"}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="new" className="mt-2">
+            <NewOrganizationForm kind={kind} />
+          </TabsContent>
+          <TabsContent value="existing" className="mt-2">
+            {kind === "client" ? <ProposeForm /> : <SubcontractForm />}
+          </TabsContent>
+        </Tabs>
       </section>
     </div>
   );
@@ -151,25 +181,30 @@ function ProjectPicker({
   const apiClient = useApiClient();
   const projects = useQuery(adminProjectsListQueryOptions(apiClient)).data?.data ?? [];
   return (
-    <Field
-      label="share projects (optional)"
-      htmlFor={id}
-      helper="Hold Ctrl or Cmd to pick several."
-    >
-      <select
-        id={id}
-        multiple
-        value={value}
-        onChange={(e) => onChange([...e.target.selectedOptions].map((option) => option.value))}
-        className={`${selectClass} h-28`}
-      >
-        {projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.title}
-          </option>
-        ))}
-      </select>
-    </Field>
+    <FieldSet>
+      <FieldLegend variant="label">Share Projects (optional)</FieldLegend>
+      {projects.length === 0 ? (
+        <FieldDescription>You have no Projects to share yet.</FieldDescription>
+      ) : (
+        <div className="grid max-h-56 gap-3 overflow-y-auto border p-3 sm:grid-cols-2">
+          {projects.map((p) => {
+            const checkboxId = `${id}-${p.id}`;
+            return (
+              <Field key={p.id} orientation="horizontal">
+                <Checkbox
+                  id={checkboxId}
+                  checked={value.includes(p.id)}
+                  onCheckedChange={(checked) =>
+                    onChange(checked === true ? [...value, p.id] : value.filter((v) => v !== p.id))
+                  }
+                />
+                <FieldLabel htmlFor={checkboxId}>{p.title}</FieldLabel>
+              </Field>
+            );
+          })}
+        </div>
+      )}
+    </FieldSet>
   );
 }
 
@@ -180,6 +215,47 @@ function useOpenEngagement() {
       to: "/admin/engagements/$engagementId",
       params: { engagementId: engagement.id },
     });
+}
+
+function FormCard({
+  title,
+  description,
+  onSubmit,
+  reason,
+  submit,
+  children,
+}: {
+  title: string;
+  description: string;
+  onSubmit: () => void;
+  reason: string | null;
+  submit: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <form
+        className="contents"
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!reason) onSubmit();
+        }}
+      >
+        <CardContent>
+          <FieldGroup>{children}</FieldGroup>
+        </CardContent>
+        <CardFooter className="flex-wrap justify-end gap-3">
+          {reason && <p className="mr-auto text-xs text-muted-foreground">{reason}</p>}
+          {submit}
+        </CardFooter>
+      </form>
+    </Card>
+  );
 }
 
 function NewOrganizationForm({ kind }: { kind: EngagementKind }) {
@@ -201,23 +277,34 @@ function NewOrganizationForm({ kind }: { kind: EngagementKind }) {
         projectIds,
         kind,
       }),
-    (engagement) => `${engagement.client.name} created — invitation sent to ${adminEmail.trim()}`,
+    (engagement) => `${engagement.client.name} created, invitation sent to ${adminEmail.trim()}`,
     { failure: `Could not create the ${label}`, onDone: openEngagement },
   );
 
-  const valid = name.trim() && isValidSlug(slug.trim()) && adminEmail.includes("@");
+  const slugInvalid = slug.trim() !== "" && !isValidSlug(slug.trim());
+  const reason = !name.trim()
+    ? `Enter the ${label}'s name.`
+    : !isValidSlug(slug.trim())
+      ? "Enter a valid slug."
+      : !adminEmail.includes("@")
+        ? "Enter the first admin's email."
+        : null;
 
   return (
-    <Card>
-      <CardContent className="p-5 space-y-4">
-        <div className="space-y-1">
-          <h2 className="font-display text-xl uppercase font-extrabold">New {label}</h2>
-          <p className="text-sm text-muted-foreground">
-            Creates the {label}'s Organization and invites its first admin as owner. You do not join
-            it: the {label} manages its own team once the invitation is accepted.
-          </p>
-        </div>
-        <Field label={`${label.toLowerCase()} name`} htmlFor="new-client-name">
+    <FormCard
+      title={`New ${label}`}
+      description={`Creates the ${label}'s Organization and invites its first admin as owner. You don't join it.`}
+      onSubmit={() => create.mutate()}
+      reason={reason}
+      submit={
+        <Button type="submit" disabled={reason !== null || create.isPending}>
+          {create.isPending ? "Creating…" : `Create ${label} and invite`}
+        </Button>
+      }
+    >
+      <div className="grid items-start gap-4 sm:grid-cols-2">
+        <Field>
+          <FieldLabel htmlFor="new-client-name">Name</FieldLabel>
           <Input
             id="new-client-name"
             value={name}
@@ -227,30 +314,68 @@ function NewOrganizationForm({ kind }: { kind: EngagementKind }) {
             }}
           />
         </Field>
-        <Field label="slug" htmlFor="new-client-slug">
+        <Field data-invalid={slugInvalid || undefined}>
+          <FieldLabel htmlFor="new-client-slug">Slug</FieldLabel>
           <Input
             id="new-client-slug"
             value={slug}
+            aria-invalid={slugInvalid || undefined}
             onChange={(e) => {
               setSlugTouched(true);
               setSlug(e.target.value);
             }}
           />
+          {slugInvalid ? (
+            <FieldError>Use lowercase letters, numbers and dashes.</FieldError>
+          ) : (
+            <FieldDescription>Filled in from the name.</FieldDescription>
+          )}
         </Field>
-        <Field label="first admin's email" htmlFor="new-client-email">
-          <Input
-            id="new-client-email"
-            type="email"
-            value={adminEmail}
-            onChange={(e) => setAdminEmail(e.target.value)}
-          />
-        </Field>
-        <ProjectPicker id="new-client-projects" value={projectIds} onChange={setProjectIds} />
-        <Button onClick={() => create.mutate()} disabled={!valid || create.isPending}>
-          {create.isPending ? "creating..." : `create ${label.toLowerCase()} and invite`}
-        </Button>
-      </CardContent>
-    </Card>
+      </div>
+      <Field>
+        <FieldLabel htmlFor="new-client-email">First admin's email</FieldLabel>
+        <Input
+          id="new-client-email"
+          type="email"
+          value={adminEmail}
+          placeholder="name@example.com"
+          onChange={(e) => setAdminEmail(e.target.value)}
+        />
+        <FieldDescription>
+          They get an invitation and manage the {label}'s team once they accept.
+        </FieldDescription>
+      </Field>
+      <ProjectPicker id="new-client-projects" value={projectIds} onChange={setProjectIds} />
+    </FormCard>
+  );
+}
+
+function OrganizationLookupFields({
+  idPrefix,
+  slug,
+  name,
+  setSlug,
+  setName,
+}: {
+  idPrefix: string;
+  slug: string;
+  name: string;
+  setSlug: (value: string) => void;
+  setName: (value: string) => void;
+}) {
+  return (
+    <div className="grid items-start gap-4 sm:grid-cols-2">
+      <Field>
+        <FieldLabel htmlFor={`${idPrefix}-slug`}>Organization slug</FieldLabel>
+        <Input id={`${idPrefix}-slug`} value={slug} onChange={(e) => setSlug(e.target.value)} />
+        <FieldDescription>Shown on its Settings page.</FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor={`${idPrefix}-name`}>Organization name</FieldLabel>
+        <Input id={`${idPrefix}-name`} value={name} onChange={(e) => setName(e.target.value)} />
+        <FieldDescription>Its exact name, as a check.</FieldDescription>
+      </Field>
+    </div>
   );
 }
 
@@ -270,31 +395,28 @@ function ProposeForm() {
       },
     },
   );
+  const reason = !slug.trim() || !name.trim() ? "Enter the Organization's slug and name." : null;
 
   return (
-    <Card>
-      <CardContent className="p-5 space-y-4">
-        <div className="space-y-1">
-          <h2 className="font-display text-xl uppercase font-extrabold">Existing Organization</h2>
-          <p className="text-sm text-muted-foreground">
-            Ask the Organization for its slug (shown on its Settings page) and its exact name. Its
-            owners and admins accept or decline your proposal.
-          </p>
-        </div>
-        <Field label="organization slug" htmlFor="propose-slug">
-          <Input id="propose-slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
-        </Field>
-        <Field label="organization name" htmlFor="propose-name">
-          <Input id="propose-name" value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Button
-          onClick={() => propose.mutate()}
-          disabled={!slug.trim() || !name.trim() || propose.isPending}
-        >
-          {propose.isPending ? "proposing..." : "propose engagement"}
+    <FormCard
+      title="Existing Organization"
+      description="Propose an Engagement to an Organization that already exists. Its owners and admins accept or decline."
+      onSubmit={() => propose.mutate()}
+      reason={reason}
+      submit={
+        <Button type="submit" disabled={reason !== null || propose.isPending}>
+          {propose.isPending ? "Proposing…" : "Propose Engagement"}
         </Button>
-      </CardContent>
-    </Card>
+      }
+    >
+      <OrganizationLookupFields
+        idPrefix="propose"
+        slug={slug}
+        name={name}
+        setSlug={setSlug}
+        setName={setName}
+      />
+    </FormCard>
   );
 }
 
@@ -310,32 +432,28 @@ function SubcontractForm() {
     (engagement) => `${engagement.client.name} now works on your shared Projects`,
     { failure: "Could not hire the Subcontractor", onDone: openEngagement },
   );
+  const reason = !slug.trim() || !name.trim() ? "Enter the Agency's slug and name." : null;
 
   return (
-    <Card>
-      <CardContent className="p-5 space-y-4">
-        <div className="space-y-1">
-          <h2 className="font-display text-xl uppercase font-extrabold">Existing Agency</h2>
-          <p className="text-sm text-muted-foreground">
-            Ask the Agency for its slug (shown on its Settings page) and its exact name. The
-            Subcontract starts at once, with no acceptance, and its owners and admins are told. You
-            can record a Prepayment on it afterwards.
-          </p>
-        </div>
-        <Field label="organization slug" htmlFor="subcontract-slug">
-          <Input id="subcontract-slug" value={slug} onChange={(e) => setSlug(e.target.value)} />
-        </Field>
-        <Field label="organization name" htmlFor="subcontract-name">
-          <Input id="subcontract-name" value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <ProjectPicker id="subcontract-projects" value={projectIds} onChange={setProjectIds} />
-        <Button
-          onClick={() => subcontract.mutate()}
-          disabled={!slug.trim() || !name.trim() || subcontract.isPending}
-        >
-          {subcontract.isPending ? "hiring..." : "hire subcontractor"}
+    <FormCard
+      title="Existing Agency"
+      description="Starts at once, with no acceptance; its owners and admins are told. You can record a Prepayment on it afterwards."
+      onSubmit={() => subcontract.mutate()}
+      reason={reason}
+      submit={
+        <Button type="submit" disabled={reason !== null || subcontract.isPending}>
+          {subcontract.isPending ? "Hiring…" : "Hire Subcontractor"}
         </Button>
-      </CardContent>
-    </Card>
+      }
+    >
+      <OrganizationLookupFields
+        idPrefix="subcontract"
+        slug={slug}
+        name={name}
+        setSlug={setSlug}
+        setName={setName}
+      />
+      <ProjectPicker id="subcontract-projects" value={projectIds} onChange={setProjectIds} />
+    </FormCard>
   );
 }

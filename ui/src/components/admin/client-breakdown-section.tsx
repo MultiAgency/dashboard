@@ -1,7 +1,23 @@
-import { Search } from "lucide-react";
+import { DownloadSimpleIcon, FunnelIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
-import { Button, Input } from "@/components";
+import {
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components";
+import { Empty } from "@/components/admin-form";
 import { TokenAmountCell } from "@/components/token-amounts";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
@@ -33,12 +49,6 @@ type ClientBreakdownCsvRow = {
   allocated: string;
   spent: string;
 };
-
-const SECTION_TITLE = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground";
-
-const TOKEN_TH =
-  "font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground px-3 py-2 text-left border-b border-border";
-const TOKEN_TD = "px-3 py-2 text-sm border-b border-border";
 
 function groupByClient(breakdown: ClientBreakdownItem[]): ClientGroup[] {
   const map = new Map<string, ClientBreakdownItem[]>();
@@ -102,57 +112,6 @@ function matchesFilter(item: ClientBreakdownItem, query: string): boolean {
   );
 }
 
-function ProjectTokenTable({ item }: { item: ClientBreakdownItem }) {
-  const tokenIds = collectReportTokenIds(item.budgetByToken, item.spentByToken);
-
-  if (tokenIds.length === 0) {
-    return <p className="text-sm text-muted-foreground px-1 py-2">No budget or spend recorded.</p>;
-  }
-
-  return (
-    <div className="overflow-x-auto rounded-sm border border-border">
-      <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            <th scope="col" className={TOKEN_TH}>
-              Token
-            </th>
-            <th scope="col" className={TOKEN_TH}>
-              Allocated
-            </th>
-            <th scope="col" className={TOKEN_TH}>
-              Spent
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {tokenIds.map((tokenId) => (
-            <tr key={tokenId} className="hover:bg-muted/20">
-              <td className={TOKEN_TD}>
-                <span className="font-medium" title={tokenId}>
-                  {tokenDisplayName(tokenId)}
-                </span>
-              </td>
-              <td className={TOKEN_TD}>
-                <TokenAmountCell
-                  amount={getTokenAmount(item.budgetByToken, tokenId)}
-                  tokenId={tokenId}
-                />
-              </td>
-              <td className={TOKEN_TD}>
-                <TokenAmountCell
-                  amount={getTokenAmount(item.spentByToken, tokenId)}
-                  tokenId={tokenId}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 type ClientBreakdownSectionProps = {
   breakdown: ClientBreakdownItem[];
 };
@@ -184,73 +143,105 @@ export function ClientBreakdownSection({ breakdown }: ClientBreakdownSectionProp
   const totalProjects = filteredGroups.reduce((n, g) => n + g.projects.length, 0);
 
   return (
-    <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className={SECTION_TITLE}>client breakdown</h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            {filteredGroups.length} client{filteredGroups.length === 1 ? "" : "s"} · {totalProjects}{" "}
-            project{totalProjects === 1 ? "" : "s"}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter client or project…"
-              className="pl-7 h-8 w-48 sm:w-64"
-            />
-          </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>Client breakdown</h2>
+        </CardTitle>
+        <CardDescription>
+          {filteredGroups.length} client{filteredGroups.length === 1 ? "" : "s"} · {totalProjects}{" "}
+          project{totalProjects === 1 ? "" : "s"}, allocated and spent per token.
+        </CardDescription>
+        <CardAction>
           <Button variant="outline" size="sm" onClick={handleExport}>
-            export csv
+            <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+            Export CSV
           </Button>
-        </div>
-      </div>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <InputGroup className="w-full sm:w-64">
+          <InputGroupAddon>
+            <MagnifyingGlassIcon aria-hidden />
+          </InputGroupAddon>
+          <InputGroupInput
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter client or project…"
+            aria-label="Filter client or project"
+          />
+        </InputGroup>
 
-      {filteredGroups.length === 0 ? (
-        <div className="rounded-sm border border-dashed border-border px-4 py-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            {query.trim() ? "No clients or projects match the filter." : "No client project data."}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {filteredGroups.map((group) => (
-            <article
-              key={group.clientName}
-              className="rounded-sm border border-border overflow-hidden"
-            >
-              <header className="px-4 py-3 border-b border-border bg-muted/30">
-                <h3 className="font-display text-lg font-black uppercase tracking-tight">
-                  {group.clientName}
-                </h3>
-                <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                  {group.projects.length} project{group.projects.length === 1 ? "" : "s"}
-                </p>
-              </header>
-
-              <div className="divide-y divide-border">
-                {group.projects.map((project) => (
-                  <div
-                    key={`${group.clientName}-${project.projectSlug}`}
-                    className="px-4 py-4 space-y-3"
-                  >
-                    <div>
-                      <h4 className="font-medium text-sm">{project.projectTitle}</h4>
-                      <p className="font-mono text-[10px] text-muted-foreground">
-                        @{project.projectSlug}
-                      </p>
-                    </div>
-                    <ProjectTokenTable item={project} />
-                  </div>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
+        {filteredGroups.length === 0 ? (
+          <Empty
+            icon={<FunnelIcon aria-hidden />}
+            label={query.trim() ? "No clients or projects match" : "No client project data"}
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Client</TableHead>
+                <TableHead scope="col">Project</TableHead>
+                <TableHead scope="col">Token</TableHead>
+                <TableHead scope="col">Allocated</TableHead>
+                <TableHead scope="col">Spent</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredGroups.flatMap((group) =>
+                group.projects.flatMap((project, projectIndex) => {
+                  const tokenIds = collectReportTokenIds(
+                    project.budgetByToken,
+                    project.spentByToken,
+                  );
+                  const lines = tokenIds.length > 0 ? tokenIds : [null];
+                  return lines.map((tokenId, lineIndex) => (
+                    <TableRow
+                      key={`${group.clientName}-${project.projectSlug}-${tokenId ?? "none"}`}
+                    >
+                      <TableCell className="font-medium">
+                        {projectIndex === 0 && lineIndex === 0 ? group.clientName : ""}
+                      </TableCell>
+                      <TableCell>
+                        {lineIndex === 0 && (
+                          <>
+                            <span className="block">{project.projectTitle}</span>
+                            <span className="block text-muted-foreground">
+                              @{project.projectSlug}
+                            </span>
+                          </>
+                        )}
+                      </TableCell>
+                      {tokenId ? (
+                        <>
+                          <TableCell title={tokenId}>{tokenDisplayName(tokenId)}</TableCell>
+                          <TableCell>
+                            <TokenAmountCell
+                              amount={getTokenAmount(project.budgetByToken, tokenId)}
+                              tokenId={tokenId}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <TokenAmountCell
+                              amount={getTokenAmount(project.spentByToken, tokenId)}
+                              tokenId={tokenId}
+                            />
+                          </TableCell>
+                        </>
+                      ) : (
+                        <TableCell colSpan={3} className="text-muted-foreground">
+                          No budget or spend recorded.
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ));
+                }),
+              )}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }

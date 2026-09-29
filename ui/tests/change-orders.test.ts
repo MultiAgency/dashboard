@@ -33,6 +33,15 @@ describe("planChangeItems", () => {
     ]);
     expect(planChangeItems([line("site", "300")], [line("site", "300")])).toEqual([]);
   });
+
+  test("the same Project and token on two lines adds up instead of keeping the last line", () => {
+    expect(planChangeItems([], [line("site", "40"), line("site", "10")])).toEqual([
+      { projectId: "site", tokenId: "near", kind: "plan_change", amount: "50" },
+    ]);
+    expect(planChangeItems([line("site", "50")], [line("site", "40"), line("site", "10")])).toEqual(
+      [],
+    );
+  });
 });
 
 describe("signedBaseAmount", () => {

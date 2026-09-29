@@ -1,4 +1,7 @@
+import { inArray } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
+import type { Database } from "../db";
+import { ideas } from "../db/schema";
 import type { PluginContext } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 import type { AgencyScope } from "./organization-access";
@@ -32,6 +35,21 @@ export type AgencyProjects = {
   require(projectId: string): Promise<Project>;
   requireBySlug(slug: string): Promise<Project>;
 };
+
+export async function withoutClientIdeas(db: Database, projects: Project[]): Promise<Project[]> {
+  if (projects.length === 0) return projects;
+  const rows = await db
+    .select({ projectId: ideas.projectId })
+    .from(ideas)
+    .where(
+      inArray(
+        ideas.projectId,
+        projects.map((p) => p.id),
+      ),
+    );
+  const clientIdeas = new Set(rows.map((r) => r.projectId));
+  return projects.filter((p) => !clientIdeas.has(p.id));
+}
 
 export function toProject(p: PluginProject): Project {
   return {

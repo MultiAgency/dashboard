@@ -21,7 +21,7 @@ export const DOCS: readonly DocEntry[] = [
   {
     slug: "contributors",
     title: "Contributors",
-    desc: "End-to-end onboarding flow: apply → email → mark complete → eligible to pay.",
+    desc: "End-to-end onboarding flow: apply, email, mark complete, then eligible to pay.",
     section: "operating",
     source: "docs",
   },

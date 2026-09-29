@@ -1,14 +1,17 @@
+import { Effect } from "every-plugin/effect";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createAgencyService } from "../../src/services/agency";
 import { type AcceptIdeaInput, createIdeasService } from "../../src/services/ideas";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
-import { clientWorkWorld, refused } from "../fakes/engagements";
+import { createReportsService } from "../../src/services/reports";
+import { clientWorkWorld, refused, withOrganizationLookupsFailing } from "../fakes/engagements";
 import { project } from "../fakes/projects";
 
 describe("Client ideas", () => {
   const state = clientWorkWorld();
   let ideas: ReturnType<typeof createIdeasService>;
+  let agency: ReturnType<typeof createAgencyService>;
   let suffixes: string[];
   let acmeEngagement: string;
 
@@ -16,15 +19,16 @@ describe("Client ideas", () => {
     const { db, world } = state;
     const listings = createListingsService(db, world.directory);
     suffixes = [];
+    agency = createAgencyService(
+      db,
+      world.plugins,
+      world.directory,
+      listings,
+      createProjectLedgers(db, listings),
+    );
     ideas = createIdeasService({
       db,
-      agency: createAgencyService(
-        db,
-        world.plugins,
-        world.directory,
-        listings,
-        createProjectLedgers(db, listings),
-      ),
+      agency,
       directory: world.directory,
       readScopeOfAgency: world.access.readScopeOfAgency,
       engagements: world.engagements,
@@ -116,6 +120,43 @@ describe("Client ideas", () => {
         reason,
       );
     });
+  });
+
+  test("a submitted idea is saved once even when naming the Organizations for its notice fails", async () => {
+    await withOrganizationLookupsFailing(world(), () => submit());
+    expect(await clientList()).toHaveLength(1);
+  });
+
+  test("the Agency's Project list leaves out Client ideas", async () => {
+    const idea = await submit();
+    const listed = await Effect.runPromise(agency.listProjects(await studio()));
+
+    expect(listed.data.map((p) => p.id)).not.toContain(idea.id);
+  });
+
+  test("an Idea-kind Project the Agency creates itself stays listed", async () => {
+    const own = await Effect.runPromise(
+      agency.createProject(await studio(), { slug: "own-idea", title: "Own idea", kind: "idea" }),
+    );
+    const listed = await Effect.runPromise(agency.listProjects(await studio()));
+
+    expect(listed.data.map((p) => p.id)).toContain(own.project.id);
+  });
+
+  test("reports leave out Client ideas", async () => {
+    const reports = createReportsService(
+      state.db,
+      world().directory,
+      world().plugins,
+      world().organizations.directory,
+    );
+    const count = async () =>
+      (await Effect.runPromise(reports.generate(await studio(), {}))).overview.projectCount;
+    const before = await count();
+
+    await submit();
+
+    expect(await count()).toBe(before);
   });
 
   describe("visibility", () => {

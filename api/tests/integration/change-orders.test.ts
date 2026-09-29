@@ -4,7 +4,12 @@ import { billings } from "../../src/db/schema";
 import { listBudgets, writeEngagementEntries } from "../../src/services/budgets";
 import type { ChangeOrderItemInput } from "../../src/services/change-orders";
 import type { DaoProposalStatus } from "../../src/services/sputnik";
-import { engagementWorld, refused, STUDIO_SEED } from "../fakes/engagements";
+import {
+  engagementWorld,
+  refused,
+  STUDIO_SEED,
+  withOrganizationLookupsFailing,
+} from "../fakes/engagements";
 import { migratedDatabase } from "./_pg";
 
 const item =
@@ -123,6 +128,15 @@ describe("change orders and the Allocation plan", () => {
     });
     return proposalId;
   }
+
+  test("a proposed Change order is saved once even when naming the Organizations for its notice fails", async () => {
+    const engagementId = await engagement();
+    const scope = await studio();
+    await withOrganizationLookupsFailing(world, () =>
+      propose(scope, engagementId, [plan("p1", "10")]),
+    );
+    expect((await world.changeOrders.list(await acme(), { engagementId })).data).toHaveLength(1);
+  });
 
   describe("deciding", () => {
     test("only owners and admins of the side that did not propose can decide; Client members only read", async () => {

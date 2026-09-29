@@ -226,3 +226,19 @@ export function clientPortalOf(db: Database, world: Awaited<ReturnType<typeof en
     ledgers,
   );
 }
+
+export async function withOrganizationLookupsFailing<T>(
+  world: EngagementWorld,
+  run: () => Promise<T>,
+): Promise<T> {
+  const directory = world.organizations.directory;
+  const get = directory.get;
+  directory.get = async () => {
+    throw new Error("auth database unavailable");
+  };
+  try {
+    return await run();
+  } finally {
+    directory.get = get;
+  }
+}

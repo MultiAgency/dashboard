@@ -69,26 +69,48 @@ export async function refreshAfterAccountChange(queryClient: QueryClient, authCl
   );
 }
 
-export async function landingDestination(deps: {
+type AccountDeps = {
   authClient: AuthClient;
   apiClient: ApiClient;
   queryClient: QueryClient;
-}): Promise<OrganizationHome | typeof WELCOME_PATH> {
-  const { authClient, apiClient, queryClient } = deps;
+};
+
+async function activateOrganization({
+  authClient,
+  queryClient,
+}: Pick<AccountDeps, "authClient" | "queryClient">): Promise<string | null> {
   const [session, organizations] = await Promise.all([
     queryClient.fetchQuery({ ...sessionQueryOptions(authClient), staleTime: 0 }),
     queryClient.fetchQuery({ ...organizationsQueryOptions(authClient), staleTime: 0 }),
   ]);
   const activeId = session?.session?.activeOrganizationId ?? null;
   const target = organizationToActivate(activeId, organizations);
-  if (!target) return WELCOME_PATH;
-  if (target !== activeId) {
+  if (target && target !== activeId) {
     const { error } = await authClient.organization.setActive({ organizationId: target });
     if (error) throw new Error(error.message ?? "Could not open your Organization");
     await refreshAccountQueries(queryClient);
   }
-  const roles = await queryClient.fetchQuery({ ...meRolesQueryOptions(apiClient), staleTime: 0 });
+  return target;
+}
+
+export async function landingDestination(
+  deps: AccountDeps,
+): Promise<OrganizationHome | typeof WELCOME_PATH> {
+  if (!(await activateOrganization(deps))) return WELCOME_PATH;
+  const roles = await deps.queryClient.fetchQuery({
+    ...meRolesQueryOptions(deps.apiClient),
+    staleTime: 0,
+  });
   return organizationHome(roles.capabilities);
+}
+
+export async function signInDestination(
+  deps: AccountDeps,
+  redirectTo: string | undefined,
+): Promise<string> {
+  if (!redirectTo) return landingDestination(deps);
+  await activateOrganization(deps).catch(() => null);
+  return redirectTo;
 }
 
 export function createRedirectOnce() {

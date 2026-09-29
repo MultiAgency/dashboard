@@ -74,10 +74,7 @@ jobs:
   notify:
     name: Notify downstream workflows
     needs: [lint-and-typecheck]
-    if: |
-      always() &&
-      !contains(needs.*.result, 'failure') &&
-      github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components";
+import { Tabs, TabsContent, TabsTrigger } from "@/components";
 import { ApplicationsAdminSection } from "@/components/admin/applications-section";
 import { ContributorsAdminSection } from "@/components/admin/contributors-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
+import { PageHeader } from "@/components/page-header";
+import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
 import { adminContributorsListQueryOptions } from "@/lib/queries";
 
 const contributorsSearchSchema = z.object({
@@ -28,18 +30,11 @@ function AdminContributorsPage() {
   const activeTab = tab === "incoming" ? "incoming" : "directory";
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          people · builders
-        </div>
-        <h1 className="font-display text-3xl sm:text-4xl font-black uppercase leading-none tracking-tight">
-          Builders
-        </h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          People who do project work. Assign them from a project page; manage profiles here.
-        </p>
-      </header>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Builders"
+        description="People who do project work. Assign them from a project page; manage profiles and applications here."
+      />
 
       <Tabs
         value={activeTab}
@@ -50,14 +45,14 @@ function AdminContributorsPage() {
           });
         }}
       >
-        <TabsList variant="line" className="font-mono text-[11px] uppercase tracking-[0.18em]">
-          <TabsTrigger value="directory">active</TabsTrigger>
-          <TabsTrigger value="incoming">applications</TabsTrigger>
-        </TabsList>
-        <TabsContent value="directory" className="mt-6">
+        <ScrollableTabsList>
+          <TabsTrigger value="directory">Active</TabsTrigger>
+          <TabsTrigger value="incoming">Applications</TabsTrigger>
+        </ScrollableTabsList>
+        <TabsContent value="directory">
           <ContributorsAdminSection />
         </TabsContent>
-        <TabsContent value="incoming" className="mt-6">
+        <TabsContent value="incoming">
           <ApplicationsAdminSection />
         </TabsContent>
       </Tabs>

@@ -7,7 +7,7 @@ import { getNetwork } from "./network";
 
 // Loader-hit queries include the active network in their queryKey so data
 // cached under one network can't be served when the visitor switches to
-// another. `getNetwork()` reads URL → current_near_network cookie (client-only);
+// another. `getNetwork()` reads the URL, then the current_near_network cookie (client-only);
 // the cookie rides the api client's credentials:include so the server resolves
 // the same network for the fetch.
 //

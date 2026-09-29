@@ -22,6 +22,10 @@ export const NOTIFICATION_KINDS = {
     title: `${p.clientName} declined your Engagement`,
     body: `${p.clientName} declined the Engagement proposed by ${p.agencyName}.`,
   }),
+  engagement_withdrawn: (p) => ({
+    title: `${p.agencyName} withdrew its Engagement proposal`,
+    body: `${p.agencyName} withdrew the Engagement it proposed to ${p.clientName}.`,
+  }),
   engagement_ended: (p) => ({
     title: `The Engagement between ${p.agencyName} and ${p.clientName} ended`,
     body: `${p.endedBy} ended the Engagement. Its shared Projects stay visible as read-only history.`,

@@ -1,10 +1,25 @@
+import { PaperPlaneTiltIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Badge, Button, Card, CardContent, DataTable, Spinner } from "@/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  DataTable,
+  Field,
+  FieldLabel,
+  Skeleton,
+} from "@/components";
 import { AdminError } from "@/components/admin-error";
+import { ChoiceSelect } from "@/components/admin-form";
 import { Input } from "@/components/ui/input";
 import { useLeaveOrganization } from "@/hooks/use-leave-organization";
 import { type AuthClient, useAuthClient } from "@/lib/auth";
@@ -34,8 +49,6 @@ type Invitation = {
   status: string;
   expiresAt: Date | string;
 };
-
-const LABEL_CLS = "font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground block";
 
 function unwrapMembers(res: unknown): Member[] {
   const raw = Array.isArray(res)
@@ -118,11 +131,7 @@ export function MembersAdminSection() {
   });
 
   if (sessionQuery.isLoading) {
-    return (
-      <section className="space-y-6">
-        <Spinner />
-      </section>
-    );
+    return <TableSkeleton />;
   }
 
   if (membersQuery.isError) {
@@ -145,70 +154,93 @@ export function MembersAdminSection() {
   };
 
   return (
-    <div className="space-y-8">
-      <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          invite team member
-        </div>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Email invitations join this Organization. Owners and admins manage members, projects and
-          settings; members work on projects. Contributors need no invitation: add them under{" "}
-          <Link
-            to="/admin/contributors"
-            className="underline underline-offset-2 hover:text-foreground"
-          >
-            Builders
-          </Link>{" "}
-          and assign their NEAR account to a project.
-        </p>
-        <AddMemberForm
-          onAdded={invalidateAll}
-          authClient={authClient}
-          orgId={activeOrgId ?? undefined}
-        />
-      </section>
-
-      <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          pending invitations ({pendingInvitations.length})
-        </div>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          Invites sent but not yet accepted. Resend or cancel here; once accepted, the person
-          appears in Current team below.
-        </p>
-        {invitationsQuery.isError ? (
-          <AdminError error={invitationsQuery.error} />
-        ) : (
-          <PendingInvitationsTable
-            invitations={pendingInvitations}
-            isLoading={invitationsQuery.isLoading}
-            onChanged={invalidateInvitations}
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Invite a team member</h2>
+          </CardTitle>
+          <CardDescription>
+            Owners and admins manage members, projects and settings; members work on projects.
+            Builders need no invitation: add them under{" "}
+            <Link to="/admin/contributors" className="underline underline-offset-2">
+              Builders
+            </Link>{" "}
+            and assign their NEAR account to a project.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AddMemberForm
+            onAdded={invalidateAll}
             authClient={authClient}
             orgId={activeOrgId ?? undefined}
           />
-        )}
-      </section>
+        </CardContent>
+      </Card>
 
-      <section className="space-y-3">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          current team ({members.length})
-        </div>
-        <p className="text-sm text-muted-foreground max-w-2xl">
-          People who accepted an invite and belong to this workspace. Change roles or remove access
-          here.
-        </p>
-        {membersQuery.isLoading ? (
-          <Spinner />
-        ) : (
-          <MembersTable
-            members={members}
-            currentUserId={sessionQuery.data?.user?.id}
-            onChanged={invalidateMembers}
-            authClient={authClient}
-            orgId={activeOrgId ?? undefined}
-          />
-        )}
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Pending invitations</h2>
+          </CardTitle>
+          <CardDescription>
+            Invites sent but not yet accepted. Once accepted, the person appears under Current team.
+          </CardDescription>
+          <CardAction>
+            <Badge variant="secondary">{pendingInvitations.length}</Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {invitationsQuery.isError ? (
+            <AdminError error={invitationsQuery.error} />
+          ) : (
+            <PendingInvitationsTable
+              invitations={pendingInvitations}
+              isLoading={invitationsQuery.isLoading}
+              onChanged={invalidateInvitations}
+              authClient={authClient}
+              orgId={activeOrgId ?? undefined}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Current team</h2>
+          </CardTitle>
+          <CardDescription>
+            People who belong to this Organization. Change roles or remove access here.
+          </CardDescription>
+          <CardAction>
+            <Badge variant="secondary">{members.length}</Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          {membersQuery.isLoading ? (
+            <TableSkeleton />
+          ) : (
+            <MembersTable
+              members={members}
+              currentUserId={sessionQuery.data?.user?.id}
+              onChanged={invalidateMembers}
+              authClient={authClient}
+              orgId={activeOrgId ?? undefined}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="flex flex-col gap-2">
+      {[0, 1, 2].map((i) => (
+        <Skeleton key={i} className="h-9 w-full" />
+      ))}
     </div>
   );
 }
@@ -256,17 +288,13 @@ function PendingInvitationsTable({
       id: "email",
       header: "Email",
       accessorKey: "email",
-      cell: ({ row }) => <span className="font-mono text-sm">{row.original.email}</span>,
+      cell: ({ row }) => <span className="font-medium">{row.original.email}</span>,
     },
     {
       id: "role",
       header: "Role",
       accessorKey: "role",
-      cell: ({ row }) => (
-        <span className="font-mono text-xs uppercase text-muted-foreground">
-          {row.original.role ?? "member"}
-        </span>
-      ),
+      cell: ({ row }) => <Badge variant="outline">{row.original.role ?? "member"}</Badge>,
     },
     {
       id: "status",
@@ -274,11 +302,7 @@ function PendingInvitationsTable({
       accessorKey: "status",
       cell: ({ row }) => {
         const status = invitationStatus(row.original);
-        return (
-          <Badge variant={status === "pending" ? "outline" : "secondary"} className="text-[10px]">
-            {status}
-          </Badge>
-        );
+        return <Badge variant={status === "pending" ? "outline" : "secondary"}>{status}</Badge>;
       },
     },
     {
@@ -286,7 +310,7 @@ function PendingInvitationsTable({
       header: "Expires",
       accessorKey: "expiresAt",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="text-muted-foreground tabular-nums">
           {formatDate(row.original.expiresAt)}
         </span>
       ),
@@ -307,15 +331,15 @@ function PendingInvitationsTable({
               onClick={() => resendMutation.mutate(invitation)}
               disabled={busy || !canAct}
             >
-              resend
+              Resend
             </Button>
             <Button
               size="sm"
-              variant="destructive"
+              variant="ghost"
               onClick={() => cancelMutation.mutate(invitation.id)}
               disabled={busy || !canAct}
             >
-              cancel
+              Cancel
             </Button>
           </div>
         );
@@ -398,16 +422,14 @@ function MembersTable({
       id: "displayName",
       header: "Name",
       accessorKey: "displayName",
-      cell: ({ row }) => <span className="font-mono text-sm">{row.original.displayName}</span>,
+      cell: ({ row }) => <span className="font-medium">{row.original.displayName}</span>,
     },
     {
       id: "email",
       header: "Email",
       accessorKey: "email",
       cell: ({ row }) => (
-        <span className="font-mono text-sm text-muted-foreground">
-          {row.original.email ?? "\u2014"}
-        </span>
+        <span className="text-muted-foreground">{row.original.email ?? "\u2014"}</span>
       ),
     },
     {
@@ -418,24 +440,20 @@ function MembersTable({
         const member = row.original;
         const lastOwner = isLastOwner(members, member.id);
         return (
-          <select
-            aria-label={`Role of ${member.displayName}`}
-            title={lastOwner ? LAST_OWNER_HINT : undefined}
-            value={pendingRoles[member.id] ?? member.role}
-            onChange={(e) => {
-              const newRole = e.target.value as OrganizationRole;
-              setPendingRoles((prev) => ({ ...prev, [member.id]: newRole }));
-              updateMutation.mutate({ memberId: member.id, role: newRole });
-            }}
-            disabled={busy || lastOwner}
-            className="h-7 rounded border border-input bg-background px-2 font-mono text-[11px]"
-          >
-            {ORGANIZATION_ROLES.map((role) => (
-              <option key={role} value={role}>
-                {role}
-              </option>
-            ))}
-          </select>
+          <div className="w-28" title={lastOwner ? LAST_OWNER_HINT : undefined}>
+            <ChoiceSelect
+              size="sm"
+              ariaLabel={`Role of ${member.displayName}`}
+              value={pendingRoles[member.id] ?? member.role}
+              onValueChange={(value) => {
+                const newRole = value as OrganizationRole;
+                setPendingRoles((prev) => ({ ...prev, [member.id]: newRole }));
+                updateMutation.mutate({ memberId: member.id, role: newRole });
+              }}
+              disabled={busy || lastOwner}
+              options={ORGANIZATION_ROLES.map((role) => ({ value: role, label: role }))}
+            />
+          </div>
         );
       },
     },
@@ -458,7 +476,7 @@ function MembersTable({
               }
               disabled={busy || lastOwner}
             >
-              {isSelf ? "leave" : "remove"}
+              {isSelf ? "Leave" : "Remove"}
             </Button>
           </div>
         );
@@ -506,53 +524,43 @@ function AddMemberForm({
     onError: (e: Error) => toast.error(e.message || "Failed to invite member"),
   });
 
+  const submit = () => {
+    if (email.trim() && !addMutation.isPending) addMutation.mutate();
+  };
+
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-end gap-3">
-          <div className="flex-1 space-y-1">
-            <label htmlFor="invite-member-email" className={LABEL_CLS}>
-              email
-            </label>
-            <Input
-              id="invite-member-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="alice@example.com"
-              disabled={addMutation.isPending}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && email.trim()) addMutation.mutate();
-              }}
-            />
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="invite-member-role" className={LABEL_CLS}>
-              role
-            </label>
-            <select
-              id="invite-member-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as OrganizationRole)}
-              disabled={addMutation.isPending}
-              className="h-9 rounded-md border border-input bg-background px-3 py-1 font-mono text-xs"
-            >
-              {ORGANIZATION_ROLES.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Button
-            onClick={() => addMutation.mutate()}
-            disabled={!email.trim() || addMutation.isPending}
-            size="sm"
-          >
-            {addMutation.isPending ? "inviting\u2026" : "invite \u2192"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <form
+      className="flex flex-col gap-3 sm:flex-row sm:items-end"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+    >
+      <Field className="flex-1">
+        <FieldLabel htmlFor="invite-member-email">Email</FieldLabel>
+        <Input
+          id="invite-member-email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="alice@example.com"
+          disabled={addMutation.isPending}
+        />
+      </Field>
+      <Field className="sm:w-36">
+        <FieldLabel htmlFor="invite-member-role">Role</FieldLabel>
+        <ChoiceSelect
+          id="invite-member-role"
+          value={role}
+          onValueChange={(value) => setRole(value as OrganizationRole)}
+          disabled={addMutation.isPending}
+          options={ORGANIZATION_ROLES.map((option) => ({ value: option, label: option }))}
+        />
+      </Field>
+      <Button type="submit" disabled={!email.trim() || addMutation.isPending}>
+        <PaperPlaneTiltIcon data-icon="inline-start" aria-hidden />
+        {addMutation.isPending ? "Inviting\u2026" : "Send invite"}
+      </Button>
+    </form>
   );
 }

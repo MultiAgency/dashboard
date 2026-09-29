@@ -1,10 +1,23 @@
+import { LockKeyIcon, WarningIcon } from "@phosphor-icons/react";
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Button, Card, CardContent, Input } from "@/components";
-import { Field } from "@/components/admin-form";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardFooter,
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  Input,
+  Spinner,
+} from "@/components";
+import { AuthCardHeader } from "@/components/auth-card-header";
 
 type ResetSearch = { token?: string; error?: string };
 
@@ -25,11 +38,12 @@ function ResetPasswordPage() {
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const mismatch = submitted && confirm.length > 0 && password !== confirm;
 
   const reset = useMutation({
     mutationFn: async () => {
       if (!token) throw new Error("This reset link is missing its token");
-      if (password !== confirm) throw new Error("The passwords do not match");
       const { error: resetError } = await authClient.resetPassword({
         newPassword: password,
         token,
@@ -37,7 +51,7 @@ function ResetPasswordPage() {
       if (resetError) throw new Error(resetError.message ?? "Could not set the password");
     },
     onSuccess: () => {
-      toast.success("Password set");
+      toast.success("Password set. Sign in with your new password.");
       navigate({ to: "/sign-in", replace: true });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -45,62 +59,78 @@ function ResetPasswordPage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    setSubmitted(true);
+    if (password !== confirm) return;
     reset.mutate();
   };
 
   return (
-    <div className="mx-auto max-w-md space-y-8 animate-fade-in">
-      <header className="space-y-2">
-        <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-          your · account
-        </div>
-        <h1 className="font-display text-4xl sm:text-5xl font-black uppercase leading-none tracking-tight">
-          New password
-        </h1>
-      </header>
-
+    <div className="mx-auto flex w-full max-w-sm animate-fade-in flex-col gap-6 sm:py-8">
       {error || !token ? (
-        <Card variant="hi-vis">
-          <CardContent className="space-y-4 text-sm leading-relaxed">
-            <p>This reset link is invalid or has expired. Request a new one.</p>
-            <Button asChild variant="outline">
+        <Card>
+          <AuthCardHeader
+            icon={<WarningIcon aria-hidden />}
+            title="Link expired"
+            description="This reset link is invalid or has expired. Request a new one to choose a password."
+          />
+          <CardFooter>
+            <Button asChild className="w-full">
               <Link to="/sign-in" search={{ mode: "forgot" }}>
-                request a new link
+                Request a new link
               </Link>
             </Button>
-          </CardContent>
+          </CardFooter>
         </Card>
       ) : (
         <Card>
+          <AuthCardHeader
+            icon={<LockKeyIcon aria-hidden />}
+            title="Set a new password"
+            description="Choose a password you don't use anywhere else."
+          />
           <CardContent>
-            <form className="grid gap-4" onSubmit={submit}>
-              <Field label="new password" htmlFor="reset-password" helper="At least 8 characters.">
-                <Input
-                  id="reset-password"
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={8}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </Field>
-              <Field label="confirm password" htmlFor="reset-password-confirm">
-                <Input
-                  id="reset-password-confirm"
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={8}
-                  required
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                />
-              </Field>
-              <div className="flex justify-end">
-                <Button type="submit" disabled={reset.isPending}>
-                  {reset.isPending ? "saving..." : "set password →"}
+            <form onSubmit={submit}>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="reset-password">New password</FieldLabel>
+                  <Input
+                    id="reset-password"
+                    type="password"
+                    autoComplete="new-password"
+                    aria-describedby="reset-password-description"
+                    minLength={8}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <FieldDescription id="reset-password-description">
+                    At least 8 characters.
+                  </FieldDescription>
+                </Field>
+                <Field data-invalid={mismatch || undefined}>
+                  <FieldLabel htmlFor="reset-password-confirm">Confirm password</FieldLabel>
+                  <Input
+                    id="reset-password-confirm"
+                    type="password"
+                    autoComplete="new-password"
+                    aria-invalid={mismatch || undefined}
+                    aria-describedby={mismatch ? "reset-password-confirm-error" : undefined}
+                    minLength={8}
+                    required
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                  />
+                  {mismatch && (
+                    <FieldError id="reset-password-confirm-error" aria-live="polite">
+                      The passwords do not match.
+                    </FieldError>
+                  )}
+                </Field>
+                <Button type="submit" className="w-full" disabled={reset.isPending}>
+                  {reset.isPending && <Spinner data-icon="inline-start" />}
+                  {reset.isPending ? "Saving…" : "Set password"}
                 </Button>
-              </div>
+              </FieldGroup>
             </form>
           </CardContent>
         </Card>

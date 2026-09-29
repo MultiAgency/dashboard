@@ -1,11 +1,21 @@
+import { EnvelopeSimpleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { Button } from "@/components";
-import { Empty } from "@/components/admin-form";
 import { LoadingCard } from "@/components/loading-card";
 import { OrganizationRowCard } from "@/components/organization-row-card";
+import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { ItemGroup } from "@/components/ui/item";
+import { Spinner } from "@/components/ui/spinner";
 import {
   landingDestination,
   refreshAccountQueries,
@@ -61,47 +71,67 @@ export function usePendingInvitations() {
   return useQuery(userInvitationsQueryOptions(authClient, !!session?.user));
 }
 
-export function PendingInvitationsList() {
+export function PendingInvitationsList({
+  emptyDescription = "Invitations sent to your email show up here.",
+}: {
+  emptyDescription?: ReactNode;
+}) {
   const invitationsQuery = usePendingInvitations();
   const { accept, decline, busy } = useInvitationActions();
   const invitations = invitationsQuery.data ?? [];
 
   if (invitationsQuery.isLoading) {
-    return <LoadingCard label="invitations" />;
+    return <LoadingCard label="invitations" rows={1} />;
   }
 
   if (invitations.length === 0) {
-    return <Empty label="No pending invitations." />;
+    return (
+      <Empty variant="outline">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <EnvelopeSimpleIcon aria-hidden />
+          </EmptyMedia>
+          <EmptyTitle>No pending invitations</EmptyTitle>
+          <EmptyDescription>{emptyDescription}</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
   }
 
   return (
-    <div className="grid gap-3">
+    <ItemGroup>
       {invitations.map((invitation) => (
         <OrganizationRowCard
           key={invitation.id}
           name={invitation.organizationName}
           role={invitation.role}
-          details={
-            <span className="font-mono text-[11px] text-muted-foreground">
-              expires {new Date(invitation.expiresAt).toISOString().slice(0, 10)}
-            </span>
-          }
+          details={<span>Expires {formatDate(invitation.expiresAt)}</span>}
         >
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => accept.mutate(invitation.id)} disabled={busy}>
-              accept →
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => decline.mutate(invitation.id)}
-              disabled={busy}
-            >
-              decline
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => decline.mutate(invitation.id)}
+            disabled={busy}
+          >
+            Decline
+          </Button>
+          <Button size="sm" onClick={() => accept.mutate(invitation.id)} disabled={busy}>
+            {accept.isPending && accept.variables === invitation.id && (
+              <Spinner data-icon="inline-start" />
+            )}
+            Accept
+          </Button>
         </OrganizationRowCard>
       ))}
-    </div>
+    </ItemGroup>
   );
+}
+
+function formatDate(value: string | Date): string {
+  return new Date(value).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }

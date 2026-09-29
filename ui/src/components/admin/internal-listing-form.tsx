@@ -1,6 +1,12 @@
+import {
+  MegaphoneIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  TrashIcon,
+  WarningIcon,
+} from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -11,10 +17,19 @@ import {
   Badge,
   Button,
   Card,
+  CardAction,
   CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+  FieldError,
+  FieldGroup,
   Input,
+  Skeleton,
+  Textarea,
 } from "@/components";
-import { Empty, Field, Loading, selectClass, textareaClass } from "@/components/admin-form";
+import { ChoiceSelect, Empty, Field } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import {
@@ -80,39 +95,63 @@ export function InternalListingSection({
   const row = listingQuery.data?.listing ?? null;
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-xs uppercase tracking-wide text-muted-foreground">Internal listing</h2>
-        {!editing && row && (
-          <div className="flex gap-2">
-            <Button onClick={() => setEditing(true)} variant="outline" size="sm">
-              edit
-            </Button>
-            <Button onClick={() => setConfirmDelete(true)} variant="ghost" size="sm">
-              delete
-            </Button>
-          </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>Internal listing</h2>
+        </CardTitle>
+        <CardDescription>
+          A bounty kept on this platform, for when no NEARN listing exists (notably on testnet).
+        </CardDescription>
+        {!editing && !listingQuery.isLoading && (
+          <CardAction>
+            {row ? (
+              <div className="flex gap-1">
+                <Button
+                  onClick={() => setEditing(true)}
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Edit internal listing"
+                >
+                  <PencilSimpleIcon aria-hidden />
+                </Button>
+                <Button
+                  onClick={() => setConfirmDelete(true)}
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Delete internal listing"
+                >
+                  <TrashIcon aria-hidden />
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={() => setEditing(true)} size="sm">
+                <PlusIcon data-icon="inline-start" aria-hidden />
+                New listing
+              </Button>
+            )}
+          </CardAction>
         )}
-        {!editing && !row && !listingQuery.isLoading && (
-          <Button onClick={() => setEditing(true)} variant="default" size="sm">
-            + internal listing
-          </Button>
-        )}
-      </div>
+      </CardHeader>
 
       {hasNearnListing && (
-        <Alert>
-          <AlertTriangle />
-          <AlertTitle>NEARN listing takes priority for rollups</AlertTitle>
-          <AlertDescription>
-            This project has a NEARN listing attached. The internal listing is dormant — rollup math
-            uses NEARN. To activate the internal listing, detach NEARN from the project's edit form.
-          </AlertDescription>
-        </Alert>
+        <CardContent>
+          <Alert>
+            <WarningIcon aria-hidden />
+            <AlertTitle>NEARN listing takes priority for rollups</AlertTitle>
+            <AlertDescription>
+              This project has a NEARN listing attached, so the internal listing is dormant. Detach
+              NEARN in the project details to activate it.
+            </AlertDescription>
+          </Alert>
+        </CardContent>
       )}
 
       {listingQuery.isLoading ? (
-        <Loading label="Loading internal listing..." />
+        <CardContent className="flex flex-col gap-2">
+          <Skeleton className="h-4 w-1/3" />
+          <Skeleton className="h-4 w-2/3" />
+        </CardContent>
       ) : editing ? (
         <InternalListingForm
           projectId={projectId}
@@ -120,30 +159,41 @@ export function InternalListingSection({
           onDone={() => setEditing(false)}
         />
       ) : row ? (
-        <Card>
-          <CardContent className="p-4 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{row.type ?? "—"}</Badge>
-              <Badge variant={row.isPublished && !row.isArchived ? "default" : "outline"}>
-                {lifecycleLabel(row)}
-              </Badge>
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">{row.type ?? "—"}</Badge>
+            <Badge variant={row.isPublished && !row.isArchived ? "default" : "outline"}>
+              {lifecycleLabel(row)}
+            </Badge>
+          </div>
+          <dl className="grid gap-4 text-sm sm:grid-cols-3">
+            <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
+              <dt className="text-xs text-muted-foreground">Title</dt>
+              <dd className="font-medium break-words">{row.title ?? "(untitled)"}</dd>
             </div>
-            <div className="text-sm font-medium">{row.title ?? "(untitled)"}</div>
-            <div className="font-mono text-sm">
-              {row.rewardAmount ?? "0"} {row.token ?? ""}
+            <div className="flex flex-col gap-1">
+              <dt className="text-xs text-muted-foreground">Reward</dt>
+              <dd className="font-medium tabular-nums">
+                {row.rewardAmount ?? "0"} {row.token ?? ""}
+              </dd>
             </div>
-            {row.description && (
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{row.description}</p>
-            )}
             {row.deadline && (
-              <div className="text-xs text-muted-foreground">
-                deadline: {new Date(row.deadline).toISOString().slice(0, 10)}
+              <div className="flex flex-col gap-1">
+                <dt className="text-xs text-muted-foreground">Deadline</dt>
+                <dd className="tabular-nums">
+                  {new Date(row.deadline).toISOString().slice(0, 10)}
+                </dd>
               </div>
             )}
-          </CardContent>
-        </Card>
+          </dl>
+          {row.description && (
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{row.description}</p>
+          )}
+        </CardContent>
       ) : (
-        <Empty label="No internal listing. Use this when no NEARN listing exists — notably on testnet, where NEARN is unavailable." />
+        <CardContent>
+          <Empty icon={<MegaphoneIcon aria-hidden />} label="No internal listing" />
+        </CardContent>
       )}
 
       {row && (
@@ -154,7 +204,7 @@ export function InternalListingSection({
           listingTitle={row.title ?? "(untitled)"}
         />
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -226,22 +276,22 @@ function InternalListingForm({
   const isPending = submitMutation.isPending;
 
   return (
-    <Card>
-      <CardContent className="p-4 grid gap-3">
-        <form
-          className="grid gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            await form.validateAllFields("submit");
-            if (form.state.canSubmit) form.handleSubmit();
-          }}
-        >
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        await form.validateAllFields("submit");
+        if (form.state.canSubmit) form.handleSubmit();
+      }}
+    >
+      <CardContent>
+        <FieldGroup>
           <form.Field name="title">
             {(field) => {
               const err = field.state.meta.errors[0];
               return (
-                <Field label="title" htmlFor={field.name}>
+                <Field label="Title" htmlFor={field.name}>
                   <Input
                     id={field.name}
                     name={field.name}
@@ -252,55 +302,48 @@ function InternalListingForm({
                     disabled={isPending}
                     aria-invalid={err ? true : undefined}
                   />
-                  {err && <p className="text-xs text-destructive">{fieldErr(err)}</p>}
+                  {err && <FieldError>{fieldErr(err)}</FieldError>}
                 </Field>
               );
             }}
           </form.Field>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-6 sm:grid-cols-3 sm:items-start">
             <form.Field name="type">
               {(field) => (
-                <Field label="type" htmlFor={field.name}>
-                  <select
+                <Field label="Type" htmlFor={field.name}>
+                  <ChoiceSelect
                     id={field.name}
-                    name={field.name}
                     value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => {
-                      const parsed = internalListingFormSchema.shape.type.safeParse(e.target.value);
+                    onValueChange={(value) => {
+                      const parsed = internalListingFormSchema.shape.type.safeParse(value);
                       if (parsed.success) field.handleChange(parsed.data);
                     }}
                     disabled={isPending}
-                    className={selectClass}
-                  >
-                    <option value="Bounty">Bounty</option>
-                    <option value="Project">Project</option>
-                    <option value="Sponsorship">Sponsorship</option>
-                  </select>
+                    options={[
+                      { value: "Bounty", label: "Bounty" },
+                      { value: "Project", label: "Project" },
+                      { value: "Sponsorship", label: "Sponsorship" },
+                    ]}
+                  />
                 </Field>
               )}
             </form.Field>
 
             <form.Field name="token">
               {(field) => (
-                <Field label="token" htmlFor={field.name}>
-                  <select
+                <Field label="Token" htmlFor={field.name}>
+                  <ChoiceSelect
                     id={field.name}
-                    name={field.name}
                     value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
+                    onValueChange={(value) => field.handleChange(value)}
                     disabled={isPending || tokensQuery.isLoading}
-                    className={selectClass}
-                  >
-                    {tokens.length === 0 && <option value="NEAR">NEAR</option>}
-                    {tokens.map((t) => (
-                      <option key={t.tokenId} value={t.symbol}>
-                        {t.symbol}
-                      </option>
-                    ))}
-                  </select>
+                    options={
+                      tokens.length === 0
+                        ? [{ value: "NEAR", label: "NEAR" }]
+                        : tokens.map((t) => ({ value: t.symbol, label: t.symbol }))
+                    }
+                  />
                 </Field>
               )}
             </form.Field>
@@ -309,7 +352,7 @@ function InternalListingForm({
               {(field) => {
                 const err = field.state.meta.errors[0];
                 return (
-                  <Field label="reward amount" htmlFor={field.name}>
+                  <Field label="Reward amount" htmlFor={field.name}>
                     <Input
                       id={field.name}
                       name={field.name}
@@ -321,7 +364,7 @@ function InternalListingForm({
                       disabled={isPending}
                       aria-invalid={err ? true : undefined}
                     />
-                    {err && <p className="text-xs text-destructive">{fieldErr(err)}</p>}
+                    {err && <FieldError>{fieldErr(err)}</FieldError>}
                   </Field>
                 );
               }}
@@ -330,92 +373,87 @@ function InternalListingForm({
 
           <form.Field name="description">
             {(field) => (
-              <Field label="description (optional)" htmlFor={field.name}>
-                <textarea
+              <Field label="Description" htmlFor={field.name}>
+                <Textarea
                   id={field.name}
                   name={field.name}
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
                   rows={3}
-                  disabled={isPending}
-                  className={textareaClass}
-                />
-              </Field>
-            )}
-          </form.Field>
-
-          <form.Field name="deadline">
-            {(field) => (
-              <Field label="deadline (optional, YYYY-MM-DD)" htmlFor={field.name}>
-                <Input
-                  id={field.name}
-                  name={field.name}
-                  type="date"
-                  value={field.state.value}
-                  onBlur={field.handleBlur}
-                  onChange={(e) => field.handleChange(e.target.value)}
+                  placeholder="Optional"
                   disabled={isPending}
                 />
               </Field>
             )}
           </form.Field>
 
-          <form.Field name="lifecycle">
-            {(field) => {
-              const current = field.state.value as InternalListingLifecycle;
-              const allowed = new Set([current, ...(LIFECYCLE_TRANSITIONS[current] ?? [])]);
-              return (
-                <Field label="status" htmlFor={field.name}>
-                  <select
+          <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+            <form.Field name="deadline">
+              {(field) => (
+                <Field label="Deadline" htmlFor={field.name} helper="Optional.">
+                  <Input
                     id={field.name}
                     name={field.name}
+                    type="date"
                     value={field.state.value}
                     onBlur={field.handleBlur}
-                    onChange={(e) => {
-                      const next = e.target.value as InternalListingLifecycle;
-                      if (isEdit && !allowed.has(next)) {
-                        if (
-                          !window.confirm(
-                            `Move listing from ${formatLifecycle(current)} to ${formatLifecycle(next)}?`,
-                          )
-                        ) {
-                          return;
-                        }
-                      }
-                      field.handleChange(next);
-                    }}
+                    onChange={(e) => field.handleChange(e.target.value)}
                     disabled={isPending}
-                    className={selectClass}
-                  >
-                    {internalListingLifecycleValues.map((v) => (
-                      <option key={v} value={v} disabled={isEdit && !allowed.has(v)}>
-                        {formatLifecycle(v)}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </Field>
-              );
-            }}
-          </form.Field>
+              )}
+            </form.Field>
 
-          <p className="text-xs text-muted-foreground">
-            Lifecycle drives the rollup column the listing contributes to: <code>published</code> +
-            no winners → <em>allocated</em>; <code>winners announced</code> → <em>committed</em>{" "}
-            (until a billing exists); <code>archived</code> or unpublished → excluded.
-          </p>
-
-          <div className="flex gap-2">
-            <Button type="submit" disabled={isPending} size="sm">
-              {isPending ? "saving..." : isEdit ? "save changes" : "create listing"}
-            </Button>
-            <Button onClick={onDone} variant="outline" disabled={isPending} size="sm" type="button">
-              cancel
-            </Button>
+            <form.Field name="lifecycle">
+              {(field) => {
+                const current = field.state.value as InternalListingLifecycle;
+                const allowed = new Set([current, ...(LIFECYCLE_TRANSITIONS[current] ?? [])]);
+                return (
+                  <Field
+                    label="Status"
+                    htmlFor={field.name}
+                    helper="Published counts as allocated, winners announced as committed until billed; archived is excluded."
+                  >
+                    <ChoiceSelect
+                      id={field.name}
+                      value={field.state.value}
+                      onValueChange={(value) => {
+                        const next = value as InternalListingLifecycle;
+                        if (isEdit && !allowed.has(next)) {
+                          if (
+                            !window.confirm(
+                              `Move listing from ${formatLifecycle(current)} to ${formatLifecycle(next)}?`,
+                            )
+                          ) {
+                            return;
+                          }
+                        }
+                        field.handleChange(next);
+                      }}
+                      disabled={isPending}
+                      options={internalListingLifecycleValues.map((v) => ({
+                        value: v,
+                        label: formatLifecycle(v),
+                        disabled: isEdit && !allowed.has(v),
+                      }))}
+                    />
+                  </Field>
+                );
+              }}
+            </form.Field>
           </div>
-        </form>
+        </FieldGroup>
       </CardContent>
-    </Card>
+      <CardFooter className="justify-end gap-2">
+        <Button onClick={onDone} variant="outline" disabled={isPending} type="button">
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isPending}>
+          {isPending ? "Saving…" : isEdit ? "Save changes" : "Create listing"}
+        </Button>
+      </CardFooter>
+    </form>
   );
 }
 
@@ -448,7 +486,7 @@ function InternalListingDeleteDialog({
       onOpenChange={onOpenChange}
       title={`Delete internal listing "${listingTitle}"?`}
       description="The listing's contribution to allocated/committed rollup columns disappears immediately. This cannot be undone."
-      confirmLabel="delete listing"
+      confirmLabel="Delete listing"
       destructive
       onConfirm={async () => {
         await deleteMutation.mutateAsync();

@@ -191,11 +191,11 @@ export function createIdeasService(deps: {
     payload: Record<string, string>,
     options: { toClient: boolean; alsoNotifyUserIds?: string[] },
   ) {
-    const [agencyOrg, clientOrg] = await Promise.all([
-      organizations.get(row.agencyOrganizationId),
-      organizations.get(row.clientOrganizationId),
-    ]);
     try {
+      const [agencyOrg, clientOrg] = await Promise.all([
+        organizations.get(row.agencyOrganizationId),
+        organizations.get(row.clientOrganizationId),
+      ]);
       await notifications.notify({
         organizationId: options.toClient ? row.clientOrganizationId : row.agencyOrganizationId,
         kind,
