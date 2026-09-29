@@ -13,10 +13,10 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-151-ui-dashboard-multiagency-073952922-ze.zephyrcloud.app",
-      "integrity": "sha384-dopGklhe60NbwGogniUJ3OzOwCGbkEYxb2Ao7tAlBQfkkPa2f+IB0wFMtZc+UsM8",
-      "ssr": "https://multiagentic-155-ui-dashboard-multiagency-8468c083f-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-KQZ8mtgd6gBlmisz9UAczNyU5Zem/AKLXDtA4Sp7ALTjkltFBo7a3va1DzdLr2o8"
+      "production": "https://multiagentic-156-ui-dashboard-multiagency-da4bae983-ze.zephyrcloud.app",
+      "integrity": "sha384-650F9rWo2VsliSH83cCkUwDSzWz03WUEdKr67wPVTT6sS5mok+Zm0JWhzBF6ER1A",
+      "ssr": "https://multiagentic-160-ui-dashboard-multiagency-fb723d2dd-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-pIS0izp3JN9Efj0ppQuD5wntHucsfbUkgA8sT3EJWUD50EHHQ20cSOAuNXvZUyhJ"
     },
     "api": {
       "name": "api",
@@ -36,8 +36,8 @@
         "APP_ORIGIN",
         "FASTNEAR_API_KEY"
       ],
-      "production": "https://multiagentic-154-api-dashboard-multiagency-eefab87b0-ze.zephyrcloud.app",
-      "integrity": "sha384-TCkwryXIrhtjQcKJJ/QDNPboR72q1YnWmyxf6gMV/mclWKctOHjMyTTYCJs39ZwT"
+      "production": "https://multiagentic-159-api-dashboard-multiagency-bdca431e7-ze.zephyrcloud.app",
+      "integrity": "sha384-axWJzoJ5AN1MlXygXaYeX1oOr8tSrJJ9yjtLuAAq/siHMJrVr0FP1Nm5/3n5QrVr"
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
@@ -60,15 +60,15 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-153-everything-dev-projects-plugin-d-7189f611b-ze.zephyrcloud.app",
-      "integrity": "sha384-omKVmRzKps7u5Z1mqgv7nwmG58WotAQngRFrYr8sEHKT0tB8w+iIbm6kwvu1SGyz"
+      "production": "https://multiagentic-157-everything-dev-projects-plugin-d-422478275-ze.zephyrcloud.app",
+      "integrity": "sha384-dTbUDrOJ14Li9F/56M3JPp0LlCxq1bZTFfw9h3JYFXqd1bFtnQr3DHHWwnGRFqwl"
     },
     "builders": {
       "development": "local:plugins/builders",
       "secrets": [
         "BUILDERS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-152-everything-dev-builders-plugin-d-f8538f307-ze.zephyrcloud.app",
+      "production": "https://multiagentic-158-everything-dev-builders-plugin-d-490da0c7a-ze.zephyrcloud.app",
       "integrity": "sha384-SxdK807mpmECvN0qkkDaV6yArqmy/6i14CKxmTg8fRDDyw0hWuEeut0ljzTITTK5"
     }
   }
