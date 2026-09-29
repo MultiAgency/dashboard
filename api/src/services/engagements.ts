@@ -16,7 +16,12 @@ import {
 } from "../lib/organizations";
 import type { NotificationKind, NotificationsService } from "./notifications";
 import { appUrl, type EmailSender, escapeHtml } from "./notify";
-import type { AgencyScope, OrganizationScope, SubcontractedProject } from "./organization-access";
+import {
+  type AgencyScope,
+  type OrganizationScope,
+  SHARED_STATUSES,
+  type SubcontractedProject,
+} from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
 
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -239,20 +244,27 @@ export function createEngagementsService(deps: {
     row: EngagementRow,
     to: EngagementSide,
     kind: NotificationKind,
-    extra: Record<string, string> = {},
+    extra:
+      | Record<string, string>
+      | ((names: Awaited<ReturnType<typeof partyNames>>) => Record<string, string>) = {},
   ) {
     const organizationId = to === "agency" ? row.agencyOrganizationId : row.clientOrganizationId;
     const link =
       to === "agency"
         ? `/admin/engagements/${row.id}`
-        : row.status === "proposed"
-          ? "/client"
-          : `/client/${row.id}`;
+        : SHARED_STATUSES.includes(row.status)
+          ? `/client/${row.id}`
+          : "/client";
     try {
+      const names = await partyNames(row);
       await notifications.notify({
         organizationId,
         kind,
-        payload: { ...(await partyNames(row)), engagementId: row.id, ...extra },
+        payload: {
+          ...names,
+          engagementId: row.id,
+          ...(typeof extra === "function" ? extra(names) : extra),
+        },
         link,
         excludeUserId: userIdOf(scope),
       });
@@ -526,16 +538,25 @@ export function createEngagementsService(deps: {
 
     end: async (scope: OrganizationScope, id: string) => {
       const { row, side } = await requireSide(scope, id);
-      const withdrawable = row.status === "proposed" && side === "agency";
-      if (row.status !== "active" && !withdrawable) {
+      if (row.status === "proposed" && side === "agency") {
+        const withdrawn = await update(id, { status: "declined", decidedAt: now() });
+        await tell(scope, withdrawn, "client", "engagement_withdrawn");
+        return view(scope, withdrawn);
+      }
+      if (row.status !== "active") {
         throw badRequest("NOT_ACTIVE", "Only an active Engagement can be ended.");
       }
       const ended = await update(id, { status: "ended", endedAt: now() });
       await deps.onEnded?.(ended);
-      const names = await partyNames(ended);
-      await tell(scope, ended, side === "agency" ? "client" : "agency", "engagement_ended", {
-        endedBy: side === "agency" ? names.agencyName : names.clientName,
-      });
+      await tell(
+        scope,
+        ended,
+        side === "agency" ? "client" : "agency",
+        "engagement_ended",
+        (names) => ({
+          endedBy: side === "agency" ? names.agencyName : names.clientName,
+        }),
+      );
       return view(scope, ended);
     },
 

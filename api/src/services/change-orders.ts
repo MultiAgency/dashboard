@@ -257,7 +257,9 @@ export function createChangeOrdersService(deps: {
     engagement: EngagementRow,
     to: EngagementSide,
     kind: NotificationKind,
-    extra: Record<string, string>,
+    extra:
+      | Record<string, string>
+      | ((nameOf: (side: EngagementSide) => string) => Record<string, string>),
     excludeUserId: string | null,
   ) {
     try {
@@ -265,14 +267,18 @@ export function createChangeOrdersService(deps: {
         organizations.get(engagement.agencyOrganizationId),
         organizations.get(engagement.clientOrganizationId),
       ]);
+      const names: Record<EngagementSide, string> = {
+        agency: agency?.name ?? engagement.agencyOrganizationId,
+        client: client?.name ?? engagement.clientOrganizationId,
+      };
       await notifications.notify({
         organizationId: organizationOf(engagement, to),
         kind,
         payload: {
-          agencyName: agency?.name ?? engagement.agencyOrganizationId,
-          clientName: client?.name ?? engagement.clientOrganizationId,
+          agencyName: names.agency,
+          clientName: names.client,
           engagementId: engagement.id,
-          ...extra,
+          ...(typeof extra === "function" ? extra((side) => names[side]) : extra),
         },
         link: linkFor(engagement, to),
         excludeUserId,
@@ -280,11 +286,6 @@ export function createChangeOrdersService(deps: {
     } catch (err) {
       console.warn("[API] notification failed:", err instanceof Error ? err.message : err);
     }
-  }
-
-  async function partyName(engagement: EngagementRow, side: EngagementSide) {
-    const id = organizationOf(engagement, side);
-    return (await organizations.get(id))?.name ?? id;
   }
 
   async function tellOutcome(
@@ -299,11 +300,11 @@ export function createChangeOrdersService(deps: {
       engagement,
       proposer,
       kind,
-      {
-        deciderName: await partyName(engagement, decider),
+      (nameOf) => ({
+        deciderName: nameOf(decider),
         changeOrderId: changeOrder.id,
         reason: changeOrder.failureReason ?? "",
-      },
+      }),
       userIdOf(scope),
     );
   }
@@ -506,7 +507,7 @@ export function createChangeOrdersService(deps: {
         engagement,
         otherSide(side),
         "change_order_proposed",
-        { proposerName: await partyName(engagement, side), changeOrderId: changeOrder.id },
+        (nameOf) => ({ proposerName: nameOf(side), changeOrderId: changeOrder.id }),
         userIdOf(scope),
       );
       return finish(scope, engagement, changeOrder);
@@ -530,7 +531,7 @@ export function createChangeOrdersService(deps: {
         engagement,
         otherSide(side),
         "change_order_withdrawn",
-        { proposerName: await partyName(engagement, side), changeOrderId: withdrawn.id },
+        (nameOf) => ({ proposerName: nameOf(side), changeOrderId: withdrawn.id }),
         userIdOf(scope),
       );
       return finish(scope, engagement, withdrawn);

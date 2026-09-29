@@ -14,9 +14,18 @@ export type PlanLine = { projectId: string; tokenId: string; amount: string };
 const keyOf = (line: { projectId: string; tokenId: string }) =>
   `${line.projectId}\u0000${line.tokenId}`;
 
+function totals(lines: PlanLine[]): Map<string, bigint> {
+  const byKey = new Map<string, bigint>();
+  for (const line of lines) {
+    const key = keyOf(line);
+    byKey.set(key, (byKey.get(key) ?? 0n) + BigInt(line.amount || "0"));
+  }
+  return byKey;
+}
+
 export function planChangeItems(current: PlanLine[], edited: PlanLine[]): ChangeOrderItem[] {
-  const before = new Map(current.map((l) => [keyOf(l), BigInt(l.amount || "0")]));
-  const after = new Map(edited.map((l) => [keyOf(l), BigInt(l.amount || "0")]));
+  const before = totals(current);
+  const after = totals(edited);
   const lines = [...edited, ...current.filter((l) => !after.has(keyOf(l)))];
   const seen = new Set<string>();
   const items: ChangeOrderItem[] = [];

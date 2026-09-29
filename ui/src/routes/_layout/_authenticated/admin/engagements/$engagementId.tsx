@@ -119,7 +119,7 @@ function EngagementDetailPage() {
   const [confirmEnd, setConfirmEnd] = useState(false);
   const end = useEngagementAction(
     () => apiClient.engagements.end({ id: engagementId }),
-    "Engagement ended",
+    (engagement) => (engagement.status === "declined" ? "Proposal withdrawn" : "Engagement ended"),
   );
 
   if (engagementQuery.isLoading) return <DetailSkeleton />;

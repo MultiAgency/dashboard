@@ -13,7 +13,7 @@ import {
 import type { OrganizationDirectory } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 import type { AgencyScope } from "./organization-access";
-import type { ProjectDirectory } from "./project-directory";
+import { type ProjectDirectory, withoutClientIdeas } from "./project-directory";
 import { sumByToken } from "./report-tokens";
 import { enrichWithChainStatus } from "./sputnik";
 
@@ -53,7 +53,9 @@ export function createReportsService(
     Effect.gen(function* () {
       const { agencyDao } = scope;
       const { subcontractorDao } = input;
-      const allProjects = yield* Effect.promise(() => directory.forAgency(scope).list());
+      const allProjects = yield* Effect.promise(async () =>
+        withoutClientIdeas(db, await directory.forAgency(scope).list()),
+      );
       let projectIds: string[];
 
       const startAt = input.startDate ? new Date(`${input.startDate}T00:00:00.000Z`) : null;

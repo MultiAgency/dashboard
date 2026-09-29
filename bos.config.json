@@ -42,6 +42,8 @@
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
       "variables": {
+        "baseUrl": "https://dev.multiagency.ai",
+        "trustedOrigins": ["http://localhost:3000"],
         "email": {
           "from": "noreply@multiagency.ai"
         },

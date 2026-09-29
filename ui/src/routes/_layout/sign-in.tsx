@@ -25,9 +25,9 @@ import { ResendVerificationButton } from "@/components/resend-verification-butto
 import { useNearSignIn } from "@/hooks/use-near-sign-in";
 import {
   createRedirectOnce,
-  landingDestination,
   refreshAfterAccountChange,
   requestPasswordReset,
+  signInDestination,
   WELCOME_PATH,
 } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
@@ -66,8 +66,7 @@ function usePostSignIn(redirectTo: string | undefined) {
   const navigate = useNavigate();
 
   return async () => {
-    const destination =
-      redirectTo ?? (await landingDestination({ authClient, apiClient, queryClient }));
+    const destination = await signInDestination({ authClient, apiClient, queryClient }, redirectTo);
     await navigate({ to: destination, replace: true });
   };
 }

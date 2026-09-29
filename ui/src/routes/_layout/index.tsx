@@ -585,6 +585,9 @@ function Hero() {
           <Button asChild size="lg" variant="outline">
             <Link to="/work">Explore work</Link>
           </Button>
+          <Button asChild size="lg" variant="outline">
+            <Link to="/contact">Hire us</Link>
+          </Button>
         </div>
       </div>
     </section>

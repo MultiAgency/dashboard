@@ -747,13 +747,7 @@ export function ProjectBudgetPanel({
               Recorded to the audit log; nothing is executed on-chain. Budgets may go negative.
             </CardDescription>
           </CardHeader>
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (canSubmit) createMutation.mutate();
-            }}
-          >
+          <div className="flex flex-col gap-4">
             <CardContent>
               <FieldGroup>
                 <TokenAmountFields
@@ -811,11 +805,11 @@ export function ProjectBudgetPanel({
               >
                 {deallocateMutation.isPending ? "Recording…" : "Record deallocation"}
               </Button>
-              <Button type="submit" disabled={!canSubmit}>
+              <Button type="button" onClick={() => createMutation.mutate()} disabled={!canSubmit}>
                 {createMutation.isPending ? "Recording…" : "Record budget"}
               </Button>
             </CardFooter>
-          </form>
+          </div>
         </Card>
       )}
 

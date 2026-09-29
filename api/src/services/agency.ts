@@ -9,7 +9,7 @@ import { type ListingsService, listingRowToNearnPayload } from "./listings";
 import { isNearnAvailable } from "./nearn";
 import type { AgencyScope, TreasuryScope } from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
-import { toProject } from "./project-directory";
+import { toProject, withoutClientIdeas } from "./project-directory";
 import { deleteProjectCascade, projectDeletionBlockers } from "./projects";
 
 type ProjectKind = Project["kind"];
@@ -33,7 +33,9 @@ export function createAgencyService(
   return {
     listProjects: (scope: AgencyScope) =>
       Effect.gen(function* () {
-        const all = yield* Effect.promise(() => directory.forAgency(scope).list());
+        const all = yield* Effect.promise(async () =>
+          withoutClientIdeas(db, await directory.forAgency(scope).list()),
+        );
         const projects = scope.canSeePrivate ? all : all.filter(isPublicActive);
 
         const linkByProjectId: Map<string, Listing> = isNearnAvailable(scope.network)
