@@ -24,7 +24,12 @@ function authApi(baseUrl: string, cookie: string): BetterAuthOrganizationsClient
   const call = async (path: string, init?: RequestInit) => {
     const response = await fetch(new URL(`/api/auth${path}`, baseUrl), {
       ...init,
-      headers: { cookie, "content-type": "application/json", ...init?.headers },
+      headers: {
+        cookie,
+        origin: new URL(baseUrl).origin,
+        "content-type": "application/json",
+        ...init?.headers,
+      },
     });
     if (!response.ok) {
       throw new Error(`Auth API ${path} failed: ${response.status} ${await response.text()}`);
