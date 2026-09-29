@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Badge, Button, Card, CardContent } from "@/components";
+import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
+import { needsTreasury } from "@/lib/treasury";
 
 function isAccessError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -18,6 +20,7 @@ function isNoOrgContext(error: unknown): boolean {
 }
 
 export function AdminError({ error }: { error: unknown }) {
+  if (needsTreasury(error)) return <ConnectTreasuryPrompt />;
   const isAccess = isAccessError(error);
   const noOrg = isNoOrgContext(error);
   const message =

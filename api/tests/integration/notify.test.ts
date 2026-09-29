@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { type ApplicationNotification, notifyNewApplication } from "../../src/services/notify";
+import {
+  type ApplicationNotification,
+  appUrl,
+  escapeHtml,
+  notifyNewApplication,
+} from "../../src/services/notify";
 
 const ok = (status = 200): Response =>
   new Response("{}", { status, headers: { "Content-Type": "application/json" } });
@@ -170,5 +175,22 @@ describe("notifyNewApplication", () => {
     expect(body.html).not.toContain("<script>");
     expect(body.html).toContain("&lt;script&gt;");
     expect(body.html).toContain("a &amp; b");
+  });
+});
+
+describe("email markup", () => {
+  test("a quote in a value cannot leave an attribute", () => {
+    const html = `<a href="${escapeHtml(`x" onclick='y'`)}">`;
+
+    expect(html).toBe('<a href="x&quot; onclick=&#39;y&#39;">');
+  });
+
+  test.each([
+    ["/client/e1", "https://app.example/client/e1"],
+    ["//other.example/x", null],
+    ["https://other.example/x", null],
+    ["javascript:alert(1)", null],
+  ])("links %s only to the configured app origin", (path, expected) => {
+    expect(appUrl("https://app.example", path)).toBe(expected);
   });
 });

@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BudgetsManager } from "@/components/admin/budgets-manager";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
+import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import { adminProjectsListQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/budgets/")({
@@ -15,6 +17,7 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/budgets/")({
 });
 
 function AdminBudgetsPage() {
+  const { agencyDao, isLoaded } = useMeRoles();
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -33,7 +36,7 @@ function AdminBudgetsPage() {
           .
         </p>
       </header>
-      <BudgetsManager />
+      {isLoaded && !agencyDao ? <ConnectTreasuryPrompt /> : <BudgetsManager />}
     </div>
   );
 }

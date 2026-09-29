@@ -1,21 +1,27 @@
-import { desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { DecoratedMiddleware } from "every-plugin/orpc";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { type Client, clientProjects, clients, organizationDaos } from "../db/schema";
+import {
+  type EngagementRow,
+  engagementProjects,
+  engagements,
+  organizationDaos,
+} from "../db/schema";
 import type { AuthContext } from "../lib/auth";
-import type { Network } from "../lib/network";
+import { getNetwork, type Network } from "../lib/network";
 import type {
   Organization,
   OrganizationRole,
   Organizations,
   PluginContext,
 } from "../lib/organizations";
+import type { Project, ProjectDirectory } from "./project-directory";
 
 export type AgencyScope = {
   organizationId: string | null;
-  agencyDao: string;
+  agencyDao: string | null;
   network: Network;
   role: OrganizationRole | null;
   actorId: string;
@@ -23,10 +29,16 @@ export type AgencyScope = {
   pluginContext: PluginContext;
 };
 
+export type TreasuryScope = AgencyScope & { agencyDao: string };
+
+export type OrganizationScope = AgencyScope & { organizationId: string };
+
+export const NO_AGENCY_DAO = "NO_AGENCY_DAO";
+
 export const ROLE_MATRIX = {
   work: ["owner", "admin", "member"],
   manage: ["owner", "admin"],
-  seePrivate: ["owner", "admin", "contributor"],
+  seePrivate: ["owner", "admin", "member", "contributor"],
 } as const satisfies Record<string, readonly OrganizationRole[]>;
 
 export type Capabilities = {
@@ -35,6 +47,8 @@ export type Capabilities = {
   hasAgencySections: boolean;
   hasClientSections: boolean;
 };
+
+export const SHARED_STATUSES: EngagementRow["status"][] = ["active", "ended"];
 
 export type OrganizationAccess = {
   organization: Organization | null;
@@ -45,7 +59,28 @@ export type OrganizationAccess = {
   pluginContext: PluginContext;
 };
 
-export type ClientMembership = { client: Client; projectIds: string[] };
+export type SharedEngagement = {
+  engagement: EngagementRow;
+  readOnly: boolean;
+  projectIds: string[];
+  scope: AgencyScope;
+  viewerAgencyDao: string | null;
+};
+
+export type SubcontractedProject = {
+  project: Project;
+  engagement: EngagementRow;
+  readOnly: boolean;
+  ownerScope: AgencyScope;
+};
+
+export type WorkableProject = {
+  project: Project;
+  relation: "owned" | "subcontractor";
+  ownerScope: AgencyScope;
+};
+
+const projectNotFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
 
 function hasRole(roles: readonly OrganizationRole[], role: OrganizationRole | null): boolean {
   return role !== null && roles.includes(role);
@@ -63,37 +98,41 @@ function forbidden(message: string, data?: Record<string, unknown>) {
   return new ORPCError("FORBIDDEN", { message, data });
 }
 
+export function requireTreasury<TScope extends AgencyScope>(scope: TScope): TScope & TreasuryScope {
+  if (!scope.agencyDao) {
+    throw forbidden(
+      "This Organization has no Agency DAO. Connect a treasury in Settings → Treasury to use money features.",
+      { reason: NO_AGENCY_DAO },
+    );
+  }
+  return scope as TScope & TreasuryScope;
+}
+
+export async function agencyDaoOf(db: Database, organizationId: string): Promise<string | null> {
+  const [row] = await db
+    .select()
+    .from(organizationDaos)
+    .where(eq(organizationDaos.organizationId, organizationId))
+    .limit(1);
+  return row?.daoAccountId ?? null;
+}
+
 export function createOrganizationAccess(deps: {
   db: Database;
   organizations: Organizations;
+  directory: ProjectDirectory;
   defaultDaoAccountId?: string;
 }) {
-  const { db, organizations, defaultDaoAccountId } = deps;
-
-  async function agencyDaoOf(organization: Organization): Promise<string | null> {
-    if (organization.isPersonal) return null;
-    const claimed = organization.metadataDaoAccountId;
-    const rows = await db
-      .select()
-      .from(organizationDaos)
-      .where(
-        claimed
-          ? or(
-              eq(organizationDaos.organizationId, organization.id),
-              eq(organizationDaos.daoAccountId, claimed),
-            )
-          : eq(organizationDaos.organizationId, organization.id),
-      );
-    const mapped = rows.find((row) => row.organizationId === organization.id);
-    if (mapped) return mapped.daoAccountId;
-    return claimed && rows.length === 0 ? claimed : null;
-  }
+  const { db, organizations, directory, defaultDaoAccountId } = deps;
 
   async function resolve(context: PluginContext): Promise<OrganizationAccess> {
     const membership = context.userId ? await organizations.activeMembership(context) : null;
     const organization = membership?.organization ?? null;
     const role = organization && !organization.isPersonal ? (membership?.role ?? null) : null;
-    const agencyDao = organization ? await agencyDaoOf(organization) : null;
+    const agencyDao =
+      organization && !organization.isPersonal ? await agencyDaoOf(db, organization.id) : null;
+    const hasClientSections =
+      organization !== null && role !== null && (await isClientOfAnyAgency(organization.id));
     return {
       organization,
       role,
@@ -103,17 +142,27 @@ export function createOrganizationAccess(deps: {
         canManageMembers: hasRole(ROLE_MATRIX.manage, role),
         canUseMoney: agencyDao !== null && hasRole(ROLE_MATRIX.work, role),
         hasAgencySections: hasRole(ROLE_MATRIX.work, role),
-        hasClientSections: false,
+        hasClientSections,
       },
       pluginContext: context,
     };
   }
 
-  function scopeOf(access: OrganizationAccess, agencyDao: string): AgencyScope {
+  async function organizationOfDao(daoAccountId: string): Promise<string | null> {
+    const [row] = await db
+      .select()
+      .from(organizationDaos)
+      .where(eq(organizationDaos.daoAccountId, daoAccountId))
+      .limit(1);
+    return row?.organizationId ?? null;
+  }
+
+  function scopeOf(access: OrganizationAccess): AgencyScope {
+    const { agencyDao } = access;
     return {
       organizationId: access.organization?.id ?? null,
       agencyDao,
-      network: networkOf(agencyDao),
+      network: agencyDao ? networkOf(agencyDao) : getNetwork(access.pluginContext.reqHeaders),
       role: access.role,
       actorId: access.actorId,
       canSeePrivate: hasRole(ROLE_MATRIX.seePrivate, access.role),
@@ -121,42 +170,43 @@ export function createOrganizationAccess(deps: {
     };
   }
 
-  async function publicScope(context: PluginContext): Promise<AgencyScope> {
-    const access = await resolve(context);
-    if (access.agencyDao) return scopeOf(access, access.agencyDao);
+  async function publicScope(context: PluginContext): Promise<TreasuryScope> {
     if (!defaultDaoAccountId) {
       throw forbidden(
-        "No DAO account configured. A platform admin must create an agency workspace with a Sputnik DAO.",
+        "No default Organization configured. Set the deployment's default Agency DAO.",
       );
     }
     return {
-      organizationId: null,
+      organizationId: await organizationOfDao(defaultDaoAccountId),
       agencyDao: defaultDaoAccountId,
       network: networkOf(defaultDaoAccountId),
       role: null,
-      actorId: access.actorId,
+      actorId: actorOf(context),
       canSeePrivate: false,
-      pluginContext: context,
+      pluginContext: {},
     };
+  }
+
+  async function publicTreasuryScope(context: PluginContext): Promise<TreasuryScope> {
+    const access = await resolve(context);
+    if (access.role && defaultDaoAccountId && access.agencyDao === defaultDaoAccountId) {
+      return requireTreasury(scopeOf(access));
+    }
+    return publicScope(context);
   }
 
   async function agencyScope(
     context: PluginContext,
     requiredRoles: readonly OrganizationRole[],
-  ): Promise<AgencyScope> {
+  ): Promise<OrganizationScope> {
     const access = await resolve(context);
-    if (!hasRole(requiredRoles, access.role)) {
+    if (!access.organization || !hasRole(requiredRoles, access.role)) {
       throw forbidden(`Requires agency role: ${requiredRoles.join(" or ")}`, {
         requiredRoles,
         currentRole: access.role,
       });
     }
-    if (!access.agencyDao) {
-      throw forbidden(
-        "This workspace has no DAO. Switch to an agency using the agency menu in the header.",
-      );
-    }
-    return scopeOf(access, access.agencyDao);
+    return { ...scopeOf(access), organizationId: access.organization.id };
   }
 
   function requireDefaultOrganization(scope: AgencyScope): void {
@@ -165,58 +215,145 @@ export function createOrganizationAccess(deps: {
     }
   }
 
-  function sharedProjectsScope(context: PluginContext, owningAgencyDao: string): AgencyScope {
+  async function isClientOfAnyAgency(organizationId: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: engagements.id })
+      .from(engagements)
+      .where(
+        and(
+          eq(engagements.clientOrganizationId, organizationId),
+          ne(engagements.status, "declined"),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
+  async function sharedProjectIds(engagementId: string): Promise<string[]> {
+    const rows = await db
+      .select({ projectId: engagementProjects.projectId })
+      .from(engagementProjects)
+      .where(eq(engagementProjects.engagementId, engagementId))
+      .orderBy(asc(engagementProjects.createdAt));
+    return rows.map((r) => r.projectId);
+  }
+
+  async function readScopeOfAgency(
+    context: PluginContext,
+    agencyOrganizationId: string,
+  ): Promise<AgencyScope> {
+    const agencyDao = await agencyDaoOf(db, agencyOrganizationId);
     return {
-      organizationId: null,
-      agencyDao: owningAgencyDao,
-      network: networkOf(owningAgencyDao),
+      organizationId: agencyOrganizationId,
+      agencyDao,
+      network: agencyDao ? networkOf(agencyDao) : getNetwork(context.reqHeaders),
       role: null,
       actorId: actorOf(context),
       canSeePrivate: true,
       pluginContext: {
-        ...context,
+        userId: context.userId,
+        reqHeaders: context.reqHeaders,
         organization: {
-          activeOrganizationId: owningAgencyDao,
-          organization: {
-            id: owningAgencyDao,
-            name: owningAgencyDao,
-            slug: owningAgencyDao,
-            metadata: { daoAccountId: owningAgencyDao, type: "agency" as const },
-          },
-          member: { role: "member" as const },
+          activeOrganizationId: agencyOrganizationId,
+          organization: { id: agencyOrganizationId, metadata: {} },
+          member: { role: "member" },
         },
       },
     };
   }
 
-  async function projectIdsByClient(clientIds: string[]): Promise<Map<string, string[]>> {
-    const byClient = new Map<string, string[]>();
-    if (clientIds.length === 0) return byClient;
-    const rows = await db
+  async function sharedWith(
+    context: PluginContext,
+    engagementId: string,
+  ): Promise<SharedEngagement> {
+    const access = await resolve(context);
+    const [engagement] = await db
       .select()
-      .from(clientProjects)
-      .where(inArray(clientProjects.clientId, clientIds));
-    for (const row of rows) {
-      const list = byClient.get(row.clientId) ?? [];
-      list.push(row.projectId);
-      byClient.set(row.clientId, list);
+      .from(engagements)
+      .where(eq(engagements.id, engagementId))
+      .limit(1);
+    if (
+      !engagement ||
+      !access.organization ||
+      engagement.clientOrganizationId !== access.organization.id ||
+      !hasRole(ROLE_MATRIX.work, access.role) ||
+      !SHARED_STATUSES.includes(engagement.status)
+    ) {
+      throw new ORPCError("NOT_FOUND", { message: "Engagement not found" });
     }
-    return byClient;
+    return {
+      engagement,
+      readOnly: engagement.status !== "active",
+      projectIds: await sharedProjectIds(engagement.id),
+      scope: await readScopeOfAgency(context, engagement.agencyOrganizationId),
+      viewerAgencyDao: access.agencyDao,
+    };
   }
 
-  async function walletClients(nearAccountId: string): Promise<ClientMembership[]> {
+  async function subcontractedIn(
+    scope: AgencyScope,
+    projectId?: string,
+  ): Promise<SubcontractedProject[]> {
+    if (!scope.organizationId) return [];
     const rows = await db
-      .select()
-      .from(clients)
-      .where(eq(clients.nearAccountId, nearAccountId))
-      .orderBy(desc(clients.updatedAt));
-    const byClient = await projectIdsByClient(rows.map((r) => r.id));
-    return rows.map((client) => ({ client, projectIds: byClient.get(client.id) ?? [] }));
+      .select({ engagement: engagements, projectId: engagementProjects.projectId })
+      .from(engagementProjects)
+      .innerJoin(engagements, eq(engagements.id, engagementProjects.engagementId))
+      .where(
+        and(
+          eq(engagements.clientOrganizationId, scope.organizationId),
+          eq(engagements.kind, "subcontract"),
+          inArray(engagements.status, SHARED_STATUSES),
+          projectId ? eq(engagementProjects.projectId, projectId) : undefined,
+        ),
+      )
+      .orderBy(asc(engagements.status), asc(engagementProjects.createdAt));
+    const byProject = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      if (!byProject.has(row.projectId)) byProject.set(row.projectId, row);
+    }
+    const ownerScopes = new Map<string, AgencyScope>();
+    const found = await Promise.all(
+      [...byProject.values()].map(async ({ engagement, projectId: id }) => {
+        const agencyId = engagement.agencyOrganizationId;
+        const ownerScope =
+          ownerScopes.get(agencyId) ?? (await readScopeOfAgency(scope.pluginContext, agencyId));
+        ownerScopes.set(agencyId, ownerScope);
+        const project = await directory
+          .forAgency(ownerScope)
+          .require(id)
+          .catch(() => null);
+        return project
+          ? { project, engagement, readOnly: engagement.status !== "active", ownerScope }
+          : null;
+      }),
+    );
+    return found.filter((p): p is SubcontractedProject => p !== null);
   }
 
-  type AccessMiddleware = DecoratedMiddleware<
+  async function workableProject(
+    scope: AgencyScope,
+    projectId: string,
+    options: { write?: boolean } = {},
+  ): Promise<WorkableProject> {
+    const owned = await directory
+      .forAgency(scope)
+      .require(projectId)
+      .catch(() => null);
+    if (owned) return { project: owned, relation: "owned", ownerScope: scope };
+    const [shared] = await subcontractedIn(scope, projectId);
+    if (!shared) throw projectNotFound();
+    if (options.write && shared.readOnly) {
+      throw forbidden("The subcontract has ended. Its shared Projects are read-only history.", {
+        reason: "ENGAGEMENT_ENDED",
+      });
+    }
+    return { project: shared.project, relation: "subcontractor", ownerScope: shared.ownerScope };
+  }
+
+  type AccessMiddleware<TScope extends AgencyScope> = DecoratedMiddleware<
     AuthContext,
-    { scope: AgencyScope },
+    { scope: TScope },
     any,
     any,
     any,
@@ -224,7 +361,10 @@ export function createOrganizationAccess(deps: {
   >;
 
   function middleware(builder: any) {
-    const requireAgency = (roles: readonly OrganizationRole[], defaultOnly: boolean) =>
+    const requireScope = <TScope extends AgencyScope>(
+      roles: readonly OrganizationRole[],
+      narrow: (scope: OrganizationScope) => TScope,
+    ) =>
       builder.middleware(async ({ context, next }: { context: AuthContext; next: any }) => {
         if (!context.user || !context.userId) {
           throw new ORPCError("UNAUTHORIZED", {
@@ -232,67 +372,56 @@ export function createOrganizationAccess(deps: {
             data: { authType: "session", hint: "Sign in to continue" },
           });
         }
-        const scope = await agencyScope(context, roles);
-        if (defaultOnly) requireDefaultOrganization(scope);
+        const scope = narrow(await agencyScope(context, roles));
         return next({ context: { scope } });
-      }) as AccessMiddleware;
+      }) as AccessMiddleware<TScope>;
+
+    const agency = (scope: OrganizationScope) => scope;
+    const defaultOrganization = (scope: OrganizationScope) => {
+      requireDefaultOrganization(scope);
+      return scope;
+    };
 
     return {
-      member: requireAgency(ROLE_MATRIX.work, false),
-      manager: requireAgency(ROLE_MATRIX.manage, false),
-      defaultOrganizationMember: requireAgency(ROLE_MATRIX.work, true),
-      defaultOrganizationManager: requireAgency(ROLE_MATRIX.manage, true),
+      member: requireScope(ROLE_MATRIX.work, agency),
+      manager: requireScope(ROLE_MATRIX.manage, agency),
+      treasuryMember: requireScope(ROLE_MATRIX.work, requireTreasury),
+      treasuryManager: requireScope(ROLE_MATRIX.manage, requireTreasury),
+      defaultOrganizationMember: requireScope(ROLE_MATRIX.work, defaultOrganization),
+      defaultOrganizationManager: requireScope(ROLE_MATRIX.manage, defaultOrganization),
     };
   }
 
   return {
     resolve,
     publicScope,
+    publicTreasuryScope,
     agencyScope,
     requireDefaultOrganization,
     middleware,
-    sharedProjectsScope,
 
-    clientMemberships: (caller: PluginContext, nearAccountId: string) =>
-      Effect.gen(function* () {
-        const own = new Set([
-          ...(caller.near?.primaryAccountId ? [caller.near.primaryAccountId] : []),
-          ...(caller.near?.linkedAccounts ?? []).map((a) => a.accountId),
-        ]);
-        if (!own.has(nearAccountId)) {
-          return yield* Effect.fail(forbidden("You can only look up your own NEAR accounts"));
-        }
-        return yield* Effect.promise(() => walletClients(nearAccountId));
-      }),
+    defaultOrganization: async (): Promise<Pick<AgencyScope, "organizationId" | "agencyDao">> => ({
+      organizationId: defaultDaoAccountId ? await organizationOfDao(defaultDaoAccountId) : null,
+      agencyDao: defaultDaoAccountId ?? null,
+    }),
 
-    clientPortal: (context: PluginContext, agencyDaoAccountId: string) =>
-      Effect.gen(function* () {
-        const nearAccountId = context.near?.primaryAccountId;
-        if (!nearAccountId) {
-          return yield* Effect.fail(
-            forbidden("Sign in with your NEAR wallet to use the client portal."),
-          );
-        }
-        const memberships = yield* Effect.promise(() => walletClients(nearAccountId));
-        const membership = memberships.find(
-          (m) => m.client.agencyDaoAccountId === agencyDaoAccountId,
-        );
-        if (!membership) {
-          return yield* Effect.fail(
-            forbidden(
-              "No client portal for this wallet at this agency. Ask your agency to add your NEAR account under Clients.",
-            ),
-          );
-        }
-        return {
-          ...membership,
-          scope:
-            membership.projectIds.length === 0
-              ? null
-              : sharedProjectsScope(context, membership.client.agencyDaoAccountId),
-        };
-      }),
+    sharedWith,
+    readScopeOfAgency,
+    workableProject,
+    subcontractedProjects: (scope: AgencyScope) => subcontractedIn(scope),
   };
 }
 
 export type OrganizationAccessService = ReturnType<typeof createOrganizationAccess>;
+
+export function workable(
+  access: Pick<OrganizationAccessService, "workableProject">,
+  scope: AgencyScope,
+  projectId: string,
+  write = false,
+) {
+  return Effect.tryPromise({
+    try: () => access.workableProject(scope, projectId, { write }),
+    catch: (err) => err,
+  });
+}

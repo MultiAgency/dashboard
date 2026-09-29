@@ -2,7 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Budget, Button, Card, CardContent, Input } from "@/components";
+import { Budget, Button, Card, CardContent, Input, SubcontractorSpend } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field, selectClass } from "@/components/admin-form";
 import { useBudgetActions } from "@/hooks/use-budget-actions";
@@ -11,18 +11,19 @@ import {
   resolveBudgetAuditDropdownOptions,
 } from "@/lib/admin-filter-graph";
 import { useApiClient } from "@/lib/api";
-import { formatTokenAmount, parseDecimalToBase } from "@/lib/format-amount";
+import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminBudgetsLogQueryKey,
-  adminClientsListQueryOptions,
   adminProjectBudgetQueryOptions,
   adminProjectBudgetsLogQueryKey,
   adminProjectsForTokenQueryKey,
   adminProjectsListQueryOptions,
   adminTokensQueryOptions,
   clientPortalProjectBudgetQueryOptions,
+  engagementsListQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
+import { CUSTOM_TOKEN, deriveBaseAmount, TokenAmountFields } from "./token-amount-fields";
 
 function budgetVerb(amount: string, relatedBudgetId: string | null): string {
   const negative = amount.startsWith("-");
@@ -36,123 +37,6 @@ function VerbTag({ verb }: { verb: string }) {
       {verb}
     </span>
   );
-}
-
-type KnownToken = {
-  tokenId: string;
-  network: string;
-  symbol: string;
-  decimals: number;
-  name: string;
-  icon: string | null;
-};
-
-const CUSTOM_TOKEN = "__custom__";
-
-function TokenAmountFields({
-  idPrefix,
-  tokens,
-  tokenSelection,
-  setTokenSelection,
-  customTokenId,
-  setCustomTokenId,
-  amount,
-  setAmount,
-  amountError,
-  disabled,
-}: {
-  idPrefix: string;
-  tokens: KnownToken[];
-  tokenSelection: string;
-  setTokenSelection: (v: string) => void;
-  customTokenId: string;
-  setCustomTokenId: (v: string) => void;
-  amount: string;
-  setAmount: (v: string) => void;
-  amountError?: string;
-  disabled?: boolean;
-}) {
-  const isCustom = tokenSelection === CUSTOM_TOKEN;
-  const effectiveTokenId = isCustom ? customTokenId.trim() : tokenSelection;
-  const knownToken = tokens.find((t) => t.tokenId === effectiveTokenId);
-
-  return (
-    <>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="token" htmlFor={`${idPrefix}-token`}>
-          <select
-            id={`${idPrefix}-token`}
-            value={tokenSelection}
-            onChange={(e) => setTokenSelection(e.target.value)}
-            disabled={disabled}
-            className={selectClass}
-          >
-            {tokens.map((t) => (
-              <option key={t.tokenId} value={t.tokenId}>
-                {t.symbol} — {t.name}
-              </option>
-            ))}
-            <option value={CUSTOM_TOKEN}>Custom…</option>
-          </select>
-          {knownToken?.icon && (
-            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <img src={knownToken.icon} alt="" width={16} height={16} className="rounded-full" />
-              <span className="font-mono">{knownToken.tokenId}</span>
-            </div>
-          )}
-        </Field>
-        <Field
-          label={knownToken ? `amount (${knownToken.symbol})` : "amount (smallest unit)"}
-          htmlFor={`${idPrefix}-amount`}
-        >
-          <Input
-            id={`${idPrefix}-amount`}
-            inputMode="decimal"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={knownToken ? "1.5" : "1000000000000000000000000"}
-            disabled={disabled}
-          />
-        </Field>
-      </div>
-      {isCustom && (
-        <Field label="custom token id" htmlFor={`${idPrefix}-custom-token`}>
-          <Input
-            id={`${idPrefix}-custom-token`}
-            value={customTokenId}
-            onChange={(e) => setCustomTokenId(e.target.value)}
-            placeholder="e.g. usdc.token.near"
-            disabled={disabled}
-          />
-        </Field>
-      )}
-      {isCustom && customTokenId.trim().length > 0 && !knownToken && (
-        <p className="text-xs text-muted-foreground">
-          ⚠ Decimals unknown for "{effectiveTokenId}". Enter the amount in the token's smallest
-          integer unit.
-        </p>
-      )}
-      {amountError && <p className="text-xs text-destructive">{amountError}</p>}
-    </>
-  );
-}
-
-function deriveBaseAmount(
-  amount: string,
-  knownToken: KnownToken | undefined,
-): { value: string; error: string } {
-  const trimmed = amount.trim();
-  if (trimmed === "") return { value: "", error: "" };
-  if (knownToken) {
-    try {
-      return { value: parseDecimalToBase(trimmed, knownToken.decimals), error: "" };
-    } catch (e) {
-      return { value: "", error: (e as Error).message };
-    }
-  }
-  return /^\d+$/.test(trimmed)
-    ? { value: trimmed, error: "" }
-    : { value: "", error: "Amount must be a positive integer (smallest unit)" };
 }
 
 export function BudgetsManager() {
@@ -224,16 +108,22 @@ function AgencyAuditLogPanel({
 
   const [filterProject, setFilterProject] = useState<string>("");
   const [filterToken, setFilterToken] = useState<string>("");
-  const [filterClient, setFilterClient] = useState<string>("");
+  const [filterEngagement, setFilterEngagement] = useState<string>("");
 
-  const clientsQuery = useQuery(adminClientsListQueryOptions(apiClient));
-  const clients = clientsQuery.data?.data ?? [];
-  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+  const engagementsQuery = useQuery(engagementsListQueryOptions(apiClient));
+  const engagements = useMemo(
+    () =>
+      (engagementsQuery.data?.data ?? []).filter(
+        (e) => e.side === "agency" && (e.status === "active" || e.status === "ended"),
+      ),
+    [engagementsQuery.data],
+  );
+  const engagementById = useMemo(() => new Map(engagements.map((e) => [e.id, e])), [engagements]);
 
-  const clientProjectIds = useMemo(() => {
-    if (!filterClient) return null;
-    return new Set(clients.find((c) => c.id === filterClient)?.projectIds ?? []);
-  }, [filterClient, clients]);
+  const engagementProjectIds = useMemo(() => {
+    if (!filterEngagement) return null;
+    return new Set(engagementById.get(filterEngagement)?.projectIds ?? []);
+  }, [filterEngagement, engagementById]);
 
   const projectBudgetQuery = useQuery({
     ...adminProjectBudgetQueryOptions(apiClient, filterProject),
@@ -276,9 +166,10 @@ function AgencyAuditLogPanel({
     () =>
       projects.filter(
         (p) =>
-          dropdownOptions.projects.has(p.id) && (!clientProjectIds || clientProjectIds.has(p.id)),
+          dropdownOptions.projects.has(p.id) &&
+          (!engagementProjectIds || engagementProjectIds.has(p.id)),
       ),
-    [projects, dropdownOptions.projects, clientProjectIds],
+    [projects, dropdownOptions.projects, engagementProjectIds],
   );
   const filterTokens = useMemo(
     () => tokens.filter((t) => dropdownOptions.tokens.has(t.tokenId)),
@@ -302,13 +193,13 @@ function AgencyAuditLogPanel({
     queryKey: adminBudgetsLogQueryKey({
       projectId: filterProject || null,
       tokenId: filterToken || null,
-      clientId: filterClient || null,
+      engagementId: filterEngagement || null,
     }),
     queryFn: ({ pageParam }) =>
       apiClient.budgets.list({
         projectId: filterProject || undefined,
         tokenId: filterToken || undefined,
-        clientId: filterClient || undefined,
+        engagementId: filterEngagement || undefined,
         cursor: pageParam,
       }),
     initialPageParam: undefined as string | undefined,
@@ -316,7 +207,7 @@ function AgencyAuditLogPanel({
   });
 
   const rows = logQuery.data?.pages.flatMap((p) => p.data) ?? [];
-  const filtersActive = filterProject !== "" || filterToken !== "" || filterClient !== "";
+  const filtersActive = filterProject !== "" || filterToken !== "" || filterEngagement !== "";
 
   return (
     <section className="space-y-3">
@@ -329,23 +220,23 @@ function AgencyAuditLogPanel({
       </p>
       <Card>
         <CardContent className="p-5 grid gap-4 sm:grid-cols-[1fr_1fr_1fr_auto]">
-          <Field label="client" htmlFor="audit-filter-client">
+          <Field label="client" htmlFor="audit-filter-engagement">
             <select
-              id="audit-filter-client"
-              value={filterClient}
+              id="audit-filter-engagement"
+              value={filterEngagement}
               onChange={(e) => {
-                setFilterClient(e.target.value);
+                setFilterEngagement(e.target.value);
                 if (e.target.value && filterProject) {
-                  const allowed = clients.find((c) => c.id === e.target.value)?.projectIds ?? [];
+                  const allowed = engagementById.get(e.target.value)?.projectIds ?? [];
                   if (!allowed.includes(filterProject)) setFilterProject("");
                 }
               }}
               className={selectClass}
             >
               <option value="">all clients</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
+              {engagements.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.client.name}
                 </option>
               ))}
             </select>
@@ -386,7 +277,7 @@ function AgencyAuditLogPanel({
               size="sm"
               disabled={!filtersActive}
               onClick={() => {
-                setFilterClient("");
+                setFilterEngagement("");
                 applyAuditFilters({ projectId: "", tokenId: "" });
               }}
             >
@@ -419,12 +310,13 @@ function AgencyAuditLogPanel({
                     </div>
                     <div className="text-xs text-muted-foreground font-mono">
                       project: {project ? `${project.title} (@${project.slug})` : a.projectId}
-                      {a.clientId && (
+                      {a.engagementId && (
                         <>
                           {" · client: "}
-                          {clientById.get(a.clientId)?.name ?? a.clientId}
+                          {engagementById.get(a.engagementId)?.client.name ?? a.engagementId}
                         </>
                       )}
+                      {a.fundingDaoAccountId && ` · from: ${a.fundingDaoAccountId}`}
                     </div>
                     {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
                     <div className="text-xs text-muted-foreground font-mono">
@@ -650,7 +542,8 @@ function TransferPanel({
             Moves budget from one project to another atomically. Two linked rows are appended to
             both projects' audit logs (a negative on source, a positive on target). The source
             project's remaining budget is allowed to go negative; over-budget is shown visually, not
-            blocked.
+            blocked. Only your own budget moves here: budget attributed to a Client's Engagement
+            moves only through Change orders.
           </p>
         </CardContent>
       </Card>
@@ -662,18 +555,16 @@ export function ProjectBudgetPanel({
   projectId,
   readOnly = false,
   showAgencyBudgetLink = false,
-  clientPortal = false,
-  agencyDaoAccountId,
+  engagementId,
 }: {
   projectId: string;
   readOnly?: boolean;
   /** Link to /admin/budgets for cross-project transfers (project detail page). */
   showAgencyBudgetLink?: boolean;
-  /** Use client-portal API (read-only client access). */
-  clientPortal?: boolean;
-  agencyDaoAccountId?: string;
+  engagementId?: string;
 }) {
   const apiClient = useApiClient();
+  const clientPortal = engagementId !== undefined;
   const { allocate, deallocate } = useBudgetActions(projectId);
 
   const adminBudgetQuery = useQuery({
@@ -681,8 +572,8 @@ export function ProjectBudgetPanel({
     enabled: !clientPortal,
   });
   const clientBudgetQuery = useQuery({
-    ...clientPortalProjectBudgetQueryOptions(apiClient, agencyDaoAccountId ?? "", projectId),
-    enabled: clientPortal && !!agencyDaoAccountId,
+    ...clientPortalProjectBudgetQueryOptions(apiClient, engagementId ?? "", projectId),
+    enabled: clientPortal,
   });
   const budgetQuery = clientPortal ? clientBudgetQuery : adminBudgetQuery;
   const budgetsQuery = useInfiniteQuery({
@@ -782,11 +673,21 @@ export function ProjectBudgetPanel({
         </div>
         {budgetQuery.isLoading ? (
           <div className="text-sm text-muted-foreground">Loading budget...</div>
-        ) : budgetQuery.data && budgetQuery.data.budgets.length > 0 ? (
+        ) : budgetQuery.data &&
+          (budgetQuery.data.budgets.length > 0 ||
+            budgetQuery.data.subcontractorSpend.length > 0) ? (
           <div className="space-y-4">
             {budgetQuery.data.budgets.map((b) => (
               <Budget key={b.tokenId} budget={b} />
             ))}
+            <SubcontractorSpend
+              rows={budgetQuery.data.subcontractorSpend}
+              title={
+                budgetQuery.data.budgets.length > 0
+                  ? "paid by subcontractors, apart from this budget"
+                  : "paid from your agency dao"
+              }
+            />
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">No budget yet.</div>
@@ -888,6 +789,7 @@ export function ProjectBudgetPanel({
                       {a.note && <div className="text-xs text-muted-foreground">{a.note}</div>}
                       <div className="text-xs text-muted-foreground font-mono">
                         by {a.actorAccountId}
+                        {a.fundingDaoAccountId && ` · from: ${a.fundingDaoAccountId}`}
                       </div>
                     </div>
                   </div>

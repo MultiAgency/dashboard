@@ -16,8 +16,9 @@ const FIELDS_EMPTY = {
   contactEmail: null,
 };
 
-const MAINNET_ORG = "agency.sputnik-dao.near";
-const TESTNET_ORG = "agency.sputnikv2.testnet";
+const DEFAULT_DAO = "agency.sputnik-dao.near";
+const DEFAULT_ORG = { organizationId: "agency-org", agencyDao: DEFAULT_DAO };
+const OTHER_ORG = { organizationId: "other-org", agencyDao: null };
 
 describe("settings-admin (integration)", () => {
   let pg: PGlite;
@@ -34,24 +35,19 @@ describe("settings-admin (integration)", () => {
     await pg.close();
   });
 
-  test("returns null when no row exists for the orgAccountId", async () => {
-    const row = await getSettingsRow(db as never, MAINNET_ORG);
-    expect(row).toBeNull();
+  test("returns null when the Organization has no settings", async () => {
+    expect(await getSettingsRow(db as never, DEFAULT_ORG)).toBeNull();
   });
 
-  test("upsert inserts a new row with created+updated audit set to inserter", async () => {
+  test("upsert keys settings by Organization id with created+updated audit", async () => {
     await upsertSettings(
       db as never,
-      MAINNET_ORG,
-      {
-        ...FIELDS_EMPTY,
-        nearnAccountId: "agency",
-        contactEmail: "hello@agency.example",
-      },
+      DEFAULT_ORG.organizationId,
+      { ...FIELDS_EMPTY, nearnAccountId: "agency", contactEmail: "hello@agency.example" },
       "admin.near",
     );
-    const row = await getSettingsRow(db as never, MAINNET_ORG);
-    expect(row?.orgAccountId).toBe(MAINNET_ORG);
+    const row = await getSettingsRow(db as never, DEFAULT_ORG);
+    expect(row?.orgAccountId).toBe("agency-org");
     expect(row?.nearnAccountId).toBe("agency");
     expect(row?.contactEmail).toBe("hello@agency.example");
     expect(row?.createdBy).toBe("admin.near");
@@ -63,60 +59,45 @@ describe("settings-admin (integration)", () => {
   test("upsert preserves createdBy/createdAt on subsequent updates", async () => {
     await upsertSettings(
       db as never,
-      MAINNET_ORG,
+      DEFAULT_ORG.organizationId,
       { ...FIELDS_EMPTY, nearnAccountId: "first" },
       "first-admin.near",
     );
-    const first = await getSettingsRow(db as never, MAINNET_ORG);
-    expect(first?.createdBy).toBe("first-admin.near");
+    const first = await getSettingsRow(db as never, DEFAULT_ORG);
     const firstCreatedAt = first?.createdAt.getTime();
-
-    // Ensure clock moves so updatedAt would differ
     await new Promise((r) => setTimeout(r, 5));
 
     await upsertSettings(
       db as never,
-      MAINNET_ORG,
+      DEFAULT_ORG.organizationId,
       { ...FIELDS_EMPTY, nearnAccountId: "second" },
       "second-admin.near",
     );
-    const second = await getSettingsRow(db as never, MAINNET_ORG);
-    // created* unchanged
+    const second = await getSettingsRow(db as never, DEFAULT_ORG);
     expect(second?.createdBy).toBe("first-admin.near");
     expect(second?.createdAt.getTime()).toBe(firstCreatedAt);
-    // updated* moved to the new actor
     expect(second?.updatedBy).toBe("second-admin.near");
     expect(second?.nearnAccountId).toBe("second");
   });
 
-  test("rows for different orgAccountIds are isolated", async () => {
-    await upsertSettings(
-      db as never,
-      MAINNET_ORG,
-      { ...FIELDS_EMPTY, nearnAccountId: "main" },
-      "admin.near",
-    );
-    await upsertSettings(
-      db as never,
-      TESTNET_ORG,
-      { ...FIELDS_EMPTY, nearnAccountId: "test" },
-      "tester.testnet",
-    );
-    const m = await getSettingsRow(db as never, MAINNET_ORG);
-    const t = await getSettingsRow(db as never, TESTNET_ORG);
-    expect(m?.nearnAccountId).toBe("main");
-    expect(t?.nearnAccountId).toBe("test");
+  test("public settings fall back to defaults and name the default Agency DAO", async () => {
+    const resolved = await getResolvedPublicSettings(db as never, "mainnet", DEFAULT_ORG);
+
+    expect(resolved.name).toBe("MultiAgency");
+    expect(resolved.orgAccountId).toBe(DEFAULT_DAO);
+    expect(resolved.nearnAccountId).toBe("multiagency");
   });
 
-  test("getResolvedPublicSettings merges DB over env/hardcoded for editable fields", async () => {
-    const before = await getResolvedPublicSettings(db as never, "mainnet");
-    expect(before.name).toBe("MultiAgency");
-    expect(before.orgAccountId).toBeNull();
-    expect(before.nearnAccountId).toBe("multiagency");
-
+  test("public settings read the default Organization's row, not the first row", async () => {
     await upsertSettings(
       db as never,
-      MAINNET_ORG,
+      OTHER_ORG.organizationId,
+      { ...FIELDS_EMPTY, nearnAccountId: "other", websiteUrl: "https://other.example" },
+      "other-admin",
+    );
+    await upsertSettings(
+      db as never,
+      DEFAULT_ORG.organizationId,
       {
         nearnAccountId: "agency",
         websiteUrl: "https://agency.example",
@@ -126,52 +107,38 @@ describe("settings-admin (integration)", () => {
       },
       "admin.near",
     );
-    const after = await getResolvedPublicSettings(db as never, "mainnet");
-    expect(after.orgAccountId).toBe(MAINNET_ORG);
-    expect(after.nearnAccountId).toBe("agency");
-    expect(after.websiteUrl).toBe("https://agency.example");
-    expect(after.docsUrl).toBe("https://docs.agency.example");
-    expect(after.description).toBe("test pitch");
-    expect(after.contactEmail).toBe("hi@agency.example");
-    expect(after.name).toBe("MultiAgency");
-    expect(after.headline).toBe("Open Books · Open Source · Open Doors");
+
+    const resolved = await getResolvedPublicSettings(db as never, "mainnet", DEFAULT_ORG);
+
+    expect(resolved).toMatchObject({
+      orgAccountId: DEFAULT_DAO,
+      nearnAccountId: "agency",
+      websiteUrl: "https://agency.example",
+      docsUrl: "https://docs.agency.example",
+      description: "test pitch",
+      contactEmail: "hi@agency.example",
+      name: "MultiAgency",
+      headline: "Open Books · Open Source · Open Doors",
+    });
   });
 
-  test("getResolvedPublicSettings uses the stored settings row when present", async () => {
+  test("a row still keyed by the Agency DAO is read until it is re-keyed", async () => {
     await upsertSettings(
       db as never,
-      TESTNET_ORG,
-      {
-        ...FIELDS_EMPTY,
-        nearnAccountId: "testnet-only",
-        websiteUrl: "https://testnet.example",
-      },
-      "testadmin.testnet",
+      DEFAULT_DAO,
+      { ...FIELDS_EMPTY, nearnAccountId: "legacy" },
+      "admin.near",
     );
-    const resolved = await getResolvedPublicSettings(db as never, "mainnet");
-    expect(resolved.orgAccountId).toBe(TESTNET_ORG);
-    expect(resolved.nearnAccountId).toBe("testnet-only");
-    expect(resolved.websiteUrl).toBe("https://testnet.example");
-  });
 
-  test("orgAccountId is the row's immutable identity — cannot be changed via upsert", async () => {
-    // upsertSettings is keyed by orgAccountId; calling it with a different orgAccountId creates a
-    // NEW row rather than mutating the existing one. This is the multi-tenant-native semantic.
+    expect((await getSettingsRow(db as never, DEFAULT_ORG))?.nearnAccountId).toBe("legacy");
+
     await upsertSettings(
       db as never,
-      MAINNET_ORG,
-      { ...FIELDS_EMPTY, nearnAccountId: "first" },
+      DEFAULT_ORG.organizationId,
+      { ...FIELDS_EMPTY, nearnAccountId: "current" },
       "admin.near",
     );
-    await upsertSettings(
-      db as never,
-      "different.sputnik-dao.near",
-      { ...FIELDS_EMPTY, nearnAccountId: "second" },
-      "admin.near",
-    );
-    const first = await getSettingsRow(db as never, MAINNET_ORG);
-    const second = await getSettingsRow(db as never, "different.sputnik-dao.near");
-    expect(first?.nearnAccountId).toBe("first");
-    expect(second?.nearnAccountId).toBe("second");
+
+    expect((await getSettingsRow(db as never, DEFAULT_ORG))?.nearnAccountId).toBe("current");
   });
 });

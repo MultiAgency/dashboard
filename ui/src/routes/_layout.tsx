@@ -1,10 +1,11 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { AppNotFound, AppRouteError, Shell } from "@/components/shell";
-import { meRolesQueryOptions } from "@/lib/queries";
+import { meRolesQueryOptions, setActiveOrganizationKey } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout")({
   head: () => ({ meta: [{ name: "theme-color", content: "#ffff33" }] }),
   beforeLoad: ({ context }) => {
+    setActiveOrganizationKey(context.session?.session?.activeOrganizationId);
     if (context.session) {
       void context.queryClient.prefetchQuery(meRolesQueryOptions(context.apiClient));
     }

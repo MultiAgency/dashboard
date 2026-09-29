@@ -1,0 +1,85 @@
+import { describe, expect, test } from "vitest";
+import {
+  amountUnit,
+  awaitingCountFor,
+  awaitingLink,
+  planChangeItems,
+  signedBaseAmount,
+} from "../src/lib/change-orders";
+
+const line = (projectId: string, amount: string, tokenId = "near") => ({
+  projectId,
+  tokenId,
+  amount,
+});
+
+describe("planChangeItems", () => {
+  test("turns an edited plan into plan-change deltas against the current plan", () => {
+    expect(
+      planChangeItems(
+        [line("site", "300"), line("app", "200")],
+        [line("site", "500"), line("app", "200"), line("docs", "100")],
+      ),
+    ).toEqual([
+      { projectId: "site", tokenId: "near", kind: "plan_change", amount: "200" },
+      { projectId: "docs", tokenId: "near", kind: "plan_change", amount: "100" },
+    ]);
+  });
+
+  test("removing a line or setting it to zero takes it out, and no change proposes nothing", () => {
+    expect(planChangeItems([line("site", "300"), line("app", "200")], [line("app", "0")])).toEqual([
+      { projectId: "app", tokenId: "near", kind: "plan_change", amount: "-200" },
+      { projectId: "site", tokenId: "near", kind: "plan_change", amount: "-300" },
+    ]);
+    expect(planChangeItems([line("site", "300")], [line("site", "300")])).toEqual([]);
+  });
+});
+
+describe("signedBaseAmount", () => {
+  test("reads signed decimal amounts for known decimals", () => {
+    expect(signedBaseAmount("-1.5", 24)).toEqual({
+      value: "-1500000000000000000000000",
+      error: "",
+    });
+    expect(signedBaseAmount("2", 6)).toEqual({ value: "2000000", error: "" });
+  });
+
+  test("reads smallest units when decimals are unknown and refuses zero or garbage", () => {
+    expect(signedBaseAmount("-42", undefined)).toEqual({ value: "-42", error: "" });
+    expect(signedBaseAmount("0", 24).error).not.toBe("");
+    expect(signedBaseAmount("1.5", undefined).error).not.toBe("");
+    expect(signedBaseAmount("", 24)).toEqual({ value: "", error: "" });
+  });
+});
+
+describe("amountUnit", () => {
+  test("names the token symbol when its decimals are known", () => {
+    expect(amountUnit("near")).toBe("NEAR");
+  });
+
+  test("asks for the smallest unit when the token is unknown", () => {
+    expect(amountUnit("mystery.near")).toBe("smallest unit of mystery.near");
+  });
+});
+
+describe("awaiting Change orders", () => {
+  test("counts the Change orders the viewer can decide on one Engagement", () => {
+    const awaiting = [
+      { engagementId: "e1", canDecide: true },
+      { engagementId: "e2", canDecide: true },
+      { engagementId: "e1", canDecide: true },
+      { engagementId: "e1", canDecide: false },
+    ];
+    expect(awaitingCountFor(awaiting, "e1")).toBe(2);
+    expect(awaitingCountFor(awaiting, "e3")).toBe(0);
+  });
+
+  test("opens the viewer's own side of the Engagement", () => {
+    expect(awaitingLink({ engagementId: "e1", proposedBy: { side: "agency" } })).toBe(
+      "/client/e1/plan",
+    );
+    expect(awaitingLink({ engagementId: "e1", proposedBy: { side: "client" } })).toBe(
+      "/admin/engagements/e1?tab=plan",
+    );
+  });
+});

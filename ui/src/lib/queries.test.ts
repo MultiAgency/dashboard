@@ -7,8 +7,6 @@ import {
   adminAssignmentsListQueryKey,
   adminBillingsQueryKey,
   adminBudgetsLogQueryKey,
-  adminClientDetailQueryOptions,
-  adminClientsListQueryKey,
   adminContributorBillingsQueryKey,
   adminContributorsListQueryKey,
   adminInternalListingQueryOptions,
@@ -17,15 +15,29 @@ import {
   adminProjectDetailQueryOptions,
   adminProjectsForTokenQueryKey,
   adminProjectsListQueryKey,
+  adminSavedReportQueryOptions,
+  adminSavedReportsQueryOptions,
   adminSettingsQueryOptions,
+  agentLinksListQueryOptions,
+  allocationPlanQueryOptions,
+  awaitingChangeOrdersQueryOptions,
+  changeOrdersListQueryOptions,
   clientBillingsQueryKey,
   clientPortalDashboardSummaryQueryOptions,
   clientPortalProjectBudgetQueryOptions,
-  clientPortalProjectsListQueryKey,
+  clientPortalProjectsListQueryOptions,
+  clientSavedReportsQueryOptions,
+  engagementDetailQueryOptions,
+  engagementsListQueryOptions,
+  ideasListQueryOptions,
+  meRolesQueryOptions,
+  prepaidBalanceQueryOptions,
+  prepaymentsListQueryOptions,
   projectsListQueryOptions,
   proposalsListQueryKey,
   publicSettingsQueryOptions,
   refreshAfter,
+  setActiveOrganizationKey,
 } from "./queries";
 
 const api = {} as ApiClient;
@@ -47,12 +59,12 @@ describe("refreshAfter", () => {
       budgetA: adminProjectBudgetQueryOptions(api, "a").queryKey,
       budgetB: adminProjectBudgetQueryOptions(api, "b").queryKey,
       budgetC: adminProjectBudgetQueryOptions(api, "c").queryKey,
-      agencyLog: adminBudgetsLogQueryKey({ projectId: null, tokenId: "near", clientId: null }),
+      agencyLog: adminBudgetsLogQueryKey({ projectId: null, tokenId: "near", engagementId: null }),
       projectLogA: adminProjectBudgetsLogQueryKey("a"),
       projectsForToken: adminProjectsForTokenQueryKey("near"),
-      clientBudget: clientPortalProjectBudgetQueryOptions(api, "dao.near", "a").queryKey,
-      clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "dao.near").queryKey,
-      clients: adminClientsListQueryKey,
+      clientBudget: clientPortalProjectBudgetQueryOptions(api, "e1", "a").queryKey,
+      clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "e1").queryKey,
+      engagements: engagementsListQueryOptions(api).queryKey,
     });
 
     await refreshAfter(queryClient, { type: "budgetEntries", projectIds: ["a", "b"] });
@@ -71,7 +83,7 @@ describe("refreshAfter", () => {
   it("billings refresh billing lists, project budgets and proposal mappings", async () => {
     const { queryClient, stale } = cacheWith({
       projectBillings: adminBillingsQueryKey({ projectId: "a" }),
-      clientBillings: clientBillingsQueryKey({ projectId: "a" }),
+      clientBillings: clientBillingsQueryKey("e1", "a"),
       contributorBillings: adminContributorBillingsQueryKey("dev.near"),
       budget: adminProjectBudgetQueryOptions(api, "a").queryKey,
       proposals: proposalsListQueryKey,
@@ -95,7 +107,7 @@ describe("refreshAfter", () => {
       listingB: adminInternalListingQueryOptions(api, "b").queryKey,
       budgetA: adminProjectBudgetQueryOptions(api, "a").queryKey,
       budgetB: adminProjectBudgetQueryOptions(api, "b").queryKey,
-      clientBudget: clientPortalProjectBudgetQueryOptions(api, "dao.near", "a").queryKey,
+      clientBudget: clientPortalProjectBudgetQueryOptions(api, "e1", "a").queryKey,
     });
 
     await refreshAfter(queryClient, { type: "listing", projectId: "a" });
@@ -109,12 +121,12 @@ describe("refreshAfter", () => {
       publicProjects: projectsListQueryOptions(api).queryKey,
       detail: adminProjectDetailQueryOptions(api, "site").queryKey,
       billings: adminBillingsQueryKey({ projectId: "a" }),
-      clientBillings: clientBillingsQueryKey({ projectId: "a" }),
-      clientProjects: [...clientPortalProjectsListQueryKey, "mainnet", "dao.near"],
-      clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "dao.near").queryKey,
+      clientBillings: clientBillingsQueryKey("e1", "a"),
+      clientProjects: clientPortalProjectsListQueryOptions(api, "e1").queryKey,
+      clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "e1").queryKey,
       budgetsLog: adminProjectBudgetsLogQueryKey("a"),
       assignments: adminAssignmentsForProjectQueryKey("a"),
-      clientDetail: adminClientDetailQueryOptions(api, "c1").queryKey,
+      engagement: engagementDetailQueryOptions(api, "e1").queryKey,
       proposals: proposalsListQueryKey,
       settings: adminSettingsQueryOptions(api).queryKey,
     });
@@ -128,9 +140,9 @@ describe("refreshAfter", () => {
       "budgetsLog",
       "clientBillings",
       "clientDashboard",
-      "clientDetail",
       "clientProjects",
       "detail",
+      "engagement",
       "proposals",
       "publicProjects",
     ]);
@@ -147,5 +159,91 @@ describe("refreshAfter", () => {
     await refreshAfter(queryClient, { type: "applications" }, { type: "builders" });
 
     expect(stale()).toEqual(["applications", "builders"]);
+  });
+
+  it("an Engagement change refreshes Engagements, the client portal and the caller's sections", async () => {
+    const { queryClient, stale } = cacheWith({
+      list: engagementsListQueryOptions(api).queryKey,
+      detail: engagementDetailQueryOptions(api, "e1").queryKey,
+      clientProjects: clientPortalProjectsListQueryOptions(api, "e1").queryKey,
+      roles: meRolesQueryOptions(api).queryKey,
+      adminProjects: adminProjectsListQueryKey,
+    });
+
+    await refreshAfter(queryClient, { type: "engagements" });
+
+    expect(stale()).toEqual(["clientProjects", "detail", "list", "roles"]);
+  });
+
+  it("prepayments and Change orders refresh balances, the plan and the budgets they apply", async () => {
+    for (const type of ["prepayments", "changeOrders"] as const) {
+      const { queryClient, stale } = cacheWith({
+        list: prepaymentsListQueryOptions(api, "e1").queryKey,
+        balance: prepaidBalanceQueryOptions(api, "e1").queryKey,
+        plan: allocationPlanQueryOptions(api, "e1").queryKey,
+        changeOrders: changeOrdersListQueryOptions(api, "e1").queryKey,
+        awaiting: awaitingChangeOrdersQueryOptions(api).queryKey,
+        budget: adminProjectBudgetQueryOptions(api, "a").queryKey,
+        engagement: engagementDetailQueryOptions(api, "e1").queryKey,
+        clientDashboard: clientPortalDashboardSummaryQueryOptions(api, "e1").queryKey,
+      });
+
+      await refreshAfter(queryClient, { type });
+
+      expect(stale()).toEqual([
+        "awaiting",
+        "balance",
+        "budget",
+        "changeOrders",
+        "clientDashboard",
+        "list",
+        "plan",
+      ]);
+    }
+  });
+});
+
+describe("refreshAfter for ideas, agent links and saved reports", () => {
+  it("a decided idea refreshes ideas, the Engagement's shared Projects and the Agency's Projects", async () => {
+    const { queryClient, stale } = cacheWith({
+      ideas: ideasListQueryOptions(api, "e1").queryKey,
+      engagement: engagementDetailQueryOptions(api, "e1").queryKey,
+      adminProjects: adminProjectsListQueryKey,
+      clientProjects: clientPortalProjectsListQueryOptions(api, "e1").queryKey,
+      links: agentLinksListQueryOptions(api, "e1").queryKey,
+      reports: adminSavedReportsQueryOptions(api).queryKey,
+    });
+
+    await refreshAfter(queryClient, { type: "ideas" });
+
+    expect(stale()).toEqual(["adminProjects", "clientProjects", "engagement", "ideas"]);
+  });
+
+  it("agent links and saved reports refresh only themselves", async () => {
+    const { queryClient, stale } = cacheWith({
+      links: agentLinksListQueryOptions(api, "e1").queryKey,
+      adminReports: adminSavedReportsQueryOptions(api).queryKey,
+      adminReport: adminSavedReportQueryOptions(api, "r1").queryKey,
+      clientReports: clientSavedReportsQueryOptions(api, "e1").queryKey,
+      ideas: ideasListQueryOptions(api, "e1").queryKey,
+    });
+
+    await refreshAfter(queryClient, { type: "agentLinks" }, { type: "reports" });
+
+    expect(stale()).toEqual(["adminReport", "adminReports", "clientReports", "links"]);
+  });
+});
+
+describe("workspace query keys", () => {
+  it("differ per active Organization, so one Organization's cache never serves another", () => {
+    setActiveOrganizationKey("agency");
+    const agencyKey = adminProjectDetailQueryOptions(api, "site").queryKey;
+    setActiveOrganizationKey("client");
+    const clientKey = adminProjectDetailQueryOptions(api, "site").queryKey;
+    setActiveOrganizationKey(null);
+
+    expect(agencyKey).not.toEqual(clientKey);
+    expect(agencyKey).toContain("agency");
+    expect(clientKey).toContain("client");
   });
 });

@@ -12,16 +12,8 @@ import {
   publicSettingsQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
-import { isValidSlug, slugify } from "@/lib/slugify";
-
-function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
+import { isSlugTakenError, isValidSlug, slugify, suggestSlug } from "@/lib/slugify";
+import { isHttpUrl } from "@/lib/url";
 
 export type ProjectStatus = "active" | "paused" | "archived";
 export type Visibility = "public" | "unlisted" | "private";
@@ -123,8 +115,10 @@ export function ProjectForm({
       toast.success(mode === "create" ? "Project created" : "Project updated");
       onDone?.();
     },
-    onError: (err: Error) =>
-      toast.error(err.message || (mode === "create" ? "Failed to create" : "Failed to update")),
+    onError: (err: Error) => {
+      if (isSlugTakenError(err)) return;
+      toast.error(err.message || (mode === "create" ? "Failed to create" : "Failed to update"));
+    },
   });
 
   const isPending = mutation.isPending;
@@ -190,6 +184,7 @@ export function ProjectForm({
             value={slug}
             onChange={(e) => {
               setSlugTouched(true);
+              mutation.reset();
               setSlug(
                 e.target.value
                   .toLowerCase()
@@ -202,6 +197,21 @@ export function ProjectForm({
           />
           {mode === "create" && slugTrimmed && !isValidSlug(slugTrimmed) && (
             <p className="text-xs text-destructive">Invalid slug format</p>
+          )}
+          {isSlugTakenError(mutation.error) && (
+            <p className="text-xs text-destructive">
+              “{slugTrimmed}” is already taken.{" "}
+              <button
+                type="button"
+                className="underline text-foreground"
+                onClick={() => {
+                  setSlug(suggestSlug(slugTrimmed));
+                  mutation.reset();
+                }}
+              >
+                Try “{suggestSlug(slugTrimmed)}”
+              </button>
+            </p>
           )}
         </Field>
         <Field label="notes" htmlFor={`project-desc-${mode}`}>
