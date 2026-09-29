@@ -56,7 +56,7 @@ bun run dev:postgres    # Boot docker compose Postgres + start dev (persistent l
 bun run db:migrate && bun run dev   # Use the configured API_DATABASE_URL, or in-memory pglite by default
 ```
 
-The API plugin uses PostgreSQL via Drizzle. Without `API_DATABASE_URL` set, it boots against an in-memory `pglite` database — fine for quick exploration but state resets on every restart. For persistent local dev, `bun run dev:postgres` boots PostgreSQL instances via `docker-compose.yml` (api/auth/projects on 5432/5433/5434) and starts the dev server. Migrations run automatically on startup; `bun run db:migrate` applies them manually against the configured database.
+The API plugin uses PostgreSQL via Drizzle. Without `API_DATABASE_URL` set, it boots against an in-memory `pglite` database — fine for quick exploration but state resets on every restart. For persistent local dev, `bun run dev:postgres` boots PostgreSQL instances via `docker-compose.yml` (api/auth/builders/projects on 5432/5433/5434/5435) and starts the dev server. Migrations run automatically on startup; `bun run db:migrate` applies them manually against the configured database.
 
 To inspect databases locally:
 ```bash
