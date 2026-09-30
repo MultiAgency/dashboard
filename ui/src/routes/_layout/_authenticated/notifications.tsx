@@ -30,9 +30,10 @@ import { awaitingLink } from "@/lib/change-orders";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   awaitingChangeOrdersQueryOptions,
+  invalidateWorkspaceQueries,
   notificationsQueryKey,
   refreshAfter,
-  showWorkspace,
+  setActiveOrganizationKey,
 } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { announceWorkspace, switchWorkspace } from "@/lib/workspace";
@@ -86,8 +87,9 @@ function NotificationsPage() {
       if (notification.organizationId !== activeOrganizationId) {
         const switched = await switchWorkspace(authClient, notification.organizationId);
         if (!switched) throw new Error("You are no longer a member of that Organization.");
-        await showWorkspace(queryClient, router, switched);
+        setActiveOrganizationKey(notification.organizationId);
         announceWorkspace(notification.organizationId);
+        await invalidateWorkspaceQueries(queryClient, router);
       }
       return notification.link;
     },
