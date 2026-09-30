@@ -36,7 +36,7 @@ import {
   setActiveOrganizationKey,
 } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { switchWorkspace } from "@/lib/workspace";
+import { announceWorkspace, switchWorkspace } from "@/lib/workspace";
 
 export const Route = createFileRoute("/_layout/_authenticated/notifications")({
   head: () => ({
@@ -88,6 +88,7 @@ function NotificationsPage() {
         const switched = await switchWorkspace(authClient, notification.organizationId);
         if (!switched) throw new Error("You are no longer a member of that Organization.");
         setActiveOrganizationKey(notification.organizationId);
+        announceWorkspace(notification.organizationId);
         await invalidateWorkspaceQueries(queryClient, router);
       }
       return notification.link;

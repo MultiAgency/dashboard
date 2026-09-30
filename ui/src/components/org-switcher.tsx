@@ -8,11 +8,18 @@ import { usePendingInvitations } from "@/components/pending-invitations";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import {
+  activeOrganizationKey,
   invalidateWorkspaceQueries,
   myOrganizationsQueryOptions,
   setActiveOrganizationKey,
 } from "@/lib/queries";
-import { activeWorkspace, recoveryTarget, switchWorkspace } from "@/lib/workspace";
+import {
+  activeWorkspace,
+  announceWorkspace,
+  onWorkspaceChange,
+  recoveryTarget,
+  switchWorkspace,
+} from "@/lib/workspace";
 import { CreateOrganizationForm } from "./create-organization-form";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
@@ -48,6 +55,7 @@ export function OrgSwitcher() {
         return;
       }
       setActiveOrganizationKey(orgId);
+      announceWorkspace(orgId);
       await queryClient.fetchQuery(sessionQueryOptions(auth));
       await invalidateWorkspaceQueries(queryClient, router);
     },
@@ -55,6 +63,19 @@ export function OrgSwitcher() {
       toast.error(error.message || "Could not switch Organization — try signing out and back in.");
     },
   });
+
+  // Another tab switched Organization for the whole session. Reloading is the only way to be
+  // sure this tab stops showing, and writing to, the Organization it loaded with.
+  useEffect(() => {
+    const check = async () => {
+      const { data, error } = await auth.getSession({ query: { disableCookieCache: true } });
+      if (error) return;
+      if ((data?.session?.activeOrganizationId ?? null) === activeOrganizationKey()) return;
+      window.location.reload();
+    };
+    // A failed check is retried the next time this tab becomes visible.
+    return onWorkspaceChange(() => void check().catch(() => {}));
+  }, [auth]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

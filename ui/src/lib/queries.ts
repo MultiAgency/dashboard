@@ -22,6 +22,10 @@ export function setActiveOrganizationKey(organizationId: string | null | undefin
   activeOrganizationId = organizationId ?? null;
 }
 
+export function activeOrganizationKey() {
+  return activeOrganizationId;
+}
+
 export function workspaceKey() {
   return [getNetwork(), typeof window === "undefined" ? null : activeOrganizationId] as const;
 }
