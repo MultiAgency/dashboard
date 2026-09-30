@@ -166,6 +166,7 @@ export function BillingsAdminSection({
           location: null,
           links: null,
           registered: false,
+          claimed: false,
           createdAt: "",
           updatedAt: "",
         });

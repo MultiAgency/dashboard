@@ -215,6 +215,7 @@ const contributor = z.object({
   location: z.string().nullable(),
   links: z.record(z.string(), z.string()).nullable(),
   registered: z.boolean(),
+  claimed: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

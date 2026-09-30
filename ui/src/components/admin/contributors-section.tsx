@@ -50,13 +50,18 @@ export function ContributorsAdminSection() {
       header: "Name",
       accessorKey: "name",
       cell: ({ row }) => (
-        <Link
-          to="/admin/contributors/$nearAccount"
-          params={{ nearAccount: row.original.nearAccount }}
-          className="font-medium hover:underline"
-        >
-          {row.original.name ?? row.original.nearAccount}
-        </Link>
+        <span className="flex items-center gap-2">
+          <Link
+            to="/admin/contributors/$nearAccount"
+            params={{ nearAccount: row.original.nearAccount }}
+            className="font-medium hover:underline"
+          >
+            {row.original.name ?? row.original.nearAccount}
+          </Link>
+          {row.original.registered && !row.original.claimed && (
+            <Badge variant="outline">Unclaimed</Badge>
+          )}
+        </span>
       ),
     },
     {
@@ -330,7 +335,12 @@ export function ContributorProfileForm({
         <CardTitle>
           <h2>Profile</h2>
         </CardTitle>
-        <CardDescription>Shown to every Agency that works with this builder.</CardDescription>
+        <CardDescription>
+          Shown to every Agency that works with this builder.
+          {contributor.registered && !contributor.claimed
+            ? ` The builder has not claimed it yet: they claim it by signing in with ${contributor.nearAccount} and saving it.`
+            : ""}
+        </CardDescription>
         {!contributor.registered && (
           <CardAction>
             <Badge variant="outline">Not registered yet</Badge>
