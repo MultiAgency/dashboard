@@ -7,11 +7,15 @@ import { useAuthClient } from "@/app";
 import { usePendingInvitations } from "@/components/pending-invitations";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
-import { activeOrganizationKey, myOrganizationsQueryOptions, showWorkspace } from "@/lib/queries";
+import {
+  activeOrganizationKey,
+  invalidateWorkspaceQueries,
+  myOrganizationsQueryOptions,
+  setActiveOrganizationKey,
+} from "@/lib/queries";
 import {
   activeWorkspace,
   announceWorkspace,
-  freshSession,
   onWorkspaceChange,
   recoveryTarget,
   switchWorkspace,
@@ -45,30 +49,33 @@ export function OrgSwitcher() {
 
   const switchMutation = useMutation({
     mutationFn: (orgId: string) => switchWorkspace(auth, orgId),
-    onSuccess: async (switched, orgId) => {
-      if (!switched) {
+    onSuccess: async (ok, orgId) => {
+      if (!ok) {
         toast.error("Could not switch Organization — try signing out and back in.");
         return;
       }
-      await showWorkspace(queryClient, router, switched);
+      setActiveOrganizationKey(orgId);
       announceWorkspace(orgId);
+      await queryClient.fetchQuery(sessionQueryOptions(auth));
+      await invalidateWorkspaceQueries(queryClient, router);
     },
     onError: (error: Error) => {
       toast.error(error.message || "Could not switch Organization — try signing out and back in.");
     },
   });
 
-  useEffect(
-    () =>
-      onWorkspaceChange(async () => {
-        const session = await freshSession(auth);
-        const organizationId = session?.session?.activeOrganizationId ?? null;
-        if (organizationId === activeOrganizationKey()) return;
-        await showWorkspace(queryClient, router, session);
-        if (organizationId) toast.info("Your Organization was switched in another tab.");
-      }),
-    [auth, queryClient, router],
-  );
+  // Another tab switched Organization for the whole session. Reloading is the only way to be
+  // sure this tab stops showing, and writing to, the Organization it loaded with.
+  useEffect(() => {
+    const check = async () => {
+      const { data, error } = await auth.getSession({ query: { disableCookieCache: true } });
+      if (error) return;
+      if ((data?.session?.activeOrganizationId ?? null) === activeOrganizationKey()) return;
+      window.location.reload();
+    };
+    // A failed check is retried the next time this tab becomes visible.
+    return onWorkspaceChange(() => void check().catch(() => {}));
+  }, [auth]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

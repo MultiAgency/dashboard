@@ -2,7 +2,7 @@ import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { queryOptions } from "@tanstack/react-query";
 import type { AnyRouter } from "@tanstack/react-router";
 import type { ApiClient } from "./api";
-import { type SessionData, sessionQueryKey } from "./auth";
+import { sessionQueryKey } from "./auth";
 import { getNetwork } from "./network";
 
 // Loader-hit queries include the active network in their queryKey so data
@@ -20,6 +20,10 @@ let activeOrganizationId: string | null = null;
 
 export function setActiveOrganizationKey(organizationId: string | null | undefined) {
   activeOrganizationId = organizationId ?? null;
+}
+
+export function activeOrganizationKey() {
+  return activeOrganizationId;
 }
 
 export function workspaceKey() {
@@ -612,26 +616,6 @@ export async function refreshAfter(queryClient: QueryClient, ...changes: DataCha
   await Promise.all(
     changes.flatMap(staleKeys).map((queryKey) => queryClient.invalidateQueries({ queryKey })),
   );
-}
-
-export async function showWorkspace(
-  queryClient: QueryClient,
-  router: Pick<AnyRouter, "invalidate">,
-  session: SessionData | null,
-) {
-  const previous = activeOrganizationId;
-  queryClient.setQueryData(sessionQueryKey, session);
-  setActiveOrganizationKey(session?.session?.activeOrganizationId);
-  if (previous && previous !== activeOrganizationId) {
-    // Invalidating would refetch the previous Organization's mounted queries under their old
-    // key while the server already answers for the new one.
-    queryClient.removeQueries({ predicate: (query) => query.queryKey.includes(previous) });
-  }
-  await invalidateWorkspaceQueries(queryClient, router);
-}
-
-export function activeOrganizationKey() {
-  return activeOrganizationId;
 }
 
 export async function invalidateWorkspaceQueries(
