@@ -10,13 +10,22 @@ import { type BuilderCaller, BuilderService, BuilderServiceLive } from "./servic
 function callerOf(context: unknown): BuilderCaller {
   const ctx = context as {
     userId: string;
-    near?: { primaryAccountId?: string | null } | null;
+    trusted?: boolean;
+    near?: {
+      primaryAccountId?: string | null;
+      linkedAccounts?: Array<{ accountId: string }> | null;
+    } | null;
     user?: { role?: string | null } | null;
   };
+  const accounts = [
+    ...(ctx.near?.primaryAccountId ? [ctx.near.primaryAccountId] : []),
+    ...(ctx.near?.linkedAccounts ?? []).map((a) => a.accountId),
+  ];
   return {
     userId: ctx.userId,
-    walletAddress: ctx.near?.primaryAccountId ?? undefined,
+    accounts: [...new Set(accounts)],
     userRole: ctx.user?.role ?? undefined,
+    trusted: ctx.trusted === true,
   };
 }
 

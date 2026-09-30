@@ -66,7 +66,17 @@ function rowToBuilder(row: any): Builder {
   };
 }
 
-export type BuilderCaller = { userId: string; walletAddress?: string; userRole?: string };
+/**
+ * `accounts` are the NEAR accounts the caller signed in with or linked.
+ * `trusted` is set only by the API, calling in-process for an Agency manager;
+ * the host never sets it on a request.
+ */
+export type BuilderCaller = {
+  userId: string;
+  accounts: string[];
+  userRole?: string;
+  trusted: boolean;
+};
 
 function isPlatformAdmin(caller: BuilderCaller): boolean {
   return caller.userRole === "admin";
@@ -74,10 +84,21 @@ function isPlatformAdmin(caller: BuilderCaller): boolean {
 
 function isBuilder(row: { nearAccount: string; userId: string | null }, caller: BuilderCaller) {
   return (
-    row.nearAccount === caller.walletAddress ||
+    caller.accounts.includes(row.nearAccount) ||
     row.nearAccount === caller.userId ||
     row.userId === caller.userId
   );
+}
+
+// Anyone else creating it would speak for an account they cannot prove is theirs.
+function canCreate(nearAccount: string, caller: BuilderCaller) {
+  return isPlatformAdmin(caller) || caller.trusted || caller.accounts.includes(nearAccount);
+}
+
+// A profile is claimed once its account's owner creates or saves it: their
+// user is recorded on it. One an Agency wrote for them stays unclaimed.
+function claimant(nearAccount: string, caller: BuilderCaller) {
+  return caller.accounts.includes(nearAccount) ? caller.userId : null;
 }
 
 const cannotEdit = () =>
@@ -249,7 +270,7 @@ export const BuilderServiceLive = Layer.effect(
               db
                 .update(builders)
                 .set({
-                  userId: input.userId ?? existing.userId,
+                  userId: input.userId ?? existing.userId ?? claimant(input.nearAccount, caller),
                   name: input.name?.trim() ?? existing.name,
                   bio: input.bio?.trim() ?? existing.bio,
                   skills:
@@ -272,14 +293,24 @@ export const BuilderServiceLive = Layer.effect(
             return rowToBuilder(updated);
           }
 
+          if (!canCreate(input.nearAccount, caller)) {
+            return yield* Effect.fail(
+              new ORPCError("FORBIDDEN", {
+                message:
+                  "You can create a profile only for a NEAR account you signed in with or linked",
+              }),
+            );
+          }
+
           const now = new Date();
           const id = generateId();
+          const userId = input.userId ?? claimant(input.nearAccount, caller);
 
           yield* Effect.promise(() =>
             db.insert(builders).values({
               id,
               nearAccount: input.nearAccount,
-              userId: input.userId ?? null,
+              userId,
               name: input.name?.trim() ?? null,
               bio: input.bio?.trim() ?? null,
               skills: serializeSkills(input.skills),
@@ -293,7 +324,7 @@ export const BuilderServiceLive = Layer.effect(
           return {
             id,
             nearAccount: input.nearAccount,
-            userId: input.userId ?? null,
+            userId,
             name: input.name?.trim() ?? null,
             bio: input.bio?.trim() ?? null,
             skills: input.skills ?? [],
@@ -322,6 +353,7 @@ export const BuilderServiceLive = Layer.effect(
 
           const now = new Date();
           const updates: any = { updatedAt: now };
+          if (!existing.userId) updates.userId = claimant(nearAccount, caller);
 
           if (input.name !== undefined) updates.name = input.name.trim() || null;
           if (input.bio !== undefined) updates.bio = input.bio.trim() || null;
