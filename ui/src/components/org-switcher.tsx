@@ -58,17 +58,17 @@ export function OrgSwitcher() {
     },
   });
 
-  useEffect(
-    () =>
-      onWorkspaceChange(async () => {
-        const session = await freshSession(auth);
-        const organizationId = session?.session?.activeOrganizationId ?? null;
-        if (organizationId === activeOrganizationKey()) return;
-        await showWorkspace(queryClient, router, session);
-        if (organizationId) toast.info("Your Organization was switched in another tab.");
-      }),
-    [auth, queryClient, router],
-  );
+  useEffect(() => {
+    const follow = async () => {
+      const session = await freshSession(auth);
+      const organizationId = session?.session?.activeOrganizationId ?? null;
+      if (organizationId === activeOrganizationKey()) return;
+      await showWorkspace(queryClient, router, session);
+      if (organizationId) toast.info("Your Organization was switched in another tab.");
+    };
+    // A failed check is retried the next time this tab becomes visible.
+    return onWorkspaceChange(() => void follow().catch(() => {}));
+  }, [auth, queryClient, router]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
