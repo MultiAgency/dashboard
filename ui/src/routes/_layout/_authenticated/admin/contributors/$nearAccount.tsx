@@ -170,6 +170,9 @@ function ContributorDetailPage() {
               : "Profile, project assignments and billing history."
           }
         />
+        {contributor.registered && !contributor.claimed && (
+          <Badge variant="outline">Unclaimed</Badge>
+        )}
       </div>
 
       {contributorQuery.data?.canEdit ? (
@@ -177,6 +180,9 @@ function ContributorDetailPage() {
       ) : (
         <p className="text-sm text-muted-foreground">
           Builder profiles are global. Only the builder or a platform admin can edit this one.
+          {contributor.registered && !contributor.claimed
+            ? " The builder has not claimed it yet, so someone else wrote it."
+            : ""}
         </p>
       )}
 

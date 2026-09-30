@@ -104,8 +104,13 @@ describe("when upstream services fail", () => {
   });
 
   describe("contributors", () => {
-    function contributorsWith(builders: Record<string, unknown>) {
-      const plugins = { builders: () => builders } as unknown as PluginsClient;
+    function contributorsWith(builders: Record<string, unknown>, contexts: unknown[] = []) {
+      const plugins = {
+        builders: (context: unknown) => {
+          contexts.push(context);
+          return builders;
+        },
+      } as unknown as PluginsClient;
       return createContributorsService(db, plugins);
     }
 
@@ -124,35 +129,47 @@ describe("when upstream services fail", () => {
       expect(contributor).toMatchObject({ nearAccount: "dev.near", registered: false });
     });
 
-    test("updating someone with no builder profile creates one", async () => {
+    test("updating someone with no builder profile creates one, unclaimed", async () => {
       const created: string[] = [];
-      const contributors = contributorsWith({
-        updateBuilderProfile: async () => {
-          throw new ORPCError("NOT_FOUND", { message: "Builder not found" });
+      const contexts: unknown[] = [];
+      const contributors = contributorsWith(
+        {
+          updateBuilderProfile: async () => {
+            throw new ORPCError("NOT_FOUND", { message: "Builder not found" });
+          },
+          createBuilder: async (input: { nearAccount: string; name?: string }) => {
+            created.push(input.nearAccount);
+            return {
+              data: {
+                nearAccount: input.nearAccount,
+                name: input.name ?? null,
+                bio: null,
+                skills: [],
+                location: null,
+                links: null,
+                userId: null,
+                createdAt: "2026-01-01T00:00:00.000Z",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+            };
+          },
         },
-        createBuilder: async (input: { nearAccount: string; name?: string }) => {
-          created.push(input.nearAccount);
-          return {
-            data: {
-              nearAccount: input.nearAccount,
-              name: input.name ?? null,
-              bio: null,
-              skills: [],
-              location: null,
-              links: null,
-              createdAt: "2026-01-01T00:00:00.000Z",
-              updatedAt: "2026-01-01T00:00:00.000Z",
-            },
-          };
-        },
-      });
+        contexts,
+      );
 
       const { contributor } = await Effect.runPromise(
         contributors.update({}, { nearAccount: "new.near", name: "New" }),
       );
 
       expect(created).toEqual(["new.near"]);
-      expect(contributor).toMatchObject({ nearAccount: "new.near", name: "New", registered: true });
+      expect(contributor).toMatchObject({
+        nearAccount: "new.near",
+        name: "New",
+        registered: true,
+        claimed: false,
+      });
+      // The builders plugin creates a profile for someone else's account only for a trusted caller.
+      expect(contexts.at(-1)).toMatchObject({ trusted: true });
     });
 
     test("a refused edit of someone else's builder profile is not turned into a create", async () => {

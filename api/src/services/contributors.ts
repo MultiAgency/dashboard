@@ -14,6 +14,8 @@ export type BuilderProfile = {
   location: string | null;
   links: Record<string, string> | null;
   registered: boolean;
+  /** Saved by the account's owner; otherwise an Agency wrote it for them. */
+  claimed: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -26,6 +28,7 @@ function toProfile(
     skills: string[];
     location: string | null;
     links: Record<string, string> | null;
+    userId: string | null;
     createdAt: string;
     updatedAt: string;
   },
@@ -39,6 +42,7 @@ function toProfile(
     location: data.location,
     links: data.links,
     registered,
+    claimed: data.userId !== null,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
   };
@@ -54,6 +58,7 @@ function stubProfile(nearAccount: string): BuilderProfile {
     location: null,
     links: null,
     registered: false,
+    claimed: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -73,6 +78,11 @@ function canEditProfile(
   }
   return nearAccountsOf(context).includes(profile.nearAccount);
 }
+
+// Create and update are open only to an Agency's managers (the `manager`
+// middleware), who may create a profile for a contributor's account; the
+// builders plugin lets a trusted, in-process call do that.
+const asManager = (context: PluginContext): PluginContext => ({ ...context, trusted: true });
 
 export function createContributorsService(db: Database, plugins: PluginsClient) {
   return {
@@ -146,7 +156,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         );
         if (Either.isRight(existing)) return { contributor: toProfile(existing.right.data) };
         const result = yield* Effect.promise(() =>
-          plugins.builders(context).createBuilder({
+          plugins.builders(asManager(context)).createBuilder({
             nearAccount,
             name: input.name,
             bio: input.bio,
@@ -184,7 +194,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         }).pipe(
           Effect.catchIf(
             (err) => err instanceof ORPCError && err.code === "NOT_FOUND",
-            () => Effect.promise(() => plugins.builders(context).createBuilder(profile)),
+            () => Effect.promise(() => plugins.builders(asManager(context)).createBuilder(profile)),
           ),
           Effect.mapError((err) =>
             err instanceof ORPCError
