@@ -1,12 +1,12 @@
 {
   "extends": "bos://dev.everything.near/dev.everything.dev",
   "account": "multiagentic.near",
-  "domain": "dev.multiagency.ai",
+  "domain": "multiagency.ai",
   "title": "MultiAgency",
   "description": "Human-led, AI-native agencies for hire.",
   "testnet": "agency.testnet",
   "staging": {
-    "domain": "staging.multiagency.ai"
+    "domain": "dev.multiagency.ai"
   },
   "repository": "https://github.com/MultiAgency/dashboard",
   "app": {
