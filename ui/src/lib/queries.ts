@@ -289,6 +289,15 @@ export function adminNearnListingQueryOptions(apiClient: ApiClient, slug: string
   });
 }
 
+export function communityProjectsQueryOptions(apiClient: ApiClient, query: string) {
+  return queryOptions({
+    queryKey: ["admin", "community", "projects", query] as const,
+    queryFn: () => apiClient.community.searchProjects({ query: query || undefined }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export function adminNearnSponsorBountiesQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: ["admin", "nearn", "sponsor-bounties", ...workspaceKey()] as const,
@@ -444,6 +453,14 @@ export function clientPortalDashboardSummaryQueryOptions(
   return queryOptions({
     queryKey: [...clientPortalQueryKey, "dashboard", ...workspaceKey(), engagementId] as const,
     queryFn: () => apiClient.clientPortal.dashboard.summary({ engagementId }),
+    retry: false,
+  });
+}
+
+export function clientPortalAllProjectsQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...clientPortalQueryKey, "projects", ...workspaceKey(), "all"] as const,
+    queryFn: () => apiClient.clientPortal.projects.listAll(),
     retry: false,
   });
 }

@@ -1,4 +1,10 @@
-import { ArrowRightIcon, ArrowUpRightIcon, LinkSimpleIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  ArrowRightIcon,
+  ArrowUpRightIcon,
+  DownloadSimpleIcon,
+  LinkSimpleIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -24,7 +30,8 @@ import {
   ItemTitle,
   Skeleton,
 } from "@/components";
-import { ProjectForm } from "@/components/admin/project-form";
+import { CommunityImportPanel } from "@/components/admin/community-import-panel";
+import { ProjectForm, type ProjectFormValues } from "@/components/admin/project-form";
 import { AdminError } from "@/components/admin-error";
 import { Empty } from "@/components/admin-form";
 import type { ApiClient } from "@/lib/api";
@@ -36,6 +43,7 @@ import {
   adminNearnSponsorBountiesQueryOptions,
   adminProjectsListQueryOptions,
 } from "@/lib/queries";
+import { isValidSlug, slugify } from "@/lib/slugify";
 
 type AdminProject = Awaited<ReturnType<ApiClient["agency"]["projects"]["list"]>>["data"][number];
 
@@ -49,11 +57,9 @@ export function ProjectsAdminSection() {
   const apiClient = useApiClient();
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
   const [creating, setCreating] = useState(false);
-  const [prefill, setPrefill] = useState<{
-    nearnListingId: string;
-    title: string;
-    slug: string;
-  } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [prefill, setPrefill] = useState<Partial<ProjectFormValues> | null>(null);
+  const existingSlugs = new Set((projectsQuery.data?.data ?? []).map((p) => p.slug));
 
   if (projectsQuery.isError) {
     return <AdminError error={projectsQuery.error} />;
@@ -119,6 +125,7 @@ export function ProjectsAdminSection() {
 
   const startCreate = (next: typeof prefill) => {
     setPrefill(next);
+    setImporting(false);
     setCreating(true);
   };
 
@@ -126,23 +133,30 @@ export function ProjectsAdminSection() {
     <div className="flex flex-col gap-6">
       {creating && (
         <ProjectForm
-          key={prefill ? `prefill-${prefill.slug}-${prefill.nearnListingId}` : "create"}
+          key={prefill ? `prefill-${prefill.slug}-${prefill.nearnListingId ?? ""}` : "create"}
           mode="create"
           defaultValues={
-            prefill
-              ? {
-                  slug: prefill.slug,
-                  title: prefill.title,
-                  nearnListingId: prefill.nearnListingId,
-                  status: "active",
-                  visibility: "private",
-                }
-              : undefined
+            prefill ? { status: "active", visibility: "private", ...prefill } : undefined
           }
           onDone={() => {
             setCreating(false);
             setPrefill(null);
           }}
+        />
+      )}
+
+      {importing && !creating && (
+        <CommunityImportPanel
+          existingSlugs={existingSlugs}
+          onClose={() => setImporting(false)}
+          onImport={(project) =>
+            startCreate({
+              slug: isValidSlug(project.slug) ? project.slug : slugify(project.title),
+              title: project.title,
+              description: project.description,
+              repository: project.repository,
+            })
+          }
         />
       )}
 
@@ -155,7 +169,13 @@ export function ProjectsAdminSection() {
             Open a project to manage its builders, budget and billings.
           </CardDescription>
           {!creating && (
-            <CardAction>
+            <CardAction className="flex flex-wrap gap-2">
+              {!importing && (
+                <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
+                  <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+                  Import
+                </Button>
+              )}
               <Button size="sm" onClick={() => startCreate(null)}>
                 <PlusIcon data-icon="inline-start" aria-hidden />
                 New project

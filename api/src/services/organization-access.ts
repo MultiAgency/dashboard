@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import type { DecoratedMiddleware } from "every-plugin/orpc";
 import { ORPCError } from "every-plugin/orpc";
@@ -34,6 +34,8 @@ export type TreasuryScope = AgencyScope & { agencyDao: string };
 export type OrganizationScope = AgencyScope & { organizationId: string };
 
 export const NO_AGENCY_DAO = "NO_AGENCY_DAO";
+
+export const CLIENT_ORGANIZATION = "CLIENT_ORGANIZATION";
 
 export const ROLE_MATRIX = {
   work: ["owner", "admin", "member"],
@@ -133,7 +135,7 @@ export function createOrganizationAccess(deps: {
       organization && !organization.isPersonal ? await agencyDaoOf(db, organization.id) : null;
     const hasClientSections =
       organization !== null && role !== null && (await isClientOfAnyAgency(organization.id));
-    return {
+    const access: OrganizationAccess = {
       organization,
       role,
       agencyDao,
@@ -146,6 +148,39 @@ export function createOrganizationAccess(deps: {
       },
       pluginContext: context,
     };
+    if (organization && hasClientSections && agencyDao === null) {
+      access.capabilities.hasAgencySections =
+        access.capabilities.hasAgencySections && (await actsAsAgency(access, organization.id));
+    }
+    return access;
+  }
+
+  async function actsAsAgency(
+    access: OrganizationAccess,
+    organizationId: string,
+  ): Promise<boolean> {
+    const [row] = await db
+      .select({ id: engagements.id })
+      .from(engagements)
+      .where(
+        and(
+          or(
+            eq(engagements.agencyOrganizationId, organizationId),
+            and(
+              eq(engagements.clientOrganizationId, organizationId),
+              eq(engagements.kind, "subcontract"),
+            ),
+          ),
+          ne(engagements.status, "declined"),
+        ),
+      )
+      .limit(1);
+    if (row) return true;
+    const owned = await directory
+      .forAgency(scopeOf(access))
+      .list()
+      .catch(() => []);
+    return owned.length > 0;
   }
 
   async function organizationOfDao(daoAccountId: string): Promise<string | null> {
@@ -198,12 +233,18 @@ export function createOrganizationAccess(deps: {
   async function agencyScope(
     context: PluginContext,
     requiredRoles: readonly OrganizationRole[],
+    options: { agencyOnly?: boolean } = {},
   ): Promise<OrganizationScope> {
     const access = await resolve(context);
     if (!access.organization || !hasRole(requiredRoles, access.role)) {
       throw forbidden(`Requires agency role: ${requiredRoles.join(" or ")}`, {
         requiredRoles,
         currentRole: access.role,
+      });
+    }
+    if (options.agencyOnly && !access.capabilities.hasAgencySections) {
+      throw forbidden("This Organization works as a client. Agency features are not available.", {
+        reason: CLIENT_ORGANIZATION,
       });
     }
     return { ...scopeOf(access), organizationId: access.organization.id };
@@ -290,6 +331,31 @@ export function createOrganizationAccess(deps: {
     };
   }
 
+  async function sharedEngagementsOf(context: PluginContext): Promise<SharedEngagement[]> {
+    const access = await resolve(context);
+    const organization = access.organization;
+    if (!organization || !hasRole(ROLE_MATRIX.work, access.role)) return [];
+    const rows = await db
+      .select()
+      .from(engagements)
+      .where(
+        and(
+          eq(engagements.clientOrganizationId, organization.id),
+          inArray(engagements.status, SHARED_STATUSES),
+        ),
+      )
+      .orderBy(asc(engagements.status), asc(engagements.createdAt));
+    return Promise.all(
+      rows.map(async (engagement) => ({
+        engagement,
+        readOnly: engagement.status !== "active",
+        projectIds: await sharedProjectIds(engagement.id),
+        scope: await readScopeOfAgency(context, engagement.agencyOrganizationId),
+        viewerAgencyDao: access.agencyDao,
+      })),
+    );
+  }
+
   async function subcontractedIn(
     scope: AgencyScope,
     projectId?: string,
@@ -364,6 +430,7 @@ export function createOrganizationAccess(deps: {
     const requireScope = <TScope extends AgencyScope>(
       roles: readonly OrganizationRole[],
       narrow: (scope: OrganizationScope) => TScope,
+      options: { agencyOnly?: boolean } = {},
     ) =>
       builder.middleware(async ({ context, next }: { context: AuthContext; next: any }) => {
         if (!context.user || !context.userId) {
@@ -372,7 +439,7 @@ export function createOrganizationAccess(deps: {
             data: { authType: "session", hint: "Sign in to continue" },
           });
         }
-        const scope = narrow(await agencyScope(context, roles));
+        const scope = narrow(await agencyScope(context, roles, options));
         return next({ context: { scope } });
       }) as AccessMiddleware<TScope>;
 
@@ -385,6 +452,8 @@ export function createOrganizationAccess(deps: {
     return {
       member: requireScope(ROLE_MATRIX.work, agency),
       manager: requireScope(ROLE_MATRIX.manage, agency),
+      agencyMember: requireScope(ROLE_MATRIX.work, agency, { agencyOnly: true }),
+      agencyManager: requireScope(ROLE_MATRIX.manage, agency, { agencyOnly: true }),
       treasuryMember: requireScope(ROLE_MATRIX.work, requireTreasury),
       treasuryManager: requireScope(ROLE_MATRIX.manage, requireTreasury),
       defaultOrganizationMember: requireScope(ROLE_MATRIX.work, defaultOrganization),
@@ -406,6 +475,7 @@ export function createOrganizationAccess(deps: {
     }),
 
     sharedWith,
+    sharedEngagementsOf,
     readScopeOfAgency,
     workableProject,
     subcontractedProjects: (scope: AgencyScope) => subcontractedIn(scope),

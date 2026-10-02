@@ -50,18 +50,13 @@ export function ContributorsAdminSection() {
       header: "Name",
       accessorKey: "name",
       cell: ({ row }) => (
-        <span className="flex items-center gap-2">
-          <Link
-            to="/admin/contributors/$nearAccount"
-            params={{ nearAccount: row.original.nearAccount }}
-            className="font-medium hover:underline"
-          >
-            {row.original.name ?? row.original.nearAccount}
-          </Link>
-          {row.original.registered && !row.original.claimed && (
-            <Badge variant="outline">Unclaimed</Badge>
-          )}
-        </span>
+        <Link
+          to="/admin/contributors/$nearAccount"
+          params={{ nearAccount: row.original.nearAccount }}
+          className="font-medium hover:underline"
+        >
+          {row.original.name ?? row.original.nearAccount}
+        </Link>
       ),
     },
     {

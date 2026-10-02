@@ -1,4 +1,10 @@
-import { BAD_REQUEST, FORBIDDEN, NOT_FOUND, UNAUTHORIZED } from "every-plugin/errors";
+import {
+  BAD_REQUEST,
+  FORBIDDEN,
+  NOT_FOUND,
+  SERVICE_UNAVAILABLE,
+  UNAUTHORIZED,
+} from "every-plugin/errors";
 import { oc } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 
@@ -1082,6 +1088,28 @@ export const contract = oc.router({
     },
 
     projects: {
+      listAll: oc
+        .route({ method: "GET", path: "/client/projects" })
+        .output(
+          z.object({
+            data: z.array(
+              z.object({
+                engagementId: z.string(),
+                readOnly: z.boolean(),
+                project,
+                contributors: z.array(
+                  z.object({
+                    nearAccount: z.string(),
+                    name: z.string(),
+                    role: z.string().nullable(),
+                  }),
+                ),
+              }),
+            ),
+          }),
+        )
+        .errors({ UNAUTHORIZED, FORBIDDEN }),
+
       list: oc
         .route({ method: "GET", path: "/client/{engagementId}/projects" })
         .input(z.object({ engagementId: z.string().min(1) }))
@@ -1483,6 +1511,35 @@ export const contract = oc.router({
         ftTokens: z.number().int().nonnegative(),
       }),
     ),
+  },
+
+  community: {
+    searchProjects: oc
+      .route({ method: "GET", path: "/admin/community/projects" })
+      .input(
+        z.object({
+          query: z.string().max(200).optional(),
+          cursor: z.string().max(200).optional(),
+        }),
+      )
+      .output(
+        z.object({
+          source: z.object({ name: z.string(), url: z.string() }),
+          data: z.array(
+            z.object({
+              id: z.string(),
+              slug: z.string(),
+              title: z.string(),
+              description: z.string().nullable(),
+              repository: z.string().nullable(),
+              domain: z.string().nullable(),
+              ownerId: z.string(),
+            }),
+          ),
+          nextCursor: z.string().nullable(),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN, SERVICE_UNAVAILABLE }),
   },
 
   nearn: {

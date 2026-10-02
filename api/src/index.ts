@@ -25,6 +25,7 @@ import { createBillingsService } from "./services/billings";
 import { createBudgetsService } from "./services/budgets";
 import { createChangeOrdersService } from "./services/change-orders";
 import { createClientPortalService } from "./services/client-portal";
+import { createCommunityService } from "./services/community";
 import { createContactFormService } from "./services/contact-form";
 import { createContributorsService } from "./services/contributors";
 import { createEngagementsService } from "./services/engagements";
@@ -53,6 +54,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({
     agencyDaoAccount: z.string().optional(),
     appOrigin: z.string().url().default("https://dev.multiagency.ai"),
+    communityApiUrl: z.string().url().default("https://nearbuilders.org/api"),
   }),
 
   secrets: z.object({
@@ -169,6 +171,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const tokens = createTokensService(db);
       const treasury = createTreasuryService(directory, projectLedgers);
       const nearn = createNearnService();
+      const community = createCommunityService(config.variables.communityApiUrl);
 
       yield* Effect.logInfo(`[API] plugins.projects available: ${typeof plugins?.projects}`);
       yield* Effect.logInfo("[API] Services Initialized");
@@ -199,6 +202,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         tokens,
         treasury,
         nearn,
+        community,
       };
     }),
 
@@ -235,11 +239,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
       tokens,
       treasury,
       nearn,
+      community,
     } = services;
     const auth = createAuthMiddleware(builder);
     const {
       member,
       manager,
+      agencyMember,
+      agencyManager,
       treasuryMember,
       treasuryManager,
       defaultOrganizationMember,
@@ -289,11 +296,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
           ),
 
           listOwned: builder.agency.projects.listOwned
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context }) => runEffect(agency.listProjects(context.scope))),
 
           get: builder.agency.projects.get
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               runEffect(agency.getProject(context.scope, input.slug)),
             ),
@@ -305,19 +312,19 @@ export default createPlugin.withPlugins<PluginsClient>()({
             ),
 
           create: builder.agency.projects.create
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               runEffect(agency.createProject(context.scope, input)),
             ),
 
           update: builder.agency.projects.update
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               runEffect(agency.updateProject(context.scope, input)),
             ),
 
           delete: builder.agency.projects.delete
-            .use(manager)
+            .use(agencyManager)
             .handler(async ({ context, input }) =>
               runEffect(agency.deleteProject(context.scope, input)),
             ),
@@ -325,25 +332,25 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
         listings: {
           get: builder.agency.listings.get
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               runEffect(listings.getInternal(context.scope, input.projectId)),
             ),
 
           create: builder.agency.listings.create
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               runEffect(listings.createInternal(context.scope, input)),
             ),
 
           update: builder.agency.listings.update
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               runEffect(listings.updateInternal(context.scope, input)),
             ),
 
           delete: builder.agency.listings.delete
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               runEffect(listings.deleteInternal(context.scope, input.projectId)),
             ),
@@ -351,7 +358,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
         reports: {
           generate: builder.agency.reports.generate
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               runEffect(
                 reports.generateSaved(context.scope, input, {
@@ -362,13 +369,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
             ),
 
           list: builder.agency.reports.list
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               reports.listSaved(context.scope.organizationId, input),
             ),
 
           get: builder.agency.reports.get
-            .use(member)
+            .use(agencyMember)
             .handler(async ({ context, input }) =>
               reports.getSaved(context.scope.organizationId, input.id),
             ),
@@ -385,13 +392,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context, input }) => engagements.get(context.scope, input.id)),
 
         createWithClient: builder.engagements.createWithClient
-          .use(manager)
+          .use(agencyManager)
           .handler(async ({ context, input }) =>
             engagements.createWithClient(context.scope, input),
           ),
 
         subcontract: builder.engagements.subcontract
-          .use(manager)
+          .use(agencyManager)
           .handler(async ({ context, input }) => engagements.subcontract(context.scope, input)),
 
         sharedWithUs: builder.engagements.sharedWithUs
@@ -399,7 +406,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context }) => engagements.sharedWithUs(context.scope)),
 
         propose: builder.engagements.propose
-          .use(manager)
+          .use(agencyManager)
           .handler(async ({ context, input }) => engagements.propose(context.scope, input)),
 
         accept: builder.engagements.accept
@@ -415,28 +422,28 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context, input }) => engagements.end(context.scope, input.id)),
 
         share: builder.engagements.share
-          .use(manager)
+          .use(agencyManager)
           .handler(async ({ context, input }) => engagements.share(context.scope, input)),
 
         unshare: builder.engagements.unshare
-          .use(manager)
+          .use(agencyManager)
           .handler(async ({ context, input }) => engagements.unshare(context.scope, input)),
 
         invitation: {
           resend: builder.engagements.invitation.resend
-            .use(manager)
+            .use(agencyManager)
             .handler(async ({ context, input }) =>
               engagements.resendInvitation(context.scope, input.id),
             ),
 
           cancel: builder.engagements.invitation.cancel
-            .use(manager)
+            .use(agencyManager)
             .handler(async ({ context, input }) =>
               engagements.cancelInvitation(context.scope, input.id),
             ),
 
           changeEmail: builder.engagements.invitation.changeEmail
-            .use(manager)
+            .use(agencyManager)
             .handler(async ({ context, input }) =>
               engagements.changeInvitationEmail(context.scope, input.id, input.email),
             ),
@@ -545,6 +552,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
         },
 
         projects: {
+          listAll: builder.clientPortal.projects.listAll
+            .use(auth.requireAuth)
+            .handler(async ({ context }) => runEffect(clientPortal.listAllProjects(context))),
+
           list: builder.clientPortal.projects.list
             .use(auth.requireAuth)
             .handler(async ({ context, input }) =>
@@ -604,21 +615,25 @@ export default createPlugin.withPlugins<PluginsClient>()({
       },
 
       contributors: {
-        list: builder.contributors.list.use(member).handler(async ({ context }) => {
+        list: builder.contributors.list.use(agencyMember).handler(async ({ context }) => {
           return runEffect(contributors.list(context.scope.pluginContext));
         }),
 
-        get: builder.contributors.get.use(member).handler(async ({ context, input }) => {
+        get: builder.contributors.get.use(agencyMember).handler(async ({ context, input }) => {
           return runEffect(contributors.get(context.scope.pluginContext, input.nearAccount));
         }),
 
-        create: builder.contributors.create.use(manager).handler(async ({ context, input }) => {
-          return runEffect(contributors.create(context.scope.pluginContext, input));
-        }),
+        create: builder.contributors.create
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            return runEffect(contributors.create(context.scope.pluginContext, input));
+          }),
 
-        update: builder.contributors.update.use(manager).handler(async ({ context, input }) => {
-          return runEffect(contributors.update(context.scope.pluginContext, input));
-        }),
+        update: builder.contributors.update
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            return runEffect(contributors.update(context.scope.pluginContext, input));
+          }),
       },
 
       assignments: {
@@ -689,17 +704,23 @@ export default createPlugin.withPlugins<PluginsClient>()({
         ),
       },
 
+      community: {
+        searchProjects: builder.community.searchProjects
+          .use(agencyMember)
+          .handler(async ({ input }) => community.searchProjects(input)),
+      },
+
       nearn: {
         getListing: builder.nearn.getListing
-          .use(member)
+          .use(agencyMember)
           .handler(async ({ context, input }) => runEffect(nearn.getListing(context.scope, input))),
 
         listSponsorBounties: builder.nearn.listSponsorBounties
-          .use(member)
+          .use(agencyMember)
           .handler(async ({ context }) => runEffect(nearn.listSponsorBounties(context.scope))),
 
         listSubmissions: builder.nearn.listSubmissions
-          .use(member)
+          .use(agencyMember)
           .handler(async ({ context, input }) =>
             runEffect(nearn.listSubmissions(context.scope, input)),
           ),
@@ -836,27 +857,29 @@ export default createPlugin.withPlugins<PluginsClient>()({
         }),
 
         get: builder.agencyConfig.get
-          .use(manager)
+          .use(agencyManager)
           .handler(async ({ context }) =>
             getAdminSettings(db, context.scope, getNetwork(context.reqHeaders)),
           ),
 
-        update: builder.agencyConfig.update.use(manager).handler(async ({ context, input }) => {
-          const { organizationId, actorId } = context.scope;
-          await upsertSettings(
-            db,
-            organizationId,
-            {
-              nearnAccountId: input.nearnAccountId,
-              websiteUrl: input.websiteUrl,
-              docsUrl: input.docsUrl,
-              description: input.description,
-              contactEmail: input.contactEmail,
-            },
-            actorId,
-          );
-          return { ok: true as const };
-        }),
+        update: builder.agencyConfig.update
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { organizationId, actorId } = context.scope;
+            await upsertSettings(
+              db,
+              organizationId,
+              {
+                nearnAccountId: input.nearnAccountId,
+                websiteUrl: input.websiteUrl,
+                docsUrl: input.docsUrl,
+                description: input.description,
+                contactEmail: input.contactEmail,
+              },
+              actorId,
+            );
+            return { ok: true as const };
+          }),
       },
     };
   },

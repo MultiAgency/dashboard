@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { clientEngagementSections, workspaceNavigation } from "../src/lib/navigation";
+import {
+  availableViews,
+  clientEngagementSections,
+  resolveView,
+  viewForPath,
+  workspaceNavigation,
+} from "../src/lib/navigation";
 
 const labels = (...args: Parameters<typeof workspaceNavigation>) =>
   workspaceNavigation(...args).flatMap((g) => g.items.map((i) => i.label));
@@ -26,22 +32,61 @@ describe("workspaceNavigation", () => {
       "member",
       true,
       true,
-      ["Projects", "Reports", "Builders", "Billings", "Budgets", "Agencies"],
+      ["Projects", "Reports", "Builders", "Billings", "Budgets"],
     ],
   ] as const)("gives %s", (_, role, hasAgencyDao, hasClientSections, expected) => {
-    expect(labels({ role, hasAgencyDao, hasClientSections })).toEqual(expected);
+    expect(
+      labels({ role, hasAgencyDao, hasAgencySections: true, hasClientSections }, "agency"),
+    ).toEqual(expected);
   });
 
-  it("adds the Client sections when the Organization is a Client of an Agency", () => {
+  it("gives a Client-only Organization the client screens and no Agency setup", () => {
     const groups = workspaceNavigation({
-      role: "admin",
+      role: "owner",
       hasAgencyDao: false,
+      hasAgencySections: false,
       hasClientSections: true,
     });
 
-    expect(groups.find((g) => g.title === "As client")?.items).toEqual([
+    expect(groups.flatMap((g) => g.items)).toEqual([
+      { to: "/client/projects", label: "Projects" },
+      { to: "/client/reports", label: "Reports" },
       { to: "/client", label: "Agencies" },
+      { to: "/admin/members", label: "Team" },
     ]);
+  });
+
+  it("leaves Team out of the client screens for members", () => {
+    expect(
+      labels(
+        { role: "member", hasAgencyDao: false, hasAgencySections: false, hasClientSections: true },
+        "client",
+      ),
+    ).toEqual(["Projects", "Reports", "Agencies"]);
+  });
+});
+
+describe("viewing role", () => {
+  const both = { hasAgencySections: true, hasClientSections: true };
+
+  it("offers a switch only to Organizations that are both Agency and Client", () => {
+    expect(availableViews(both)).toEqual(["agency", "client"]);
+    expect(availableViews({ ...both, hasAgencySections: false })).toEqual(["client"]);
+    expect(availableViews({ ...both, hasClientSections: false })).toEqual(["agency"]);
+  });
+
+  it("keeps a preferred view only when the Organization has it", () => {
+    expect(resolveView(both, "client")).toBe("client");
+    expect(resolveView(both, null)).toBe("agency");
+    expect(resolveView({ ...both, hasAgencySections: false }, "agency")).toBe("client");
+  });
+
+  it("reads the view from the current page, with Team shared by both", () => {
+    expect(viewForPath("/client/projects")).toBe("client");
+    expect(viewForPath("/client")).toBe("client");
+    expect(viewForPath("/admin/settings")).toBe("agency");
+    expect(viewForPath("/admin/members")).toBeNull();
+    expect(viewForPath("/dashboard")).toBeNull();
   });
 });
 

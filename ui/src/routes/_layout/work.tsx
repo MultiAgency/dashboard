@@ -4,30 +4,24 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Badge,
   Button,
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
   Empty,
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
   Skeleton,
 } from "@/components";
 import { LoadError } from "@/components/load-error";
 import { PageHeader } from "@/components/page-header";
 import { useApiClient } from "@/lib/api";
-import {
-  formatNearnReward,
-  nearnDescriptionPreview,
-  nearnListingHref,
-  nearnSponsorUrl,
-} from "@/lib/nearn";
+import { formatNearnReward, nearnDescriptionPreview, nearnListingHref } from "@/lib/nearn";
 import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/work")({
@@ -85,26 +79,9 @@ function WorkIndex() {
     initialData: loaderData.settings ?? undefined,
   });
 
-  const nearnUrl = settingsQuery.data?.nearnAccountId
-    ? nearnSponsorUrl(settingsQuery.data.nearnAccountId)
-    : null;
-
   return (
     <div className="flex animate-fade-in flex-col gap-8">
-      <PageHeader
-        title="Our work"
-        description="Active Projects. Open work, listings and applications live on NEARN."
-        actions={
-          nearnUrl && (
-            <Button asChild variant="outline">
-              <a href={nearnUrl} target="_blank" rel="noopener noreferrer">
-                View on NEARN
-                <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
-              </a>
-            </Button>
-          )
-        }
-      />
+      <PageHeader title="Our work" description="Projects we are building now." />
 
       <PublicProjects
         projectsQuery={projectsQuery}
@@ -125,9 +102,9 @@ function PublicProjects({
 }) {
   if (projectsQuery.isLoading) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="flex flex-col gap-2.5" aria-busy="true">
         {[0, 1, 2].map((i) => (
-          <ProjectCardSkeleton key={i} />
+          <Skeleton key={i} className="h-16 w-full" />
         ))}
       </div>
     );
@@ -137,11 +114,11 @@ function PublicProjects({
   }
   if (projectsQuery.data && projectsQuery.data.data.length > 0) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <ItemGroup>
         {projectsQuery.data.data.map((p) => (
-          <ProjectCard key={p.id} project={p} nearnSponsor={nearnSponsor} />
+          <ProjectRow key={p.id} project={p} nearnSponsor={nearnSponsor} />
         ))}
-      </div>
+      </ItemGroup>
     );
   }
   return (
@@ -165,7 +142,7 @@ function PublicProjects({
   );
 }
 
-function ProjectCard({
+function ProjectRow({
   project,
   nearnSponsor,
 }: {
@@ -173,77 +150,40 @@ function ProjectCard({
   nearnSponsor: string | null;
 }) {
   const n = project.nearnListing;
-  const nearnHref = n ? nearnListingHref(n, nearnSponsor) : null;
+  const bountyHref = n ? nearnListingHref(n, nearnSponsor) : null;
   const descriptionPreview = nearnDescriptionPreview(n?.description);
-  const paid =
-    n?.totalWinnersSelected != null && n.totalWinnersSelected > 0
-      ? `${n.totalPaymentsMade ?? 0} of ${n.totalWinnersSelected}`
-      : null;
   const deadline = n?.deadline ? new Date(n.deadline).toISOString().slice(0, 10) : null;
+  const facts = [
+    `@${project.slug}`,
+    n ? formatNearnReward(n) : null,
+    deadline ? `Due ${deadline}` : null,
+  ].filter((f): f is string => !!f);
   return (
-    <Card>
-      <CardHeader>
-        <CardDescription>
-          <span className="block truncate">@{project.slug}</span>
-        </CardDescription>
-        <CardTitle>
-          <h2 className="break-words">{project.title}</h2>
-        </CardTitle>
-        <CardAction>
+    <li>
+      <Item variant="outline" size="sm">
+        <ItemContent className="min-w-0">
+          <ItemTitle className="break-words">
+            <h2>{project.title}</h2>
+          </ItemTitle>
+          <ItemDescription className="truncate">{facts.join(" · ")}</ItemDescription>
+          {descriptionPreview && (
+            <p className="line-clamp-2 text-xs/relaxed text-muted-foreground">
+              {descriptionPreview}
+            </p>
+          )}
+        </ItemContent>
+        <ItemActions>
           <Badge variant="outline">{n?.status ?? project.status}</Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        {descriptionPreview && (
-          <p className="line-clamp-3 text-xs/relaxed text-muted-foreground">{descriptionPreview}</p>
-        )}
-        {n && (
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-            <ListingFact label="Reward" value={formatNearnReward(n)} />
-            {n.type && <ListingFact label="Type" value={n.type} />}
-            {paid && <ListingFact label="Paid" value={paid} />}
-            {deadline && <ListingFact label="Deadline" value={deadline} />}
-          </dl>
-        )}
-      </CardContent>
-      {nearnHref && (
-        <CardFooter className="mt-auto">
-          <Button asChild variant="outline" className="w-full">
-            <a href={nearnHref} target="_blank" rel="noopener noreferrer">
-              Open listing
-              <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
-            </a>
-          </Button>
-        </CardFooter>
-      )}
-    </Card>
-  );
-}
-
-function ListingFact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="truncate font-medium tabular-nums">{value}</dd>
-    </div>
-  );
-}
-
-function ProjectCardSkeleton() {
-  return (
-    <Card>
-      <CardHeader>
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-4 w-3/4" />
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2">
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-5/6" />
-        <Skeleton className="h-3 w-1/3" />
-      </CardContent>
-      <CardFooter>
-        <Skeleton className="h-8 w-full" />
-      </CardFooter>
-    </Card>
+          {bountyHref && (
+            <Button asChild size="sm" variant="outline">
+              <a href={bountyHref} target="_blank" rel="noopener noreferrer">
+                Open bounty
+                <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
+              </a>
+            </Button>
+          )}
+        </ItemActions>
+      </Item>
+    </li>
   );
 }

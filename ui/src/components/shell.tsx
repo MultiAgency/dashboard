@@ -17,12 +17,6 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Empty,
   EmptyContent,
   EmptyDescription,
@@ -30,6 +24,16 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { UserNav } from "@/components/user-nav";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { cn } from "@/lib/utils";
@@ -87,7 +91,7 @@ export function Shell({ children }: { children: ReactNode }) {
             <span className="flex size-6">
               <Logo />
             </span>
-            <span className="hidden font-heading text-sm font-semibold tracking-tight md:inline">
+            <span className="font-heading text-sm font-semibold tracking-tight sm:hidden md:inline">
               {brandName}
             </span>
           </Link>
@@ -99,27 +103,22 @@ export function Shell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
-            {isAuthenticated && <OrgSwitcher />}
+            {isAuthenticated && (
+              <span className="hidden sm:contents">
+                <OrgSwitcher />
+              </span>
+            )}
             {isAuthenticated && <NotificationsBell />}
-            <NetworkToggle />
-            <ThemeToggle />
+            <span className="hidden sm:contents">
+              <NetworkToggle />
+              <ThemeToggle />
+            </span>
             <UserNav />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" className="sm:hidden" aria-label="Open menu">
-                  <ListIcon aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                {PRIMARY_NAV.map((item) => (
-                  <DropdownMenuItem key={item.to} asChild>
-                    <Link to={item.to} aria-current={linkActive(item.to) ? "page" : undefined}>
-                      {item.label}
-                    </Link>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <MobileMenu
+              isAuthenticated={isAuthenticated}
+              brandName={brandName}
+              linkActive={linkActive}
+            />
           </div>
         </div>
       </header>
@@ -130,6 +129,60 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </main>
     </div>
+  );
+}
+
+function MobileMenu({
+  isAuthenticated,
+  brandName,
+  linkActive,
+}: {
+  isAuthenticated: boolean;
+  brandName: string;
+  linkActive: (to: string) => boolean;
+}) {
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon-sm" className="sm:hidden" aria-label="Open menu">
+          <ListIcon aria-hidden />
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="right" className="w-72 gap-0">
+        <SheetHeader>
+          <SheetTitle>{brandName}</SheetTitle>
+          <SheetDescription className="sr-only">Site navigation and preferences</SheetDescription>
+        </SheetHeader>
+        <nav aria-label="Primary" className="flex flex-col gap-1 px-4">
+          {PRIMARY_NAV.map((item) => {
+            const active = linkActive(item.to);
+            return (
+              <SheetClose key={item.to} asChild>
+                <Button asChild variant={active ? "secondary" : "ghost"} className="justify-start">
+                  <Link to={item.to} aria-current={active ? "page" : undefined}>
+                    {item.label}
+                  </Link>
+                </Button>
+              </SheetClose>
+            );
+          })}
+        </nav>
+        <Separator className="my-4" />
+        <div className="flex flex-col gap-4 px-4">
+          {isAuthenticated && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">Organization</span>
+              <OrgSwitcher fullWidth />
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">Theme</span>
+            <ThemeToggle />
+          </div>
+          <NetworkToggle label="Network" />
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

@@ -1,11 +1,11 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { sessionQueryOptions } from "@/lib/auth";
-import { isManager, isWorkspaceRole } from "@/lib/navigation";
+import { CLIENT_ADMIN_PATHS, isManager, isWorkspaceRole, viewHome } from "@/lib/navigation";
 import { meRolesQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin")({
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     const [session, roles] = await Promise.all([
       context.queryClient.ensureQueryData(sessionQueryOptions(context.authClient, context.session)),
       context.queryClient.ensureQueryData(meRolesQueryOptions(context.apiClient)),
@@ -16,6 +16,16 @@ export const Route = createFileRoute("/_layout/_authenticated/admin")({
 
     if (!isSuperAdmin && !orgRole) {
       throw redirect({ to: "/dashboard" });
+    }
+
+    const path = location.pathname.replace(/\/+$/, "");
+    if (
+      !isSuperAdmin &&
+      !roles.capabilities.hasAgencySections &&
+      roles.capabilities.hasClientSections &&
+      !CLIENT_ADMIN_PATHS.includes(path)
+    ) {
+      throw redirect({ to: viewHome("client") });
     }
 
     return { session, isSuperAdmin, isOrgAdmin: isManager(orgRole) };

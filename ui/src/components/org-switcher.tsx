@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
-export function OrgSwitcher() {
+export function OrgSwitcher({ fullWidth = false }: { fullWidth?: boolean }) {
   const auth = useAuthClient();
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
@@ -91,18 +91,18 @@ export function OrgSwitcher() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
+            variant={fullWidth ? "outline" : "ghost"}
             size="sm"
-            className="max-w-30 sm:max-w-45"
+            className={fullWidth ? "w-full justify-start" : "max-w-30 sm:max-w-45"}
             aria-label={`Organization: ${activeOrg?.name ?? "none"}`}
           >
             <BankIcon aria-hidden />
-            <span className="hidden min-w-0 truncate sm:inline">
+            <span className={fullWidth ? "min-w-0 truncate" : "hidden min-w-0 truncate sm:inline"}>
               {activeOrg?.name ?? "Organization"}
             </span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuContent align={fullWidth ? "start" : "end"} className="w-64">
           <DropdownMenuLabel>Organizations</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {organizations.map((org) => (

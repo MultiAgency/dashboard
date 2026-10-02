@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import { engagements, organizationDaos } from "../../src/db/schema";
 import {
+  CLIENT_ORGANIZATION,
   NO_AGENCY_DAO,
   ROLE_MATRIX,
   requireTreasury,
@@ -134,6 +135,64 @@ describe("organization access", () => {
       agencyDao: DEFAULT_DAO,
       role: null,
       canSeePrivate: false,
+    });
+  });
+
+  const engage = (
+    agencyOrganizationId: string,
+    clientOrganizationId: string,
+    kind: "client" | "subcontract" = "client",
+  ) =>
+    database.db.insert(engagements).values({
+      id: `e-${agencyOrganizationId}-${clientOrganizationId}-${kind}`,
+      agencyOrganizationId,
+      clientOrganizationId,
+      kind,
+      status: "active",
+      proposedBy: "u1",
+    });
+
+  test("a DAO-less Client of an Agency works as a client and is kept out of agency-only routes", async () => {
+    await engage("multiagency", "no-dao");
+    const access = accessWith();
+    const context = signedIn("u1", "no-dao");
+
+    expect((await access.resolve(context)).capabilities).toEqual({
+      ...NO_CAPABILITIES,
+      canManageMembers: true,
+      hasClientSections: true,
+    });
+    expect(await outcome(access.agencyScope(context, ROLE_MATRIX.manage))).toBe("allowed");
+    await expect(
+      access.agencyScope(context, ROLE_MATRIX.manage, { agencyOnly: true }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN", data: { reason: CLIENT_ORGANIZATION } });
+  });
+
+  test.each([
+    ["it serves its own Clients", () => engage("no-dao", "other")],
+    ["it is hired as a Subcontractor", () => engage("other", "no-dao", "subcontract")],
+  ])("a DAO-less Client keeps agency routes when %s", async (_, extra) => {
+    await engage("multiagency", "no-dao");
+    await extra();
+    const access = accessWith();
+    const context = signedIn("u1", "no-dao");
+
+    expect((await access.resolve(context)).capabilities).toMatchObject({
+      hasAgencySections: true,
+      hasClientSections: true,
+    });
+    expect(
+      await outcome(access.agencyScope(context, ROLE_MATRIX.manage, { agencyOnly: true })),
+    ).toBe("allowed");
+  });
+
+  test("a Client with an Agency DAO keeps agency routes", async () => {
+    await engage("multiagency", "other");
+    const access = accessWith();
+
+    expect((await access.resolve(signedIn("owner", "other"))).capabilities).toMatchObject({
+      hasAgencySections: true,
+      hasClientSections: true,
     });
   });
 

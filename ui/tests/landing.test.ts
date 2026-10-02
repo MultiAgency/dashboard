@@ -41,8 +41,8 @@ describe("organizationHome", () => {
     expect(organizationHome({ ...none, hasAgencySections: true })).toBe("/admin");
   });
 
-  test("users with only Client-side access land on the Client sections", () => {
-    expect(organizationHome({ ...none, hasClientSections: true })).toBe("/client");
+  test("users with only Client-side access land on their shared Projects", () => {
+    expect(organizationHome({ ...none, hasClientSections: true })).toBe("/client/projects");
   });
 
   test("users without sections land on My work", () => {
