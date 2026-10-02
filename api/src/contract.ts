@@ -1625,6 +1625,7 @@ export const contract = oc.router({
             hasAgencySections: z.boolean(),
             hasClientSections: z.boolean(),
           }),
+          recommendedView: z.enum(["agency", "client"]).nullable(),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),

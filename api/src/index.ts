@@ -762,11 +762,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       me: {
         roles: builder.me.roles.use(auth.requireAuth).handler(async ({ context }) => {
-          const { role, agencyDao, capabilities } = await access.resolve(context);
+          const resolved = await access.resolve(context);
+          const { role, agencyDao, capabilities } = resolved;
           return {
             orgRole: role === "admin" || role === "member" || role === "owner" ? role : null,
             agencyDao,
             capabilities,
+            recommendedView: await access.recommendedView(resolved),
           };
         }),
 

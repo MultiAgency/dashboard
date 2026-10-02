@@ -46,7 +46,7 @@ export function useWorkspaceView() {
   );
   return {
     ...roles,
-    view: resolveView(access, preferred),
+    view: resolveView(access, preferred, roles.recommendedView),
     views: availableViews(access),
     setView: (view: WorkspaceView) => setWorkspaceView(roles.organizationId, view),
   };

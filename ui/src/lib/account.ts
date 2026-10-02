@@ -103,7 +103,7 @@ export async function landingDestination(
     ...meRolesQueryOptions(deps.apiClient),
     staleTime: 0,
   });
-  return organizationHome(roles.capabilities);
+  return organizationHome(roles.capabilities, roles.recommendedView);
 }
 
 export async function signInDestination(

@@ -25,9 +25,11 @@ export function availableViews(
 export function resolveView(
   access: Pick<WorkspaceAccess, "hasAgencySections" | "hasClientSections">,
   preferred: WorkspaceView | null,
+  recommended: WorkspaceView | null = null,
 ): WorkspaceView {
   const views = availableViews(access);
   if (preferred && views.includes(preferred)) return preferred;
+  if (recommended && views.includes(recommended)) return recommended;
   return views[0] ?? "agency";
 }
 

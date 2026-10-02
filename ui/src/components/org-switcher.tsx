@@ -7,9 +7,12 @@ import { useAuthClient } from "@/app";
 import { usePendingInvitations } from "@/components/pending-invitations";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
+import { organizationHome } from "@/lib/landing";
+import { viewForPath } from "@/lib/navigation";
 import {
   activeOrganizationKey,
   invalidateWorkspaceQueries,
+  meRolesQueryOptions,
   myOrganizationsQueryOptions,
   setActiveOrganizationKey,
 } from "@/lib/queries";
@@ -57,6 +60,13 @@ export function OrgSwitcher({ fullWidth = false }: { fullWidth?: boolean }) {
       setActiveOrganizationKey(orgId);
       announceWorkspace(orgId);
       await queryClient.fetchQuery(sessionQueryOptions(auth));
+      if (viewForPath(router.state.location.pathname)) {
+        const roles = await queryClient.fetchQuery({
+          ...meRolesQueryOptions(apiClient),
+          staleTime: 0,
+        });
+        await router.navigate({ to: organizationHome(roles.capabilities, roles.recommendedView) });
+      }
       await invalidateWorkspaceQueries(queryClient, router);
     },
     onError: (error: Error) => {

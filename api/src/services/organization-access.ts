@@ -43,6 +43,8 @@ export const ROLE_MATRIX = {
   seePrivate: ["owner", "admin", "member", "contributor"],
 } as const satisfies Record<string, readonly OrganizationRole[]>;
 
+export type WorkspaceView = "agency" | "client";
+
 export type Capabilities = {
   canManageMembers: boolean;
   canUseMoney: boolean;
@@ -153,6 +155,29 @@ export function createOrganizationAccess(deps: {
         access.capabilities.hasAgencySections && (await actsAsAgency(access, organization.id));
     }
     return access;
+  }
+
+  async function recommendedView(access: OrganizationAccess): Promise<WorkspaceView | null> {
+    const { organization, capabilities } = access;
+    if (!organization || !access.role) return null;
+    if (!capabilities.hasClientSections) return capabilities.hasAgencySections ? "agency" : null;
+    if (!capabilities.hasAgencySections) return "client";
+    const rows = await db
+      .select({ agencyOrganizationId: engagements.agencyOrganizationId, kind: engagements.kind })
+      .from(engagements)
+      .where(
+        and(
+          or(
+            eq(engagements.agencyOrganizationId, organization.id),
+            eq(engagements.clientOrganizationId, organization.id),
+          ),
+          eq(engagements.status, "active"),
+        ),
+      );
+    const agencySide = rows.filter(
+      (r) => r.agencyOrganizationId === organization.id || r.kind === "subcontract",
+    ).length;
+    return rows.length - agencySide > agencySide ? "client" : "agency";
   }
 
   async function actsAsAgency(
@@ -463,6 +488,7 @@ export function createOrganizationAccess(deps: {
 
   return {
     resolve,
+    recommendedView,
     publicScope,
     publicTreasuryScope,
     agencyScope,

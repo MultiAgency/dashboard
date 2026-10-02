@@ -10,7 +10,7 @@ type SharedProject = Awaited<
   ReturnType<ApiClient["clientPortal"]["projects"]["listAll"]>
 >["data"][number];
 
-export const Route = createFileRoute("/_layout/_authenticated/client/projects")({
+export const Route = createFileRoute("/_layout/_authenticated/client/projects/")({
   head: () => ({
     meta: [
       { title: "Projects" },
@@ -39,7 +39,7 @@ function ClientProjectsPage() {
       cell: ({ row }) => (
         <div className="flex flex-col gap-0.5">
           <Link
-            to="/client/$engagementId/projects/$slug"
+            to="/client/projects/$engagementId/$slug"
             params={{ engagementId: row.original.engagementId, slug: row.original.project.slug }}
             className="font-medium underline-offset-4 hover:underline"
           >
