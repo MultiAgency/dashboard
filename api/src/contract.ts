@@ -1232,7 +1232,7 @@ export const contract = oc.router({
     get: oc
       .route({ method: "GET", path: "/admin/contributors/{nearAccount}" })
       .input(z.object({ nearAccount: nearAccountId }))
-      .output(z.object({ contributor, canEdit: z.boolean() }))
+      .output(z.object({ contributor, canEdit: z.boolean(), canDelete: z.boolean() }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
     create: oc
@@ -1264,6 +1264,12 @@ export const contract = oc.router({
       )
       .output(z.object({ contributor }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    delete: oc
+      .route({ method: "DELETE", path: "/admin/contributors/{nearAccount}" })
+      .input(z.object({ nearAccount: nearAccountId }))
+      .output(z.object({ deleted: z.boolean() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
   assignments: {

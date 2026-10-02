@@ -624,7 +624,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
         }),
 
         get: builder.contributors.get.use(agencyMember).handler(async ({ context, input }) => {
-          return runEffect(contributors.get(context.scope.pluginContext, input.nearAccount));
+          return runEffect(
+            contributors.get(context.scope.pluginContext, input.nearAccount, {
+              canManage:
+                context.scope.role !== null &&
+                (ROLE_MATRIX.manage as readonly string[]).includes(context.scope.role),
+            }),
+          );
         }),
 
         create: builder.contributors.create
@@ -637,6 +643,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(agencyManager)
           .handler(async ({ context, input }) => {
             return runEffect(contributors.update(context.scope.pluginContext, input));
+          }),
+
+        delete: builder.contributors.delete
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            return runEffect(contributors.delete(context.scope.pluginContext, input.nearAccount));
           }),
       },
 

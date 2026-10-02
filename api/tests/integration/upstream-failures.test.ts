@@ -172,6 +172,67 @@ describe("when upstream services fail", () => {
       expect(contexts.at(-1)).toMatchObject({ trusted: true });
     });
 
+    const profileOf = (userId: string | null) => ({
+      data: {
+        nearAccount: "ada.near",
+        name: "Ada",
+        bio: null,
+        skills: [],
+        location: null,
+        links: null,
+        userId,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    test.each([
+      ["an unclaimed profile to a manager", null, true, true],
+      ["an unclaimed profile to a member", null, false, false],
+      ["a claimed profile to a manager", "ada-user", true, false],
+    ] as const)("offers edit and remove for %s", async (_, userId, canManage, allowed) => {
+      const contributors = contributorsWith({ getBuilder: async () => profileOf(userId) });
+
+      const result = await Effect.runPromise(
+        contributors.get({ userId: "manager" }, "ada.near", { canManage }),
+      );
+
+      expect(result).toMatchObject({ canEdit: allowed, canDelete: allowed });
+    });
+
+    test("removing a builder still assigned to a Project is refused", async () => {
+      await db
+        .insert(projectContributors)
+        .values({ projectId: "p1", nearAccount: "ada.near", role: "lead" });
+      const deleted: string[] = [];
+      const contributors = contributorsWith({
+        deleteBuilder: async ({ nearAccount }: { nearAccount: string }) => {
+          deleted.push(nearAccount);
+          return { deleted: true };
+        },
+      });
+
+      const outcome = await Effect.runPromise(
+        Effect.either(contributors.delete({}, "ada.near")),
+      );
+
+      expect(Either.isLeft(outcome) && outcome.left).toMatchObject({ code: "BAD_REQUEST" });
+      expect(deleted).toEqual([]);
+    });
+
+    test("removing an unassigned builder deletes the profile as a trusted caller", async () => {
+      const contexts: unknown[] = [];
+      const contributors = contributorsWith(
+        { deleteBuilder: async () => ({ deleted: true }) },
+        contexts,
+      );
+
+      expect(await Effect.runPromise(contributors.delete({}, "ada.near"))).toEqual({
+        deleted: true,
+      });
+      expect(contexts.at(-1)).toMatchObject({ trusted: true });
+    });
+
     test("a refused edit of someone else's builder profile is not turned into a create", async () => {
       const created: string[] = [];
       const contributors = contributorsWith({

@@ -64,12 +64,15 @@ function stubProfile(nearAccount: string): BuilderProfile {
   };
 }
 
+function isPlatformAdmin(context: PluginContext): boolean {
+  return (context as { user?: { role?: string | null } | null }).user?.role === "admin";
+}
+
 function canEditProfile(
   context: PluginContext,
   profile: { nearAccount: string; userId?: string | null },
 ): boolean {
-  const user = (context as { user?: { role?: string | null } | null }).user;
-  if (user?.role === "admin") return true;
+  if (isPlatformAdmin(context)) return true;
   if (
     context.userId &&
     (profile.userId === context.userId || profile.nearAccount === context.userId)
@@ -107,7 +110,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         return { data: [...byNear.values()] };
       }),
 
-    get: (context: PluginContext, nearAccount: string) =>
+    get: (context: PluginContext, nearAccount: string, options: { canManage?: boolean } = {}) =>
       Effect.gen(function* () {
         const assignmentRows = yield* Effect.promise(() =>
           db
@@ -122,15 +125,17 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         );
         if (Either.isRight(builder)) {
           const profile = builder.right.data;
+          const managesUnclaimed = !!options.canManage && !profile.userId;
           return {
             contributor: toProfile(profile),
-            canEdit: canEditProfile(context, profile),
+            canEdit: managesUnclaimed || canEditProfile(context, profile),
+            canDelete: managesUnclaimed || isPlatformAdmin(context),
           };
         }
         if (assignmentRows.length === 0) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Builder not found" }));
         }
-        return { contributor: stubProfile(nearAccount), canEdit: true };
+        return { contributor: stubProfile(nearAccount), canEdit: true, canDelete: false };
       }),
 
     create: (
@@ -189,7 +194,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           links: input.links,
         };
         const result = yield* Effect.tryPromise({
-          try: () => plugins.builders(context).updateBuilderProfile(profile),
+          try: () => plugins.builders(asManager(context)).updateBuilderProfile(profile),
           catch: (err) => err,
         }).pipe(
           Effect.catchIf(
@@ -203,6 +208,31 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           ),
         );
         return { contributor: toProfile(result.data) };
+      }),
+
+    delete: (context: PluginContext, nearAccount: string) =>
+      Effect.gen(function* () {
+        const [assigned] = yield* Effect.promise(() =>
+          db
+            .select({ projectId: projectContributors.projectId })
+            .from(projectContributors)
+            .where(eq(projectContributors.nearAccount, nearAccount))
+            .limit(1),
+        );
+        if (assigned) {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message: "This builder is still assigned to a Project. Remove them from it first.",
+            }),
+          );
+        }
+        return yield* Effect.tryPromise({
+          try: () => plugins.builders(asManager(context)).deleteBuilder({ nearAccount }),
+          catch: (err) =>
+            err instanceof ORPCError
+              ? err
+              : new ORPCError("INTERNAL_SERVER_ERROR", { message: String(err) }),
+        });
       }),
   };
 }
