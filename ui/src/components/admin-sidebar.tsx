@@ -48,7 +48,7 @@ export function AdminSidebar() {
   return (
     <nav
       aria-label="Organization"
-      className="-mx-4 flex flex-col gap-3 border-b px-4 pb-3 lg:mx-0 lg:w-48 lg:shrink-0 lg:gap-5 lg:border-b-0 lg:px-0 lg:pb-0"
+      className="-mx-4 flex flex-col gap-3 border-b px-4 pb-3 print:hidden lg:mx-0 lg:w-48 lg:shrink-0 lg:gap-5 lg:border-b-0 lg:px-0 lg:pb-0"
     >
       {views.length > 1 && (
         <ToggleGroup

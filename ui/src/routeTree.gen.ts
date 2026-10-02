@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LayoutRouteImport } from './routes/_layout'
 import { Route as LayoutIndexRouteImport } from './routes/_layout/index'
-import { Route as LayoutWorkRouteImport } from './routes/_layout/work'
 import { Route as LayoutTreasuryRouteImport } from './routes/_layout/treasury'
 import { Route as LayoutTeamRouteImport } from './routes/_layout/team'
 import { Route as LayoutSignInRouteImport } from './routes/_layout/sign-in'
@@ -20,7 +19,9 @@ import { Route as LayoutRegisterRouteImport } from './routes/_layout/register'
 import { Route as LayoutContactRouteImport } from './routes/_layout/contact'
 import { Route as LayoutApplyRouteImport } from './routes/_layout/apply'
 import { Route as LayoutAuthenticatedRouteImport } from './routes/_layout/_authenticated'
+import { Route as LayoutWorkIndexRouteImport } from './routes/_layout/work/index'
 import { Route as LayoutDocsIndexRouteImport } from './routes/_layout/docs/index'
+import { Route as LayoutWorkSlugRouteImport } from './routes/_layout/work/$slug'
 import { Route as LayoutDocsSlugRouteImport } from './routes/_layout/docs/$slug'
 import { Route as LayoutAcceptInvitationIdRouteImport } from './routes/_layout/accept-invitation/$id'
 import { Route as LayoutAuthenticatedWelcomeRouteImport } from './routes/_layout/_authenticated/welcome'
@@ -67,11 +68,6 @@ const LayoutIndexRoute = LayoutIndexRouteImport.update({
   path: '/',
   getParentRoute: () => LayoutRoute,
 } as any)
-const LayoutWorkRoute = LayoutWorkRouteImport.update({
-  id: '/work',
-  path: '/work',
-  getParentRoute: () => LayoutRoute,
-} as any)
 const LayoutTreasuryRoute = LayoutTreasuryRouteImport.update({
   id: '/treasury',
   path: '/treasury',
@@ -111,9 +107,19 @@ const LayoutAuthenticatedRoute = LayoutAuthenticatedRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => LayoutRoute,
 } as any)
+const LayoutWorkIndexRoute = LayoutWorkIndexRouteImport.update({
+  id: '/work/',
+  path: '/work/',
+  getParentRoute: () => LayoutRoute,
+} as any)
 const LayoutDocsIndexRoute = LayoutDocsIndexRouteImport.update({
   id: '/docs/',
   path: '/docs/',
+  getParentRoute: () => LayoutRoute,
+} as any)
+const LayoutWorkSlugRoute = LayoutWorkSlugRouteImport.update({
+  id: '/work/$slug',
+  path: '/work/$slug',
   getParentRoute: () => LayoutRoute,
 } as any)
 const LayoutDocsSlugRoute = LayoutDocsSlugRouteImport.update({
@@ -341,7 +347,6 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof LayoutSignInRoute
   '/team': typeof LayoutTeamRoute
   '/treasury': typeof LayoutTreasuryRoute
-  '/work': typeof LayoutWorkRoute
   '/admin': typeof LayoutAuthenticatedAdminRouteRouteWithChildren
   '/client': typeof LayoutAuthenticatedClientRouteRouteWithChildren
   '/platform': typeof LayoutAuthenticatedPlatformRouteRouteWithChildren
@@ -351,7 +356,9 @@ export interface FileRoutesByFullPath {
   '/welcome': typeof LayoutAuthenticatedWelcomeRoute
   '/accept-invitation/$id': typeof LayoutAcceptInvitationIdRoute
   '/docs/$slug': typeof LayoutDocsSlugRoute
+  '/work/$slug': typeof LayoutWorkSlugRoute
   '/docs/': typeof LayoutDocsIndexRoute
+  '/work/': typeof LayoutWorkIndexRoute
   '/client/$engagementId': typeof LayoutAuthenticatedClientEngagementIdRouteRouteWithChildren
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
@@ -389,14 +396,15 @@ export interface FileRoutesByTo {
   '/sign-in': typeof LayoutSignInRoute
   '/team': typeof LayoutTeamRoute
   '/treasury': typeof LayoutTreasuryRoute
-  '/work': typeof LayoutWorkRoute
   '/dashboard': typeof LayoutAuthenticatedDashboardRoute
   '/notifications': typeof LayoutAuthenticatedNotificationsRoute
   '/profile': typeof LayoutAuthenticatedProfileRoute
   '/welcome': typeof LayoutAuthenticatedWelcomeRoute
   '/accept-invitation/$id': typeof LayoutAcceptInvitationIdRoute
   '/docs/$slug': typeof LayoutDocsSlugRoute
+  '/work/$slug': typeof LayoutWorkSlugRoute
   '/docs': typeof LayoutDocsIndexRoute
+  '/work': typeof LayoutWorkIndexRoute
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/client/reports': typeof LayoutAuthenticatedClientReportsRoute
@@ -435,7 +443,6 @@ export interface FileRoutesById {
   '/_layout/sign-in': typeof LayoutSignInRoute
   '/_layout/team': typeof LayoutTeamRoute
   '/_layout/treasury': typeof LayoutTreasuryRoute
-  '/_layout/work': typeof LayoutWorkRoute
   '/_layout/': typeof LayoutIndexRoute
   '/_layout/_authenticated/admin': typeof LayoutAuthenticatedAdminRouteRouteWithChildren
   '/_layout/_authenticated/client': typeof LayoutAuthenticatedClientRouteRouteWithChildren
@@ -446,7 +453,9 @@ export interface FileRoutesById {
   '/_layout/_authenticated/welcome': typeof LayoutAuthenticatedWelcomeRoute
   '/_layout/accept-invitation/$id': typeof LayoutAcceptInvitationIdRoute
   '/_layout/docs/$slug': typeof LayoutDocsSlugRoute
+  '/_layout/work/$slug': typeof LayoutWorkSlugRoute
   '/_layout/docs/': typeof LayoutDocsIndexRoute
+  '/_layout/work/': typeof LayoutWorkIndexRoute
   '/_layout/_authenticated/client/$engagementId': typeof LayoutAuthenticatedClientEngagementIdRouteRouteWithChildren
   '/_layout/_authenticated/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/_layout/_authenticated/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
@@ -486,7 +495,6 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/team'
     | '/treasury'
-    | '/work'
     | '/admin'
     | '/client'
     | '/platform'
@@ -496,7 +504,9 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/accept-invitation/$id'
     | '/docs/$slug'
+    | '/work/$slug'
     | '/docs/'
+    | '/work/'
     | '/client/$engagementId'
     | '/admin/members'
     | '/admin/settings'
@@ -534,14 +544,15 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/team'
     | '/treasury'
-    | '/work'
     | '/dashboard'
     | '/notifications'
     | '/profile'
     | '/welcome'
     | '/accept-invitation/$id'
     | '/docs/$slug'
+    | '/work/$slug'
     | '/docs'
+    | '/work'
     | '/admin/members'
     | '/admin/settings'
     | '/client/reports'
@@ -579,7 +590,6 @@ export interface FileRouteTypes {
     | '/_layout/sign-in'
     | '/_layout/team'
     | '/_layout/treasury'
-    | '/_layout/work'
     | '/_layout/'
     | '/_layout/_authenticated/admin'
     | '/_layout/_authenticated/client'
@@ -590,7 +600,9 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/welcome'
     | '/_layout/accept-invitation/$id'
     | '/_layout/docs/$slug'
+    | '/_layout/work/$slug'
     | '/_layout/docs/'
+    | '/_layout/work/'
     | '/_layout/_authenticated/client/$engagementId'
     | '/_layout/_authenticated/admin/members'
     | '/_layout/_authenticated/admin/settings'
@@ -638,13 +650,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof LayoutIndexRouteImport
-      parentRoute: typeof LayoutRoute
-    }
-    '/_layout/work': {
-      id: '/_layout/work'
-      path: '/work'
-      fullPath: '/work'
-      preLoaderRoute: typeof LayoutWorkRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/treasury': {
@@ -703,11 +708,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedRouteImport
       parentRoute: typeof LayoutRoute
     }
+    '/_layout/work/': {
+      id: '/_layout/work/'
+      path: '/work'
+      fullPath: '/work/'
+      preLoaderRoute: typeof LayoutWorkIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
     '/_layout/docs/': {
       id: '/_layout/docs/'
       path: '/docs'
       fullPath: '/docs/'
       preLoaderRoute: typeof LayoutDocsIndexRouteImport
+      parentRoute: typeof LayoutRoute
+    }
+    '/_layout/work/$slug': {
+      id: '/_layout/work/$slug'
+      path: '/work/$slug'
+      fullPath: '/work/$slug'
+      preLoaderRoute: typeof LayoutWorkSlugRouteImport
       parentRoute: typeof LayoutRoute
     }
     '/_layout/docs/$slug': {
@@ -1126,11 +1145,12 @@ interface LayoutRouteChildren {
   LayoutSignInRoute: typeof LayoutSignInRoute
   LayoutTeamRoute: typeof LayoutTeamRoute
   LayoutTreasuryRoute: typeof LayoutTreasuryRoute
-  LayoutWorkRoute: typeof LayoutWorkRoute
   LayoutIndexRoute: typeof LayoutIndexRoute
   LayoutAcceptInvitationIdRoute: typeof LayoutAcceptInvitationIdRoute
   LayoutDocsSlugRoute: typeof LayoutDocsSlugRoute
+  LayoutWorkSlugRoute: typeof LayoutWorkSlugRoute
   LayoutDocsIndexRoute: typeof LayoutDocsIndexRoute
+  LayoutWorkIndexRoute: typeof LayoutWorkIndexRoute
 }
 
 const LayoutRouteChildren: LayoutRouteChildren = {
@@ -1142,11 +1162,12 @@ const LayoutRouteChildren: LayoutRouteChildren = {
   LayoutSignInRoute: LayoutSignInRoute,
   LayoutTeamRoute: LayoutTeamRoute,
   LayoutTreasuryRoute: LayoutTreasuryRoute,
-  LayoutWorkRoute: LayoutWorkRoute,
   LayoutIndexRoute: LayoutIndexRoute,
   LayoutAcceptInvitationIdRoute: LayoutAcceptInvitationIdRoute,
   LayoutDocsSlugRoute: LayoutDocsSlugRoute,
+  LayoutWorkSlugRoute: LayoutWorkSlugRoute,
   LayoutDocsIndexRoute: LayoutDocsIndexRoute,
+  LayoutWorkIndexRoute: LayoutWorkIndexRoute,
 }
 
 const LayoutRouteWithChildren =

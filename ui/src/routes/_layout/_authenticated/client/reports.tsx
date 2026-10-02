@@ -25,6 +25,7 @@ import { engagementsListQueryOptions } from "@/lib/queries";
 export const Route = createFileRoute("/_layout/_authenticated/client/reports")({
   validateSearch: z.object({
     agency: z.string().optional().catch(undefined),
+    project: z.string().optional().catch(undefined),
     report: z.string().optional().catch(undefined),
   }),
   head: () => ({
@@ -39,7 +40,7 @@ export const Route = createFileRoute("/_layout/_authenticated/client/reports")({
 function ClientReportsIndex() {
   const apiClient = useApiClient();
   const navigate = Route.useNavigate();
-  const { agency, report } = Route.useSearch();
+  const { agency, project, report } = Route.useSearch();
   const engagementsQuery = useQuery(engagementsListQueryOptions(apiClient));
   const engagements = (engagementsQuery.data?.data ?? []).filter(
     (e) => e.side === "client" && canReadEngagement(e.status),
@@ -96,6 +97,7 @@ function ClientReportsIndex() {
           key={selected.id}
           engagement={selected}
           reportId={report}
+          initialProjectId={project}
           onOpenReport={(id) => void navigate({ search: { agency: selected.id, report: id } })}
         />
       )}

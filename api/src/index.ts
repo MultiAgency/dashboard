@@ -295,6 +295,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
             runEffect(agency.listProjects(await access.publicScope(context))),
           ),
 
+          getPublic: builder.agency.projects.getPublic.handler(async ({ context, input }) =>
+            runEffect(agency.getPublicProject(await access.publicScope(context), input.slug)),
+          ),
+
           listOwned: builder.agency.projects.listOwned
             .use(agencyMember)
             .handler(async ({ context }) => runEffect(agency.listProjects(context.scope))),
@@ -705,6 +709,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
       },
 
       community: {
+        searchBuilders: builder.community.searchBuilders
+          .use(agencyMember)
+          .handler(async ({ input }) => community.searchBuilders(input)),
+
         searchProjects: builder.community.searchProjects
           .use(agencyMember)
           .handler(async ({ input }) => community.searchProjects(input)),

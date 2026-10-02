@@ -1,10 +1,11 @@
-import { DownloadSimpleIcon } from "@phosphor-icons/react";
+import { DownloadSimpleIcon, FilePdfIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
   Button,
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -15,6 +16,11 @@ import {
   FieldLabel,
   Input,
   SectionHeader,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Skeleton,
   Spinner,
 } from "@/components";
@@ -26,20 +32,39 @@ import { SavedReportsList } from "@/components/saved-reports";
 import { useApiClient } from "@/lib/api";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 import {
+  clientPortalProjectsListQueryOptions,
   clientSavedReportQueryOptions,
   clientSavedReportsQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
 import { formatAllocatedSpent } from "@/lib/report-amounts";
 
+function isoDate(date: Date): string {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function monthRange(year: number, month: number) {
+  return { start: isoDate(new Date(year, month, 1)), end: isoDate(new Date(year, month + 1, 0)) };
+}
+
+const ALL_PROJECTS = "all";
+
+const MONTH_PRESETS = [
+  { label: "This month", range: (now: Date) => monthRange(now.getFullYear(), now.getMonth()) },
+  { label: "Last month", range: (now: Date) => monthRange(now.getFullYear(), now.getMonth() - 1) },
+];
+
 export function ClientReports({
   engagement,
   reportId,
   onOpenReport,
+  initialProjectId,
 }: {
   engagement: EngagementView;
   reportId: string | undefined;
   onOpenReport: (id: string) => void;
+  initialProjectId?: string;
 }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
@@ -49,6 +74,9 @@ export function ClientReports({
     enabled: !!reportId,
   });
   const report = reportId ? (openedQuery.data?.report ?? null) : null;
+  const projects =
+    useQuery(clientPortalProjectsListQueryOptions(apiClient, engagement.id)).data?.data ?? [];
+  const [projectId, setProjectId] = useState(initialProjectId ?? ALL_PROJECTS);
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -58,6 +86,7 @@ export function ClientReports({
     mutationFn: () =>
       apiClient.clientPortal.reports.generate({
         engagementId: engagement.id,
+        projectId: projectId === ALL_PROJECTS ? undefined : projectId,
         note: note.trim() || undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
@@ -74,11 +103,16 @@ export function ClientReports({
     if (!report) return;
     const overview = reportOverviewCsvValues(report.overview);
     const rows = [
-      ...report.clientBreakdown.map((r) => ({
-        section: "Project",
-        label: r.projectTitle,
-        value: formatAllocatedSpent(r.budgetByToken, r.spentByToken),
-      })),
+      ...report.clientBreakdown.flatMap((r) => [
+        {
+          section: "Project",
+          label: r.projectTitle,
+          value: formatAllocatedSpent(r.budgetByToken, r.spentByToken),
+        },
+        ...(r.builders && r.builders.length > 0
+          ? [{ section: "Builders", label: r.projectTitle, value: r.builders.join(", ") }]
+          : []),
+      ]),
       {
         section: "Overview",
         label: "Total billed",
@@ -96,18 +130,50 @@ export function ClientReports({
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="max-w-2xl text-sm text-pretty text-muted-foreground">
+      <p className="max-w-2xl text-sm text-pretty text-muted-foreground print:hidden">
         Generate a report of the Projects {engagement.agency.name} shares with you, with their
         budget and billings. Reports are saved with their memo, so everyone on your team can open
         them later.
       </p>
-      <Card>
+      <Card className="print:hidden">
         <CardHeader>
           <CardTitle>Generate a report</CardTitle>
           <CardDescription>Leave the dates empty to cover the whole Engagement.</CardDescription>
+          <CardAction className="flex flex-wrap gap-2">
+            {MONTH_PRESETS.map((preset) => (
+              <Button
+                key={preset.label}
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const range = preset.range(new Date());
+                  setStartDate(range.start);
+                  setEndDate(range.end);
+                }}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </CardAction>
         </CardHeader>
         <CardContent>
           <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="client-report-project">Project</FieldLabel>
+              <Select value={projectId} onValueChange={setProjectId}>
+                <SelectTrigger id="client-report-project" className="w-full sm:w-80">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_PROJECTS}>All shared projects</SelectItem>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
             <ReportNoteField id="client-report-note" value={note} onChange={setNote} />
             <div className="grid items-start gap-4 sm:grid-cols-2">
               <Field>
@@ -133,10 +199,16 @@ export function ClientReports({
         </CardContent>
         <CardFooter className="flex-wrap justify-end gap-2">
           {report && (
-            <Button variant="outline" onClick={handleDownload}>
-              <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
-              Download summary CSV
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => window.print()}>
+                <FilePdfIcon data-icon="inline-start" aria-hidden />
+                Download PDF
+              </Button>
+              <Button variant="outline" onClick={handleDownload}>
+                <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+                Download summary CSV
+              </Button>
+            </>
           )}
           <Button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
             {generateMutation.isPending && <Spinner data-icon="inline-start" />}
@@ -145,7 +217,7 @@ export function ClientReports({
         </CardFooter>
       </Card>
 
-      <section className="flex flex-col gap-3" aria-labelledby="client-saved-reports">
+      <section className="flex flex-col gap-3 print:hidden" aria-labelledby="client-saved-reports">
         <SectionHeader id="client-saved-reports" title="Saved reports" />
         {savedQuery.isLoading ? (
           <div className="flex flex-col gap-2" aria-busy="true">
@@ -160,6 +232,7 @@ export function ClientReports({
             reports={savedQuery.data?.data ?? []}
             selectedId={reportId}
             onOpen={openReport}
+            describe={(r) => r.projectTitle ?? "All shared projects"}
           />
         )}
       </section>

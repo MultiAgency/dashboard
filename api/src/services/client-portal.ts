@@ -135,14 +135,22 @@ export function createClientPortalService(
 
     generateReport: (
       context: PluginContext,
-      input: { engagementId: string; note?: string; startDate?: string; endDate?: string },
+      input: {
+        engagementId: string;
+        projectId?: string;
+        note?: string;
+        startDate?: string;
+        endDate?: string;
+      },
     ) =>
       Effect.gen(function* () {
         const engagement = yield* shared(context, input.engagementId);
+        if (input.projectId) assertShared(engagement, input.projectId);
         return yield* reports.generateSaved(
           engagement.scope,
           {
             engagementId: engagement.engagement.id,
+            projectId: input.projectId,
             forClient: true,
             note: input.note,
             startDate: input.startDate,

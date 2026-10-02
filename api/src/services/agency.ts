@@ -59,6 +59,51 @@ export function createAgencyService(
         return { data };
       }),
 
+    getPublicProject: (scope: AgencyScope, slug: string) =>
+      Effect.gen(function* () {
+        const found = yield* Effect.either(
+          Effect.tryPromise(() => directory.forAgency(scope).requireBySlug(slug)),
+        );
+        const candidate = Either.isRight(found) ? found.right : null;
+        const [match] = candidate
+          ? yield* Effect.promise(() => withoutClientIdeas(db, [candidate]))
+          : [];
+        if (!match || !isPublicActive(match)) {
+          return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Project not found" }));
+        }
+        const linkByProjectId: Map<string, Listing> = isNearnAvailable(scope.network)
+          ? yield* listings.forProjects(scope, [match.id], "nearn", { skipRefresh: true })
+          : new Map();
+        const link = linkByProjectId.get(match.id);
+        const [contributorRows, builders] = yield* Effect.promise(() =>
+          Promise.all([
+            db
+              .select({
+                nearAccount: projectContributors.nearAccount,
+                role: projectContributors.role,
+              })
+              .from(projectContributors)
+              .where(eq(projectContributors.projectId, match.id))
+              .orderBy(desc(projectContributors.createdAt)),
+            plugins.builders(scope.pluginContext).listBuilders({ limit: 100 }),
+          ]),
+        );
+        const nameByNear = new Map(
+          builders.data.map((b) => [b.nearAccount, b.name ?? b.nearAccount]),
+        );
+        return {
+          project: {
+            ...withListingId(match, link?.externalId ?? null),
+            nearnListing: link ? listingRowToNearnPayload(link) : null,
+          },
+          description: match.description,
+          builders: contributorRows.map((r) => ({
+            name: nameByNear.get(r.nearAccount) ?? r.nearAccount,
+            role: r.role,
+          })),
+        };
+      }),
+
     getProject: (scope: AgencyScope, slug: string) =>
       Effect.gen(function* () {
         const found = yield* Effect.either(

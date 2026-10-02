@@ -271,6 +271,7 @@ const reportOutput = z.object({
     billedByToken: z.array(tokenAmount),
     period: z.string(),
   }),
+  project: z.object({ title: z.string(), slug: z.string() }).nullable().optional(),
   contributorStats: z.array(
     z.object({
       nearAccount: z.string(),
@@ -286,6 +287,7 @@ const reportOutput = z.object({
       projectSlug: z.string(),
       budgetByToken: z.array(tokenAmount),
       spentByToken: z.array(tokenAmount),
+      builders: z.array(z.string()).optional(),
     }),
   ),
   notes: z.string(),
@@ -301,6 +303,7 @@ const savedReportSummary = z.object({
   startDate: z.string().nullable(),
   endDate: z.string().nullable(),
   note: z.string().nullable(),
+  projectTitle: z.string().nullable().optional(),
   createdAt: z.date(),
 });
 
@@ -629,6 +632,18 @@ export const contract = oc.router({
       list: oc
         .route({ method: "GET", path: "/projects" })
         .output(z.object({ data: z.array(projectWithNearn) })),
+
+      getPublic: oc
+        .route({ method: "GET", path: "/work/{slug}" })
+        .input(z.object({ slug }))
+        .output(
+          z.object({
+            project: projectWithNearn,
+            description: z.string().nullable(),
+            builders: z.array(z.object({ name: z.string(), role: z.string().nullable() })),
+          }),
+        )
+        .errors({ NOT_FOUND }),
 
       listOwned: oc
         .route({ method: "GET", path: "/admin/projects" })
@@ -1166,6 +1181,7 @@ export const contract = oc.router({
         .input(
           z.object({
             engagementId: z.string().min(1),
+            projectId: z.string().min(1).optional(),
             note: z.string().max(4000).optional(),
             startDate: reportDate,
             endDate: reportDate,
@@ -1514,6 +1530,32 @@ export const contract = oc.router({
   },
 
   community: {
+    searchBuilders: oc
+      .route({ method: "GET", path: "/admin/community/builders" })
+      .input(
+        z.object({
+          query: z.string().max(200).optional(),
+          cursor: z.string().max(200).optional(),
+        }),
+      )
+      .output(
+        z.object({
+          source: z.object({ name: z.string(), url: z.string() }),
+          data: z.array(
+            z.object({
+              nearAccount: z.string(),
+              name: z.string().nullable(),
+              bio: z.string().nullable(),
+              skills: z.array(z.string()),
+              location: z.string().nullable(),
+              links: z.record(z.string(), z.string()).nullable(),
+            }),
+          ),
+          nextCursor: z.string().nullable(),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN, SERVICE_UNAVAILABLE }),
+
     searchProjects: oc
       .route({ method: "GET", path: "/admin/community/projects" })
       .input(

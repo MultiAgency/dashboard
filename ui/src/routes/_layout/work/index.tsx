@@ -1,4 +1,4 @@
-import { ArrowRightIcon, ArrowUpRightIcon, FolderSimpleIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, FolderSimpleIcon } from "@phosphor-icons/react";
 import { type UseQueryResult, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -21,24 +21,18 @@ import {
 import { LoadError } from "@/components/load-error";
 import { PageHeader } from "@/components/page-header";
 import { useApiClient } from "@/lib/api";
-import { formatNearnReward, nearnDescriptionPreview, nearnListingHref } from "@/lib/nearn";
-import { projectsListQueryOptions, publicSettingsQueryOptions } from "@/lib/queries";
+import { formatNearnReward, nearnDescriptionPreview } from "@/lib/nearn";
+import { projectsListQueryOptions } from "@/lib/queries";
 
-export const Route = createFileRoute("/_layout/work")({
+export const Route = createFileRoute("/_layout/work/")({
   head: () => ({
     meta: [{ title: "Work" }, { name: "description", content: "Active Projects." }],
   }),
   loader: async ({ context }) => {
-    const [settings, projects] = await Promise.all([
-      context.queryClient
-        .ensureQueryData(publicSettingsQueryOptions(context.apiClient))
-        .catch(() => null),
-      context.queryClient
-        .ensureQueryData(projectsListQueryOptions(context.apiClient))
-        .catch(() => null),
-    ]);
-
-    return { settings, projects };
+    const projects = await context.queryClient
+      .ensureQueryData(projectsListQueryOptions(context.apiClient))
+      .catch(() => null);
+    return { projects };
   },
   component: WorkIndex,
 });
@@ -74,32 +68,19 @@ function WorkIndex() {
     staleTime: 30_000,
     initialData: loaderData.projects ?? undefined,
   });
-  const settingsQuery = useQuery({
-    ...publicSettingsQueryOptions(apiClient),
-    initialData: loaderData.settings ?? undefined,
-  });
 
   return (
     <div className="flex animate-fade-in flex-col gap-8">
       <PageHeader title="Our work" description="Projects we are building now." />
 
-      <PublicProjects
-        projectsQuery={projectsQuery}
-        nearnSponsor={settingsQuery.data?.nearnAccountId ?? null}
-      />
+      <PublicProjects projectsQuery={projectsQuery} />
     </div>
   );
 }
 
 type ProjectsQuery = UseQueryResult<{ data: ProjectListItem[] }>;
 
-function PublicProjects({
-  projectsQuery,
-  nearnSponsor,
-}: {
-  projectsQuery: ProjectsQuery;
-  nearnSponsor: string | null;
-}) {
+function PublicProjects({ projectsQuery }: { projectsQuery: ProjectsQuery }) {
   if (projectsQuery.isLoading) {
     return (
       <div className="flex flex-col gap-2.5" aria-busy="true">
@@ -116,7 +97,7 @@ function PublicProjects({
     return (
       <ItemGroup>
         {projectsQuery.data.data.map((p) => (
-          <ProjectRow key={p.id} project={p} nearnSponsor={nearnSponsor} />
+          <ProjectRow key={p.id} project={p} />
         ))}
       </ItemGroup>
     );
@@ -142,15 +123,8 @@ function PublicProjects({
   );
 }
 
-function ProjectRow({
-  project,
-  nearnSponsor,
-}: {
-  project: ProjectListItem;
-  nearnSponsor: string | null;
-}) {
+function ProjectRow({ project }: { project: ProjectListItem }) {
   const n = project.nearnListing;
-  const bountyHref = n ? nearnListingHref(n, nearnSponsor) : null;
   const descriptionPreview = nearnDescriptionPreview(n?.description);
   const deadline = n?.deadline ? new Date(n.deadline).toISOString().slice(0, 10) : null;
   const facts = [
@@ -174,14 +148,12 @@ function ProjectRow({
         </ItemContent>
         <ItemActions>
           <Badge variant="outline">{n?.status ?? project.status}</Badge>
-          {bountyHref && (
-            <Button asChild size="sm" variant="outline">
-              <a href={bountyHref} target="_blank" rel="noopener noreferrer">
-                Open bounty
-                <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
-              </a>
-            </Button>
-          )}
+          <Button asChild size="sm" variant="outline">
+            <Link to="/work/$slug" params={{ slug: project.slug }}>
+              Open
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
+            </Link>
+          </Button>
         </ItemActions>
       </Item>
     </li>

@@ -93,6 +93,15 @@ export function projectsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export function publicProjectQueryOptions(apiClient: ApiClient, slug: string) {
+  return queryOptions({
+    queryKey: [...projectsListQueryKey, "public", getNetwork(), slug] as const,
+    queryFn: () => apiClient.agency.projects.getPublic({ slug }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export const tokensListQueryKey = ["tokens", "list"] as const;
 
 export function tokensListQueryOptions(apiClient: ApiClient) {
@@ -284,6 +293,15 @@ export function adminNearnListingQueryOptions(apiClient: ApiClient, slug: string
     queryKey: [...adminNearnListingQueryKey, ...workspaceKey(), slug] as const,
     queryFn: () => apiClient.nearn.getListing({ slug }),
     enabled: slug.length > 1,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function communityBuildersQueryOptions(apiClient: ApiClient, query: string) {
+  return queryOptions({
+    queryKey: ["admin", "community", "builders", query] as const,
+    queryFn: () => apiClient.community.searchBuilders({ query: query || undefined }),
     staleTime: 60_000,
     retry: false,
   });

@@ -28,7 +28,7 @@ export function SharedProjectDetail({
 }: {
   engagement: EngagementView;
   slug: string;
-  back: ReactNode;
+  back: ReactNode | ((project: { id: string; title: string }) => ReactNode);
 }) {
   const apiClient = useApiClient();
   const { agencyDao, isLoaded } = useMeRoles();
@@ -57,7 +57,7 @@ export function SharedProjectDetail({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        {back}
+        {typeof back === "function" ? back(project) : back}
         <SectionHeader
           title={project.title}
           description={

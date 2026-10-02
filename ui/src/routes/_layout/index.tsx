@@ -700,7 +700,7 @@ function ProjectRow({ project }: { project: LandingProject }) {
         <ItemActions>
           <Badge variant="outline">{project.status}</Badge>
           <Button asChild size="sm" variant="outline">
-            <Link to="/work">
+            <Link to="/work/$slug" params={{ slug: project.slug }}>
               Open
               <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Link>

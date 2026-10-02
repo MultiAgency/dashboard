@@ -1,4 +1,4 @@
-import { PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
+import { DownloadSimpleIcon, PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -20,6 +20,7 @@ import {
   Input,
   Textarea,
 } from "@/components";
+import { CommunityBuildersImportPanel } from "@/components/admin/community-builders-import-panel";
 import { AdminError } from "@/components/admin-error";
 import { Field } from "@/components/admin-form";
 import type { ApiClient } from "@/lib/api";
@@ -39,6 +40,7 @@ export function ContributorsAdminSection() {
   const apiClient = useApiClient();
   const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   if (contributorsQuery.isError) {
     return <AdminError error={contributorsQuery.error} />;
@@ -115,6 +117,13 @@ export function ContributorsAdminSection() {
     <div className="flex flex-col gap-6">
       {creating && <ContributorCreateForm onDone={() => setCreating(false)} />}
 
+      {importing && !creating && (
+        <CommunityBuildersImportPanel
+          existingAccounts={new Set((contributorsQuery.data?.data ?? []).map((c) => c.nearAccount))}
+          onClose={() => setImporting(false)}
+        />
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>
@@ -124,7 +133,13 @@ export function ContributorsAdminSection() {
             Profiles are shared across Agencies and keyed by NEAR account.
           </CardDescription>
           {!creating && (
-            <CardAction>
+            <CardAction className="flex flex-wrap gap-2">
+              {!importing && (
+                <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
+                  <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+                  Import
+                </Button>
+              )}
               <Button size="sm" onClick={() => setCreating(true)}>
                 <PlusIcon data-icon="inline-start" aria-hidden />
                 New builder

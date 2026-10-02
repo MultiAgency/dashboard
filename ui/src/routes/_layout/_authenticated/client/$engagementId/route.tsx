@@ -90,7 +90,7 @@ function EngagementLayout() {
           )
         }
       />
-      <Tabs value={current} activationMode="manual">
+      <Tabs value={current} activationMode="manual" className="print:hidden">
         <ScrollableTabsList aria-label="Engagement sections">
           {sections.map((section) => (
             <TabsTrigger key={section.to} value={section.to} asChild>

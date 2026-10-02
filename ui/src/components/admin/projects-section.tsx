@@ -2,7 +2,6 @@ import {
   ArrowRightIcon,
   ArrowUpRightIcon,
   DownloadSimpleIcon,
-  LinkSimpleIcon,
   PlusIcon,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -33,7 +32,6 @@ import {
 import { CommunityImportPanel } from "@/components/admin/community-import-panel";
 import { ProjectForm, type ProjectFormValues } from "@/components/admin/project-form";
 import { AdminError } from "@/components/admin-error";
-import { Empty } from "@/components/admin-form";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
@@ -64,6 +62,8 @@ export function ProjectsAdminSection() {
   if (projectsQuery.isError) {
     return <AdminError error={projectsQuery.error} />;
   }
+
+  const anyNearnListing = (projectsQuery.data?.data ?? []).some((p) => p.nearnListing);
 
   const columns: ColumnDef<AdminProject>[] = [
     {
@@ -97,14 +97,20 @@ export function ProjectsAdminSection() {
       accessorKey: "visibility",
       cell: ({ row }) => <Badge variant="outline">{row.original.visibility}</Badge>,
     },
-    {
-      id: "nearn",
-      header: "NEARN",
-      accessorFn: (row) => row.nearnListing?.slug ?? "",
-      cell: ({ row }) => (
-        <span className="text-muted-foreground">{row.original.nearnListing?.slug ?? "—"}</span>
-      ),
-    },
+    ...(anyNearnListing
+      ? [
+          {
+            id: "nearn",
+            header: "NEARN",
+            accessorFn: (row: AdminProject) => row.nearnListing?.slug ?? "",
+            cell: ({ row }: { row: { original: AdminProject } }) => (
+              <span className="text-muted-foreground">
+                {row.original.nearnListing?.slug ?? "—"}
+              </span>
+            ),
+          } satisfies ColumnDef<AdminProject>,
+        ]
+      : []),
     {
       id: "actions",
       header: "",
@@ -287,9 +293,8 @@ function NearnSponsorBountiesPanel({
   const apiClient = useApiClient();
   const query = useQuery(adminNearnSponsorBountiesQueryOptions(apiClient));
 
-  if (query.isError || (!query.isLoading && !query.data)) return null;
-
   const unlinked = query.data ? query.data.bounties.filter((b) => !linkedSlugs.has(b.slug)) : [];
+  if (query.isError || !query.data?.sponsorSlug || unlinked.length === 0) return null;
 
   return (
     <Card>
@@ -302,55 +307,33 @@ function NearnSponsorBountiesPanel({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {query.isLoading ? (
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-        ) : !query.data?.sponsorSlug ? (
-          <Empty
-            icon={<LinkSimpleIcon aria-hidden />}
-            label="No NEARN sponsor configured"
-            description="Set the Agency NEARN account in Settings to surface unlinked bounties here."
-          >
-            <Button asChild variant="outline" size="sm">
-              <Link to="/admin/settings">Open settings</Link>
-            </Button>
-          </Empty>
-        ) : unlinked.length === 0 ? (
-          <Empty
-            icon={<LinkSimpleIcon aria-hidden />}
-            label="Every current NEARN bounty is linked"
-          />
-        ) : (
-          <ItemGroup>
-            {unlinked.map((b) => (
-              <Item key={b.slug} variant="outline" size="sm" asChild>
-                <li>
-                  <ItemContent>
-                    <ItemTitle>{b.title ?? b.slug}</ItemTitle>
-                    <ItemDescription>
-                      @{b.slug}
-                      {b.rewardAmount !== null &&
-                        b.token &&
-                        ` · ${formatTokenAmount(String(b.rewardAmount), b.token)}`}
-                    </ItemDescription>
-                  </ItemContent>
-                  <ItemActions>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onCreateFrom({ slug: b.slug, title: b.title })}
-                    >
-                      <PlusIcon data-icon="inline-start" aria-hidden />
-                      Create project
-                    </Button>
-                  </ItemActions>
-                </li>
-              </Item>
-            ))}
-          </ItemGroup>
-        )}
+        <ItemGroup>
+          {unlinked.map((b) => (
+            <Item key={b.slug} variant="outline" size="sm" asChild>
+              <li>
+                <ItemContent>
+                  <ItemTitle>{b.title ?? b.slug}</ItemTitle>
+                  <ItemDescription>
+                    @{b.slug}
+                    {b.rewardAmount !== null &&
+                      b.token &&
+                      ` · ${formatTokenAmount(String(b.rewardAmount), b.token)}`}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onCreateFrom({ slug: b.slug, title: b.title })}
+                  >
+                    <PlusIcon data-icon="inline-start" aria-hidden />
+                    Create project
+                  </Button>
+                </ItemActions>
+              </li>
+            </Item>
+          ))}
+        </ItemGroup>
       </CardContent>
     </Card>
   );

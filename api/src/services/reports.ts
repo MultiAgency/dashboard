@@ -7,6 +7,7 @@ import {
   budgets,
   engagementProjects,
   engagements,
+  projectContributors,
   type ReportSnapshotRow,
   reportSnapshots,
 } from "../db/schema";
@@ -39,8 +40,18 @@ function summaryOf(row: ReportSnapshotRow) {
     startDate: row.startDate,
     endDate: row.endDate,
     note: row.note,
+    projectTitle: projectTitleOf(row.payload),
     createdAt: row.createdAt,
   };
+}
+
+function projectTitleOf(payload: string): string | null {
+  try {
+    const parsed = JSON.parse(payload) as { project?: { title?: string } | null };
+    return parsed.project?.title ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function createReportsService(
@@ -203,12 +214,34 @@ export function createReportsService(
         contributorStats.set(b.nearAccount, existing);
       }
 
+      const assignmentRows =
+        projectIds.length > 0
+          ? yield* Effect.promise(() =>
+              db
+                .select({
+                  projectId: projectContributors.projectId,
+                  nearAccount: projectContributors.nearAccount,
+                })
+                .from(projectContributors)
+                .where(inArray(projectContributors.projectId, projectIds)),
+            )
+          : [];
+      const buildersOf = (projectId: string) =>
+        [
+          ...new Set(
+            assignmentRows
+              .filter((r) => r.projectId === projectId)
+              .map((r) => builderByNear.get(r.nearAccount) ?? r.nearAccount),
+          ),
+        ].sort((a, b) => a.localeCompare(b));
+
       const clientBreakdown: Array<{
         clientName: string;
         projectTitle: string;
         projectSlug: string;
         budgetByToken: ReturnType<typeof sumByToken>;
         spentByToken: ReturnType<typeof sumByToken>;
+        builders: string[];
       }> = [];
 
       for (const engagement of reported) {
@@ -227,6 +260,7 @@ export function createReportsService(
               budgetRows.filter((b) => b.projectId === pid && b.engagementId === engagement.id),
             ),
             spentByToken: sumByToken(paidBillings.filter((b) => b.projectId === pid)),
+            builders: buildersOf(pid),
           });
         }
       }
@@ -240,7 +274,10 @@ export function createReportsService(
               ? `through ${input.endDate}`
               : "all time";
 
+      const scopedProject = input.projectId ? projectById.get(input.projectId) : undefined;
+
       return {
+        project: scopedProject ? { title: scopedProject.title, slug: scopedProject.slug } : null,
         overview: {
           projectCount: projectIds.length,
           budgetByToken: sumByToken(budgetRows),

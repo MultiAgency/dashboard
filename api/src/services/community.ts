@@ -38,7 +38,45 @@ export const communityContract = oc.router({
         }),
       }),
     ),
+  listBuilders: oc
+    .route({ method: "GET", path: "/v1/builders" })
+    .input(
+      z.object({
+        search: z.string().max(200).optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+        cursor: z.string().optional(),
+      }),
+    )
+    .output(
+      z.object({
+        data: z.array(
+          z.object({
+            nearAccount: z.string(),
+            name: z.string().nullable(),
+            bio: z.string().nullable(),
+            skills: z.array(z.string()),
+            location: z.string().nullable(),
+            links: z.record(z.string(), z.string()).nullable(),
+            withdrawnAt: z.string().nullable().optional(),
+          }),
+        ),
+        meta: z.object({
+          total: z.number(),
+          hasMore: z.boolean(),
+          nextCursor: z.string().nullable(),
+        }),
+      }),
+    ),
 });
+
+export type CommunityBuilder = {
+  nearAccount: string;
+  name: string | null;
+  bio: string | null;
+  skills: string[];
+  location: string | null;
+  links: Record<string, string> | null;
+};
 
 export type CommunityProject = {
   id: string;
@@ -61,7 +99,37 @@ export function createCommunityService(apiUrl: string) {
     new RPCLink({ url: `${base}/rpc` }),
   );
 
+  const unreachable = (err: unknown) =>
+    new ORPCError("SERVICE_UNAVAILABLE", {
+      message: `Could not reach ${new URL(base).host}`,
+      cause: err,
+    });
+
   return {
+    searchBuilders: async (input: { query?: string; cursor?: string }) => {
+      const page = await client
+        .listBuilders({ search: input.query?.trim() || undefined, limit: 24, cursor: input.cursor })
+        .catch((err: unknown) => {
+          throw unreachable(err);
+        });
+      return {
+        source: { name: new URL(base).host, url: origin },
+        data: page.data
+          .filter((b) => !b.withdrawnAt)
+          .map(
+            (b): CommunityBuilder => ({
+              nearAccount: b.nearAccount,
+              name: b.name,
+              bio: b.bio,
+              skills: b.skills,
+              location: b.location,
+              links: b.links,
+            }),
+          ),
+        nextCursor: page.meta.nextCursor ?? null,
+      };
+    },
+
     searchProjects: async (input: { query?: string; cursor?: string }) => {
       const page = await client
         .listProjects({
@@ -74,10 +142,7 @@ export function createCommunityService(apiUrl: string) {
           cursor: input.cursor,
         })
         .catch((err: unknown) => {
-          throw new ORPCError("SERVICE_UNAVAILABLE", {
-            message: `Could not reach ${new URL(base).host}`,
-            cause: err,
-          });
+          throw unreachable(err);
         });
       return {
         source: { name: new URL(base).host, url: origin },

@@ -27,7 +27,7 @@ function ClientProjectPage() {
     <SharedProjectDetail
       engagement={engagement}
       slug={slug}
-      back={
+      back={(project) => (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Button asChild size="sm" variant="ghost" className="w-fit">
             <Link to="/client/projects">
@@ -36,12 +36,12 @@ function ClientProjectPage() {
             </Link>
           </Button>
           <Button asChild size="sm" variant="outline">
-            <Link to="/client/reports" search={{ agency: engagement.id }}>
-              Reports for {engagement.agency.name}
+            <Link to="/client/reports" search={{ agency: engagement.id, project: project.id }}>
+              Report on this project
             </Link>
           </Button>
         </div>
-      }
+      )}
     />
   );
 }
