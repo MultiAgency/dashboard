@@ -40,6 +40,7 @@ export type ReportViewData = {
     projectSlug: string;
     budgetByToken: TokenAmount[];
     spentByToken: TokenAmount[];
+    builders?: string[];
   }>;
   notes?: string;
 };

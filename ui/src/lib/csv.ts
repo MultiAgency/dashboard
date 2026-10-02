@@ -9,9 +9,12 @@ export function toCsv<T>(rows: T[], columns: CsvColumn<T>[]): string {
   return [headerLine, ...bodyLines].join("\n");
 }
 
+const FORMULA_START = /^[=+\-@\t\r]/;
+
 function escapeCell(value: string | number): string {
-  const s = String(value);
-  if (s === "") return "";
+  const raw = String(value);
+  if (raw === "") return "";
+  const s = typeof value === "string" && FORMULA_START.test(raw) ? `'${raw}` : raw;
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

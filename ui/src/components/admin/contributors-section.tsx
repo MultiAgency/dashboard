@@ -1,4 +1,4 @@
-import { PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
+import { DownloadSimpleIcon, PencilSimpleIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -20,8 +20,10 @@ import {
   Input,
   Textarea,
 } from "@/components";
+import { CommunityBuildersImportPanel } from "@/components/admin/community-builders-import-panel";
 import { AdminError } from "@/components/admin-error";
 import { Field } from "@/components/admin-form";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import {
@@ -39,10 +41,13 @@ export function ContributorsAdminSection() {
   const apiClient = useApiClient();
   const contributorsQuery = useQuery(adminContributorsListQueryOptions(apiClient));
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   if (contributorsQuery.isError) {
     return <AdminError error={contributorsQuery.error} />;
   }
+
+  const manageable = new Set(contributorsQuery.data?.manageable ?? []);
 
   const columns: ColumnDef<Contributor>[] = [
     {
@@ -50,18 +55,13 @@ export function ContributorsAdminSection() {
       header: "Name",
       accessorKey: "name",
       cell: ({ row }) => (
-        <span className="flex items-center gap-2">
-          <Link
-            to="/admin/contributors/$nearAccount"
-            params={{ nearAccount: row.original.nearAccount }}
-            className="font-medium hover:underline"
-          >
-            {row.original.name ?? row.original.nearAccount}
-          </Link>
-          {row.original.registered && !row.original.claimed && (
-            <Badge variant="outline">Unclaimed</Badge>
-          )}
-        </span>
+        <Link
+          to="/admin/contributors/$nearAccount"
+          params={{ nearAccount: row.original.nearAccount }}
+          className="font-medium hover:underline"
+        >
+          {row.original.name ?? row.original.nearAccount}
+        </Link>
       ),
     },
     {
@@ -101,7 +101,7 @@ export function ContributorsAdminSection() {
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => (
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-1">
           <Button asChild variant="ghost" size="icon-sm">
             <Link
               to="/admin/contributors/$nearAccount"
@@ -111,6 +111,15 @@ export function ContributorsAdminSection() {
               <PencilSimpleIcon aria-hidden />
             </Link>
           </Button>
+          {row.original.registered &&
+            !row.original.claimed &&
+            manageable.has(row.original.nearAccount) && (
+              <RemoveBuilderButton
+                nearAccount={row.original.nearAccount}
+                name={row.original.name ?? row.original.nearAccount}
+                iconOnly
+              />
+            )}
         </div>
       ),
     },
@@ -119,6 +128,13 @@ export function ContributorsAdminSection() {
   return (
     <div className="flex flex-col gap-6">
       {creating && <ContributorCreateForm onDone={() => setCreating(false)} />}
+
+      {importing && !creating && (
+        <CommunityBuildersImportPanel
+          existingAccounts={new Set((contributorsQuery.data?.data ?? []).map((c) => c.nearAccount))}
+          onClose={() => setImporting(false)}
+        />
+      )}
 
       <Card>
         <CardHeader>
@@ -129,7 +145,13 @@ export function ContributorsAdminSection() {
             Profiles are shared across Agencies and keyed by NEAR account.
           </CardDescription>
           {!creating && (
-            <CardAction>
+            <CardAction className="flex flex-wrap gap-2">
+              {!importing && (
+                <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
+                  <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+                  Import
+                </Button>
+              )}
               <Button size="sm" onClick={() => setCreating(true)}>
                 <PlusIcon data-icon="inline-start" aria-hidden />
                 New builder
@@ -335,12 +357,7 @@ export function ContributorProfileForm({
         <CardTitle>
           <h2>Profile</h2>
         </CardTitle>
-        <CardDescription>
-          Shown to every Agency that works with this builder.
-          {contributor.registered && !contributor.claimed
-            ? ` The builder has not claimed it yet: they claim it by signing in with ${contributor.nearAccount} and saving it.`
-            : ""}
-        </CardDescription>
+        <CardDescription>Shown to every Agency that works with this builder.</CardDescription>
         {!contributor.registered && (
           <CardAction>
             <Badge variant="outline">Not registered yet</Badge>
@@ -418,5 +435,54 @@ export function ContributorProfileForm({
         </CardFooter>
       </form>
     </Card>
+  );
+}
+
+export function RemoveBuilderButton({
+  nearAccount,
+  name,
+  iconOnly = false,
+  onRemoved,
+}: {
+  nearAccount: string;
+  name: string;
+  iconOnly?: boolean;
+  onRemoved?: () => void;
+}) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+
+  return (
+    <>
+      <Button
+        variant={iconOnly ? "ghost" : "outline"}
+        size={iconOnly ? "icon-sm" : "sm"}
+        onClick={() => setConfirming(true)}
+        aria-label={iconOnly ? `Remove ${name}` : undefined}
+      >
+        <TrashIcon aria-hidden data-icon={iconOnly ? undefined : "inline-start"} />
+        {!iconOnly && "Remove builder"}
+      </Button>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`Remove ${name}?`}
+        description="Their profile is deleted from the builder directory. Billings already recorded for them are kept."
+        confirmLabel="Remove builder"
+        destructive
+        onConfirm={async () => {
+          try {
+            await apiClient.contributors.delete({ nearAccount });
+          } catch (err) {
+            toast.error((err as Error).message || "Could not remove builder");
+            return;
+          }
+          await refreshAfter(queryClient, { type: "builders" });
+          toast.success(`${name} removed`);
+          onRemoved?.();
+        }}
+      />
+    </>
   );
 }

@@ -4,8 +4,13 @@ import type { ApiClient } from "./api";
 import { type AuthClient, sessionQueryKey, sessionQueryOptions } from "./auth";
 import { pendingInvitations } from "./invitations";
 import { type OrganizationHome, organizationHome, organizationToActivate } from "./landing";
-import { meRolesQueryKey, meRolesQueryOptions, myOrganizationsQueryKey } from "./queries";
-import { announceWorkspace } from "./workspace";
+import {
+  meRolesQueryKey,
+  meRolesQueryOptions,
+  myOrganizationsQueryKey,
+  setActiveOrganizationKey,
+} from "./queries";
+import { announceWorkspace, switchWorkspace } from "./workspace";
 
 export const WELCOME_PATH = "/welcome";
 
@@ -87,8 +92,10 @@ async function activateOrganization({
   const activeId = session?.session?.activeOrganizationId ?? null;
   const target = organizationToActivate(activeId, organizations);
   if (target && target !== activeId) {
-    const { error } = await authClient.organization.setActive({ organizationId: target });
-    if (error) throw new Error(error.message ?? "Could not open your Organization");
+    if (!(await switchWorkspace(authClient, target))) {
+      throw new Error("Could not open your Organization");
+    }
+    setActiveOrganizationKey(target);
     announceWorkspace(target);
     await refreshAccountQueries(queryClient);
   }
@@ -103,7 +110,7 @@ export async function landingDestination(
     ...meRolesQueryOptions(deps.apiClient),
     staleTime: 0,
   });
-  return organizationHome(roles.capabilities);
+  return organizationHome(roles.capabilities, roles.recommendedView);
 }
 
 export async function signInDestination(

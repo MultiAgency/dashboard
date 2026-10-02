@@ -1,4 +1,9 @@
-import { ArrowRightIcon, ArrowUpRightIcon, LinkSimpleIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  ArrowRightIcon,
+  ArrowUpRightIcon,
+  DownloadSimpleIcon,
+  PlusIcon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -24,9 +29,9 @@ import {
   ItemTitle,
   Skeleton,
 } from "@/components";
-import { ProjectForm } from "@/components/admin/project-form";
+import { CommunityImportPanel } from "@/components/admin/community-import-panel";
+import { ProjectForm, type ProjectFormValues } from "@/components/admin/project-form";
 import { AdminError } from "@/components/admin-error";
-import { Empty } from "@/components/admin-form";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
@@ -36,6 +41,7 @@ import {
   adminNearnSponsorBountiesQueryOptions,
   adminProjectsListQueryOptions,
 } from "@/lib/queries";
+import { isValidSlug, slugify } from "@/lib/slugify";
 
 type AdminProject = Awaited<ReturnType<ApiClient["agency"]["projects"]["list"]>>["data"][number];
 
@@ -49,15 +55,15 @@ export function ProjectsAdminSection() {
   const apiClient = useApiClient();
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
   const [creating, setCreating] = useState(false);
-  const [prefill, setPrefill] = useState<{
-    nearnListingId: string;
-    title: string;
-    slug: string;
-  } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [prefill, setPrefill] = useState<Partial<ProjectFormValues> | null>(null);
+  const existingSlugs = new Set((projectsQuery.data?.data ?? []).map((p) => p.slug));
 
   if (projectsQuery.isError) {
     return <AdminError error={projectsQuery.error} />;
   }
+
+  const anyNearnListing = (projectsQuery.data?.data ?? []).some((p) => p.nearnListing);
 
   const columns: ColumnDef<AdminProject>[] = [
     {
@@ -91,14 +97,20 @@ export function ProjectsAdminSection() {
       accessorKey: "visibility",
       cell: ({ row }) => <Badge variant="outline">{row.original.visibility}</Badge>,
     },
-    {
-      id: "nearn",
-      header: "NEARN",
-      accessorFn: (row) => row.nearnListing?.slug ?? "",
-      cell: ({ row }) => (
-        <span className="text-muted-foreground">{row.original.nearnListing?.slug ?? "—"}</span>
-      ),
-    },
+    ...(anyNearnListing
+      ? [
+          {
+            id: "nearn",
+            header: "NEARN",
+            accessorFn: (row: AdminProject) => row.nearnListing?.slug ?? "",
+            cell: ({ row }: { row: { original: AdminProject } }) => (
+              <span className="text-muted-foreground">
+                {row.original.nearnListing?.slug ?? "—"}
+              </span>
+            ),
+          } satisfies ColumnDef<AdminProject>,
+        ]
+      : []),
     {
       id: "actions",
       header: "",
@@ -119,6 +131,7 @@ export function ProjectsAdminSection() {
 
   const startCreate = (next: typeof prefill) => {
     setPrefill(next);
+    setImporting(false);
     setCreating(true);
   };
 
@@ -126,23 +139,30 @@ export function ProjectsAdminSection() {
     <div className="flex flex-col gap-6">
       {creating && (
         <ProjectForm
-          key={prefill ? `prefill-${prefill.slug}-${prefill.nearnListingId}` : "create"}
+          key={prefill ? `prefill-${prefill.slug}-${prefill.nearnListingId ?? ""}` : "create"}
           mode="create"
           defaultValues={
-            prefill
-              ? {
-                  slug: prefill.slug,
-                  title: prefill.title,
-                  nearnListingId: prefill.nearnListingId,
-                  status: "active",
-                  visibility: "private",
-                }
-              : undefined
+            prefill ? { status: "active", visibility: "private", ...prefill } : undefined
           }
           onDone={() => {
             setCreating(false);
             setPrefill(null);
           }}
+        />
+      )}
+
+      {importing && !creating && (
+        <CommunityImportPanel
+          existingSlugs={existingSlugs}
+          onClose={() => setImporting(false)}
+          onImport={(project) =>
+            startCreate({
+              slug: isValidSlug(project.slug) ? project.slug : slugify(project.title),
+              title: project.title,
+              description: project.description,
+              repository: project.repository,
+            })
+          }
         />
       )}
 
@@ -155,7 +175,13 @@ export function ProjectsAdminSection() {
             Open a project to manage its builders, budget and billings.
           </CardDescription>
           {!creating && (
-            <CardAction>
+            <CardAction className="flex flex-wrap gap-2">
+              {!importing && (
+                <Button size="sm" variant="outline" onClick={() => setImporting(true)}>
+                  <DownloadSimpleIcon data-icon="inline-start" aria-hidden />
+                  Import
+                </Button>
+              )}
               <Button size="sm" onClick={() => startCreate(null)}>
                 <PlusIcon data-icon="inline-start" aria-hidden />
                 New project
@@ -267,9 +293,8 @@ function NearnSponsorBountiesPanel({
   const apiClient = useApiClient();
   const query = useQuery(adminNearnSponsorBountiesQueryOptions(apiClient));
 
-  if (query.isError || (!query.isLoading && !query.data)) return null;
-
   const unlinked = query.data ? query.data.bounties.filter((b) => !linkedSlugs.has(b.slug)) : [];
+  if (query.isError || !query.data?.sponsorSlug || unlinked.length === 0) return null;
 
   return (
     <Card>
@@ -282,55 +307,33 @@ function NearnSponsorBountiesPanel({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {query.isLoading ? (
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-        ) : !query.data?.sponsorSlug ? (
-          <Empty
-            icon={<LinkSimpleIcon aria-hidden />}
-            label="No NEARN sponsor configured"
-            description="Set the Agency NEARN account in Settings to surface unlinked bounties here."
-          >
-            <Button asChild variant="outline" size="sm">
-              <Link to="/admin/settings">Open settings</Link>
-            </Button>
-          </Empty>
-        ) : unlinked.length === 0 ? (
-          <Empty
-            icon={<LinkSimpleIcon aria-hidden />}
-            label="Every current NEARN bounty is linked"
-          />
-        ) : (
-          <ItemGroup>
-            {unlinked.map((b) => (
-              <Item key={b.slug} variant="outline" size="sm" asChild>
-                <li>
-                  <ItemContent>
-                    <ItemTitle>{b.title ?? b.slug}</ItemTitle>
-                    <ItemDescription>
-                      @{b.slug}
-                      {b.rewardAmount !== null &&
-                        b.token &&
-                        ` · ${formatTokenAmount(String(b.rewardAmount), b.token)}`}
-                    </ItemDescription>
-                  </ItemContent>
-                  <ItemActions>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onCreateFrom({ slug: b.slug, title: b.title })}
-                    >
-                      <PlusIcon data-icon="inline-start" aria-hidden />
-                      Create project
-                    </Button>
-                  </ItemActions>
-                </li>
-              </Item>
-            ))}
-          </ItemGroup>
-        )}
+        <ItemGroup>
+          {unlinked.map((b) => (
+            <Item key={b.slug} variant="outline" size="sm" asChild>
+              <li>
+                <ItemContent>
+                  <ItemTitle>{b.title ?? b.slug}</ItemTitle>
+                  <ItemDescription>
+                    @{b.slug}
+                    {b.rewardAmount !== null &&
+                      b.token &&
+                      ` · ${formatTokenAmount(String(b.rewardAmount), b.token)}`}
+                  </ItemDescription>
+                </ItemContent>
+                <ItemActions>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onCreateFrom({ slug: b.slug, title: b.title })}
+                  >
+                    <PlusIcon data-icon="inline-start" aria-hidden />
+                    Create project
+                  </Button>
+                </ItemActions>
+              </li>
+            </Item>
+          ))}
+        </ItemGroup>
       </CardContent>
     </Card>
   );

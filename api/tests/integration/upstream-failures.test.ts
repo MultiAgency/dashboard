@@ -5,7 +5,7 @@ import { ORPCError } from "every-plugin/orpc";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
-import { projectContributors } from "../../src/db/schema";
+import { organizationBuilders, projectContributors } from "../../src/db/schema";
 import { runEffect } from "../../src/lib/context";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createContributorsService } from "../../src/services/contributors";
@@ -35,7 +35,7 @@ describe("when upstream services fail", () => {
   });
 
   beforeEach(async () => {
-    await pg.query("TRUNCATE project_contributors");
+    await pg.query("TRUNCATE project_contributors, organization_builders");
     globalThis.fetch = (async () => {
       throw new Error("upstream unreachable");
     }) as typeof fetch;
@@ -157,11 +157,22 @@ describe("when upstream services fail", () => {
         contexts,
       );
 
+      await db
+        .insert(projectContributors)
+        .values({ projectId: "p1", nearAccount: "new.near", organizationId: "acme" });
+
       const { contributor } = await Effect.runPromise(
-        contributors.update({}, { nearAccount: "new.near", name: "New" }),
+        contributors.update(
+          {},
+          { nearAccount: "new.near", name: "New" },
+          { organizationId: "acme" },
+        ),
       );
 
       expect(created).toEqual(["new.near"]);
+      expect(await db.select().from(organizationBuilders)).toMatchObject([
+        { organizationId: "acme", nearAccount: "new.near" },
+      ]);
       expect(contributor).toMatchObject({
         nearAccount: "new.near",
         name: "New",
@@ -170,6 +181,123 @@ describe("when upstream services fail", () => {
       });
       // The builders plugin creates a profile for someone else's account only for a trusted caller.
       expect(contexts.at(-1)).toMatchObject({ trusted: true });
+    });
+
+    const profileOf = (userId: string | null) => ({
+      data: {
+        nearAccount: "ada.near",
+        name: "Ada",
+        bio: null,
+        skills: [],
+        location: null,
+        links: null,
+        userId,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    const addedBy = (organizationId: string) =>
+      db.insert(organizationBuilders).values({ organizationId, nearAccount: "ada.near" });
+
+    test.each([
+      ["the Agency that added them", null, () => addedBy("acme"), true],
+      [
+        "an Agency with them on its own Project",
+        null,
+        () =>
+          db
+            .insert(projectContributors)
+            .values({ projectId: "p1", nearAccount: "ada.near", organizationId: "acme" }),
+        true,
+      ],
+      ["another Agency", null, () => addedBy("other"), false],
+      ["the Agency that added them, once claimed", "ada-user", () => addedBy("acme"), false],
+    ] as const)("offers edit and remove of an unclaimed profile to %s", async (_, userId, seed, allowed) => {
+      await seed();
+      const contributors = contributorsWith({ getBuilder: async () => profileOf(userId) });
+
+      const result = await Effect.runPromise(
+        contributors.get({ userId: "manager" }, "ada.near", { organizationId: "acme" }),
+      );
+
+      expect(result).toMatchObject({ canEdit: allowed, canDelete: allowed });
+    });
+
+    test("an Agency that did not add a builder cannot edit their profile", async () => {
+      await addedBy("other");
+      const updated: string[] = [];
+      const contributors = contributorsWith({
+        updateBuilderProfile: async ({ nearAccount }: { nearAccount: string }) => {
+          updated.push(nearAccount);
+          return profileOf(null);
+        },
+      });
+
+      await expect(
+        runEffect(
+          contributors.update(
+            {},
+            { nearAccount: "ada.near", name: "Renamed" },
+            {
+              organizationId: "acme",
+            },
+          ),
+        ),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(updated).toEqual([]);
+    });
+
+    test("removing a builder still assigned to a Project is refused", async () => {
+      await addedBy("acme");
+      await db
+        .insert(projectContributors)
+        .values({ projectId: "p1", nearAccount: "ada.near", role: "lead" });
+      const deleted: string[] = [];
+      const contributors = contributorsWith({
+        deleteBuilder: async ({ nearAccount }: { nearAccount: string }) => {
+          deleted.push(nearAccount);
+          return { deleted: true };
+        },
+      });
+
+      const outcome = await Effect.runPromise(
+        Effect.either(contributors.delete({}, "ada.near", { organizationId: "acme" })),
+      );
+
+      expect(Either.isLeft(outcome) && outcome.left).toMatchObject({ code: "BAD_REQUEST" });
+      expect(deleted).toEqual([]);
+    });
+
+    test("the Agency that added a builder can remove them, as a trusted caller", async () => {
+      await addedBy("acme");
+      const contexts: unknown[] = [];
+      const contributors = contributorsWith(
+        { deleteBuilder: async () => ({ deleted: true }) },
+        contexts,
+      );
+
+      expect(
+        await Effect.runPromise(contributors.delete({}, "ada.near", { organizationId: "acme" })),
+      ).toEqual({ deleted: true });
+      expect(contexts.at(-1)).toMatchObject({ trusted: true });
+      expect(await db.select().from(organizationBuilders)).toEqual([]);
+    });
+
+    test("another Agency cannot remove a builder", async () => {
+      await addedBy("other");
+      const deleted: string[] = [];
+      const contributors = contributorsWith({
+        deleteBuilder: async ({ nearAccount }: { nearAccount: string }) => {
+          deleted.push(nearAccount);
+          return { deleted: true };
+        },
+      });
+
+      await expect(
+        runEffect(contributors.delete({}, "ada.near", { organizationId: "acme" })),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(deleted).toEqual([]);
     });
 
     test("a refused edit of someone else's builder profile is not turned into a create", async () => {

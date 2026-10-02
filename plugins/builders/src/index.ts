@@ -107,9 +107,13 @@ export default createPlugin({
           return { data: result };
         }),
 
-      deleteBuilder: builder.deleteBuilder.use(auth.requireAdmin).handler(async ({ input }) => {
-        return await runEffect(services.builder.deleteBuilder(input.nearAccount));
-      }),
+      deleteBuilder: builder.deleteBuilder
+        .use(auth.requireAuth)
+        .handler(async ({ input, context }) => {
+          return await runEffect(
+            services.builder.deleteBuilder(input.nearAccount, callerOf(context)),
+          );
+        }),
     };
   },
 });

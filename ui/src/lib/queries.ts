@@ -93,6 +93,23 @@ export function projectsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export function publicTeamQueryOptions(apiClient: ApiClient, projectId: string) {
+  return queryOptions({
+    queryKey: [...projectsListQueryKey, "public-team", ...workspaceKey(), projectId] as const,
+    queryFn: () => apiClient.agency.projects.getPublicTeam({ projectId }),
+    retry: false,
+  });
+}
+
+export function publicProjectQueryOptions(apiClient: ApiClient, slug: string) {
+  return queryOptions({
+    queryKey: [...projectsListQueryKey, "public", getNetwork(), slug] as const,
+    queryFn: () => apiClient.agency.projects.getPublic({ slug }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export const tokensListQueryKey = ["tokens", "list"] as const;
 
 export function tokensListQueryOptions(apiClient: ApiClient) {
@@ -289,6 +306,24 @@ export function adminNearnListingQueryOptions(apiClient: ApiClient, slug: string
   });
 }
 
+export function communityBuildersQueryOptions(apiClient: ApiClient, query: string) {
+  return queryOptions({
+    queryKey: ["admin", "community", "builders", query] as const,
+    queryFn: () => apiClient.community.searchBuilders({ query: query || undefined }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function communityProjectsQueryOptions(apiClient: ApiClient, query: string) {
+  return queryOptions({
+    queryKey: ["admin", "community", "projects", query] as const,
+    queryFn: () => apiClient.community.searchProjects({ query: query || undefined }),
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export function adminNearnSponsorBountiesQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: ["admin", "nearn", "sponsor-bounties", ...workspaceKey()] as const,
@@ -444,6 +479,14 @@ export function clientPortalDashboardSummaryQueryOptions(
   return queryOptions({
     queryKey: [...clientPortalQueryKey, "dashboard", ...workspaceKey(), engagementId] as const,
     queryFn: () => apiClient.clientPortal.dashboard.summary({ engagementId }),
+    retry: false,
+  });
+}
+
+export function clientPortalAllProjectsQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...clientPortalQueryKey, "projects", ...workspaceKey(), "all"] as const,
+    queryFn: () => apiClient.clientPortal.projects.listAll(),
     retry: false,
   });
 }

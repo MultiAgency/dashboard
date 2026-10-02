@@ -1,4 +1,10 @@
-import { BAD_REQUEST, FORBIDDEN, NOT_FOUND, UNAUTHORIZED } from "every-plugin/errors";
+import {
+  BAD_REQUEST,
+  FORBIDDEN,
+  NOT_FOUND,
+  SERVICE_UNAVAILABLE,
+  UNAUTHORIZED,
+} from "every-plugin/errors";
 import { oc } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 
@@ -265,6 +271,7 @@ const reportOutput = z.object({
     billedByToken: z.array(tokenAmount),
     period: z.string(),
   }),
+  project: z.object({ title: z.string(), slug: z.string() }).nullable().optional(),
   contributorStats: z.array(
     z.object({
       nearAccount: z.string(),
@@ -280,6 +287,7 @@ const reportOutput = z.object({
       projectSlug: z.string(),
       budgetByToken: z.array(tokenAmount),
       spentByToken: z.array(tokenAmount),
+      builders: z.array(z.string()).optional(),
     }),
   ),
   notes: z.string(),
@@ -295,6 +303,7 @@ const savedReportSummary = z.object({
   startDate: z.string().nullable(),
   endDate: z.string().nullable(),
   note: z.string().nullable(),
+  projectTitle: z.string().nullable().optional(),
   createdAt: z.date(),
 });
 
@@ -623,6 +632,31 @@ export const contract = oc.router({
       list: oc
         .route({ method: "GET", path: "/projects" })
         .output(z.object({ data: z.array(projectWithNearn) })),
+
+      getPublic: oc
+        .route({ method: "GET", path: "/work/{slug}" })
+        .input(z.object({ slug }))
+        .output(
+          z.object({
+            project: projectWithNearn,
+            description: z.string().nullable(),
+            showTeam: z.boolean(),
+            builders: z.array(z.object({ name: z.string(), role: z.string().nullable() })),
+          }),
+        )
+        .errors({ NOT_FOUND }),
+
+      getPublicTeam: oc
+        .route({ method: "GET", path: "/admin/projects/{projectId}/public-team" })
+        .input(z.object({ projectId: z.string() }))
+        .output(z.object({ showTeam: z.boolean() }))
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      setPublicTeam: oc
+        .route({ method: "PUT", path: "/admin/projects/{projectId}/public-team" })
+        .input(z.object({ projectId: z.string(), showTeam: z.boolean() }))
+        .output(z.object({ showTeam: z.boolean() }))
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
       listOwned: oc
         .route({ method: "GET", path: "/admin/projects" })
@@ -1082,6 +1116,28 @@ export const contract = oc.router({
     },
 
     projects: {
+      listAll: oc
+        .route({ method: "GET", path: "/client/projects" })
+        .output(
+          z.object({
+            data: z.array(
+              z.object({
+                engagementId: z.string(),
+                readOnly: z.boolean(),
+                project,
+                contributors: z.array(
+                  z.object({
+                    nearAccount: z.string(),
+                    name: z.string(),
+                    role: z.string().nullable(),
+                  }),
+                ),
+              }),
+            ),
+          }),
+        )
+        .errors({ UNAUTHORIZED, FORBIDDEN }),
+
       list: oc
         .route({ method: "GET", path: "/client/{engagementId}/projects" })
         .input(z.object({ engagementId: z.string().min(1) }))
@@ -1138,6 +1194,7 @@ export const contract = oc.router({
         .input(
           z.object({
             engagementId: z.string().min(1),
+            projectId: z.string().min(1).optional(),
             note: z.string().max(4000).optional(),
             startDate: reportDate,
             endDate: reportDate,
@@ -1182,13 +1239,13 @@ export const contract = oc.router({
   contributors: {
     list: oc
       .route({ method: "GET", path: "/admin/contributors" })
-      .output(z.object({ data: z.array(contributor) }))
+      .output(z.object({ data: z.array(contributor), manageable: z.array(z.string()) }))
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
     get: oc
       .route({ method: "GET", path: "/admin/contributors/{nearAccount}" })
       .input(z.object({ nearAccount: nearAccountId }))
-      .output(z.object({ contributor, canEdit: z.boolean() }))
+      .output(z.object({ contributor, canEdit: z.boolean(), canDelete: z.boolean() }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
     create: oc
@@ -1220,6 +1277,12 @@ export const contract = oc.router({
       )
       .output(z.object({ contributor }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    delete: oc
+      .route({ method: "DELETE", path: "/admin/contributors/{nearAccount}" })
+      .input(z.object({ nearAccount: nearAccountId }))
+      .output(z.object({ deleted: z.boolean() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
   assignments: {
@@ -1485,6 +1548,61 @@ export const contract = oc.router({
     ),
   },
 
+  community: {
+    searchBuilders: oc
+      .route({ method: "GET", path: "/admin/community/builders" })
+      .input(
+        z.object({
+          query: z.string().max(200).optional(),
+          cursor: z.string().max(200).optional(),
+        }),
+      )
+      .output(
+        z.object({
+          source: z.object({ name: z.string(), url: z.string() }),
+          data: z.array(
+            z.object({
+              nearAccount: z.string(),
+              name: z.string().nullable(),
+              bio: z.string().nullable(),
+              skills: z.array(z.string()),
+              location: z.string().nullable(),
+              links: z.record(z.string(), z.string()).nullable(),
+            }),
+          ),
+          nextCursor: z.string().nullable(),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN, SERVICE_UNAVAILABLE }),
+
+    searchProjects: oc
+      .route({ method: "GET", path: "/admin/community/projects" })
+      .input(
+        z.object({
+          query: z.string().max(200).optional(),
+          cursor: z.string().max(200).optional(),
+        }),
+      )
+      .output(
+        z.object({
+          source: z.object({ name: z.string(), url: z.string() }),
+          data: z.array(
+            z.object({
+              id: z.string(),
+              slug: z.string(),
+              title: z.string(),
+              description: z.string().nullable(),
+              repository: z.string().nullable(),
+              domain: z.string().nullable(),
+              ownerId: z.string(),
+            }),
+          ),
+          nextCursor: z.string().nullable(),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN, SERVICE_UNAVAILABLE }),
+  },
+
   nearn: {
     getListing: oc
       .route({ method: "GET", path: "/admin/nearn/listings/{slug}" })
@@ -1568,6 +1686,7 @@ export const contract = oc.router({
             hasAgencySections: z.boolean(),
             hasClientSections: z.boolean(),
           }),
+          recommendedView: z.enum(["agency", "client"]).nullable(),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),

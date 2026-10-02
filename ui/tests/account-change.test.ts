@@ -45,7 +45,10 @@ describe("signInDestination", () => {
   function signedInWithoutActiveOrganization() {
     const activated: string[] = [];
     const authClient = {
-      getSession: async () => ({ data: { session: { activeOrganizationId: null } }, error: null }),
+      getSession: async () => ({
+        data: { session: { activeOrganizationId: activated.at(-1) ?? null } },
+        error: null,
+      }),
       organization: {
         list: async () => ({ data: [{ id: "studio", metadata: null }] }),
         setActive: async ({ organizationId }: { organizationId: string }) => {

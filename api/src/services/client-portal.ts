@@ -55,6 +55,35 @@ export function createClientPortalService(
         return { data: projects.map((p) => ({ ...p, nearnListingId: null })) };
       }),
 
+    listAllProjects: (context: PluginContext) =>
+      Effect.gen(function* () {
+        const engagements = yield* Effect.promise(() => access.sharedEngagementsOf(context));
+        const perEngagement = yield* Effect.forEach(
+          engagements,
+          (engagement) =>
+            Effect.gen(function* () {
+              const projects = yield* sharedProjects(engagement);
+              return yield* Effect.forEach(
+                projects,
+                (project) =>
+                  agency.getProject(engagement.scope, project.slug).pipe(
+                    Effect.map((detail) => detail.contributors ?? []),
+                    Effect.orElseSucceed(() => []),
+                    Effect.map((contributors) => ({
+                      engagementId: engagement.engagement.id,
+                      readOnly: engagement.readOnly,
+                      project: { ...project, nearnListingId: null },
+                      contributors,
+                    })),
+                  ),
+                { concurrency: 4 },
+              );
+            }),
+          { concurrency: 4 },
+        );
+        return { data: perEngagement.flat() };
+      }),
+
     getProject: (context: PluginContext, input: { engagementId: string; slug: string }) =>
       Effect.gen(function* () {
         const engagement = yield* shared(context, input.engagementId);
@@ -106,14 +135,22 @@ export function createClientPortalService(
 
     generateReport: (
       context: PluginContext,
-      input: { engagementId: string; note?: string; startDate?: string; endDate?: string },
+      input: {
+        engagementId: string;
+        projectId?: string;
+        note?: string;
+        startDate?: string;
+        endDate?: string;
+      },
     ) =>
       Effect.gen(function* () {
         const engagement = yield* shared(context, input.engagementId);
+        if (input.projectId) assertShared(engagement, input.projectId);
         return yield* reports.generateSaved(
           engagement.scope,
           {
             engagementId: engagement.engagement.id,
+            projectId: input.projectId,
             forClient: true,
             note: input.note,
             startDate: input.startDate,

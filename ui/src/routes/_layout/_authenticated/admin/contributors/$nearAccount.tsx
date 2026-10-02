@@ -1,6 +1,6 @@
 import { ArrowLeftIcon, UserCircleIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   Badge,
@@ -19,7 +19,10 @@ import {
   EmptyTitle,
 } from "@/components";
 import { BuilderSummaryPanel } from "@/components/admin/builder-summary-panel";
-import { ContributorProfileForm } from "@/components/admin/contributors-section";
+import {
+  ContributorProfileForm,
+  RemoveBuilderButton,
+} from "@/components/admin/contributors-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
 import { BuilderAvatar } from "@/components/builder-avatar";
 import { PageHeader } from "@/components/page-header";
@@ -74,6 +77,7 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/contributors
 function ContributorDetailPage() {
   const { nearAccount } = Route.useParams();
   const apiClient = Route.useRouteContext().apiClient;
+  const navigate = useNavigate();
   const contributorQuery = useQuery(adminContributorDetailQueryOptions(apiClient, nearAccount));
   const contributor = contributorQuery.data?.contributor;
   const hasContributor = Boolean(contributor);
@@ -170,8 +174,12 @@ function ContributorDetailPage() {
               : "Profile, project assignments and billing history."
           }
         />
-        {contributor.registered && !contributor.claimed && (
-          <Badge variant="outline">Unclaimed</Badge>
+        {contributorQuery.data?.canDelete && (
+          <RemoveBuilderButton
+            nearAccount={nearAccount}
+            name={contributor.name ?? nearAccount}
+            onRemoved={() => void navigate({ to: "/admin/contributors" })}
+          />
         )}
       </div>
 
@@ -179,10 +187,7 @@ function ContributorDetailPage() {
         <ContributorProfileForm nearAccount={nearAccount} contributor={contributor} />
       ) : (
         <p className="text-sm text-muted-foreground">
-          Builder profiles are global. Only the builder or a platform admin can edit this one.
-          {contributor.registered && !contributor.claimed
-            ? " The builder has not claimed it yet, so someone else wrote it."
-            : ""}
+          This builder manages their own profile, so only they or a platform admin can edit it.
         </p>
       )}
 

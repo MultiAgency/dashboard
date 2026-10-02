@@ -37,6 +37,7 @@ export function UserNav() {
   const { data: profile } = useQuery(nearProfileQueryOptions(authClient, nearAccountId));
   const { data: roles } = useQuery({ ...meRolesQueryOptions(apiClient), enabled: !!user });
   const orgRole = roles?.orgRole ?? null;
+  const hasAgencySections = roles?.capabilities.hasAgencySections ?? false;
   const hasClientSections = roles?.capabilities.hasClientSections ?? false;
   const isSuperAdmin = session?.user?.role === "admin";
   const avatarUrl =
@@ -116,14 +117,16 @@ export function UserNav() {
           <DropdownMenuItem asChild>
             <Link to="/profile">Profile</Link>
           </DropdownMenuItem>
-          {orgRole && (
+          {orgRole && (hasAgencySections || !hasClientSections) && (
             <DropdownMenuItem asChild>
               <Link to="/admin/projects">Organization dashboard</Link>
             </DropdownMenuItem>
           )}
           {orgRole && hasClientSections && (
             <DropdownMenuItem asChild>
-              <Link to="/client">Agencies</Link>
+              <Link to="/client/projects">
+                {hasAgencySections ? "Client dashboard" : "Organization dashboard"}
+              </Link>
             </DropdownMenuItem>
           )}
           <DropdownMenuItem asChild>

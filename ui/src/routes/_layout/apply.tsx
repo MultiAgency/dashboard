@@ -1,15 +1,13 @@
-import { ArrowUpRightIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon } from "@phosphor-icons/react";
 import { useForm } from "@tanstack/react-form";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { InquiryForm, InquiryPage, InquirySent, InquiryTextField } from "@/components/inquiry-form";
 import { useApiClient } from "@/lib/api";
 import { isValidNearAccountId } from "@/lib/near-account";
-import { nearnSponsorUrl } from "@/lib/nearn";
-import { publicSettingsQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/apply")({
   head: () => ({
@@ -36,10 +34,6 @@ type ApplyValues = z.infer<typeof applySchema>;
 
 function ApplyPage() {
   const apiClient = useApiClient();
-  const settingsQuery = useQuery(publicSettingsQueryOptions(apiClient));
-  const nearnUrl = settingsQuery.data?.nearnAccountId
-    ? nearnSponsorUrl(settingsQuery.data.nearnAccountId)
-    : null;
 
   const [submitted, setSubmitted] = useState(false);
 
@@ -103,17 +97,13 @@ function ApplyPage() {
           if (form.state.canSubmit) await form.handleSubmit();
         }}
         aside={
-          nearnUrl && (
-            <a
-              href={nearnUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 underline underline-offset-4 hover:text-foreground"
-            >
-              Browse open work on NEARN
-              <ArrowUpRightIcon aria-hidden className="size-3" />
-            </a>
-          )
+          <Link
+            to="/work"
+            className="inline-flex items-center gap-1 underline underline-offset-4 hover:text-foreground"
+          >
+            See what we are working on
+            <ArrowRightIcon aria-hidden className="size-3" />
+          </Link>
         }
       >
         <form.Field name="name">

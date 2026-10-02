@@ -451,6 +451,25 @@ export const ideas = pgTable(
 
 export type IdeaRow = typeof ideas.$inferSelect;
 
+export const organizationBuilders = pgTable(
+  "organization_builders",
+  {
+    organizationId: text("organization_id").notNull(),
+    nearAccount: text("near_account").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.organizationId, t.nearAccount] }),
+    nearAccountIdx: index("organization_builders_near_account").on(t.nearAccount),
+  }),
+);
+
+export const projectPublicSettings = pgTable("project_public_settings", {
+  projectId: text("project_id").primaryKey(),
+  showTeam: boolean("show_team").notNull().default(false),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
+
 export const agentLinks = pgTable(
   "agent_links",
   {
