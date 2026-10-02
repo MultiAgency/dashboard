@@ -56,7 +56,7 @@ function PublicProjectPage() {
   }
   if (!projectQuery.data) throw notFound();
 
-  const { project, description, builders } = projectQuery.data;
+  const { project, description, showTeam, builders } = projectQuery.data;
   const listing = project.nearnListing;
   const bountyHref = listing
     ? nearnListingHref(listing, settingsQuery.data?.nearnAccountId ?? null)
@@ -113,28 +113,30 @@ function PublicProjectPage() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <h2>Team</h2>
-          </CardTitle>
-          <CardDescription>The builders working on this Project.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {builders.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No builders assigned yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {builders.map((b) => (
-                <li key={b.name} className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-medium">{b.name}</span>
-                  {b.role && <span className="text-muted-foreground">{b.role}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      {showTeam && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Team</h2>
+            </CardTitle>
+            <CardDescription>The builders working on this Project.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {builders.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No builders assigned yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {builders.map((b) => (
+                  <li key={b.name} className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-medium">{b.name}</span>
+                    {b.role && <span className="text-muted-foreground">{b.role}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {listing && (
         <Card>

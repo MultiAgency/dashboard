@@ -47,6 +47,8 @@ export function ContributorsAdminSection() {
     return <AdminError error={contributorsQuery.error} />;
   }
 
+  const manageable = new Set(contributorsQuery.data?.manageable ?? []);
+
   const columns: ColumnDef<Contributor>[] = [
     {
       id: "name",
@@ -109,13 +111,15 @@ export function ContributorsAdminSection() {
               <PencilSimpleIcon aria-hidden />
             </Link>
           </Button>
-          {row.original.registered && !row.original.claimed && (
-            <RemoveBuilderButton
-              nearAccount={row.original.nearAccount}
-              name={row.original.name ?? row.original.nearAccount}
-              iconOnly
-            />
-          )}
+          {row.original.registered &&
+            !row.original.claimed &&
+            manageable.has(row.original.nearAccount) && (
+              <RemoveBuilderButton
+                nearAccount={row.original.nearAccount}
+                name={row.original.name ?? row.original.nearAccount}
+                iconOnly
+              />
+            )}
         </div>
       ),
     },

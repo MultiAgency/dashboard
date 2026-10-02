@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { Effect, Either } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { projectContributors } from "../db/schema";
+import { organizationBuilders, projectContributors } from "../db/schema";
 import { nearAccountsOf, type PluginContext } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 
@@ -82,14 +82,56 @@ function canEditProfile(
   return nearAccountsOf(context).includes(profile.nearAccount);
 }
 
-// Create and update are open only to an Agency's managers (the `manager`
-// middleware), who may create a profile for a contributor's account; the
-// builders plugin lets a trusted, in-process call do that.
+export type ManagerScope = { organizationId: string };
+
+const notYourBuilder = () =>
+  new ORPCError("FORBIDDEN", {
+    message:
+      "Only the builder, or an Agency that added them or has them on its Projects, can change this profile.",
+  });
+
 const asManager = (context: PluginContext): PluginContext => ({ ...context, trusted: true });
 
 export function createContributorsService(db: Database, plugins: PluginsClient) {
+  async function managesBuilder(manager: ManagerScope | undefined, nearAccount: string) {
+    if (!manager) return false;
+    const [added] = await db
+      .select({ nearAccount: organizationBuilders.nearAccount })
+      .from(organizationBuilders)
+      .where(
+        and(
+          eq(organizationBuilders.organizationId, manager.organizationId),
+          eq(organizationBuilders.nearAccount, nearAccount),
+        ),
+      )
+      .limit(1);
+    if (added) return true;
+    const [assigned] = await db
+      .select({ projectId: projectContributors.projectId })
+      .from(projectContributors)
+      .where(
+        and(
+          eq(projectContributors.nearAccount, nearAccount),
+          or(
+            eq(projectContributors.organizationId, manager.organizationId),
+            eq(projectContributors.assignedByOrganizationId, manager.organizationId),
+          ),
+        ),
+      )
+      .limit(1);
+    return !!assigned;
+  }
+
+  async function recordAdded(manager: ManagerScope | undefined, nearAccount: string) {
+    if (!manager) return;
+    await db
+      .insert(organizationBuilders)
+      .values({ organizationId: manager.organizationId, nearAccount })
+      .onConflictDoNothing();
+  }
+
   return {
-    list: (context: PluginContext) =>
+    list: (context: PluginContext, manager?: ManagerScope) =>
       Effect.gen(function* () {
         const result = yield* Effect.promise(() =>
           plugins.builders(context).listBuilders({ limit: 100 }),
@@ -107,10 +149,31 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           }
         }
 
-        return { data: [...byNear.values()] };
+        const manageable = manager
+          ? yield* Effect.promise(async () => {
+              const [added, assigned] = await Promise.all([
+                db
+                  .select({ nearAccount: organizationBuilders.nearAccount })
+                  .from(organizationBuilders)
+                  .where(eq(organizationBuilders.organizationId, manager.organizationId)),
+                db
+                  .selectDistinct({ nearAccount: projectContributors.nearAccount })
+                  .from(projectContributors)
+                  .where(
+                    or(
+                      eq(projectContributors.organizationId, manager.organizationId),
+                      eq(projectContributors.assignedByOrganizationId, manager.organizationId),
+                    ),
+                  ),
+              ]);
+              return [...new Set([...added, ...assigned].map((r) => r.nearAccount))];
+            })
+          : [];
+
+        return { data: [...byNear.values()], manageable };
       }),
 
-    get: (context: PluginContext, nearAccount: string, options: { canManage?: boolean } = {}) =>
+    get: (context: PluginContext, nearAccount: string, manager?: ManagerScope) =>
       Effect.gen(function* () {
         const assignmentRows = yield* Effect.promise(() =>
           db
@@ -123,9 +186,10 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         const builder = yield* Effect.either(
           Effect.tryPromise(() => plugins.builders(context).getBuilder({ nearAccount })),
         );
+        const manages = yield* Effect.promise(() => managesBuilder(manager, nearAccount));
         if (Either.isRight(builder)) {
           const profile = builder.right.data;
-          const managesUnclaimed = !!options.canManage && !profile.userId;
+          const managesUnclaimed = manages && !profile.userId;
           return {
             contributor: toProfile(profile),
             canEdit: managesUnclaimed || canEditProfile(context, profile),
@@ -135,7 +199,11 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         if (assignmentRows.length === 0) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Builder not found" }));
         }
-        return { contributor: stubProfile(nearAccount), canEdit: true, canDelete: false };
+        return {
+          contributor: stubProfile(nearAccount),
+          canEdit: manages || isPlatformAdmin(context),
+          canDelete: false,
+        };
       }),
 
     create: (
@@ -148,6 +216,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         location?: string;
         links?: Record<string, string>;
       },
+      manager?: ManagerScope,
     ) =>
       Effect.gen(function* () {
         if (!input.nearAccount?.trim()) {
@@ -170,6 +239,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
             links: input.links,
           }),
         );
+        yield* Effect.promise(() => recordAdded(manager, nearAccount));
         return { contributor: toProfile(result.data) };
       }),
 
@@ -183,8 +253,15 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         location?: string;
         links?: Record<string, string>;
       },
+      manager?: ManagerScope,
     ) =>
       Effect.gen(function* () {
+        const self = isPlatformAdmin(context) || canEditProfile(context, input);
+        const manages = self
+          ? false
+          : yield* Effect.promise(() => managesBuilder(manager, input.nearAccount));
+        if (!self && !manages) return yield* Effect.fail(notYourBuilder());
+        const caller = manages ? asManager(context) : context;
         const profile = {
           nearAccount: input.nearAccount,
           name: input.name,
@@ -194,12 +271,17 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           links: input.links,
         };
         const result = yield* Effect.tryPromise({
-          try: () => plugins.builders(asManager(context)).updateBuilderProfile(profile),
+          try: () => plugins.builders(caller).updateBuilderProfile(profile),
           catch: (err) => err,
         }).pipe(
           Effect.catchIf(
             (err) => err instanceof ORPCError && err.code === "NOT_FOUND",
-            () => Effect.promise(() => plugins.builders(asManager(context)).createBuilder(profile)),
+            () =>
+              Effect.promise(async () => {
+                const created = await plugins.builders(asManager(context)).createBuilder(profile);
+                await recordAdded(manager, input.nearAccount);
+                return created;
+              }),
           ),
           Effect.mapError((err) =>
             err instanceof ORPCError
@@ -210,8 +292,12 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         return { contributor: toProfile(result.data) };
       }),
 
-    delete: (context: PluginContext, nearAccount: string) =>
+    delete: (context: PluginContext, nearAccount: string, manager?: ManagerScope) =>
       Effect.gen(function* () {
+        const allowed =
+          isPlatformAdmin(context) ||
+          (yield* Effect.promise(() => managesBuilder(manager, nearAccount)));
+        if (!allowed) return yield* Effect.fail(notYourBuilder());
         const [assigned] = yield* Effect.promise(() =>
           db
             .select({ projectId: projectContributors.projectId })
@@ -226,13 +312,17 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
             }),
           );
         }
-        return yield* Effect.tryPromise({
+        const result = yield* Effect.tryPromise({
           try: () => plugins.builders(asManager(context)).deleteBuilder({ nearAccount }),
           catch: (err) =>
             err instanceof ORPCError
               ? err
               : new ORPCError("INTERNAL_SERVER_ERROR", { message: String(err) }),
         });
+        yield* Effect.promise(() =>
+          db.delete(organizationBuilders).where(eq(organizationBuilders.nearAccount, nearAccount)),
+        );
+        return result;
       }),
   };
 }

@@ -93,6 +93,14 @@ export function projectsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export function publicTeamQueryOptions(apiClient: ApiClient, projectId: string) {
+  return queryOptions({
+    queryKey: [...projectsListQueryKey, "public-team", ...workspaceKey(), projectId] as const,
+    queryFn: () => apiClient.agency.projects.getPublicTeam({ projectId }),
+    retry: false,
+  });
+}
+
 export function publicProjectQueryOptions(apiClient: ApiClient, slug: string) {
   return queryOptions({
     queryKey: [...projectsListQueryKey, "public", getNetwork(), slug] as const,

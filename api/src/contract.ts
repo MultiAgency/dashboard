@@ -640,10 +640,23 @@ export const contract = oc.router({
           z.object({
             project: projectWithNearn,
             description: z.string().nullable(),
+            showTeam: z.boolean(),
             builders: z.array(z.object({ name: z.string(), role: z.string().nullable() })),
           }),
         )
         .errors({ NOT_FOUND }),
+
+      getPublicTeam: oc
+        .route({ method: "GET", path: "/admin/projects/{projectId}/public-team" })
+        .input(z.object({ projectId: z.string() }))
+        .output(z.object({ showTeam: z.boolean() }))
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      setPublicTeam: oc
+        .route({ method: "PUT", path: "/admin/projects/{projectId}/public-team" })
+        .input(z.object({ projectId: z.string(), showTeam: z.boolean() }))
+        .output(z.object({ showTeam: z.boolean() }))
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
       listOwned: oc
         .route({ method: "GET", path: "/admin/projects" })
@@ -1226,7 +1239,7 @@ export const contract = oc.router({
   contributors: {
     list: oc
       .route({ method: "GET", path: "/admin/contributors" })
-      .output(z.object({ data: z.array(contributor) }))
+      .output(z.object({ data: z.array(contributor), manageable: z.array(z.string()) }))
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 
     get: oc

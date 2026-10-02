@@ -299,6 +299,18 @@ export default createPlugin.withPlugins<PluginsClient>()({
             runEffect(agency.getPublicProject(await access.publicScope(context), input.slug)),
           ),
 
+          getPublicTeam: builder.agency.projects.getPublicTeam
+            .use(agencyMember)
+            .handler(async ({ context, input }) =>
+              runEffect(agency.getPublicTeam(context.scope, input.projectId)),
+            ),
+
+          setPublicTeam: builder.agency.projects.setPublicTeam
+            .use(agencyMember)
+            .handler(async ({ context, input }) =>
+              runEffect(agency.setPublicTeam(context.scope, input.projectId, input.showTeam)),
+            ),
+
           listOwned: builder.agency.projects.listOwned
             .use(agencyMember)
             .handler(async ({ context }) => runEffect(agency.listProjects(context.scope))),
@@ -620,35 +632,58 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
       contributors: {
         list: builder.contributors.list.use(agencyMember).handler(async ({ context }) => {
-          return runEffect(contributors.list(context.scope.pluginContext));
+          const isManager =
+            context.scope.role !== null &&
+            (ROLE_MATRIX.manage as readonly string[]).includes(context.scope.role);
+          return runEffect(
+            contributors.list(
+              context.scope.pluginContext,
+              isManager ? { organizationId: context.scope.organizationId } : undefined,
+            ),
+          );
         }),
 
         get: builder.contributors.get.use(agencyMember).handler(async ({ context, input }) => {
+          const isManager =
+            context.scope.role !== null &&
+            (ROLE_MATRIX.manage as readonly string[]).includes(context.scope.role);
           return runEffect(
-            contributors.get(context.scope.pluginContext, input.nearAccount, {
-              canManage:
-                context.scope.role !== null &&
-                (ROLE_MATRIX.manage as readonly string[]).includes(context.scope.role),
-            }),
+            contributors.get(
+              context.scope.pluginContext,
+              input.nearAccount,
+              isManager ? { organizationId: context.scope.organizationId } : undefined,
+            ),
           );
         }),
 
         create: builder.contributors.create
           .use(agencyManager)
           .handler(async ({ context, input }) => {
-            return runEffect(contributors.create(context.scope.pluginContext, input));
+            return runEffect(
+              contributors.create(context.scope.pluginContext, input, {
+                organizationId: context.scope.organizationId,
+              }),
+            );
           }),
 
         update: builder.contributors.update
           .use(agencyManager)
           .handler(async ({ context, input }) => {
-            return runEffect(contributors.update(context.scope.pluginContext, input));
+            return runEffect(
+              contributors.update(context.scope.pluginContext, input, {
+                organizationId: context.scope.organizationId,
+              }),
+            );
           }),
 
         delete: builder.contributors.delete
           .use(agencyManager)
           .handler(async ({ context, input }) => {
-            return runEffect(contributors.delete(context.scope.pluginContext, input.nearAccount));
+            return runEffect(
+              contributors.delete(context.scope.pluginContext, input.nearAccount, {
+                organizationId: context.scope.organizationId,
+              }),
+            );
           }),
       },
 

@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { Effect, Either } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
-import { type Listing, projectContributors } from "../db/schema";
+import { type Listing, projectContributors, projectPublicSettings } from "../db/schema";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 import type { ProjectLedgers } from "./ledger";
 import { type ListingsService, listingRowToNearnPayload } from "./listings";
@@ -30,6 +30,15 @@ export function createAgencyService(
   listings: ListingsService,
   projectLedgers: ProjectLedgers,
 ) {
+  async function publicTeamOf(projectId: string): Promise<boolean> {
+    const [row] = await db
+      .select({ showTeam: projectPublicSettings.showTeam })
+      .from(projectPublicSettings)
+      .where(eq(projectPublicSettings.projectId, projectId))
+      .limit(1);
+    return row?.showTeam ?? false;
+  }
+
   return {
     listProjects: (scope: AgencyScope) =>
       Effect.gen(function* () {
@@ -75,19 +84,22 @@ export function createAgencyService(
           ? yield* listings.forProjects(scope, [match.id], "nearn", { skipRefresh: true })
           : new Map();
         const link = linkByProjectId.get(match.id);
-        const [contributorRows, builders] = yield* Effect.promise(() =>
-          Promise.all([
-            db
-              .select({
-                nearAccount: projectContributors.nearAccount,
-                role: projectContributors.role,
-              })
-              .from(projectContributors)
-              .where(eq(projectContributors.projectId, match.id))
-              .orderBy(desc(projectContributors.createdAt)),
-            plugins.builders(scope.pluginContext).listBuilders({ limit: 100 }),
-          ]),
-        );
+        const showTeam = yield* Effect.promise(() => publicTeamOf(match.id));
+        const [contributorRows, builders] = showTeam
+          ? yield* Effect.promise(() =>
+              Promise.all([
+                db
+                  .select({
+                    nearAccount: projectContributors.nearAccount,
+                    role: projectContributors.role,
+                  })
+                  .from(projectContributors)
+                  .where(eq(projectContributors.projectId, match.id))
+                  .orderBy(desc(projectContributors.createdAt)),
+                plugins.builders(scope.pluginContext).listBuilders({ limit: 100 }),
+              ]),
+            )
+          : [[], { data: [] }];
         const nameByNear = new Map(
           builders.data.map((b) => [b.nearAccount, b.name ?? b.nearAccount]),
         );
@@ -97,11 +109,39 @@ export function createAgencyService(
             nearnListing: link ? listingRowToNearnPayload(link) : null,
           },
           description: match.description,
+          showTeam,
           builders: contributorRows.map((r) => ({
             name: nameByNear.get(r.nearAccount) ?? r.nearAccount,
             role: r.role,
           })),
         };
+      }),
+
+    getPublicTeam: (scope: AgencyScope, projectId: string) =>
+      Effect.gen(function* () {
+        yield* Effect.tryPromise({
+          try: () => directory.forAgency(scope).require(projectId),
+          catch: () => new ORPCError("NOT_FOUND", { message: "Project not found" }),
+        });
+        return { showTeam: yield* Effect.promise(() => publicTeamOf(projectId)) };
+      }),
+
+    setPublicTeam: (scope: AgencyScope, projectId: string, showTeam: boolean) =>
+      Effect.gen(function* () {
+        yield* Effect.tryPromise({
+          try: () => directory.forAgency(scope).require(projectId),
+          catch: () => new ORPCError("NOT_FOUND", { message: "Project not found" }),
+        });
+        yield* Effect.promise(() =>
+          db
+            .insert(projectPublicSettings)
+            .values({ projectId, showTeam })
+            .onConflictDoUpdate({
+              target: projectPublicSettings.projectId,
+              set: { showTeam, updatedAt: new Date() },
+            }),
+        );
+        return { showTeam };
       }),
 
     getProject: (scope: AgencyScope, slug: string) =>
