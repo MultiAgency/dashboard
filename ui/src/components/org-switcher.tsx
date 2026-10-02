@@ -35,7 +35,13 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
-export function OrgSwitcher({ fullWidth = false }: { fullWidth?: boolean }) {
+export function OrgSwitcher({
+  fullWidth = false,
+  background = true,
+}: {
+  fullWidth?: boolean;
+  background?: boolean;
+}) {
   const auth = useAuthClient();
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
@@ -77,6 +83,7 @@ export function OrgSwitcher({ fullWidth = false }: { fullWidth?: boolean }) {
   // Another tab switched Organization for the whole session. Reloading is the only way to be
   // sure this tab stops showing, and writing to, the Organization it loaded with.
   useEffect(() => {
+    if (!background) return;
     const check = async () => {
       const { data, error } = await auth.getSession({ query: { disableCookieCache: true } });
       if (error) return;
@@ -85,16 +92,16 @@ export function OrgSwitcher({ fullWidth = false }: { fullWidth?: boolean }) {
     };
     // A failed check is retried the next time this tab becomes visible.
     return onWorkspaceChange(() => void check().catch(() => {}));
-  }, [auth]);
+  }, [auth, background]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !background) return;
     if (recoveredRef.current || !orgsQuery.isSuccess || switchMutation.isPending) return;
     const target = recoveryTarget(organizations, activeOrgId);
     if (!target) return;
     recoveredRef.current = true;
     switchMutation.mutate(target);
-  }, [activeOrgId, organizations, orgsQuery.isSuccess, switchMutation]);
+  }, [activeOrgId, background, organizations, orgsQuery.isSuccess, switchMutation]);
 
   return (
     <>

@@ -96,7 +96,10 @@ export function createCommunityService(apiUrl: string) {
   const base = trimSlashes(apiUrl);
   const origin = new URL(base).origin;
   const client: ContractRouterClient<typeof communityContract> = createORPCClient(
-    new RPCLink({ url: `${base}/rpc` }),
+    new RPCLink({
+      url: `${base}/rpc`,
+      fetch: (request, init) => fetch(request, { ...init, signal: AbortSignal.timeout(10_000) }),
+    }),
   );
 
   const unreachable = (err: unknown) =>

@@ -76,7 +76,8 @@ export function ClientReports({
   const report = reportId ? (openedQuery.data?.report ?? null) : null;
   const projects =
     useQuery(clientPortalProjectsListQueryOptions(apiClient, engagement.id)).data?.data ?? [];
-  const [projectId, setProjectId] = useState(initialProjectId ?? ALL_PROJECTS);
+  const [pickedProjectId, setProjectId] = useState(initialProjectId ?? ALL_PROJECTS);
+  const projectId = projects.some((p) => p.id === pickedProjectId) ? pickedProjectId : ALL_PROJECTS;
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");

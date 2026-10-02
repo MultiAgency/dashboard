@@ -172,7 +172,7 @@ function MobileMenu({
           {isAuthenticated && (
             <div className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Organization</span>
-              <OrgSwitcher fullWidth />
+              <OrgSwitcher fullWidth background={false} />
             </div>
           )}
           <div className="flex items-center justify-between gap-2">

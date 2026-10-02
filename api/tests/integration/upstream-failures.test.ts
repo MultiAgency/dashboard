@@ -212,9 +212,7 @@ describe("when upstream services fail", () => {
         },
       });
 
-      const outcome = await Effect.runPromise(
-        Effect.either(contributors.delete({}, "ada.near")),
-      );
+      const outcome = await Effect.runPromise(Effect.either(contributors.delete({}, "ada.near")));
 
       expect(Either.isLeft(outcome) && outcome.left).toMatchObject({ code: "BAD_REQUEST" });
       expect(deleted).toEqual([]);
