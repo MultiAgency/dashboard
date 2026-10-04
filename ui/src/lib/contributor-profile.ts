@@ -32,3 +32,8 @@ export function splitContributorLinks(links: Record<string, string> | null | und
     website: links.website ?? links.Website ?? "",
   };
 }
+
+export function githubProfileUrl(login: string): string {
+  const app = login.match(/^(.+)\[bot\]$/);
+  return app ? `https://github.com/apps/${app[1]}` : `https://github.com/${login}`;
+}

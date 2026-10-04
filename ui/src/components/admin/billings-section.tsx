@@ -165,6 +165,7 @@ export function BillingsAdminSection({
           skills: [],
           location: null,
           links: null,
+          githubLogin: null,
           registered: false,
           claimed: false,
           createdAt: "",

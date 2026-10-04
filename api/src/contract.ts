@@ -220,6 +220,7 @@ const contributor = z.object({
   skills: z.array(z.string()),
   location: z.string().nullable(),
   links: z.record(z.string(), z.string()).nullable(),
+  githubLogin: z.string().nullable(),
   registered: z.boolean(),
   claimed: z.boolean(),
   createdAt: z.string(),

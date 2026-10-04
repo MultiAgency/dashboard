@@ -11,8 +11,51 @@ const BuilderOutput = z.object({
   skills: z.array(z.string()),
   location: z.string().nullable(),
   links: z.record(z.string(), z.string()).nullable(),
+  githubLogin: z.string().nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
+});
+
+const CONFLICT = { status: 409, message: "Conflict" } as const;
+
+const Network = z.enum(["testnet", "mainnet"]);
+
+const AdmissionStatus = z.enum(["admitted", "suspended", "removed"]);
+
+const Kind = z.enum(["human", "agent"]);
+
+const GithubLogin = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}(?:\[bot\])?$/);
+
+const NearAccountId = z
+  .string()
+  .trim()
+  .min(2)
+  .max(64)
+  .regex(
+    /^[a-z0-9]+(?:[-_][a-z0-9]+)*(?:\.[a-z0-9]+(?:[-_][a-z0-9]+)*)*$/,
+    "must be a valid NEAR account id (lowercase letters, digits, dashes, underscores, dots)",
+  );
+
+const MemberOutput = z.object({
+  githubLogin: z.string(),
+  kind: Kind,
+  operatorGithubLogin: z.string().nullable(),
+  name: z.string().nullable(),
+  skills: z.array(z.string()),
+  nearAccount: z.string().nullable(),
+  accounts: z.array(z.object({ network: Network, account: z.string() })),
+  admissions: z.array(
+    z.object({
+      network: Network,
+      status: AdmissionStatus,
+      proofUrl: z.string().nullable(),
+      admittedAt: z.iso.datetime().nullable(),
+    }),
+  ),
 });
 
 export const contract = oc.router({
@@ -85,6 +128,63 @@ export const contract = oc.router({
     .route({ method: "DELETE", path: "/v1/builders/{nearAccount}" })
     .input(z.object({ nearAccount: z.string() }))
     .output(z.object({ deleted: z.boolean() }))
+    .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+  listMembers: oc
+    .route({ method: "GET", path: "/v1/members" })
+    .input(z.object({ network: Network.optional(), status: AdmissionStatus.optional() }))
+    .output(z.object({ data: z.array(MemberOutput) })),
+
+  getMember: oc
+    .route({ method: "GET", path: "/v1/members/{githubLogin}" })
+    .input(z.object({ githubLogin: GithubLogin }))
+    .output(z.object({ data: MemberOutput }))
+    .errors({ NOT_FOUND }),
+
+  putMember: oc
+    .route({ method: "PUT", path: "/v1/members/{githubLogin}" })
+    .input(
+      z.object({
+        githubLogin: GithubLogin,
+        network: Network,
+        kind: Kind,
+        operatorGithubLogin: GithubLogin.optional(),
+        name: z.string().trim().min(1).max(100).optional(),
+        skills: z.array(z.string().max(50)).max(20).optional(),
+        account: z.object({ account: NearAccountId, proof: z.string().min(1) }).optional(),
+        admission: z
+          .object({
+            status: AdmissionStatus,
+            proofUrl: z.url().optional(),
+            admittedAt: z.iso.datetime().optional(),
+          })
+          .optional(),
+      }),
+    )
+    .output(z.object({ data: MemberOutput, overwritten: z.array(z.string()) }))
+    .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, CONFLICT }),
+
+  recordAgreement: oc
+    .route({ method: "PUT", path: "/v1/members/{githubLogin}/agreement" })
+    .input(
+      z.object({
+        githubLogin: GithubLogin,
+        version: z.string().trim().min(1).max(100),
+        attestedAt: z.iso.datetime(),
+        proof: z.string().min(1),
+      }),
+    )
+    .output(
+      z.object({
+        data: z.object({
+          githubLogin: z.string(),
+          version: z.string(),
+          attestedAt: z.iso.datetime(),
+          recordedBy: z.string(),
+          recordedAt: z.iso.datetime(),
+        }),
+      }),
+    )
     .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 });
 

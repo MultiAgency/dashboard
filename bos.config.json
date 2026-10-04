@@ -71,7 +71,9 @@
     "builders": {
       "development": "local:plugins/builders",
       "secrets": [
-        "BUILDERS_DATABASE_URL"
+        "BUILDERS_DATABASE_URL",
+        "REGISTRY_TOKEN_TESTNET",
+        "REGISTRY_TOKEN_MAINNET"
       ],
       "production": "https://multiagentic-243-everything-dev-builders-plugin-d-1f619b063-ze.zephyrcloud.app",
       "integrity": "sha384-9Y9Z9Xt+7xuGxRxE7vLkkTOnoDRrql3qHYnjdyX4eBUqSJl+uFgWY3UK9bT11BLV"

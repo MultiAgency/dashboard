@@ -13,6 +13,7 @@ export type BuilderProfile = {
   skills: string[];
   location: string | null;
   links: Record<string, string> | null;
+  githubLogin: string | null;
   registered: boolean;
   /** Saved by the account's owner; otherwise an Agency wrote it for them. */
   claimed: boolean;
@@ -28,6 +29,7 @@ function toProfile(
     skills: string[];
     location: string | null;
     links: Record<string, string> | null;
+    githubLogin: string | null;
     userId: string | null;
     createdAt: string;
     updatedAt: string;
@@ -41,6 +43,7 @@ function toProfile(
     skills: data.skills,
     location: data.location,
     links: data.links,
+    githubLogin: data.githubLogin,
     registered,
     claimed: data.userId !== null,
     createdAt: data.createdAt,
@@ -57,6 +60,7 @@ function stubProfile(nearAccount: string): BuilderProfile {
     skills: [],
     location: null,
     links: null,
+    githubLogin: null,
     registered: false,
     claimed: false,
     createdAt: now,
@@ -189,11 +193,11 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
         const manages = yield* Effect.promise(() => managesBuilder(manager, nearAccount));
         if (Either.isRight(builder)) {
           const profile = builder.right.data;
-          const managesUnclaimed = manages && !profile.userId;
+          const managesUnclaimed = manages && !profile.userId && !profile.githubLogin;
           return {
             contributor: toProfile(profile),
             canEdit: managesUnclaimed || canEditProfile(context, profile),
-            canDelete: managesUnclaimed || isPlatformAdmin(context),
+            canDelete: !profile.githubLogin && (managesUnclaimed || isPlatformAdmin(context)),
           };
         }
         if (assignmentRows.length === 0) {
