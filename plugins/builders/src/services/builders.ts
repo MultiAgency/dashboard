@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNotNull, or } from "drizzle-orm";
 import { Context, Effect, Layer } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { DatabaseTag } from "../db/layer";
@@ -9,7 +9,7 @@ function toIsoString(value: Date | string | null | undefined): string {
   return typeof value === "string" ? value : value.toISOString();
 }
 
-function parseSkills(raw: string | null): string[] {
+export function parseSkills(raw: string | null): string[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
@@ -29,7 +29,7 @@ function parseLinks(raw: string | null): Record<string, string> | null {
   }
 }
 
-function serializeSkills(skills?: string[]): string {
+export function serializeSkills(skills?: string[]): string {
   return JSON.stringify(skills ?? []);
 }
 
@@ -47,6 +47,7 @@ export interface Builder {
   skills: string[];
   location: string | null;
   links: Record<string, string> | null;
+  githubLogin: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -61,6 +62,7 @@ function rowToBuilder(row: any): Builder {
     skills: parseSkills(row.skills),
     location: row.location ?? null,
     links: parseLinks(row.links),
+    githubLogin: row.githubLogin ?? null,
     createdAt: toIsoString(row.createdAt),
     updatedAt: toIsoString(row.updatedAt),
   };
@@ -78,14 +80,18 @@ export type BuilderCaller = {
   trusted: boolean;
 };
 
-function isPlatformAdmin(caller: BuilderCaller): boolean {
+export function isPlatformAdmin(caller: BuilderCaller): boolean {
   return caller.userRole === "admin";
 }
 
-function isBuilder(row: { nearAccount: string; userId: string | null }, caller: BuilderCaller) {
+function isBuilder(
+  row: { nearAccount: string | null; userId: string | null },
+  caller: BuilderCaller,
+) {
+  const { nearAccount } = row;
   return (
-    caller.accounts.includes(row.nearAccount) ||
-    row.nearAccount === caller.userId ||
+    (nearAccount !== null &&
+      (caller.accounts.includes(nearAccount) || nearAccount === caller.userId)) ||
     row.userId === caller.userId
   );
 }
@@ -101,8 +107,11 @@ function claimant(nearAccount: string, caller: BuilderCaller) {
   return caller.accounts.includes(nearAccount) ? caller.userId : null;
 }
 
-function canManage(row: { userId: string | null }, caller: BuilderCaller) {
-  return caller.trusted && row.userId === null;
+function canManage(
+  row: { userId: string | null; githubLogin: string | null },
+  caller: BuilderCaller,
+) {
+  return caller.trusted && row.userId === null && row.githubLogin === null;
 }
 
 const cannotEdit = () =>
@@ -110,7 +119,7 @@ const cannotEdit = () =>
     message: "Only the builder or a platform admin can edit this profile",
   });
 
-function generateId(): string {
+export function generateId(): string {
   return `bld_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
@@ -179,7 +188,7 @@ export const BuilderServiceLive = Layer.effect(
         Effect.gen(function* () {
           const limit = Math.min(input.limit ?? 24, 100);
           const offset = input.cursor ? parseInt(input.cursor, 10) : 0;
-          const conditions: any[] = [];
+          const conditions: any[] = [isNotNull(builders.nearAccount)];
 
           if (input.search) {
             const pattern = `%${input.search}%`;
@@ -247,7 +256,7 @@ export const BuilderServiceLive = Layer.effect(
             db
               .select()
               .from(builders)
-              .where(and(or(...conditions)))
+              .where(and(isNotNull(builders.nearAccount), or(...conditions)))
               .limit(1),
           );
           return row ? rowToBuilder(row) : null;
@@ -335,6 +344,7 @@ export const BuilderServiceLive = Layer.effect(
             skills: input.skills ?? [],
             location: input.location?.trim() ?? null,
             links: input.links && Object.keys(input.links).length > 0 ? input.links : null,
+            githubLogin: null,
             createdAt: toIsoString(now),
             updatedAt: toIsoString(now),
           };
@@ -390,6 +400,14 @@ export const BuilderServiceLive = Layer.effect(
           if (!existing) {
             return yield* Effect.fail(
               new ORPCError("NOT_FOUND", { message: "Builder profile not found" }),
+            );
+          }
+
+          if (existing.githubLogin) {
+            return yield* Effect.fail(
+              new ORPCError("FORBIDDEN", {
+                message: "This builder is a board member; the board manages its membership",
+              }),
             );
           }
 

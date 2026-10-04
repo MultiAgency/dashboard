@@ -191,6 +191,7 @@ describe("when upstream services fail", () => {
         skills: [],
         location: null,
         links: null,
+        githubLogin: null,
         userId,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
@@ -222,6 +223,23 @@ describe("when upstream services fail", () => {
       );
 
       expect(result).toMatchObject({ canEdit: allowed, canDelete: allowed });
+    });
+
+    test("does not offer an Agency to edit or remove a board member's profile", async () => {
+      await addedBy("acme");
+      const contributors = contributorsWith({
+        getBuilder: async () => ({ data: { ...profileOf(null).data, githubLogin: "ada" } }),
+      });
+
+      const result = await Effect.runPromise(
+        contributors.get({ userId: "manager" }, "ada.near", { organizationId: "acme" }),
+      );
+
+      expect(result).toMatchObject({
+        contributor: { githubLogin: "ada" },
+        canEdit: false,
+        canDelete: false,
+      });
     });
 
     test("an Agency that did not add a builder cannot edit their profile", async () => {
