@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -86,6 +86,11 @@ function PlatformOrgs() {
       <PageHeader
         title="Workspaces"
         description="Create Organizations, optionally with an Agency DAO. You become the owner; the admin email receives a separate invite."
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link to="/platform/members">Members</Link>
+          </Button>
+        }
       />
 
       <CreateAgencyForm onCreated={invalidate} />
