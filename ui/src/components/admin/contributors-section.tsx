@@ -1,4 +1,10 @@
-import { DownloadSimpleIcon, PencilSimpleIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
+import {
+  DownloadSimpleIcon,
+  PencilSimpleIcon,
+  PlusIcon,
+  SealCheckIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -29,6 +35,7 @@ import { useApiClient } from "@/lib/api";
 import {
   buildContributorLinks,
   formatSkillsInput,
+  githubProfileUrl,
   parseSkillsInput,
   splitContributorLinks,
 } from "@/lib/contributor-profile";
@@ -36,6 +43,21 @@ import { isValidNearAccountId } from "@/lib/near-account";
 import { adminContributorsListQueryOptions, refreshAfter } from "@/lib/queries";
 
 type Contributor = Awaited<ReturnType<ApiClient["contributors"]["list"]>>["data"][number];
+
+function VerifiedGithub({ login }: { login: string }) {
+  return (
+    <a
+      href={githubProfileUrl(login)}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="GitHub account verified by the contribution board"
+      aria-label={`Verified GitHub account @${login}`}
+      className="inline-flex items-center gap-1 text-sm underline-offset-4 hover:underline"
+    >
+      <SealCheckIcon aria-hidden className="size-4 text-muted-foreground" />@{login}
+    </a>
+  );
+}
 
 export function ContributorsAdminSection() {
   const apiClient = useApiClient();
@@ -69,6 +91,17 @@ export function ContributorsAdminSection() {
       header: "NEAR",
       accessorKey: "nearAccount",
       cell: ({ row }) => <span className="text-muted-foreground">{row.original.nearAccount}</span>,
+    },
+    {
+      id: "githubLogin",
+      header: "GitHub",
+      accessorFn: (row) => row.githubLogin ?? "",
+      cell: ({ row }) =>
+        row.original.githubLogin ? (
+          <VerifiedGithub login={row.original.githubLogin} />
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
     },
     {
       id: "skills",
@@ -113,6 +146,7 @@ export function ContributorsAdminSection() {
           </Button>
           {row.original.registered &&
             !row.original.claimed &&
+            !row.original.githubLogin &&
             manageable.has(row.original.nearAccount) && (
               <RemoveBuilderButton
                 nearAccount={row.original.nearAccount}
@@ -361,6 +395,11 @@ export function ContributorProfileForm({
         {!contributor.registered && (
           <CardAction>
             <Badge variant="outline">Not registered yet</Badge>
+          </CardAction>
+        )}
+        {contributor.githubLogin && (
+          <CardAction>
+            <VerifiedGithub login={contributor.githubLogin} />
           </CardAction>
         )}
       </CardHeader>

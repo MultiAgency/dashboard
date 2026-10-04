@@ -1,0 +1,397 @@
+{
+  "id": "17800b1a-a6ce-4a8a-a62c-1e0620b34a11",
+  "prevId": "fff36e56-1daf-4d90-bf01-a0e7a5cb1e3b",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.builder_accounts": {
+      "name": "builder_accounts",
+      "schema": "",
+      "columns": {
+        "builder_id": {
+          "name": "builder_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "network": {
+          "name": "network",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account": {
+          "name": "account",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proof": {
+          "name": "proof",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "builder_accounts_network_account_idx": {
+          "name": "builder_accounts_network_account_idx",
+          "columns": [
+            {
+              "expression": "network",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "builder_accounts_builder_id_builders_id_fk": {
+          "name": "builder_accounts_builder_id_builders_id_fk",
+          "tableFrom": "builder_accounts",
+          "tableTo": "builders",
+          "columnsFrom": ["builder_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "builder_accounts_builder_id_network_pk": {
+          "name": "builder_accounts_builder_id_network_pk",
+          "columns": ["builder_id", "network"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "builder_accounts_network_check": {
+          "name": "builder_accounts_network_check",
+          "value": "\"builder_accounts\".\"network\" in ('testnet', 'mainnet')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.builder_admissions": {
+      "name": "builder_admissions",
+      "schema": "",
+      "columns": {
+        "builder_id": {
+          "name": "builder_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "network": {
+          "name": "network",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proof_url": {
+          "name": "proof_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "admitted_at": {
+          "name": "admitted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "builder_admissions_builder_id_builders_id_fk": {
+          "name": "builder_admissions_builder_id_builders_id_fk",
+          "tableFrom": "builder_admissions",
+          "tableTo": "builders",
+          "columnsFrom": ["builder_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "builder_admissions_builder_id_network_pk": {
+          "name": "builder_admissions_builder_id_network_pk",
+          "columns": ["builder_id", "network"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "builder_admissions_network_check": {
+          "name": "builder_admissions_network_check",
+          "value": "\"builder_admissions\".\"network\" in ('testnet', 'mainnet')"
+        },
+        "builder_admissions_status_check": {
+          "name": "builder_admissions_status_check",
+          "value": "\"builder_admissions\".\"status\" in ('admitted', 'suspended', 'removed')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.builder_agreements": {
+      "name": "builder_agreements",
+      "schema": "",
+      "columns": {
+        "builder_id": {
+          "name": "builder_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attested_at": {
+          "name": "attested_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proof": {
+          "name": "proof",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_by": {
+          "name": "recorded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "builder_agreements_builder_id_builders_id_fk": {
+          "name": "builder_agreements_builder_id_builders_id_fk",
+          "tableFrom": "builder_agreements",
+          "tableTo": "builders",
+          "columnsFrom": ["builder_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.builders": {
+      "name": "builders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "near_account": {
+          "name": "near_account",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bio": {
+          "name": "bio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "skills": {
+          "name": "skills",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "location": {
+          "name": "location",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "links": {
+          "name": "links",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "github_login": {
+          "name": "github_login",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'human'"
+        },
+        "operator_id": {
+          "name": "operator_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "builders_near_account_idx": {
+          "name": "builders_near_account_idx",
+          "columns": [
+            {
+              "expression": "near_account",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "builders_user_id_idx": {
+          "name": "builders_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "builders_operator_id_builders_id_fk": {
+          "name": "builders_operator_id_builders_id_fk",
+          "tableFrom": "builders",
+          "tableTo": "builders",
+          "columnsFrom": ["operator_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "builders_near_account_unique": {
+          "name": "builders_near_account_unique",
+          "nullsNotDistinct": false,
+          "columns": ["near_account"]
+        },
+        "builders_github_login_unique": {
+          "name": "builders_github_login_unique",
+          "nullsNotDistinct": false,
+          "columns": ["github_login"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "builders_kind_check": {
+          "name": "builders_kind_check",
+          "value": "\"builders\".\"kind\" in ('human', 'agent')"
+        },
+        "builders_operator_check": {
+          "name": "builders_operator_check",
+          "value": "(\"builders\".\"kind\" = 'agent') = (\"builders\".\"operator_id\" is not null)"
+        },
+        "builders_github_login_check": {
+          "name": "builders_github_login_check",
+          "value": "\"builders\".\"github_login\" = lower(\"builders\".\"github_login\")"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
