@@ -8,7 +8,7 @@ type Capabilities = {
   hasClientSections: boolean;
 };
 
-export type OrganizationHome = "/admin" | "/dashboard" | "/client";
+export type OrganizationHome = "/admin" | "/dashboard" | "/client/projects";
 
 export function nonPersonalOrganizations<T extends OrganizationLike>(organizations: T[]): T[] {
   return organizations.filter((o) => !parseOrgMetadata(o.metadata).isPersonal);
@@ -22,9 +22,13 @@ export function organizationToActivate(
   return (candidates.find((o) => o.id === activeOrganizationId) ?? candidates[0])?.id ?? null;
 }
 
-export function organizationHome(capabilities: Capabilities): OrganizationHome {
+export function organizationHome(
+  capabilities: Capabilities,
+  recommendedView: "agency" | "client" | null = null,
+): OrganizationHome {
+  if (recommendedView === "client" && capabilities.hasClientSections) return "/client/projects";
   if (capabilities.hasAgencySections) return "/admin";
-  if (capabilities.hasClientSections) return "/client";
+  if (capabilities.hasClientSections) return "/client/projects";
   return "/dashboard";
 }
 

@@ -36,6 +36,12 @@ import {
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
   Separator,
   Skeleton,
 } from "@/components";
@@ -347,7 +353,7 @@ const STEPS = [
 const TEMPLATE = [
   { label: "Website", note: "Landing, work and contact pages" },
   { label: "Treasury", note: "Payouts, permissions and policies" },
-  { label: "Projects", note: "Live NEARN listings" },
+  { label: "Projects", note: "Live work, teams and budgets" },
   { label: "Dashboard", note: "Clients, contributors and billing" },
 ];
 
@@ -372,7 +378,7 @@ type LandingProject = {
   id: string;
   slug: string;
   title: string;
-  nearnListing: unknown | null;
+  status: string;
 };
 
 function Landing() {
@@ -640,7 +646,7 @@ function ProjectsSection() {
     <section className="flex flex-col gap-6">
       <SectionHeader
         title="Our work"
-        description="Live Projects, with open listings on NEARN."
+        description="Projects we are building now."
         actions={
           projects.length > 0 && (
             <Button asChild variant="outline">
@@ -653,9 +659,9 @@ function ProjectsSection() {
         }
       />
       {projectsQuery.isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="flex flex-col gap-2.5" aria-busy="true">
           {[0, 1, 2].map((i) => (
-            <ProjectCardSkeleton key={i} />
+            <ProjectRowSkeleton key={i} />
           ))}
         </div>
       ) : projectsQuery.isError ? (
@@ -671,56 +677,42 @@ function ProjectsSection() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ItemGroup>
           {visibleProjects.map((p) => (
-            <ProjectCard key={p.id} project={p} />
+            <ProjectRow key={p.id} project={p} />
           ))}
-        </div>
+        </ItemGroup>
       )}
     </section>
   );
 }
 
-function ProjectCard({ project }: { project: LandingProject }) {
+function ProjectRow({ project }: { project: LandingProject }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardDescription>
-          <span className="block truncate">@{project.slug}</span>
-        </CardDescription>
-        <CardTitle>
-          <h3 className="break-words">{project.title}</h3>
-        </CardTitle>
-        {project.nearnListing ? (
-          <CardAction>
-            <Badge variant="secondary">Bounty</Badge>
-          </CardAction>
-        ) : null}
-      </CardHeader>
-      <CardFooter className="mt-auto">
-        <Button asChild variant="outline" className="w-full">
-          <Link to="/work">
-            Open
-            <ArrowRightIcon data-icon="inline-end" aria-hidden />
-          </Link>
-        </Button>
-      </CardFooter>
-    </Card>
+    <li>
+      <Item variant="outline" size="sm">
+        <ItemContent className="min-w-0">
+          <ItemTitle className="break-words">
+            <h3>{project.title}</h3>
+          </ItemTitle>
+          <ItemDescription className="truncate">@{project.slug}</ItemDescription>
+        </ItemContent>
+        <ItemActions>
+          <Badge variant="outline">{project.status}</Badge>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/work/$slug" params={{ slug: project.slug }}>
+              Open
+              <ArrowRightIcon data-icon="inline-end" aria-hidden />
+            </Link>
+          </Button>
+        </ItemActions>
+      </Item>
+    </li>
   );
 }
 
-function ProjectCardSkeleton() {
-  return (
-    <Card>
-      <CardHeader>
-        <Skeleton className="h-3 w-24" />
-        <Skeleton className="h-4 w-3/4" />
-      </CardHeader>
-      <CardFooter>
-        <Skeleton className="h-8 w-full" />
-      </CardFooter>
-    </Card>
-  );
+function ProjectRowSkeleton() {
+  return <Skeleton className="h-14 w-full" />;
 }
 
 function StackCard({

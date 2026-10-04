@@ -101,6 +101,10 @@ function claimant(nearAccount: string, caller: BuilderCaller) {
   return caller.accounts.includes(nearAccount) ? caller.userId : null;
 }
 
+function canManage(row: { userId: string | null }, caller: BuilderCaller) {
+  return caller.trusted && row.userId === null;
+}
+
 const cannotEdit = () =>
   new ORPCError("FORBIDDEN", {
     message: "Only the builder or a platform admin can edit this profile",
@@ -160,6 +164,7 @@ export class BuilderService extends Context.Tag("builders/BuilderService")<
 
     deleteBuilder: (
       nearAccount: string,
+      caller: BuilderCaller,
     ) => Effect.Effect<{ deleted: boolean }, ORPCError<string, unknown>>;
   }
 >() {}
@@ -347,7 +352,11 @@ export const BuilderServiceLive = Layer.effect(
             );
           }
 
-          if (!isPlatformAdmin(caller) && !isBuilder(existing, caller)) {
+          if (
+            !isPlatformAdmin(caller) &&
+            !isBuilder(existing, caller) &&
+            !canManage(existing, caller)
+          ) {
             return yield* Effect.fail(cannotEdit());
           }
 
@@ -372,7 +381,7 @@ export const BuilderServiceLive = Layer.effect(
           return rowToBuilder(updated);
         }),
 
-      deleteBuilder: (nearAccount) =>
+      deleteBuilder: (nearAccount, caller) =>
         Effect.gen(function* () {
           const [existing] = yield* Effect.promise(() =>
             db.select().from(builders).where(eq(builders.nearAccount, nearAccount)).limit(1),
@@ -381,6 +390,14 @@ export const BuilderServiceLive = Layer.effect(
           if (!existing) {
             return yield* Effect.fail(
               new ORPCError("NOT_FOUND", { message: "Builder profile not found" }),
+            );
+          }
+
+          if (!isPlatformAdmin(caller) && !canManage(existing, caller)) {
+            return yield* Effect.fail(
+              new ORPCError("FORBIDDEN", {
+                message: "Only a platform admin can remove a profile its builder has claimed",
+              }),
             );
           }
 

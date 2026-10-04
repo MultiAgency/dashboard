@@ -23,7 +23,8 @@
       "development": "local:api",
       "variables": {
         "agencyDaoAccount": "multiagency.sputnik-dao.near",
-        "appOrigin": "https://dev.multiagency.ai"
+        "appOrigin": "https://dev.multiagency.ai",
+        "communityApiUrl": "https://nearbuilders.org/api"
       },
       "secrets": [
         "API_DATABASE_URL",

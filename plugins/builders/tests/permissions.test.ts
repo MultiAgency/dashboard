@@ -138,6 +138,66 @@ describe("builders plugin permissions", () => {
     expect(updated.data.name).toBe("Ada Lovelace");
   });
 
+  describe("unclaimed profiles", () => {
+    const claimed = async () => {
+      const nearAccount = await created();
+      await clientFor({ userId: "ada", near: nearAccount }).updateBuilderProfile({
+        nearAccount,
+        bio: "Mathematician",
+      });
+      return nearAccount;
+    };
+
+    test("an Agency manager, through the API, can edit a profile nobody has claimed", async () => {
+      const nearAccount = await created();
+
+      await apiClientFor(agencyAdmin).updateBuilderProfile({ nearAccount, name: "Ada L." });
+
+      expect(await nameOf(nearAccount)).toBe("Ada L.");
+      expect((await anonymousClient().getBuilder({ nearAccount })).data.userId).toBeNull();
+    });
+
+    test("an Agency manager cannot edit a profile its builder has claimed", async () => {
+      const nearAccount = await claimed();
+
+      await expect(
+        apiClientFor(agencyAdmin).updateBuilderProfile({ nearAccount, name: "Renamed" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    test("an Agency manager, through the API, can remove a profile nobody has claimed", async () => {
+      const nearAccount = await created();
+
+      await apiClientFor(agencyAdmin).deleteBuilder({ nearAccount });
+
+      await expect(anonymousClient().getBuilder({ nearAccount })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    });
+
+    test.each([
+      ["a claimed profile through the API", async () => apiClientFor(agencyAdmin), claimed],
+      ["an unclaimed profile directly", async () => clientFor(agencyAdmin), created],
+    ])("an Agency manager cannot remove %s", async (_name, client, make) => {
+      const nearAccount = await make();
+
+      await expect((await client()).deleteBuilder({ nearAccount })).rejects.toMatchObject({
+        code: "FORBIDDEN",
+      });
+      expect(await nameOf(nearAccount)).toBeTruthy();
+    });
+
+    test("a platform admin can remove a claimed profile", async () => {
+      const nearAccount = await claimed();
+
+      await clientFor(platformAdmin).deleteBuilder({ nearAccount });
+
+      await expect(anonymousClient().getBuilder({ nearAccount })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    });
+  });
+
   describe("claiming", () => {
     const userIdOf = async (nearAccount: string) =>
       (await anonymousClient().getBuilder({ nearAccount })).data.userId;

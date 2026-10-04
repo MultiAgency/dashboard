@@ -4,7 +4,7 @@ import { Effect } from "every-plugin/effect";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
-import { listings } from "../../src/db/schema";
+import { listings, projectContributors } from "../../src/db/schema";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { createAgencyService } from "../../src/services/agency";
 import { createProjectLedgers } from "../../src/services/ledger";
@@ -27,7 +27,7 @@ describe("agency projects", () => {
   });
 
   beforeEach(async () => {
-    await pg.query("TRUNCATE listings");
+    await pg.query("TRUNCATE listings, project_contributors, project_public_settings");
   });
 
   afterAll(async () => {
@@ -94,5 +94,35 @@ describe("agency projects", () => {
       const outcome = await Effect.runPromise(Effect.either(agency.getProject(scope, slug)));
       expect(outcome._tag === "Left" && outcome.left).toMatchObject({ code: "NOT_FOUND" });
     }
+  });
+
+  test("a public project page shows the team only after the Agency turns it on", async () => {
+    const agency = agencyWith([
+      { ...project("site", AGENCY), visibility: "public", description: "A site" },
+    ]);
+    const visitor = agencyScope(AGENCY, { role: null, canSeePrivate: false });
+    await db
+      .insert(projectContributors)
+      .values({ projectId: "site", nearAccount: "ada.near", role: "Lead" });
+
+    const hidden = await Effect.runPromise(agency.getPublicProject(visitor, "slug-site"));
+    expect(hidden).toMatchObject({ description: "A site", showTeam: false, builders: [] });
+
+    await Effect.runPromise(agency.setPublicTeam(agencyScope(AGENCY), "site", true));
+    const shown = await Effect.runPromise(agency.getPublicProject(visitor, "slug-site"));
+    expect(shown).toMatchObject({
+      showTeam: true,
+      builders: [{ name: "ada.near", role: "Lead" }],
+    });
+  });
+
+  test("only the owning Agency can change a project's public team setting", async () => {
+    const agency = agencyWith([project("site", AGENCY)]);
+
+    const outcome = await Effect.runPromise(
+      Effect.either(agency.setPublicTeam(agencyScope("beta.sputnik-dao.near"), "site", true)),
+    );
+
+    expect(outcome._tag === "Left" && outcome.left).toMatchObject({ code: "NOT_FOUND" });
   });
 });

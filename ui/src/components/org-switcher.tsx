@@ -7,9 +7,12 @@ import { useAuthClient } from "@/app";
 import { usePendingInvitations } from "@/components/pending-invitations";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
+import { organizationHome } from "@/lib/landing";
+import { viewForPath } from "@/lib/navigation";
 import {
   activeOrganizationKey,
   invalidateWorkspaceQueries,
+  meRolesQueryOptions,
   myOrganizationsQueryOptions,
   setActiveOrganizationKey,
 } from "@/lib/queries";
@@ -32,7 +35,13 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 
-export function OrgSwitcher() {
+export function OrgSwitcher({
+  fullWidth = false,
+  background = true,
+}: {
+  fullWidth?: boolean;
+  background?: boolean;
+}) {
   const auth = useAuthClient();
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
@@ -57,6 +66,13 @@ export function OrgSwitcher() {
       setActiveOrganizationKey(orgId);
       announceWorkspace(orgId);
       await queryClient.fetchQuery(sessionQueryOptions(auth));
+      if (viewForPath(router.state.location.pathname)) {
+        const roles = await queryClient.fetchQuery({
+          ...meRolesQueryOptions(apiClient),
+          staleTime: 0,
+        });
+        await router.navigate({ to: organizationHome(roles.capabilities, roles.recommendedView) });
+      }
       await invalidateWorkspaceQueries(queryClient, router);
     },
     onError: (error: Error) => {
@@ -67,6 +83,7 @@ export function OrgSwitcher() {
   // Another tab switched Organization for the whole session. Reloading is the only way to be
   // sure this tab stops showing, and writing to, the Organization it loaded with.
   useEffect(() => {
+    if (!background) return;
     const check = async () => {
       const { data, error } = await auth.getSession({ query: { disableCookieCache: true } });
       if (error) return;
@@ -75,34 +92,34 @@ export function OrgSwitcher() {
     };
     // A failed check is retried the next time this tab becomes visible.
     return onWorkspaceChange(() => void check().catch(() => {}));
-  }, [auth]);
+  }, [auth, background]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !background) return;
     if (recoveredRef.current || !orgsQuery.isSuccess || switchMutation.isPending) return;
     const target = recoveryTarget(organizations, activeOrgId);
     if (!target) return;
     recoveredRef.current = true;
     switchMutation.mutate(target);
-  }, [activeOrgId, organizations, orgsQuery.isSuccess, switchMutation]);
+  }, [activeOrgId, background, organizations, orgsQuery.isSuccess, switchMutation]);
 
   return (
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
+            variant={fullWidth ? "outline" : "ghost"}
             size="sm"
-            className="max-w-30 sm:max-w-45"
+            className={fullWidth ? "w-full justify-start" : "max-w-30 sm:max-w-45"}
             aria-label={`Organization: ${activeOrg?.name ?? "none"}`}
           >
             <BankIcon aria-hidden />
-            <span className="hidden min-w-0 truncate sm:inline">
+            <span className={fullWidth ? "min-w-0 truncate" : "hidden min-w-0 truncate sm:inline"}>
               {activeOrg?.name ?? "Organization"}
             </span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuContent align={fullWidth ? "start" : "end"} className="w-64">
           <DropdownMenuLabel>Organizations</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {organizations.map((org) => (

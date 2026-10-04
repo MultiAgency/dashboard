@@ -33,6 +33,7 @@ export type ClientBreakdownItem = {
   projectSlug: string;
   budgetByToken: TokenAmount[];
   spentByToken: TokenAmount[];
+  builders?: string[];
 };
 
 type ClientGroup = {
@@ -44,6 +45,7 @@ type ClientBreakdownCsvRow = {
   clientName: string;
   projectTitle: string;
   projectSlug: string;
+  builders: string;
   tokenLabel: string;
   tokenId: string;
   allocated: string;
@@ -78,6 +80,7 @@ function flattenForCsv(breakdown: ClientBreakdownItem[]): ClientBreakdownCsvRow[
         clientName: item.clientName,
         projectTitle: item.projectTitle,
         projectSlug: item.projectSlug,
+        builders: (item.builders ?? []).join(", "),
         tokenLabel: "—",
         tokenId: "—",
         allocated: "—",
@@ -92,6 +95,7 @@ function flattenForCsv(breakdown: ClientBreakdownItem[]): ClientBreakdownCsvRow[
         clientName: item.clientName,
         projectTitle: item.projectTitle,
         projectSlug: item.projectSlug,
+        builders: (item.builders ?? []).join(", "),
         tokenLabel: tokenDisplayName(tokenId),
         tokenId,
         allocated: allocated ? formatTokenAmount(allocated, tokenId) : "—",
@@ -108,7 +112,8 @@ function matchesFilter(item: ClientBreakdownItem, query: string): boolean {
   return (
     item.clientName.toLowerCase().includes(q) ||
     item.projectTitle.toLowerCase().includes(q) ||
-    item.projectSlug.toLowerCase().includes(q)
+    item.projectSlug.toLowerCase().includes(q) ||
+    (item.builders ?? []).some((b) => b.toLowerCase().includes(q))
   );
 }
 
@@ -133,6 +138,7 @@ export function ClientBreakdownSection({ breakdown }: ClientBreakdownSectionProp
       { header: "Client", value: (r) => r.clientName },
       { header: "Project", value: (r) => r.projectTitle },
       { header: "Project slug", value: (r) => r.projectSlug },
+      { header: "Builders", value: (r) => r.builders },
       { header: "Token", value: (r) => r.tokenLabel },
       { header: "Allocated", value: (r) => r.allocated },
       { header: "Spent", value: (r) => r.spent },
@@ -150,7 +156,7 @@ export function ClientBreakdownSection({ breakdown }: ClientBreakdownSectionProp
         </CardTitle>
         <CardDescription>
           {filteredGroups.length} client{filteredGroups.length === 1 ? "" : "s"} · {totalProjects}{" "}
-          project{totalProjects === 1 ? "" : "s"}, allocated and spent per token.
+          project{totalProjects === 1 ? "" : "s"}: who works on each, allocated and spent per token.
         </CardDescription>
         <CardAction>
           <Button variant="outline" size="sm" onClick={handleExport}>
@@ -183,6 +189,7 @@ export function ClientBreakdownSection({ breakdown }: ClientBreakdownSectionProp
               <TableRow>
                 <TableHead scope="col">Client</TableHead>
                 <TableHead scope="col">Project</TableHead>
+                <TableHead scope="col">Builders</TableHead>
                 <TableHead scope="col">Token</TableHead>
                 <TableHead scope="col">Allocated</TableHead>
                 <TableHead scope="col">Spent</TableHead>
@@ -212,6 +219,9 @@ export function ClientBreakdownSection({ breakdown }: ClientBreakdownSectionProp
                             </span>
                           </>
                         )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {lineIndex === 0 && ((project.builders ?? []).join(", ") || "—")}
                       </TableCell>
                       {tokenId ? (
                         <>

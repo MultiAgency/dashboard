@@ -37,6 +37,7 @@ import { ProjectBudgetPanel } from "@/components/admin/project-budget-panel";
 import type { Project } from "@/components/admin/project-form";
 import { ProjectForm } from "@/components/admin/project-form";
 import { NearnSnapshot, projectStatusVariant } from "@/components/admin/projects-section";
+import { PublicTeamSetting } from "@/components/admin/public-team-setting";
 import { AdminError } from "@/components/admin-error";
 import { Empty as AdminEmpty } from "@/components/admin-form";
 import { AdminSectionSkeleton } from "@/components/admin-section-states";
@@ -218,6 +219,11 @@ function AdminProjectDetail() {
               </CardContent>
             </Card>
             <AssignmentsSection projectId={project.id} />
+            <PublicTeamSetting
+              projectId={project.id}
+              slug={project.slug}
+              isPublic={project.visibility === "public" && project.status === "active"}
+            />
           </div>
         </TabsContent>
 

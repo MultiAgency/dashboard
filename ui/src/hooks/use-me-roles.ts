@@ -22,7 +22,10 @@ export function useMeRoles() {
     orgRole,
     canAccessAdmin: isManager(orgRole),
     agencyDao: query.data?.agencyDao ?? null,
+    hasAgencySections: query.data?.capabilities.hasAgencySections ?? false,
     hasClientSections: query.data?.capabilities.hasClientSections ?? false,
+    organizationId: session?.session?.activeOrganizationId ?? null,
+    recommendedView: query.data?.recommendedView ?? null,
     isLoaded,
   };
 }
