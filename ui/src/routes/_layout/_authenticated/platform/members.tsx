@@ -143,6 +143,7 @@ function PlatformMembers() {
 
       {recording && (
         <RecordAgreementForm
+          key={recording}
           githubLogin={recording}
           existing={members.find((m) => m.githubLogin === recording)?.agreement ?? null}
           onDone={() => setRecording(null)}

@@ -77,6 +77,34 @@ describe("Platform members", () => {
     expect(within(botRow).getByText("@ada")).toBeTruthy();
   });
 
+  test("switching members clears the details of the one before", async () => {
+    list.mockResolvedValue({
+      data: [
+        member("ada", {
+          agreement: {
+            version: "2026-09",
+            attestedAt: "2026-10-01T00:00:00.000Z",
+            recordedBy: "platform",
+            recordedAt: "2026-10-02T00:00:00.000Z",
+          },
+        }),
+        member("grace"),
+      ],
+    });
+    renderPage();
+    const rowOf = (login: string) =>
+      screen
+        .getByRole("link", { name: new RegExp(`verified github account @${login}$`, "i") })
+        .closest("tr") as HTMLElement;
+
+    fireEvent.click(await screen.findByRole("button", { name: "Update agreement" }));
+    expect((screen.getByLabelText("Agreement version") as HTMLInputElement).value).toBe("2026-09");
+    fireEvent.click(within(rowOf("grace")).getByRole("button", { name: "Record agreement" }));
+
+    expect((screen.getByLabelText("Agreement version") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Signed on") as HTMLInputElement).value).toBe("");
+  });
+
   test("records an agreement for a member", async () => {
     list.mockResolvedValue({ data: [member("grace")] });
     recordAgreement.mockResolvedValue({ recorded: true });
