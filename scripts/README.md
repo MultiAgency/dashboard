@@ -188,3 +188,15 @@ From #43 the API reads the auth database directly (`AUTH_DATABASE_URL`, the same
 The API writes only two things there: a new Organization with no members, and the first-admin invitation (created, re-dated, canceled). Accepting the invitation still goes through the auth plugin. The invitation email is sent by the API through Resend (`RESEND_API_KEY`, `NOTIFY_FROM_EMAIL`), with the same `/accept-invitation/<id>` link the auth plugin uses.
 
 Without `AUTH_DATABASE_URL` the API still starts, but creating Clients, finding Organizations by slug, notifications and the switcher's list are unavailable.
+
+## Merging into staging
+
+`main` and `staging` each hold their own deployment URLs in `bos.config.json`, because every deploy writes them back. `scripts/merge-bos-config.ts` is a git merge driver that keeps the receiving branch's deployment fields (`production`, `integrity`, `ssr`, `ssrIntegrity`, `baseUrl`, `appOrigin`) and merges every other change normally. When both sides change the same other field differently, it stops with ordinary conflict markers.
+
+`.gitattributes` assigns it to `bos.config.json`. Git doesn't run a repository's merge drivers until each clone opts in, once:
+
+```bash
+git config merge.bos-config.driver "bun scripts/merge-bos-config.ts %O %A %B"
+```
+
+Tests: `bun test scripts/merge-bos-config.test.ts`.
