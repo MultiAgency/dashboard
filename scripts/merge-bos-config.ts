@@ -24,9 +24,6 @@ export function mergeBosConfig(
   theirs: Json | undefined,
   path: string[] = [],
 ): Json | undefined {
-  if (same(ours, theirs)) return ours;
-  if (same(base, ours)) return theirs;
-  if (same(base, theirs)) return ours;
   if (DEPLOYMENT_FIELDS.has(path.at(-1) ?? "")) return ours;
   if (isObject(ours) && isObject(theirs)) {
     const baseObject = isObject(base) ? base : {};
@@ -37,6 +34,9 @@ export function mergeBosConfig(
     }
     return merged;
   }
+  if (same(ours, theirs)) return ours;
+  if (same(base, ours)) return theirs;
+  if (same(base, theirs)) return ours;
   throw new MergeConflict(`both sides changed ${path.join(".") || "the file"} differently`);
 }
 
@@ -54,8 +54,8 @@ if (import.meta.main) {
     const merged = mergeBosConfig(read(basePath), read(oursPath), read(theirsPath));
     writeFileSync(oursPath, `${JSON.stringify(merged, null, 2)}\n`);
   } catch (error) {
-    if (!(error instanceof MergeConflict)) throw error;
-    console.error(`bos.config.json: ${error.message}; resolve it by hand.`);
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(`bos.config.json: ${reason}; resolve it by hand.`);
     Bun.spawnSync(["git", "merge-file", "-L", "ours", "-L", "base", "-L", "theirs", oursPath, basePath, theirsPath]);
     process.exit(1);
   }
