@@ -205,16 +205,27 @@ function WorkOrdersPage() {
             <h2>Payouts with no work order</h2>
           </CardTitle>
           <CardDescription>
-            Approved payouts from the last 180 days that no signed or completed work order covers.
+            Approved payouts from the last 180 days that no signed, completed or terminated work
+            order covers.
           </CardDescription>
-          <CardAction>
-            <Badge variant={uncovered.length ? "destructive" : "secondary"}>
-              {uncovered.length}
-            </Badge>
-          </CardAction>
+          {uncoveredQuery.data && (
+            <CardAction>
+              <Badge variant={uncovered.length ? "destructive" : "secondary"}>
+                {uncovered.length}
+              </Badge>
+            </CardAction>
+          )}
         </CardHeader>
         <CardContent>
-          {uncovered.length === 0 ? (
+          {uncoveredQuery.isError ? (
+            <LoadError
+              title="Could not load payouts"
+              description={uncoveredQuery.error?.message || "Check your connection and try again."}
+              onRetry={() => void uncoveredQuery.refetch()}
+            />
+          ) : !uncoveredQuery.data ? (
+            <p className="text-sm text-muted-foreground">Loading payouts…</p>
+          ) : uncovered.length === 0 ? (
             <p className="text-sm text-muted-foreground">Every recent payout is covered.</p>
           ) : (
             <ul className="flex flex-col gap-2 text-sm">
@@ -377,7 +388,9 @@ function WorkOrderFormBody({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {STATUSES.map((s) => (
+                    {STATUSES.filter(
+                      (s) => s !== "draft" || !existing || existing.status === "draft",
+                    ).map((s) => (
                       <SelectItem key={s} value={s}>
                         {s}
                       </SelectItem>

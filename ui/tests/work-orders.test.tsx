@@ -108,6 +108,24 @@ describe("Work orders page", () => {
     expect(await screen.findByText(/bob\.near · Website/)).toBeTruthy();
   });
 
+  test("doesn't call payouts covered while they are still loading", async () => {
+    list.mockResolvedValue({ data: [] });
+    uncoveredPayouts.mockReturnValue(new Promise(() => {}));
+    renderPage();
+
+    expect(await screen.findByText("Loading payouts…")).toBeTruthy();
+    expect(screen.queryByText("Every recent payout is covered.")).toBeNull();
+  });
+
+  test("shows an error instead of calling payouts covered when they fail to load", async () => {
+    list.mockResolvedValue({ data: [] });
+    uncoveredPayouts.mockRejectedValue(new Error("boom"));
+    renderPage();
+
+    expect(await screen.findByText("Could not load payouts")).toBeTruthy();
+    expect(screen.queryByText("Every recent payout is covered.")).toBeNull();
+  });
+
   test("a new work order can't be saved until it has a Project, token and amount", async () => {
     list.mockResolvedValue({ data: [] });
     uncoveredPayouts.mockResolvedValue({ data: [] });
