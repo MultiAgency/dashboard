@@ -687,6 +687,19 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }),
       },
 
+      members: {
+        list: builder.members.list
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => runEffect(contributors.members(context))),
+
+        recordAgreement: builder.members.recordAgreement
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => {
+            await runEffect(contributors.recordAgreement(context, input));
+            return { recorded: true };
+          }),
+      },
+
       assignments: {
         list: builder.assignments.list
           .use(member)

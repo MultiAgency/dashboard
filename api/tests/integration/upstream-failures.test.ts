@@ -114,6 +114,45 @@ describe("when upstream services fail", () => {
       return createContributorsService(db, plugins);
     }
 
+    test("lists board members for the caller the plugin is asked about", async () => {
+      const contexts: unknown[] = [];
+      const contributors = contributorsWith(
+        { listMembersWithAgreements: async () => ({ data: [{ githubLogin: "ada" }] }) },
+        contexts,
+      );
+
+      const result = await Effect.runPromise(contributors.members({ userId: "platform" }));
+
+      expect(result).toEqual({ data: [{ githubLogin: "ada" }] });
+      expect(contexts.at(-1)).toEqual({ userId: "platform" });
+    });
+
+    test("passes the plugin's refusal to record an agreement through unchanged", async () => {
+      const contributors = contributorsWith({
+        recordAgreement: async () => {
+          throw new ORPCError("FORBIDDEN", {
+            message: "Only a platform admin records a services agreement",
+          });
+        },
+      });
+
+      const outcome = await Effect.runPromise(
+        Effect.either(
+          contributors.recordAgreement(
+            { userId: "manager" },
+            {
+              githubLogin: "ada",
+              version: "v1",
+              attestedAt: "2026-10-01T00:00:00.000Z",
+              proof: "p",
+            },
+          ),
+        ),
+      );
+
+      expect(Either.isLeft(outcome) && outcome.left).toMatchObject({ code: "FORBIDDEN" });
+    });
+
     test("an assigned contributor without a builder profile gets an unregistered stub", async () => {
       await db
         .insert(projectContributors)
