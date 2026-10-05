@@ -65,4 +65,18 @@ describe("mergeBosConfig", () => {
 
     expect(() => mergeBosConfig(config("base"), ours, theirs)).toThrow(MergeConflict);
   });
+  test("keeps the receiving branch's URL and integrity together", () => {
+    const base = { plugins: { projects: { production: "base-url", integrity: "same-hash" } } };
+    const ours = { plugins: { projects: { production: "staging-url", integrity: "same-hash" } } };
+    const theirs = { plugins: { projects: { production: "main-url", integrity: "main-hash" } } };
+
+    expect(mergeBosConfig(base, ours, theirs)).toEqual(ours);
+  });
+  test("keeps the receiving branch's URL when only the other side redeployed", () => {
+    const base = { app: { ui: { production: "old-url", integrity: "old-hash" } } };
+    const ours = base;
+    const theirs = { app: { ui: { production: "main-url", integrity: "main-hash" } } };
+
+    expect(mergeBosConfig(base, ours, theirs)).toEqual(ours);
+  });
 });
