@@ -44,7 +44,7 @@ import { adminContributorsListQueryOptions, refreshAfter } from "@/lib/queries";
 
 type Contributor = Awaited<ReturnType<ApiClient["contributors"]["list"]>>["data"][number];
 
-function VerifiedGithub({ login }: { login: string }) {
+export function VerifiedGithub({ login }: { login: string }) {
   return (
     <a
       href={githubProfileUrl(login)}
@@ -395,11 +395,6 @@ export function ContributorProfileForm({
         {!contributor.registered && (
           <CardAction>
             <Badge variant="outline">Not registered yet</Badge>
-          </CardAction>
-        )}
-        {contributor.githubLogin && (
-          <CardAction>
-            <VerifiedGithub login={contributor.githubLogin} />
           </CardAction>
         )}
       </CardHeader>
