@@ -68,7 +68,7 @@ function stubProfile(nearAccount: string): BuilderProfile {
   };
 }
 
-function isPlatformAdmin(context: PluginContext): boolean {
+export function isPlatformAdmin(context: PluginContext): boolean {
   return (context as { user?: { role?: string | null } | null }).user?.role === "admin";
 }
 
@@ -330,6 +330,21 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           db.delete(organizationBuilders).where(eq(organizationBuilders.nearAccount, nearAccount)),
         );
         return result;
+      }),
+
+    accountsOf: (context: PluginContext, nearAccount: string) =>
+      Effect.promise(async () => {
+        const builder = await plugins
+          .builders(context)
+          .getBuilder({ nearAccount })
+          .catch(() => null);
+        const githubLogin = builder?.data.githubLogin;
+        if (!githubLogin) return [nearAccount];
+        const member = await plugins
+          .builders(context)
+          .getMember({ githubLogin })
+          .catch(() => null);
+        return [...new Set([nearAccount, ...(member?.data.accounts ?? []).map((a) => a.account)])];
       }),
 
     members: (context: PluginContext) =>

@@ -11,6 +11,18 @@ const labels = (...args: Parameters<typeof workspaceNavigation>) =>
   workspaceNavigation(...args).flatMap((g) => g.items.map((i) => i.label));
 
 describe("workspaceNavigation", () => {
+  it("shows Work orders only to a platform admin who manages the Agency", () => {
+    const access = { hasAgencyDao: true, hasAgencySections: true, hasClientSections: false };
+
+    expect(labels({ ...access, role: "owner", isPlatformAdmin: true }, "agency")).toContain(
+      "Work orders",
+    );
+    expect(labels({ ...access, role: "owner" }, "agency")).not.toContain("Work orders");
+    expect(labels({ ...access, role: "member", isPlatformAdmin: true }, "agency")).not.toContain(
+      "Work orders",
+    );
+  });
+
   it.each([
     ["nothing to someone without a role", null, true, true, []],
     [

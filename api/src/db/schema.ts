@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  date,
   index,
   integer,
   pgTable,
@@ -509,3 +510,46 @@ export const reportSnapshots = pgTable(
 );
 
 export type ReportSnapshotRow = typeof reportSnapshots.$inferSelect;
+
+export const workOrders = pgTable(
+  "work_orders",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    nearAccount: text("near_account").notNull(),
+    status: text("status", { enum: ["draft", "signed", "completed", "terminated"] })
+      .notNull()
+      .default("draft"),
+    startsOn: date("starts_on", { mode: "string" }).notNull(),
+    endsOn: date("ends_on", { mode: "string" }).notNull(),
+    documentUrl: text("document_url"),
+    closedAt: timestamp("closed_at", { withTimezone: false }),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    organizationIdx: index("work_orders_organization").on(t.organizationId),
+    nearAccountIdx: index("work_orders_near_account").on(t.nearAccount),
+  }),
+);
+
+export type WorkOrderRow = typeof workOrders.$inferSelect;
+
+export const workOrderLines = pgTable(
+  "work_order_lines",
+  {
+    workOrderId: text("work_order_id")
+      .notNull()
+      .references(() => workOrders.id, { onDelete: "cascade" }),
+    projectId: text("project_id").notNull(),
+    tokenId: text("token_id").notNull(),
+    amount: text("amount").notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.workOrderId, t.projectId, t.tokenId] }),
+    projectIdx: index("work_order_lines_project").on(t.projectId),
+  }),
+);
+
+export type WorkOrderLineRow = typeof workOrderLines.$inferSelect;

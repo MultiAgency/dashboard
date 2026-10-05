@@ -1,5 +1,5 @@
 import { createPlugin } from "every-plugin";
-import { Effect } from "every-plugin/effect";
+import { Effect, Either } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 import pg from "pg";
@@ -21,13 +21,13 @@ import { createAgencyDaoService } from "./services/agency-dao";
 import { createAgentLinksService } from "./services/agent-links";
 import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
-import { createBillingsService } from "./services/billings";
+import { createBillingsService, withPayingStatus } from "./services/billings";
 import { createBudgetsService } from "./services/budgets";
 import { createChangeOrdersService } from "./services/change-orders";
 import { createClientPortalService } from "./services/client-portal";
 import { createCommunityService } from "./services/community";
 import { createContactFormService } from "./services/contact-form";
-import { createContributorsService } from "./services/contributors";
+import { createContributorsService, isPlatformAdmin } from "./services/contributors";
 import { createEngagementsService } from "./services/engagements";
 import { createIdeasService } from "./services/ideas";
 import { createProjectLedgers } from "./services/ledger";
@@ -49,6 +49,7 @@ import {
 import { getRoles } from "./services/sputnik";
 import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
+import { createWorkOrdersService } from "./services/work-orders";
 
 export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({
@@ -153,6 +154,34 @@ export default createPlugin.withPlugins<PluginsClient>()({
         organizations: organizationDirectory,
       });
       const agentLinks = createAgentLinksService({ db });
+      const workOrders = createWorkOrdersService({
+        db,
+        isPlatformAdmin: (scope) => isPlatformAdmin(scope.pluginContext),
+        projectsOf: async (scope) =>
+          (await directory.forAgency(scope).list()).map((p) => ({ id: p.id, title: p.title })),
+        accountsOf: (scope, nearAccount) =>
+          Effect.runPromise(contributors.accountsOf(scope.pluginContext, nearAccount)),
+        agreementOnFile: async (scope) => {
+          const members = await Effect.runPromise(
+            Effect.either(contributors.members(scope.pluginContext)),
+          );
+          if (Either.isLeft(members)) return () => true;
+          const signed = new Set(
+            members.right.data
+              .filter((m) => m.agreement)
+              .flatMap((m) => [m.nearAccount, ...m.accounts.map((a) => a.account)])
+              .filter((a): a is string => Boolean(a)),
+          );
+          return (nearAccount) => signed.has(nearAccount);
+        },
+        approved: (scope, rows) =>
+          Promise.all(
+            rows.map(
+              async (row) =>
+                (await withPayingStatus(db, row, scope.agencyDao)).status === "Approved",
+            ),
+          ),
+      });
       const clientPortal = createClientPortalService(
         access,
         agency,
@@ -189,6 +218,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         changeOrders,
         ideas,
         agentLinks,
+        workOrders,
         notifications,
         organizationDirectory,
         authPool,
@@ -227,6 +257,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       changeOrders,
       ideas,
       agentLinks,
+      workOrders,
       notifications,
       organizationDirectory,
       assignments,
@@ -534,6 +565,28 @@ export default createPlugin.withPlugins<PluginsClient>()({
         decline: builder.ideas.decline
           .use(manager)
           .handler(async ({ context, input }) => ideas.decline(context.scope, input)),
+      },
+
+      workOrders: {
+        list: builder.workOrders.list
+          .use(agencyManager)
+          .handler(async ({ context }) => workOrders.list(context.scope)),
+
+        create: builder.workOrders.create
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.create(context.scope, input)),
+
+        update: builder.workOrders.update
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.update(context.scope, input)),
+
+        remove: builder.workOrders.remove
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.remove(context.scope, input)),
+
+        uncoveredPayouts: builder.workOrders.uncoveredPayouts
+          .use(agencyManager)
+          .handler(async ({ context }) => workOrders.uncoveredPayouts(context.scope)),
       },
 
       agentLinks: {
