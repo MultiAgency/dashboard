@@ -13,10 +13,10 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-256-ui-dashboard-multiagency-26ce1f98e-ze.zephyrcloud.app",
-      "integrity": "sha384-4gX3Nd5uA90/nkhkI8CdBNz7kXMAlkIlOt6SJBiWfSDeSw5YeuQPeMzm+1lYYqAo",
-      "ssr": "https://multiagentic-260-ui-dashboard-multiagency-3089ffd99-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-egnSVj54FgE9theigQ2+e/blODHe5l+7Xs3Fe4MHllXEKY6CVYRRgogEnG2IYo82"
+      "production": "https://multiagentic-266-ui-dashboard-multiagency-7fb635de5-ze.zephyrcloud.app",
+      "integrity": "sha384-n+sAfM+RmUu1Y9XCv9Byv4fgNvqHcNJcCBb426XLjaunrbRK381RvUbG/+W6Wc26",
+      "ssr": "https://multiagentic-270-ui-dashboard-multiagency-9681a008b-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-Jv+mapvTgFNwFlez0Tw1lJAzJwIRXICTSpfm5u1CaYPwUnCaYCvsqEIC5aZc04/A"
     },
     "api": {
       "name": "api",
@@ -37,7 +37,7 @@
         "APP_ORIGIN",
         "FASTNEAR_API_KEY"
       ],
-      "production": "https://multiagentic-259-api-dashboard-multiagency-69abaf515-ze.zephyrcloud.app",
+      "production": "https://multiagentic-269-api-dashboard-multiagency-759396b42-ze.zephyrcloud.app",
       "integrity": "sha384-qmekkNZyj8V9kebDPUIiNsxMjN5mPN74tsTDVXbEySn3sVhsdLc8PUOek/O5zWCT"
     },
     "auth": {
@@ -65,7 +65,7 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-258-everything-dev-projects-plugin-d-d44206d88-ze.zephyrcloud.app",
+      "production": "https://multiagentic-268-everything-dev-projects-plugin-d-7bd9a9417-ze.zephyrcloud.app",
       "integrity": "sha384-qPOhAJTs/T7AsUmqhbdUnrcWJc4R5zW8DtsCJLScSOOyQS46quiS1qmJ/PfVmlH8"
     },
     "builders": {
@@ -75,7 +75,7 @@
         "REGISTRY_TOKEN_TESTNET",
         "REGISTRY_TOKEN_MAINNET"
       ],
-      "production": "https://multiagentic-257-everything-dev-builders-plugin-d-1ec37713a-ze.zephyrcloud.app",
+      "production": "https://multiagentic-267-everything-dev-builders-plugin-d-50b67a2f9-ze.zephyrcloud.app",
       "integrity": "sha384-HVd3JBtogajDWoxVKGoFBiF93pb1sojI3kwzQgyhXrqVfldRO/Ynj6u87XeCpPpA"
     }
   }
