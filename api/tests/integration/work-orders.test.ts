@@ -188,6 +188,30 @@ describe("work orders", () => {
     await expect(service().remove(scopeOf(), { id: draft.data.id })).resolves.toEqual({ ok: true });
   });
 
+  test.each([
+    "signed",
+    "completed",
+    "terminated",
+  ] as const)("a %s work order can't go back to draft", async (status) => {
+    const created = await service().create(scopeOf(), order({ status }));
+
+    await expect(
+      service().update(scopeOf(), { id: created.data.id, ...order({ status: "draft" }) }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  test("a terminated work order still covers the payouts it counts as paid", async () => {
+    await budget("site", "5000");
+    await bill("before", { amount: "300", at: "2026-10-02T00:00:00Z" });
+    const created = await service().create(scopeOf(), order({ status: "terminated" }));
+
+    const { data } = await service().list(scopeOf());
+    const uncovered = await service().uncoveredPayouts(scopeOf());
+
+    expect(data.find((o) => o.id === created.data.id)?.lines[0]?.paid).toBe("300");
+    expect(uncovered.data).toEqual([]);
+  });
+
   test("lists approved payouts that no work order covers", async () => {
     await service().create(scopeOf(), order());
     await bill("covered", { amount: "100", at: "2026-10-02T00:00:00Z" });

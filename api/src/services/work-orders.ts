@@ -324,6 +324,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     update: async (scope: OrganizationScope, input: WorkOrderInput & { id: string }) => {
       requirePlatformAdmin(scope);
       const previous = await requireOwn(scope, input.id);
+      if (previous.status !== "draft" && input.status === "draft") {
+        throw badRequest("A signed work order can't go back to draft; mark it terminated instead");
+      }
       await validate(scope, input, input.id);
       await db.transaction(async (tx) => {
         await tx
@@ -379,10 +382,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .select()
         .from(workOrders)
         .where(
-          and(
-            eq(workOrders.organizationId, scope.organizationId),
-            inArray(workOrders.status, ["signed", "completed"]),
-          ),
+          and(eq(workOrders.organizationId, scope.organizationId), ne(workOrders.status, "draft")),
         );
       const lines = orders.length
         ? await db
