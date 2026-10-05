@@ -9,6 +9,7 @@ import {
   workOrderLines,
   workOrders,
 } from "../db/schema";
+import { paidBy } from "./billings";
 import type { OrganizationScope } from "./organization-access";
 
 export type WorkOrderStatus = WorkOrderRow["status"];
@@ -144,12 +145,19 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return null;
   }
 
+  const startOf = (order: WorkOrderRow) => new Date(`${order.startsOn}T00:00:00Z`);
+
+  const covers = (order: WorkOrderRow, at: Date) =>
+    at >= startOf(order) && (!order.closedAt || at <= order.closedAt);
+
   async function paidOn(
     scope: OrganizationScope,
     order: WorkOrderRow,
     line: WorkOrderLineRow,
     accounts: string[],
+    later: WorkOrderRow[],
   ): Promise<bigint> {
+    if (!scope.agencyDao) return 0n;
     const rows = await db
       .select()
       .from(billings)
@@ -158,12 +166,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           eq(billings.projectId, line.projectId),
           eq(billings.tokenId, line.tokenId),
           inArray(billings.nearAccount, accounts),
-          gte(billings.createdAt, new Date(`${order.startsOn}T00:00:00Z`)),
+          gte(billings.createdAt, startOf(order)),
+          paidBy(scope.agencyDao),
         ),
       );
-    const inWindow = rows.filter((b) => !order.closedAt || b.createdAt <= order.closedAt);
-    const approved = await deps.approved(scope, inWindow);
-    return inWindow.reduce((sum, b, i) => (approved[i] ? sum + BigInt(b.amount) : sum), 0n);
+    const mine = rows.filter(
+      (b) => covers(order, b.createdAt) && !later.some((o) => covers(o, b.createdAt)),
+    );
+    const approved = await deps.approved(scope, mine);
+    return mine.reduce((sum, b, i) => (approved[i] ? sum + BigInt(b.amount) : sum), 0n);
   }
 
   async function budgetTotals(projectIds: string[]) {
@@ -189,11 +200,39 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         ),
       );
     const linesOf = Map.groupBy(lines, (l) => l.workOrderId);
+    const others = await db
+      .select()
+      .from(workOrders)
+      .where(
+        and(eq(workOrders.organizationId, scope.organizationId), ne(workOrders.status, "draft")),
+      );
+    const otherLines = others.length
+      ? await db
+          .select()
+          .from(workOrderLines)
+          .where(
+            inArray(
+              workOrderLines.workOrderId,
+              others.map((o) => o.id),
+            ),
+          )
+      : [];
+    const otherLinesOf = Map.groupBy(otherLines, (l) => l.workOrderId);
+    const laterCovering = (order: WorkOrderRow, line: WorkOrderLineRow) =>
+      others.filter(
+        (o) =>
+          o.id !== order.id &&
+          o.nearAccount === order.nearAccount &&
+          o.startsOn > order.startsOn &&
+          (otherLinesOf.get(o.id) ?? []).some(
+            (l) => l.projectId === line.projectId && l.tokenId === line.tokenId,
+          ),
+      );
     const titles = new Map((await deps.projectsOf(scope)).map((p) => [p.id, p.title]));
     const budgetsByKey = await budgetTotals([...new Set(lines.map((l) => l.projectId))]);
     const committedByKey = new Map<string, bigint>();
-    for (const order of orders.filter((o) => ACTIVE.includes(o.status))) {
-      for (const line of linesOf.get(order.id) ?? []) {
+    for (const order of others.filter((o) => ACTIVE.includes(o.status))) {
+      for (const line of otherLinesOf.get(order.id) ?? []) {
         const key = `${line.projectId}:${line.tokenId}`;
         committedByKey.set(key, (committedByKey.get(key) ?? 0n) + BigInt(line.amount));
       }
@@ -210,7 +249,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         const active = ACTIVE.includes(order.status);
         const lineViews = await Promise.all(
           (linesOf.get(order.id) ?? []).map(async (line) => {
-            const paid = await paidOn(scope, order, line, accounts);
+            const paid = await paidOn(scope, order, line, accounts, laterCovering(order, line));
             const amount = BigInt(line.amount);
             const key = `${line.projectId}:${line.tokenId}`;
             const warnings: WorkOrderWarning[] = [];
@@ -324,11 +363,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (projects.length === 0) return { data: [] };
       const titles = new Map(projects.map((p) => [p.id, p.title]));
       const since = new Date(now().getTime() - UNCOVERED_LOOKBACK_DAYS * 86_400_000);
+      if (!scope.agencyDao) return { data: [] };
       const rows = await db
         .select()
         .from(billings)
         .where(
-          and(inArray(billings.projectId, [...titles.keys()]), gte(billings.createdAt, since)),
+          and(
+            inArray(billings.projectId, [...titles.keys()]),
+            gte(billings.createdAt, since),
+            paidBy(scope.agencyDao),
+          ),
         );
       const approved = await deps.approved(scope, rows);
       const orders = await db
