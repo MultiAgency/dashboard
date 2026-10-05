@@ -17,7 +17,15 @@ export function AdminSidebar() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const workspace = useWorkspaceView();
-  const { orgRole, agencyDao, hasAgencySections, hasClientSections, views, setView } = workspace;
+  const {
+    orgRole,
+    agencyDao,
+    hasAgencySections,
+    hasClientSections,
+    isPlatformAdmin,
+    views,
+    setView,
+  } = workspace;
   const pathView = viewForPath(pathname);
   const view = pathView && views.includes(pathView) ? pathView : workspace.view;
   const groups = workspaceNavigation(
@@ -26,6 +34,7 @@ export function AdminSidebar() {
       hasAgencyDao: agencyDao !== null,
       hasAgencySections,
       hasClientSections,
+      isPlatformAdmin,
     },
     view,
   );

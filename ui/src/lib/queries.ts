@@ -157,6 +157,24 @@ export function adminProjectsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const workOrdersQueryKey = ["admin", "work-orders"] as const;
+
+export function workOrdersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrdersQueryKey, "list", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.list(),
+    retry: false,
+  });
+}
+
+export function uncoveredPayoutsQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrdersQueryKey, "uncovered", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.uncoveredPayouts(),
+    retry: false,
+  });
+}
+
 export const adminContributorsListQueryKey = ["admin", "contributors", "list"] as const;
 
 export function adminContributorsListQueryOptions(apiClient: ApiClient) {
