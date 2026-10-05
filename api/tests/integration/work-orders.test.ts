@@ -54,7 +54,13 @@ describe("work orders", () => {
 
   async function bill(
     proposalId: string,
-    values: { projectId?: string; nearAccount?: string; amount: string; at: string },
+    values: {
+      projectId?: string;
+      nearAccount?: string;
+      amount: string;
+      at: string;
+      payingDao?: string;
+    },
     approved = true,
   ) {
     await state.db.insert(billings).values({
@@ -64,7 +70,7 @@ describe("work orders", () => {
       tokenId: USDC,
       amount: values.amount,
       proposalId,
-      payingDaoAccountId: "studio.sputnik-dao.near",
+      payingDaoAccountId: values.payingDao ?? "studio.sputnik-dao.near",
       createdAt: new Date(values.at),
     });
     if (approved) approvedProposals.add(proposalId);
@@ -200,5 +206,47 @@ describe("work orders", () => {
     const { data } = await service().uncoveredPayouts(scopeOf());
 
     expect(data.map((p) => p.billingId)).toEqual(["b-someone-else", "b-other-project"]);
+  });
+
+  test("ignores payouts another Agency's DAO made on a shared Project", async () => {
+    await budget("site", "5000");
+    await bill("own", { amount: "300", at: "2026-10-02T00:00:00Z" });
+    await bill("sub", {
+      amount: "900",
+      at: "2026-10-03T00:00:00Z",
+      payingDao: "subcontractor.sputnik-dao.near",
+    });
+
+    const { data } = await service().create(scopeOf(), order());
+    const uncovered = await service().uncoveredPayouts(scopeOf());
+
+    expect(data.lines[0]?.paid).toBe("300");
+    expect(uncovered.data).toEqual([]);
+  });
+
+  test("counts a payout on only one work order when a renewal overlaps a closed one", async () => {
+    await budget("site", "5000");
+    today = new Date("2026-07-03T00:00:00Z");
+    await service().create(
+      scopeOf(),
+      order({ status: "completed", startsOn: "2026-04-01", endsOn: "2026-06-30" }),
+    );
+    await service().create(scopeOf(), order({ startsOn: "2026-07-01", endsOn: "2026-09-30" }));
+    await bill("overlap", { amount: "250", at: "2026-07-02T00:00:00Z" });
+
+    const { data } = await service().list(scopeOf());
+    const paid = data.map((o) => o.lines[0]?.paid).sort();
+
+    expect(paid).toEqual(["0", "250"]);
+    expect(data.find((o) => o.startsOn === "2026-07-01")?.lines[0]?.paid).toBe("250");
+  });
+
+  test("flags a budget overrun from every active work order, not just the one saved", async () => {
+    await budget("site", "1500");
+    await service().create(scopeOf(), order({ nearAccount: "bob.near" }));
+
+    const { data } = await service().create(scopeOf(), order());
+
+    expect(data.lines[0]?.warnings).toContain("overBudget");
   });
 });
