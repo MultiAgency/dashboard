@@ -11,6 +11,7 @@ export type WorkspaceAccess = {
   hasAgencyDao: boolean;
   hasAgencySections: boolean;
   hasClientSections: boolean;
+  isPlatformAdmin?: boolean;
 };
 
 export function availableViews(
@@ -76,6 +77,9 @@ export function workspaceNavigation(
         ...(manager ? [{ to: "/admin/engagements", label: "Engagements" }] : []),
         { to: "/admin/contributors", label: "Builders", match: "/admin/contributors" },
         ...(manager ? [{ to: "/admin/members", label: "Team" }] : []),
+        ...(manager && access.isPlatformAdmin
+          ? [{ to: "/admin/work-orders", label: "Work orders" }]
+          : []),
       ],
     },
   ];

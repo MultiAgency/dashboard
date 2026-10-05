@@ -227,6 +227,78 @@ const contributor = z.object({
   updatedAt: z.string(),
 });
 
+const registryNetwork = z.enum(["testnet", "mainnet"]);
+
+const registryMember = z.object({
+  githubLogin: z.string(),
+  kind: z.enum(["human", "agent"]),
+  operatorGithubLogin: z.string().nullable(),
+  name: z.string().nullable(),
+  skills: z.array(z.string()),
+  nearAccount: z.string().nullable(),
+  accounts: z.array(z.object({ network: registryNetwork, account: z.string() })),
+  admissions: z.array(
+    z.object({
+      network: registryNetwork,
+      status: z.enum(["admitted", "suspended", "removed"]),
+      proofUrl: z.string().nullable(),
+      admittedAt: z.string().nullable(),
+    }),
+  ),
+  agreement: z
+    .object({
+      version: z.string(),
+      attestedAt: z.string(),
+      recordedBy: z.string(),
+      recordedAt: z.string(),
+    })
+    .nullable(),
+});
+
+const workOrderStatus = z.enum(["draft", "signed", "completed", "terminated"]);
+
+const workOrderWarning = z.enum(["overpaid", "overBudget", "endingSoon", "noAgreement"]);
+
+const workOrderInput = z.object({
+  nearAccount: nearAccountId,
+  status: workOrderStatus,
+  startsOn: z.iso.date(),
+  endsOn: z.iso.date(),
+  documentUrl: z.url().nullable().optional(),
+  lines: z
+    .array(
+      z.object({
+        projectId: z.string().min(1),
+        tokenId: tokenId,
+        amount: z.string().regex(/^\d+$/),
+      }),
+    )
+    .min(1)
+    .max(50),
+});
+
+const workOrder = z.object({
+  id: z.string(),
+  nearAccount: z.string(),
+  status: workOrderStatus,
+  startsOn: z.string(),
+  endsOn: z.string(),
+  documentUrl: z.string().nullable(),
+  closedAt: z.string().nullable(),
+  lines: z.array(
+    z.object({
+      projectId: z.string(),
+      projectTitle: z.string().nullable(),
+      tokenId: z.string(),
+      amount: z.string(),
+      paid: z.string(),
+      remaining: z.string(),
+      warnings: z.array(workOrderWarning),
+    }),
+  ),
+  warnings: z.array(workOrderWarning),
+});
+
 const engagementParty = z.object({ id: z.string(), name: z.string(), slug: z.string() });
 
 const engagementStatus = z.enum(["proposed", "active", "declined", "ended"]);
@@ -1284,6 +1356,70 @@ export const contract = oc.router({
       .input(z.object({ nearAccount: nearAccountId }))
       .output(z.object({ deleted: z.boolean() }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  workOrders: {
+    list: oc
+      .route({ method: "GET", path: "/admin/work-orders" })
+      .output(z.object({ data: z.array(workOrder) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    create: oc
+      .route({ method: "POST", path: "/admin/work-orders" })
+      .input(workOrderInput)
+      .output(z.object({ data: workOrder }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
+
+    update: oc
+      .route({ method: "PATCH", path: "/admin/work-orders/{id}" })
+      .input(workOrderInput.extend({ id: z.string() }))
+      .output(z.object({ data: workOrder }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, NOT_FOUND }),
+
+    remove: oc
+      .route({ method: "DELETE", path: "/admin/work-orders/{id}" })
+      .input(z.object({ id: z.string() }))
+      .output(z.object({ ok: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, NOT_FOUND }),
+
+    uncoveredPayouts: oc
+      .route({ method: "GET", path: "/admin/work-orders/uncovered-payouts" })
+      .output(
+        z.object({
+          data: z.array(
+            z.object({
+              billingId: z.string(),
+              projectId: z.string(),
+              projectTitle: z.string().nullable(),
+              nearAccount: z.string().nullable(),
+              tokenId: z.string(),
+              amount: z.string(),
+              recordedAt: z.string(),
+            }),
+          ),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+  },
+
+  members: {
+    list: oc
+      .route({ method: "GET", path: "/platform/members" })
+      .output(z.object({ data: z.array(registryMember) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    recordAgreement: oc
+      .route({ method: "PUT", path: "/platform/members/{githubLogin}/agreement" })
+      .input(
+        z.object({
+          githubLogin: z.string().trim().toLowerCase().min(1).max(60),
+          version: z.string().trim().min(1).max(100),
+          attestedAt: z.iso.datetime(),
+          proof: z.string().trim().min(1).max(2000),
+        }),
+      )
+      .output(z.object({ recorded: z.boolean() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
   },
 
   assignments: {

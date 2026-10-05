@@ -34,7 +34,9 @@ import { Route as LayoutAuthenticatedAdminRouteRouteImport } from './routes/_lay
 import { Route as LayoutAuthenticatedPlatformIndexRouteImport } from './routes/_layout/_authenticated/platform/index'
 import { Route as LayoutAuthenticatedClientIndexRouteImport } from './routes/_layout/_authenticated/client/index'
 import { Route as LayoutAuthenticatedAdminIndexRouteImport } from './routes/_layout/_authenticated/admin/index'
+import { Route as LayoutAuthenticatedPlatformMembersRouteImport } from './routes/_layout/_authenticated/platform/members'
 import { Route as LayoutAuthenticatedClientReportsRouteImport } from './routes/_layout/_authenticated/client/reports'
+import { Route as LayoutAuthenticatedAdminWorkOrdersRouteImport } from './routes/_layout/_authenticated/admin/work-orders'
 import { Route as LayoutAuthenticatedAdminSettingsRouteImport } from './routes/_layout/_authenticated/admin/settings'
 import { Route as LayoutAuthenticatedAdminMembersRouteImport } from './routes/_layout/_authenticated/admin/members'
 import { Route as LayoutAuthenticatedClientEngagementIdRouteRouteImport } from './routes/_layout/_authenticated/client/$engagementId/route'
@@ -193,11 +195,23 @@ const LayoutAuthenticatedAdminIndexRoute =
     path: '/',
     getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
+const LayoutAuthenticatedPlatformMembersRoute =
+  LayoutAuthenticatedPlatformMembersRouteImport.update({
+    id: '/members',
+    path: '/members',
+    getParentRoute: () => LayoutAuthenticatedPlatformRouteRoute,
+  } as any)
 const LayoutAuthenticatedClientReportsRoute =
   LayoutAuthenticatedClientReportsRouteImport.update({
     id: '/reports',
     path: '/reports',
     getParentRoute: () => LayoutAuthenticatedClientRouteRoute,
+  } as any)
+const LayoutAuthenticatedAdminWorkOrdersRoute =
+  LayoutAuthenticatedAdminWorkOrdersRouteImport.update({
+    id: '/work-orders',
+    path: '/work-orders',
+    getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
 const LayoutAuthenticatedAdminSettingsRoute =
   LayoutAuthenticatedAdminSettingsRouteImport.update({
@@ -362,7 +376,9 @@ export interface FileRoutesByFullPath {
   '/client/$engagementId': typeof LayoutAuthenticatedClientEngagementIdRouteRouteWithChildren
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
+  '/admin/work-orders': typeof LayoutAuthenticatedAdminWorkOrdersRoute
   '/client/reports': typeof LayoutAuthenticatedClientReportsRoute
+  '/platform/members': typeof LayoutAuthenticatedPlatformMembersRoute
   '/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/platform/': typeof LayoutAuthenticatedPlatformIndexRoute
@@ -407,7 +423,9 @@ export interface FileRoutesByTo {
   '/work': typeof LayoutWorkIndexRoute
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
+  '/admin/work-orders': typeof LayoutAuthenticatedAdminWorkOrdersRoute
   '/client/reports': typeof LayoutAuthenticatedClientReportsRoute
+  '/platform/members': typeof LayoutAuthenticatedPlatformMembersRoute
   '/admin': typeof LayoutAuthenticatedAdminIndexRoute
   '/client': typeof LayoutAuthenticatedClientIndexRoute
   '/platform': typeof LayoutAuthenticatedPlatformIndexRoute
@@ -459,7 +477,9 @@ export interface FileRoutesById {
   '/_layout/_authenticated/client/$engagementId': typeof LayoutAuthenticatedClientEngagementIdRouteRouteWithChildren
   '/_layout/_authenticated/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/_layout/_authenticated/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
+  '/_layout/_authenticated/admin/work-orders': typeof LayoutAuthenticatedAdminWorkOrdersRoute
   '/_layout/_authenticated/client/reports': typeof LayoutAuthenticatedClientReportsRoute
+  '/_layout/_authenticated/platform/members': typeof LayoutAuthenticatedPlatformMembersRoute
   '/_layout/_authenticated/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/_layout/_authenticated/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/_layout/_authenticated/platform/': typeof LayoutAuthenticatedPlatformIndexRoute
@@ -510,7 +530,9 @@ export interface FileRouteTypes {
     | '/client/$engagementId'
     | '/admin/members'
     | '/admin/settings'
+    | '/admin/work-orders'
     | '/client/reports'
+    | '/platform/members'
     | '/admin/'
     | '/client/'
     | '/platform/'
@@ -555,7 +577,9 @@ export interface FileRouteTypes {
     | '/work'
     | '/admin/members'
     | '/admin/settings'
+    | '/admin/work-orders'
     | '/client/reports'
+    | '/platform/members'
     | '/admin'
     | '/client'
     | '/platform'
@@ -606,7 +630,9 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/client/$engagementId'
     | '/_layout/_authenticated/admin/members'
     | '/_layout/_authenticated/admin/settings'
+    | '/_layout/_authenticated/admin/work-orders'
     | '/_layout/_authenticated/client/reports'
+    | '/_layout/_authenticated/platform/members'
     | '/_layout/_authenticated/admin/'
     | '/_layout/_authenticated/client/'
     | '/_layout/_authenticated/platform/'
@@ -813,12 +839,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedAdminIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
     }
+    '/_layout/_authenticated/platform/members': {
+      id: '/_layout/_authenticated/platform/members'
+      path: '/members'
+      fullPath: '/platform/members'
+      preLoaderRoute: typeof LayoutAuthenticatedPlatformMembersRouteImport
+      parentRoute: typeof LayoutAuthenticatedPlatformRouteRoute
+    }
     '/_layout/_authenticated/client/reports': {
       id: '/_layout/_authenticated/client/reports'
       path: '/reports'
       fullPath: '/client/reports'
       preLoaderRoute: typeof LayoutAuthenticatedClientReportsRouteImport
       parentRoute: typeof LayoutAuthenticatedClientRouteRoute
+    }
+    '/_layout/_authenticated/admin/work-orders': {
+      id: '/_layout/_authenticated/admin/work-orders'
+      path: '/work-orders'
+      fullPath: '/admin/work-orders'
+      preLoaderRoute: typeof LayoutAuthenticatedAdminWorkOrdersRouteImport
+      parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
     }
     '/_layout/_authenticated/admin/settings': {
       id: '/_layout/_authenticated/admin/settings'
@@ -987,6 +1027,7 @@ declare module '@tanstack/react-router' {
 interface LayoutAuthenticatedAdminRouteRouteChildren {
   LayoutAuthenticatedAdminMembersRoute: typeof LayoutAuthenticatedAdminMembersRoute
   LayoutAuthenticatedAdminSettingsRoute: typeof LayoutAuthenticatedAdminSettingsRoute
+  LayoutAuthenticatedAdminWorkOrdersRoute: typeof LayoutAuthenticatedAdminWorkOrdersRoute
   LayoutAuthenticatedAdminIndexRoute: typeof LayoutAuthenticatedAdminIndexRoute
   LayoutAuthenticatedAdminContributorsNearAccountRoute: typeof LayoutAuthenticatedAdminContributorsNearAccountRoute
   LayoutAuthenticatedAdminEngagementsEngagementIdRoute: typeof LayoutAuthenticatedAdminEngagementsEngagementIdRoute
@@ -1005,6 +1046,8 @@ const LayoutAuthenticatedAdminRouteRouteChildren: LayoutAuthenticatedAdminRouteR
     LayoutAuthenticatedAdminMembersRoute: LayoutAuthenticatedAdminMembersRoute,
     LayoutAuthenticatedAdminSettingsRoute:
       LayoutAuthenticatedAdminSettingsRoute,
+    LayoutAuthenticatedAdminWorkOrdersRoute:
+      LayoutAuthenticatedAdminWorkOrdersRoute,
     LayoutAuthenticatedAdminIndexRoute: LayoutAuthenticatedAdminIndexRoute,
     LayoutAuthenticatedAdminContributorsNearAccountRoute:
       LayoutAuthenticatedAdminContributorsNearAccountRoute,
@@ -1096,11 +1139,14 @@ const LayoutAuthenticatedClientRouteRouteWithChildren =
   )
 
 interface LayoutAuthenticatedPlatformRouteRouteChildren {
+  LayoutAuthenticatedPlatformMembersRoute: typeof LayoutAuthenticatedPlatformMembersRoute
   LayoutAuthenticatedPlatformIndexRoute: typeof LayoutAuthenticatedPlatformIndexRoute
 }
 
 const LayoutAuthenticatedPlatformRouteRouteChildren: LayoutAuthenticatedPlatformRouteRouteChildren =
   {
+    LayoutAuthenticatedPlatformMembersRoute:
+      LayoutAuthenticatedPlatformMembersRoute,
     LayoutAuthenticatedPlatformIndexRoute:
       LayoutAuthenticatedPlatformIndexRoute,
   }
