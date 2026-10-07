@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  date,
   index,
   integer,
   pgTable,
@@ -216,6 +217,7 @@ export const budgets = pgTable(
       onDelete: "set null",
     }),
     fundingDaoAccountId: text("funding_dao_account_id"),
+    effectiveOn: date("effective_on"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({

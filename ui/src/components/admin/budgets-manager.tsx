@@ -47,6 +47,7 @@ import {
   engagementsListQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
+import { isoDate } from "@/lib/report-dates";
 import { CUSTOM_TOKEN, deriveBaseAmount, TokenAmountFields } from "./token-amount-fields";
 
 function budgetVerb(amount: string, relatedBudgetId: string | null): string {
@@ -370,6 +371,7 @@ function AgencyAuditLogPanel({
                       </TableCell>
                       <TableCell className="whitespace-normal text-muted-foreground">
                         {a.note && <span className="block text-foreground">{a.note}</span>}
+                        {a.effectiveOn && <span className="block">for {a.effectiveOn}</span>}
                         <span className="block">by {a.actorAccountId}</span>
                         {a.fundingDaoAccountId && (
                           <span className="block">from {a.fundingDaoAccountId}</span>
@@ -410,6 +412,7 @@ function TransferPanel({
   const [customTokenId, setCustomTokenId] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [effectiveOn, setEffectiveOn] = useState(() => isoDate(new Date()));
 
   const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
@@ -447,6 +450,7 @@ function TransferPanel({
         tokenId: effectiveTokenId,
         amount: amountInBase,
         note: note.trim() || undefined,
+        effectiveOn: effectiveOn || undefined,
       }),
     onSuccess: async () => {
       await refreshAfter(queryClient, {
@@ -552,6 +556,15 @@ function TransferPanel({
                 )}
               </dl>
             )}
+            <Field label="Budget date" htmlFor="transfer-effective-on">
+              <Input
+                id="transfer-effective-on"
+                type="date"
+                value={effectiveOn}
+                onChange={(e) => setEffectiveOn(e.target.value)}
+                disabled={isPending}
+              />
+            </Field>
             <Field label="Note" htmlFor="transfer-note">
               <Input
                 id="transfer-note"
@@ -626,6 +639,7 @@ export function ProjectBudgetPanel({
   const [customTokenId, setCustomTokenId] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [effectiveOn, setEffectiveOn] = useState(() => isoDate(new Date()));
 
   const isCustom = tokenSelection === CUSTOM_TOKEN;
   const effectiveTokenId = isCustom ? customTokenId.trim() : tokenSelection;
@@ -648,6 +662,7 @@ export function ProjectBudgetPanel({
           tokenId: effectiveTokenId,
           amount: amountInBase,
           note: note.trim() || undefined,
+          effectiveOn: effectiveOn || undefined,
         },
         {
           onSuccess: () => {
@@ -667,6 +682,7 @@ export function ProjectBudgetPanel({
           tokenId: effectiveTokenId,
           amount: amountInBase,
           note: note.trim() || undefined,
+          effectiveOn: effectiveOn || undefined,
         },
         {
           onSuccess: () => {
@@ -785,6 +801,15 @@ export function ProjectBudgetPanel({
                     )}
                   </p>
                 )}
+                <Field label="Budget date" htmlFor="budget-effective-on">
+                  <Input
+                    id="budget-effective-on"
+                    type="date"
+                    value={effectiveOn}
+                    onChange={(e) => setEffectiveOn(e.target.value)}
+                    disabled={isPending}
+                  />
+                </Field>
                 <Field label="Note" htmlFor="budget-note">
                   <Input
                     id="budget-note"
@@ -849,6 +874,7 @@ export function ProjectBudgetPanel({
                         </TableCell>
                         <TableCell className="whitespace-normal text-muted-foreground">
                           {a.note && <span className="block text-foreground">{a.note}</span>}
+                          {a.effectiveOn && <span className="block">for {a.effectiveOn}</span>}
                           <span className="block">by {a.actorAccountId}</span>
                           {a.fundingDaoAccountId && (
                             <span className="block">from {a.fundingDaoAccountId}</span>

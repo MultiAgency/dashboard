@@ -1,5 +1,9 @@
 import { parseDecimalToBase, tokenDecimals, tokenSymbol } from "@/lib/format-amount";
 
+// The Allocation plan and Change orders are omitted for now: budgets made on Admin → Budgets
+// are allocated to the Project. The screens stay in the code; set this to true to show them again.
+export const allocationPlanEnabled: boolean = false;
+
 export type ChangeOrderItemKind = "plan_change" | "one_off_move";
 
 export type ChangeOrderItem = {

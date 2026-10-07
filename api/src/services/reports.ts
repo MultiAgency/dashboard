@@ -13,6 +13,7 @@ import {
 } from "../db/schema";
 import type { OrganizationDirectory } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
+import { ALLOCATION_PLAN_ENABLED } from "./budgets";
 import type { AgencyScope } from "./organization-access";
 import { type ProjectDirectory, withoutClientIdeas } from "./project-directory";
 import { sumByToken } from "./report-tokens";
@@ -77,11 +78,14 @@ export function createReportsService(
         );
       }
 
-      const inPeriod = <T extends { createdAt: Date }>(row: T) => {
-        if (startAt && row.createdAt < startAt) return false;
-        if (endAt && row.createdAt > endAt) return false;
+      const within = (at: Date) => {
+        if (startAt && at < startAt) return false;
+        if (endAt && at > endAt) return false;
         return true;
       };
+      const inPeriod = <T extends { createdAt: Date }>(row: T) => within(row.createdAt);
+      const budgetInPeriod = (row: { effectiveOn: string | null; createdAt: Date }) =>
+        within(row.effectiveOn ? new Date(`${row.effectiveOn}T00:00:00.000Z`) : row.createdAt);
 
       const agencyEngagements = scope.organizationId
         ? yield* Effect.promise(() =>
@@ -154,10 +158,13 @@ export function createReportsService(
             )
           : [];
 
+      // Allocation plan omitted for now: budget is allocated to the Project, so a shared Project
+      // reports all of its Budget entries, not only entries attributed to the Engagement.
       const budgetRows = budgetRowsAll
-        .filter(inPeriod)
+        .filter(budgetInPeriod)
         .filter(
           (b) =>
+            !ALLOCATION_PLAN_ENABLED ||
             !input.engagementId ||
             b.engagementId === input.engagementId ||
             (!input.forClient && b.engagementId === null),
@@ -257,7 +264,11 @@ export function createReportsService(
             projectTitle: project?.title ?? pid,
             projectSlug: project?.slug ?? pid,
             budgetByToken: sumByToken(
-              budgetRows.filter((b) => b.projectId === pid && b.engagementId === engagement.id),
+              budgetRows.filter(
+                (b) =>
+                  b.projectId === pid &&
+                  (!ALLOCATION_PLAN_ENABLED || b.engagementId === engagement.id),
+              ),
             ),
             spentByToken: sumByToken(paidBillings.filter((b) => b.projectId === pid)),
             builders: buildersOf(pid),

@@ -352,6 +352,7 @@ const budget = z.object({
   relatedBudgetId: z.string().nullable(),
   engagementId: z.string().nullable(),
   fundingDaoAccountId: z.string().nullable(),
+  effectiveOn: z.string().nullable(),
   createdAt: z.date(),
 });
 
@@ -1372,6 +1373,7 @@ export const contract = oc.router({
           tokenId,
           amount: baseAmount,
           note: z.string().max(2000).optional(),
+          effectiveOn: reportDate,
         }),
       )
       .output(z.object({ budget }))
@@ -1385,6 +1387,7 @@ export const contract = oc.router({
           tokenId,
           amount: baseAmount,
           note: z.string().max(2000).optional(),
+          effectiveOn: reportDate,
         }),
       )
       .output(z.object({ budget }))
@@ -1403,6 +1406,7 @@ export const contract = oc.router({
               .regex(/^\d+$/, "positive integer string in the token's smallest unit")
               .max(80),
             note: z.string().max(2000).optional(),
+            effectiveOn: reportDate,
           })
           .refine((v) => v.fromProjectId !== v.toProjectId, {
             message: "fromProjectId and toProjectId must differ",

@@ -20,6 +20,12 @@ import type { TreasuryScope } from "./organization-access";
 import { lockEngagement, prepaidBalances } from "./prepaid-balance";
 import type { ProjectDirectory } from "./project-directory";
 
+// The Allocation plan and Change orders are omitted for now. Budget entries are allocated to
+// the Project, and a Client sees the budget of every Project shared with them. Recording a
+// Prepayment no longer writes Budget entries. The code stays in place; set this to true to
+// bring the plan-driven flow back.
+export const ALLOCATION_PLAN_ENABLED: boolean = false;
+
 export class BudgetInsufficientError extends Error {
   constructor(
     readonly projectId: string,
@@ -84,7 +90,8 @@ function requireOwnBudget(sums: LockedSums, projectId: string, tokenId: string, 
   if (sums.total + delta < 0n) {
     throw new BudgetInsufficientError(projectId, tokenId, sums.total, delta);
   }
-  if (sums.own + delta < 0n) {
+  // Omitted for now: without Change orders, Engagement-attributed budget moves like the Agency's own.
+  if (ALLOCATION_PLAN_ENABLED && sums.own + delta < 0n) {
     throw new EngagementBudgetError(
       "ENGAGEMENT_ATTRIBUTED",
       `Only ${sums.own.toString()} of this Project's ${tokenId} budget is the Agency's own. The rest is attributed to Engagements and moves only through Change orders.`,
@@ -103,6 +110,7 @@ export type BudgetListItem = Pick<
   | "relatedBudgetId"
   | "engagementId"
   | "fundingDaoAccountId"
+  | "effectiveOn"
   | "createdAt"
 >;
 
@@ -137,6 +145,7 @@ export async function listBudgets(
       relatedBudgetId: budgets.relatedBudgetId,
       engagementId: budgets.engagementId,
       fundingDaoAccountId: budgets.fundingDaoAccountId,
+      effectiveOn: budgets.effectiveOn,
       createdAt: budgets.createdAt,
     })
     .from(budgets)
@@ -165,6 +174,7 @@ export interface CreateBudgetInput {
   note: string | null;
   actorAccountId: string;
   fundingDaoAccountId?: string | null;
+  effectiveOn?: string | null;
 }
 
 export async function createBudget(db: Database, input: CreateBudgetInput): Promise<Budget> {
@@ -178,6 +188,7 @@ export async function createBudget(db: Database, input: CreateBudgetInput): Prom
       note: input.note,
       actorAccountId: input.actorAccountId,
       fundingDaoAccountId: input.fundingDaoAccountId ?? null,
+      effectiveOn: input.effectiveOn ?? null,
     })
     .returning();
   if (!row) throw new Error("budgets insert returned no row");
@@ -201,6 +212,7 @@ export interface TransferBudgetInput {
   note: string | null;
   actorAccountId: string;
   fundingDaoAccountId?: string | null;
+  effectiveOn?: string | null;
 }
 
 export async function transferBudget(
@@ -219,6 +231,7 @@ export async function transferBudget(
       note: input.note,
       actorAccountId: input.actorAccountId,
       fundingDaoAccountId: input.fundingDaoAccountId ?? null,
+      effectiveOn: input.effectiveOn ?? null,
       createdAt,
     };
     const inserted = await tx
@@ -482,7 +495,13 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
 
     create: (
       scope: TreasuryScope,
-      input: { projectId: string; tokenId: string; amount: string; note?: string },
+      input: {
+        projectId: string;
+        tokenId: string;
+        amount: string;
+        note?: string;
+        effectiveOn?: string;
+      },
     ) =>
       inAgency(scope, [input.projectId], async () => ({
         budget: await createBudget(db, {
@@ -495,7 +514,13 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
 
     deallocate: (
       scope: TreasuryScope,
-      input: { projectId: string; tokenId: string; amount: string; note?: string },
+      input: {
+        projectId: string;
+        tokenId: string;
+        amount: string;
+        note?: string;
+        effectiveOn?: string;
+      },
     ) =>
       inAgency(scope, [input.projectId], async () => ({
         budget: await deallocateBudget(db, {
@@ -514,6 +539,7 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
         tokenId: string;
         amount: string;
         note?: string;
+        effectiveOn?: string;
       },
     ) =>
       inAgency(scope, [input.fromProjectId, input.toProjectId], () =>

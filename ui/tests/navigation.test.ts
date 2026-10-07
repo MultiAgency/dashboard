@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { allocationPlanEnabled } from "../src/lib/change-orders";
 import {
   availableViews,
   clientEngagementSections,
@@ -6,6 +7,8 @@ import {
   viewForPath,
   workspaceNavigation,
 } from "../src/lib/navigation";
+
+// The plan test is skipped while the Allocation plan is omitted for now; see allocationPlanEnabled.
 
 const labels = (...args: Parameters<typeof workspaceNavigation>) =>
   workspaceNavigation(...args).flatMap((g) => g.items.map((i) => i.label));
@@ -91,17 +94,29 @@ describe("viewing role", () => {
 });
 
 describe("clientEngagementSections", () => {
-  it("gives Client members every section of their Engagement, Prepayments and the plan included", () => {
-    expect(clientEngagementSections("e1", "client")).toEqual([
-      { to: "/client/e1", label: "Overview" },
-      { to: "/client/e1/projects", label: "Shared projects" },
-      { to: "/client/e1/prepayments", label: "Prepayments" },
-      { to: "/client/e1/plan", label: "Plan & Change orders" },
-      { to: "/client/e1/billings", label: "Billings" },
-      { to: "/client/e1/reports", label: "Reports" },
-      { to: "/client/e1/ideas", label: "Ideas" },
-    ]);
-  });
+  it.skipIf(!allocationPlanEnabled)(
+    "gives Client members every section of their Engagement, Prepayments and the plan included",
+    () => {
+      expect(clientEngagementSections("e1", "client")).toEqual([
+        { to: "/client/e1", label: "Overview" },
+        { to: "/client/e1/projects", label: "Shared projects" },
+        { to: "/client/e1/prepayments", label: "Prepayments" },
+        { to: "/client/e1/plan", label: "Plan & Change orders" },
+        { to: "/client/e1/billings", label: "Billings" },
+        { to: "/client/e1/reports", label: "Reports" },
+        { to: "/client/e1/ideas", label: "Ideas" },
+      ]);
+    },
+  );
+
+  it.skipIf(allocationPlanEnabled)(
+    "leaves out the plan while the Allocation plan is omitted",
+    () => {
+      expect(clientEngagementSections("e1", "client").map((s) => s.label)).not.toContain(
+        "Plan & Change orders",
+      );
+    },
+  );
 
   it("leaves out ideas for a Subcontractor, who does not submit ideas to the hiring Agency", () => {
     expect(clientEngagementSections("e1", "subcontract").map((s) => s.label)).not.toContain(
