@@ -1,3 +1,7 @@
+// Agent links are suppressed for now. The screens and API stay in the code; set this to true to
+// show them again.
+export const agentLinksEnabled: boolean = false;
+
 export function moveLink(ids: string[], id: string, offset: -1 | 1): string[] {
   const from = ids.indexOf(id);
   const to = from + offset;

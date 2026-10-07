@@ -4,11 +4,14 @@ import { budgets } from "../../src/db/schema";
 import { runEffect } from "../../src/lib/context";
 import { createAgencyService } from "../../src/services/agency";
 import { createBillingsService } from "../../src/services/billings";
+import { ALLOCATION_PLAN_ENABLED } from "../../src/services/budgets";
 import { createClientPortalService } from "../../src/services/client-portal";
 import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
 import { createReportsService } from "../../src/services/reports";
 import { clientWorkWorld, refused, STUDIO_DAO } from "../fakes/engagements";
+
+// Skipped while the Allocation plan is omitted for now; see ALLOCATION_PLAN_ENABLED.
 
 const run = <A>(effect: Effect.Effect<A, unknown>) => runEffect(effect);
 const near = (amount: string) => [{ tokenId: "near", amount }];
@@ -106,29 +109,32 @@ describe("saved reports", () => {
     });
   });
 
-  test("budget on a co-funded Project counts only for the Engagement that funded it", async () => {
-    await state.db.insert(budgets).values(budget("internal", null, "50"));
+  test.skipIf(!ALLOCATION_PLAN_ENABLED)(
+    "budget on a co-funded Project counts only for the Engagement that funded it",
+    async () => {
+      await state.db.insert(budgets).values(budget("internal", null, "50"));
 
-    const acmeView = await clientReport("acme-member", "acme", acmeEngagement);
-    const globexView = await clientReport("globex-owner", "globex", globexEngagement);
-    const agencyAcme = await agencyReport(acmeEngagement);
-    const agencyWide = await agencyReport();
+      const acmeView = await clientReport("acme-member", "acme", acmeEngagement);
+      const globexView = await clientReport("globex-owner", "globex", globexEngagement);
+      const agencyAcme = await agencyReport(acmeEngagement);
+      const agencyWide = await agencyReport();
 
-    expect(acmeView.overview.budgetByToken).toEqual(near("700"));
-    expect(acmeView.clientBreakdown[0]?.budgetByToken).toEqual(near("700"));
-    expect(globexView.overview.budgetByToken).toEqual(near("300"));
-    expect(agencyAcme.overview.budgetByToken).toEqual(near("750"));
-    expect(agencyAcme.clientBreakdown.map((row) => row.clientName)).toEqual(["Acme Corp"]);
-    expect(agencyWide.overview.budgetByToken).toEqual(near("1050"));
-    expect(
-      agencyWide.clientBreakdown
-        .map((row) => [row.clientName, row.budgetByToken])
-        .sort(([a], [b]) => String(a).localeCompare(String(b))),
-    ).toEqual([
-      ["Acme Corp", near("700")],
-      ["Globex", near("300")],
-    ]);
-  });
+      expect(acmeView.overview.budgetByToken).toEqual(near("700"));
+      expect(acmeView.clientBreakdown[0]?.budgetByToken).toEqual(near("700"));
+      expect(globexView.overview.budgetByToken).toEqual(near("300"));
+      expect(agencyAcme.overview.budgetByToken).toEqual(near("750"));
+      expect(agencyAcme.clientBreakdown.map((row) => row.clientName)).toEqual(["Acme Corp"]);
+      expect(agencyWide.overview.budgetByToken).toEqual(near("1050"));
+      expect(
+        agencyWide.clientBreakdown
+          .map((row) => [row.clientName, row.budgetByToken])
+          .sort(([a], [b]) => String(a).localeCompare(String(b))),
+      ).toEqual([
+        ["Acme Corp", near("700")],
+        ["Globex", near("300")],
+      ]);
+    },
+  );
 
   test("a saved report is visible only to the Organization that generated it", async () => {
     const acmeReport = await clientReport("acme-member", "acme", acmeEngagement);

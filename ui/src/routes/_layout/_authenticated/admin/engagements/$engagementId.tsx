@@ -57,8 +57,9 @@ import { PageHeader } from "@/components/page-header";
 import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
 import { useEngagementAction } from "@/hooks/use-engagement-action";
 import { useMeRoles } from "@/hooks/use-me-roles";
+import { agentLinksEnabled } from "@/lib/agent-links";
 import { useApiClient } from "@/lib/api";
-import { awaitingCountFor } from "@/lib/change-orders";
+import { allocationPlanEnabled, awaitingCountFor } from "@/lib/change-orders";
 import { acceptsIdeas } from "@/lib/navigation";
 import {
   adminProjectsListQueryOptions,
@@ -178,7 +179,7 @@ function EngagementDetailPage() {
         </Alert>
       )}
 
-      {engagement.status !== "proposed" && tab !== "plan" && (
+      {allocationPlanEnabled && engagement.status !== "proposed" && tab !== "plan" && (
         <ShortfallWarnings engagementId={engagement.id} projects={sharedProjects} />
       )}
 
@@ -190,7 +191,11 @@ function EngagementDetailPage() {
         <SharedProjects engagement={engagement} />
       ) : (
         <Tabs
-          value={tab ?? "projects"}
+          value={
+            (tab === "plan" && !allocationPlanEnabled) || (tab === "links" && !agentLinksEnabled)
+              ? "projects"
+              : (tab ?? "projects")
+          }
           onValueChange={(value) => {
             void navigate({
               search: {
@@ -203,16 +208,18 @@ function EngagementDetailPage() {
           <ScrollableTabsList>
             <TabsTrigger value="projects">Shared Projects</TabsTrigger>
             <TabsTrigger value="prepayments">Prepayments</TabsTrigger>
-            <TabsTrigger value="plan">
-              Plan and Change orders
-              {awaiting > 0 && (
-                <Badge size="counter" aria-label={`${awaiting} awaiting you`}>
-                  {awaiting}
-                </Badge>
-              )}
-            </TabsTrigger>
+            {allocationPlanEnabled && (
+              <TabsTrigger value="plan">
+                Plan and Change orders
+                {awaiting > 0 && (
+                  <Badge size="counter" aria-label={`${awaiting} awaiting you`}>
+                    {awaiting}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            )}
             {acceptsIdeas(engagement.kind) && <TabsTrigger value="ideas">Ideas</TabsTrigger>}
-            <TabsTrigger value="links">Agent links</TabsTrigger>
+            {agentLinksEnabled && <TabsTrigger value="links">Agent links</TabsTrigger>}
           </ScrollableTabsList>
           <TabsContent value="projects" className="mt-4">
             <SharedProjects engagement={engagement} />
@@ -220,24 +227,28 @@ function EngagementDetailPage() {
           <TabsContent value="prepayments" className="mt-4">
             <PrepaymentsPanel engagement={engagement} />
           </TabsContent>
-          <TabsContent value="plan" className="mt-4">
-            <ChangeOrdersPanel
-              engagementId={engagement.id}
-              side="agency"
-              names={{ agency: engagement.agency.name, client: engagement.client.name }}
-              projects={sharedProjects}
-              active={engagement.status === "active"}
-              canManage={canAccessAdmin}
-            />
-          </TabsContent>
+          {allocationPlanEnabled && (
+            <TabsContent value="plan" className="mt-4">
+              <ChangeOrdersPanel
+                engagementId={engagement.id}
+                side="agency"
+                names={{ agency: engagement.agency.name, client: engagement.client.name }}
+                projects={sharedProjects}
+                active={engagement.status === "active"}
+                canManage={canAccessAdmin}
+              />
+            </TabsContent>
+          )}
           {acceptsIdeas(engagement.kind) && (
             <TabsContent value="ideas" className="mt-4">
               <IdeasInbox engagement={engagement} canManage={canAccessAdmin} />
             </TabsContent>
           )}
-          <TabsContent value="links" className="mt-4">
-            <AgentLinksPanel engagement={engagement} canManage={canAccessAdmin} />
-          </TabsContent>
+          {agentLinksEnabled && (
+            <TabsContent value="links" className="mt-4">
+              <AgentLinksPanel engagement={engagement} canManage={canAccessAdmin} />
+            </TabsContent>
+          )}
         </Tabs>
       )}
 

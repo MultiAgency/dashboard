@@ -1,3 +1,5 @@
+import { allocationPlanEnabled } from "@/lib/change-orders";
+
 export type WorkspaceRole = "owner" | "admin" | "member";
 
 export type NavItem = { to: string; label: string; match?: string };
@@ -127,7 +129,7 @@ export function clientEngagementSections(engagementId: string, kind: EngagementK
     { to: base, label: "Overview" },
     { to: `${base}/projects`, label: "Shared projects" },
     { to: `${base}/prepayments`, label: "Prepayments" },
-    { to: `${base}/plan`, label: "Plan & Change orders" },
+    ...(allocationPlanEnabled ? [{ to: `${base}/plan`, label: "Plan & Change orders" }] : []),
     { to: `${base}/billings`, label: "Billings" },
     { to: `${base}/reports`, label: "Reports" },
     ...(acceptsIdeas(kind) ? [{ to: `${base}/ideas`, label: "Ideas" }] : []),

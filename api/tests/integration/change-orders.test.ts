@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import { billings } from "../../src/db/schema";
-import { listBudgets, writeEngagementEntries } from "../../src/services/budgets";
+import {
+  ALLOCATION_PLAN_ENABLED,
+  listBudgets,
+  writeEngagementEntries,
+} from "../../src/services/budgets";
 import type { ChangeOrderItemInput } from "../../src/services/change-orders";
 import type { DaoProposalStatus } from "../../src/services/sputnik";
 import {
@@ -11,6 +15,8 @@ import {
   withOrganizationLookupsFailing,
 } from "../fakes/engagements";
 import { migratedDatabase } from "./_pg";
+
+// Skipped while the Allocation plan is omitted for now; see ALLOCATION_PLAN_ENABLED.
 
 const item =
   (kind: ChangeOrderItemInput["kind"]) =>
@@ -224,82 +230,101 @@ describe("change orders and the Allocation plan", () => {
   });
 
   describe("the Allocation plan", () => {
-    test("the first plan is a Change order by the Agency, applied from the next period once per period", async () => {
-      const id = await engagement();
-      const approved = await agreed(id, [plan("p1", "300"), plan("p2", "200")]);
+    test.skipIf(!ALLOCATION_PLAN_ENABLED)(
+      "the first plan is a Change order by the Agency, applied from the next period once per period",
+      async () => {
+        const id = await engagement();
+        const approved = await agreed(id, [plan("p1", "300"), plan("p2", "200")]);
 
-      expect(approved).toMatchObject({ status: "applied", effectivePeriod: "2026-10" });
-      expect(await planLines(id)).toEqual([
-        ["p1", "300", "2026-10"],
-        ["p2", "200", "2026-10"],
-      ]);
+        expect(approved).toMatchObject({ status: "applied", effectivePeriod: "2026-10" });
+        expect(await planLines(id)).toEqual([
+          ["p1", "300", "2026-10"],
+          ["p2", "200", "2026-10"],
+        ]);
 
-      await record(id, "1000", "2026-09");
-      expect(await attributed(id)).toEqual({});
+        await record(id, "1000", "2026-09");
+        expect(await attributed(id)).toEqual({});
 
-      await record(id, "1000", "2026-10");
-      await record(id, "1000", "2026-10");
-      expect(await attributed(id)).toEqual({ p1: "300", p2: "200" });
-      expect(await balance(id)).toBe("2500");
-      expect((await world.changeOrders.plan(await studio(), { engagementId: id })).nextPeriod).toBe(
-        "2026-11",
-      );
-    });
+        await record(id, "1000", "2026-10");
+        await record(id, "1000", "2026-10");
+        expect(await attributed(id)).toEqual({ p1: "300", p2: "200" });
+        expect(await balance(id)).toBe("2500");
+        expect(
+          (await world.changeOrders.plan(await studio(), { engagementId: id })).nextPeriod,
+        ).toBe("2026-11");
+      },
+    );
 
-    test("plan changes take effect from the next period's Prepayment, even when effective now", async () => {
-      const id = await engagement();
-      await agreed(id, [plan("p1", "300")]);
-      today = new Date("2026-10-03T09:00:00Z");
-      await record(id, "5000", "2026-10");
+    test.skipIf(!ALLOCATION_PLAN_ENABLED)(
+      "plan changes take effect from the next period's Prepayment, even when effective now",
+      async () => {
+        const id = await engagement();
+        await agreed(id, [plan("p1", "300")]);
+        today = new Date("2026-10-03T09:00:00Z");
+        await record(id, "5000", "2026-10");
 
-      const changed = await agreed(id, [plan("p1", "100"), plan("p2", "50")], "now");
+        const changed = await agreed(id, [plan("p1", "100"), plan("p2", "50")], "now");
 
-      expect(changed.effectivePeriod).toBe("2026-11");
-      await record(id, "1000", "2026-10");
-      expect(await attributed(id)).toEqual({ p1: "300" });
-      await record(id, "1000", "2026-11");
-      expect(await attributed(id)).toEqual({ p1: "700", p2: "50" });
-      expect(await planLines(id)).toEqual([
-        ["p1", "400", "2026-11"],
-        ["p2", "50", "2026-11"],
-      ]);
-    });
+        expect(changed.effectivePeriod).toBe("2026-11");
+        await record(id, "1000", "2026-10");
+        expect(await attributed(id)).toEqual({ p1: "300" });
+        await record(id, "1000", "2026-11");
+        expect(await attributed(id)).toEqual({ p1: "700", p2: "50" });
+        expect(await planLines(id)).toEqual([
+          ["p1", "400", "2026-11"],
+          ["p2", "50", "2026-11"],
+        ]);
+      },
+    );
 
-    test("a late Prepayment for an earlier period uses the plan that was current then", async () => {
-      const id = await engagement();
-      await agreed(id, [plan("p1", "300")]);
-      today = new Date("2026-11-05T09:00:00Z");
-      await record(id, "5000", "2026-11");
-      await agreed(id, [plan("p1", "-300"), plan("p2", "100")]);
+    test.skipIf(!ALLOCATION_PLAN_ENABLED)(
+      "a late Prepayment for an earlier period uses the plan that was current then",
+      async () => {
+        const id = await engagement();
+        await agreed(id, [plan("p1", "300")]);
+        today = new Date("2026-11-05T09:00:00Z");
+        await record(id, "5000", "2026-11");
+        await agreed(id, [plan("p1", "-300"), plan("p2", "100")]);
 
-      await record(id, "1000", "2026-10");
-      expect(await attributed(id)).toEqual({ p1: "600" });
-      await record(id, "1000", "2026-12");
-      expect(await attributed(id)).toEqual({ p1: "600", p2: "100" });
-    });
+        await record(id, "1000", "2026-10");
+        expect(await attributed(id)).toEqual({ p1: "600" });
+        await record(id, "1000", "2026-12");
+        expect(await attributed(id)).toEqual({ p1: "600", p2: "100" });
+      },
+    );
 
-    test("skips plan lines that no longer fit the Prepaid balance and notifies both sides", async () => {
-      const id = await engagement();
-      await agreed(id, [plan("p1", "600"), plan("p2", "600")]);
+    test.skipIf(!ALLOCATION_PLAN_ENABLED)(
+      "skips plan lines that no longer fit the Prepaid balance and notifies both sides",
+      async () => {
+        const id = await engagement();
+        await agreed(id, [plan("p1", "600"), plan("p2", "600")]);
 
-      await record(id, "1000", "2026-10");
+        await record(id, "1000", "2026-10");
 
-      expect(await attributed(id)).toEqual({ p1: "600" });
-      const { applications } = await world.changeOrders.plan(await studio(), { engagementId: id });
-      expect(applications).toEqual([
-        expect.objectContaining({
-          period: "2026-10",
-          shortfall: [
-            { projectId: "p2", tokenId: "near", amount: "600", reason: "PREPAID_BALANCE_EXCEEDED" },
-          ],
-        }),
-      ]);
-      expect(await inbox("acme-owner")).toContain("plan_shortfall");
-      expect(await inbox("studio-admin")).toContain("plan_shortfall");
+        expect(await attributed(id)).toEqual({ p1: "600" });
+        const { applications } = await world.changeOrders.plan(await studio(), {
+          engagementId: id,
+        });
+        expect(applications).toEqual([
+          expect.objectContaining({
+            period: "2026-10",
+            shortfall: [
+              {
+                projectId: "p2",
+                tokenId: "near",
+                amount: "600",
+                reason: "PREPAID_BALANCE_EXCEEDED",
+              },
+            ],
+          }),
+        ]);
+        expect(await inbox("acme-owner")).toContain("plan_shortfall");
+        expect(await inbox("studio-admin")).toContain("plan_shortfall");
 
-      await record(id, "5000", "2026-10");
-      expect(await attributed(id)).toEqual({ p1: "600" });
-    });
+        await record(id, "5000", "2026-10");
+        expect(await attributed(id)).toEqual({ p1: "600" });
+      },
+    );
 
     test("a plan line cannot go below zero", async () => {
       const id = await engagement();
@@ -325,22 +350,25 @@ describe("change orders and the Allocation plan", () => {
       expect(await balance(id)).toBe("600");
     });
 
-    test("wait for the next period's Prepayment when effective next period", async () => {
-      const id = await engagement();
-      await record(id, "1000", "2026-09");
+    test.skipIf(!ALLOCATION_PLAN_ENABLED)(
+      "wait for the next period's Prepayment when effective next period",
+      async () => {
+        const id = await engagement();
+        await record(id, "1000", "2026-09");
 
-      const approved = await agreed(id, [move("p1", "400"), plan("p2", "100")]);
+        const approved = await agreed(id, [move("p1", "400"), plan("p2", "100")]);
 
-      expect(approved).toMatchObject({ status: "approved", effectivePeriod: "2026-10" });
-      expect(await attributed(id)).toEqual({});
-      expect(await planLines(id)).toEqual([]);
+        expect(approved).toMatchObject({ status: "approved", effectivePeriod: "2026-10" });
+        expect(await attributed(id)).toEqual({});
+        expect(await planLines(id)).toEqual([]);
 
-      await record(id, "500", "2026-10");
+        await record(id, "500", "2026-10");
 
-      expect(await statusOf(id, approved.id)).toBe("applied");
-      expect(await attributed(id)).toEqual({ p1: "400", p2: "100" });
-      expect(await balance(id)).toBe("1000");
-    });
+        expect(await statusOf(id, approved.id)).toBe("applied");
+        expect(await attributed(id)).toEqual({ p1: "400", p2: "100" });
+        expect(await balance(id)).toBe("1000");
+      },
+    );
 
     test("move unspent budget between Projects", async () => {
       const id = await engagement();
@@ -433,21 +461,24 @@ describe("change orders and the Allocation plan", () => {
   });
 
   describe("chain statuses", () => {
-    test("are fetched before the Engagement is locked, on approval and on plan application", async () => {
-      const id = await engagement();
-      await record(id, "1000", "2026-09");
-      await agreed(id, [move("p1", "600")], "now");
-      await bill("200", "Approved");
+    test.skipIf(!ALLOCATION_PLAN_ENABLED)(
+      "are fetched before the Engagement is locked, on approval and on plan application",
+      async () => {
+        const id = await engagement();
+        await record(id, "1000", "2026-09");
+        await agreed(id, [move("p1", "600")], "now");
+        await bill("200", "Approved");
 
-      const now = await agreed(id, [move("p1", "-100")], "now");
-      const later = await agreed(id, [move("p1", "-100")]);
-      await record(id, "1", "2026-10");
+        const now = await agreed(id, [move("p1", "-100")], "now");
+        const later = await agreed(id, [move("p1", "-100")]);
+        await record(id, "1", "2026-10");
 
-      expect(now.status).toBe("applied");
-      expect(await statusOf(id, later.id)).toBe("applied");
-      expect(fetches.length).toBeGreaterThanOrEqual(2);
-      expect(fetches.filter((f) => f.insideLock)).toEqual([]);
-    });
+        expect(now.status).toBe("applied");
+        expect(await statusOf(id, later.id)).toBe("applied");
+        expect(fetches.length).toBeGreaterThanOrEqual(2);
+        expect(fetches.filter((f) => f.insideLock)).toEqual([]);
+      },
+    );
 
     test("a billing created after the statuses were fetched counts as committed", async () => {
       const id = await engagement();

@@ -17,7 +17,7 @@ export function useBudgetActions(projectId: string) {
   };
 
   const allocate = useMutation({
-    mutationFn: (input: { tokenId: string; amount: string; note?: string }) =>
+    mutationFn: (input: { tokenId: string; amount: string; note?: string; effectiveOn?: string }) =>
       apiClient.budgets.create({ projectId, ...input }),
     onSuccess: async () => {
       await invalidate();
@@ -27,7 +27,7 @@ export function useBudgetActions(projectId: string) {
   });
 
   const deallocate = useMutation({
-    mutationFn: (input: { tokenId: string; amount: string; note?: string }) =>
+    mutationFn: (input: { tokenId: string; amount: string; note?: string; effectiveOn?: string }) =>
       apiClient.budgets.deallocate({ projectId, ...input }),
     onSuccess: async () => {
       await invalidate();

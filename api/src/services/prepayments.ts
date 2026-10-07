@@ -4,7 +4,7 @@ import type { Database } from "../db";
 import { type EngagementRow, engagements, type PrepaymentRow, prepayments } from "../db/schema";
 import type { OrganizationDirectory } from "../lib/organizations";
 import { applyPlanForPeriod, type PlanApplication, pendingItems } from "./allocation-plan";
-import { prefetchEngagementStatuses } from "./budgets";
+import { ALLOCATION_PLAN_ENABLED, prefetchEngagementStatuses } from "./budgets";
 import type { ChainStatusFetcher } from "./ledger";
 import type { NotificationKind, NotificationsService } from "./notifications";
 import { type OrganizationScope, requireTreasury, SHARED_STATUSES } from "./organization-access";
@@ -180,12 +180,14 @@ export function createPrepaymentsService(deps: {
     record: async (scope: OrganizationScope, input: RecordPrepaymentInput) => {
       const treasury = requireTreasury(scope);
       requireValid(input);
-      const statuses = await prefetchEngagementStatuses(
-        db,
-        input.engagementId,
-        await pendingItems(db, input.engagementId),
-        deps.chainStatus,
-      );
+      const statuses = ALLOCATION_PLAN_ENABLED
+        ? await prefetchEngagementStatuses(
+            db,
+            input.engagementId,
+            await pendingItems(db, input.engagementId),
+            deps.chainStatus,
+          )
+        : new Map();
       const { engagement, row, application } = await db.transaction(async (tx) => {
         const engagement = requireWritable(
           scope,
@@ -204,13 +206,17 @@ export function createPrepaymentsService(deps: {
             actorAccountId: scope.actorId,
           })
           .returning();
-        const application = await applyPlanForPeriod(tx as Database, engagement, {
-          period: input.period,
-          prepaymentId: row!.id,
-          actorAccountId: scope.actorId,
-          now: now(),
-          statuses,
-        });
+        // Allocation plan omitted for now: a Prepayment is recorded on its own, and Budget entries
+        // are made on Admin → Budgets instead of from the plan.
+        const application = ALLOCATION_PLAN_ENABLED
+          ? await applyPlanForPeriod(tx as Database, engagement, {
+              period: input.period,
+              prepaymentId: row!.id,
+              actorAccountId: scope.actorId,
+              now: now(),
+              statuses,
+            })
+          : null;
         return { engagement, row: row!, application };
       });
       await tellClient(scope, engagement, "prepayment_recorded", row);

@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   Button,
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -31,6 +32,7 @@ import {
   refreshAfter,
 } from "@/lib/queries";
 import { formatAllocatedSpent, formatTokenTotals } from "@/lib/report-amounts";
+import { MONTH_PRESETS } from "@/lib/report-dates";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/reports/")({
   validateSearch: z.object({ report: z.string().optional().catch(undefined) }),
@@ -139,6 +141,22 @@ function AdminReportsPage() {
           <CardDescription>
             Leave the filters empty to cover every client and project.
           </CardDescription>
+          <CardAction className="flex flex-wrap gap-2">
+            {MONTH_PRESETS.map((preset) => (
+              <Button
+                key={preset.label}
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  const range = preset.range(new Date());
+                  setStartDate(range.start);
+                  setEndDate(range.end);
+                }}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </CardAction>
         </CardHeader>
         <form
           className="flex flex-col gap-4"
