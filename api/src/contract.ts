@@ -273,6 +273,16 @@ const reportOutput = z.object({
     period: z.string(),
   }),
   project: z.object({ title: z.string(), slug: z.string() }).nullable().optional(),
+  projectBreakdown: z
+    .array(
+      z.object({
+        projectTitle: z.string(),
+        projectSlug: z.string(),
+        budgetByToken: z.array(tokenAmount),
+        billedByToken: z.array(tokenAmount),
+      }),
+    )
+    .optional(),
   contributorStats: z.array(
     z.object({
       nearAccount: z.string(),

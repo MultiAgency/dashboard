@@ -276,6 +276,21 @@ export function createReportsService(
         }
       }
 
+      const projectBreakdown = projectIds
+        .map((pid) => {
+          const project = projectById.get(pid);
+          return {
+            projectTitle: project?.title ?? pid,
+            projectSlug: project?.slug ?? pid,
+            budgetByToken: sumByToken(budgetRows.filter((b) => b.projectId === pid)),
+            billedByToken: sumByToken(paidBillings.filter((b) => b.projectId === pid)),
+          };
+        })
+        .filter((p) =>
+          [...p.budgetByToken, ...p.billedByToken].some((t) => BigInt(t.amount) !== 0n),
+        )
+        .sort((a, b) => a.projectTitle.localeCompare(b.projectTitle));
+
       const period =
         input.startDate && input.endDate
           ? `${input.startDate} – ${input.endDate}`
@@ -301,6 +316,7 @@ export function createReportsService(
           billedByToken: sumByToken(s.billedRows),
           billingCount: s.count,
         })),
+        projectBreakdown,
         clientBreakdown,
         notes: input.note ?? "",
         generatedAt: new Date().toISOString(),

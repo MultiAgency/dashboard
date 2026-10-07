@@ -370,6 +370,87 @@ describe("reports.generate", () => {
     expect(october.overview.budgetByToken).toEqual([{ tokenId: "near", amount: "300" }]);
   });
 
+  test("generate — projectBreakdown lists each project's budget and billed amounts for the period", async () => {
+    await db.insert(budgets).values([
+      {
+        id: "budget-a-sep",
+        projectId: "project-a",
+        tokenId: "near",
+        amount: "700",
+        effectiveOn: "2026-09-01",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-a-aug",
+        projectId: "project-a",
+        tokenId: "near",
+        amount: "999",
+        effectiveOn: "2026-08-01",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-b-sep",
+        projectId: "project-b",
+        tokenId: "near",
+        amount: "300",
+        effectiveOn: "2026-09-15",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-c-aug",
+        projectId: "project-c",
+        tokenId: "near",
+        amount: "50",
+        effectiveOn: "2026-08-01",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-d-in",
+        projectId: "project-d",
+        tokenId: "near",
+        amount: "400",
+        effectiveOn: "2026-09-05",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-d-out",
+        projectId: "project-d",
+        tokenId: "near",
+        amount: "-400",
+        effectiveOn: "2026-09-20",
+        actorAccountId: "admin.near",
+      },
+    ]);
+
+    const reports = buildReports(
+      createFakePlugins([
+        makeProject({ id: "project-a", slug: "project-a-slug", title: "Alpha" }),
+        makeProject({ id: "project-b", slug: "project-b-slug", title: "Bravo" }),
+        makeProject({ id: "project-c", slug: "project-c-slug", title: "Charlie" }),
+        makeProject({ id: "project-d", slug: "project-d-slug", title: "Delta" }),
+      ]),
+    );
+
+    const september = await Effect.runPromise(
+      reports.generate(scope, { startDate: "2026-09-01", endDate: "2026-09-30" }),
+    );
+
+    expect(september.projectBreakdown).toEqual([
+      {
+        projectTitle: "Alpha",
+        projectSlug: "project-a-slug",
+        budgetByToken: [{ tokenId: "near", amount: "700" }],
+        billedByToken: [],
+      },
+      {
+        projectTitle: "Bravo",
+        projectSlug: "project-b-slug",
+        budgetByToken: [{ tokenId: "near", amount: "300" }],
+        billedByToken: [],
+      },
+    ]);
+  });
+
   test("generate (client route) — scoped to one client, doesn't leak another client's data into the response", async () => {
     await insertClient("client-a");
     await insertClient("client-b");
