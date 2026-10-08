@@ -1,6 +1,6 @@
 ---
 name: contributors
-description: End-to-end contributor onboarding flow for MultiAgency — Apply → email exchange → admin marks complete → eligible for work orders and payouts. Read when adding a new contributor, when reviewing a billing, or when a contributor asks "what happens after I apply?".
+description: End-to-end contributor onboarding flow for MultiAgency — Apply → email exchange → signed agreement and tax form on file → eligible for work orders and payouts. Read when adding a new contributor, when reviewing a billing, or when a contributor asks "what happens after I apply?".
 ---
 
 # Contributors
@@ -14,13 +14,13 @@ flowchart TD
   A["<div style='text-align:center; padding: 14px 20px; min-width: 22rem; max-width: 26rem'><strong>1. Apply</strong><br/>/apply form<br/>name, email, NEAR account, message</div>"]
   B["<div style='text-align:center; padding: 14px 20px; min-width: 22rem; max-width: 26rem'><strong>2. Email back</strong><br/>admin sends master services agreement<br/>+ tax form</div>"]
   C["<div style='text-align:center; padding: 14px 20px; min-width: 22rem; max-width: 26rem'><strong>3. Counter-sign</strong><br/>contributor returns signed agreement<br/>+ W-9 or W-8BEN</div>"]
-  D["<div style='text-align:center; padding: 14px 20px; min-width: 22rem; max-width: 26rem'><strong>4. Mark ready</strong><br/>admin sets onboarding status<br/>to complete</div>"]
+  D["<div style='text-align:center; padding: 14px 20px; min-width: 22rem; max-width: 26rem'><strong>4. On file</strong><br/>admin files the signed agreement<br/>+ tax form</div>"]
   E["<div style='text-align:center; padding: 14px 20px; min-width: 22rem; max-width: 26rem'><strong>5. Work order</strong><br/>per project, before work starts</div>"]
   F["<div style='text-align:center; padding: 14px 20px; min-width: 22rem; max-width: 26rem'><strong>6. Pay</strong><br/>Sputnik DAO proposal<br/>→ on-chain transfer</div>"]
   A --> B --> C --> D --> E --> F
 ```
 
-No paperwork is uploaded into the dashboard. The dashboard tracks **status**, not artifacts. Documents live in email and the admin's chosen filing system (Drive, Notion, etc.).
+No paperwork is uploaded into the dashboard, and the dashboard does not track an onboarding status. Documents live in email and the admin's chosen filing system (Drive, Notion, etc.).
 
 ## Step 1 — Apply
 
@@ -37,15 +37,11 @@ The admin replies by email with two attachments:
 
 Contributor returns the signed agreement and the completed tax form by email. The admin files both.
 
-## Step 4 — Mark ready
+## Step 4 — On file
 
-In the admin contributor row, the admin marks onboarding `complete`. There are three states:
+Once the signed agreement and tax form are filed, the contributor is ready for work orders and payouts. There is nothing to switch on in the dashboard: assigning a contributor to a project and recording their billings work the same either way, so the admin checks the paperwork is on file first.
 
-- **pending** — applied or invited but no signed agreement on file
-- **complete** — signed agreement and tax form received; eligible for work orders and payouts
-- **expired** — agreement on file is stale (e.g. tax form needs refresh) and must be re-sent
-
-A contributor at `pending` or `expired` triggers a warning when an admin records a billing for them — see "safe-by-default" below.
+For builders in the member registry, a platform admin can also record the signed agreement there, with its version and the date it was signed.
 
 ## Step 5 — Work order
 
@@ -61,7 +57,7 @@ When a deliverable is accepted, the admin records a billing in the dashboard. Th
 
 Two guardrails:
 
-1. **Onboarding warning at billing time.** When an admin records a billing for a contributor whose status is not `complete`, the dashboard surfaces a warning at the create form: *"Contributor onboarding not complete. Confirm signed services agreement + tax form received before recording a payout."*
+1. **Paperwork before payout.** Before recording a billing, the admin confirms the contributor's signed agreement and tax form are on file. The dashboard does not check this for you.
 2. **Audit log on budgets.** Every treasury budget change records the actor's NEAR account and a timestamp — a clear record of who authorized each payment and when.
 
 ## Related

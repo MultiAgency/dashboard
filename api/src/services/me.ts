@@ -73,7 +73,6 @@ export function createMeService(deps: {
               organizationId: r.organizationId,
               agencyName: names.get(assigner) ?? assigner,
               role: r.role,
-              onboardingStatus: r.onboardingStatus,
               createdAt: r.createdAt,
             },
           ];

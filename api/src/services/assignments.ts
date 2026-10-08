@@ -55,7 +55,6 @@ export function createAssignmentsService(
       projectId: row.projectId,
       nearAccount: row.nearAccount,
       role: row.role,
-      onboardingStatus: row.onboardingStatus,
       assignedBy: assigner ? (names.get(assigner) ?? { id: assigner, name: assigner }) : null,
       canRemove: assigner !== null && assigner === scope.organizationId,
       createdAt: row.createdAt,
@@ -118,7 +117,6 @@ export function createAssignmentsService(
         projectId: string;
         nearAccount: string;
         role?: string;
-        onboardingStatus?: string;
       },
     ) =>
       Effect.gen(function* () {
@@ -148,7 +146,6 @@ export function createAssignmentsService(
               projectId: input.projectId,
               nearAccount,
               role: input.role ?? null,
-              onboardingStatus: input.onboardingStatus ?? "pending",
               organizationId,
               assignedByOrganizationId,
             })
@@ -158,9 +155,6 @@ export function createAssignmentsService(
                 role: input.role ?? null,
                 organizationId,
                 assignedByOrganizationId,
-                ...(input.onboardingStatus !== undefined
-                  ? { onboardingStatus: input.onboardingStatus }
-                  : {}),
               },
             }),
         );
@@ -169,7 +163,6 @@ export function createAssignmentsService(
           projectId: input.projectId,
           nearAccount,
           role: input.role ?? null,
-          onboardingStatus: input.onboardingStatus ?? "pending",
         };
       }),
 

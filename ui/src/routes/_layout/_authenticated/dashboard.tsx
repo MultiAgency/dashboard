@@ -40,12 +40,6 @@ function MyWorkPage() {
       header: "Role",
       accessorFn: (row) => row.role ?? "",
     },
-    {
-      id: "onboarding",
-      header: "Onboarding",
-      accessorKey: "onboardingStatus",
-      cell: ({ row }) => <Badge variant="outline">{row.original.onboardingStatus}</Badge>,
-    },
   ];
 
   const billingColumns: ColumnDef<MyBilling>[] = [
@@ -103,7 +97,7 @@ function MyWorkPage() {
         <SectionHeader
           id="my-assigned-projects"
           title="Assigned Projects"
-          description="Projects you are assigned to, with your role and onboarding status."
+          description="Projects you are assigned to, with your role."
         />
         <DataTable
           readOnly

@@ -516,7 +516,6 @@ const assignment = z.object({
   projectId: z.string(),
   nearAccount: z.string(),
   role: z.string().nullable(),
-  onboardingStatus: z.string(),
   assignedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
   canRemove: z.boolean(),
   createdAt: z.date(),
@@ -1382,7 +1381,6 @@ export const contract = oc.router({
           projectId: z.string(),
           nearAccount: nearAccountId,
           role: z.string().max(80).optional(),
-          onboardingStatus: z.string().max(40).optional(),
         }),
       )
       .output(
@@ -1390,7 +1388,6 @@ export const contract = oc.router({
           projectId: z.string(),
           nearAccount: z.string(),
           role: z.string().nullable(),
-          onboardingStatus: z.string(),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
@@ -1771,7 +1768,6 @@ export const contract = oc.router({
               organizationId: z.string(),
               agencyName: z.string(),
               role: z.string().nullable(),
-              onboardingStatus: z.string(),
               createdAt: z.date(),
             }),
           ),
