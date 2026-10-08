@@ -28,11 +28,14 @@ import {
 } from "@/components/saved-reports";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { type ApiClient, useApiClient } from "@/lib/api";
+import { formatPeriod } from "@/lib/budget-periods";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
+import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminProjectsListQueryOptions,
   adminSavedReportQueryOptions,
   adminSavedReportsQueryOptions,
+  agreementsListQueryOptions,
   engagementsListQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
@@ -49,6 +52,7 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/reports/")({
 
 type ReportFilters = {
   engagementId?: string;
+  agreementId?: string;
   projectId?: string;
   note?: string;
   startDate?: string;
@@ -64,6 +68,16 @@ function summaryCsv(report: ShownReport) {
     { section: "Overview", label: "Total budget", value: overview.budget },
     { section: "Overview", label: "Total billed", value: overview.billed },
     { section: "Overview", label: "Period", value: report.overview.period },
+    ...(report.agreement
+      ? [
+          { section: "Agreement", label: "Title", value: report.agreement.title },
+          {
+            section: "Agreement",
+            label: "Allocated of agreed",
+            value: `${formatTokenAmount(report.agreement.allocated, report.agreement.tokenId)} of ${formatTokenAmount(report.agreement.agreedAmount, report.agreement.tokenId)}`,
+          },
+        ]
+      : []),
     ...(report.projectBreakdown ?? []).map((p) => ({
       section: "Project",
       label: p.projectTitle,
@@ -103,6 +117,7 @@ function AdminReportsPage() {
   const engagementsQuery = useQuery(engagementsListQueryOptions(apiClient));
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
   const [engagementId, setEngagementId] = useState("");
+  const [agreementId, setAgreementId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -129,16 +144,24 @@ function AdminReportsPage() {
     return projects.filter((p) => allowed.has(p.id));
   }, [engagementId, engagements, projects]);
 
+  const agreementsQuery = useQuery({
+    ...agreementsListQueryOptions(apiClient, { engagementId }),
+    enabled: !!engagementId && engagements.find((e) => e.id === engagementId)?.kind === "client",
+  });
+  const agreements = engagementId ? (agreementsQuery.data?.data ?? []) : [];
+  const agreement = agreements.find((a) => a.id === agreementId);
+
   const refreshReports = () => refreshAfter(queryClient, { type: "reports" });
 
   const previewMutation = useMutation({
     mutationFn: async () => {
       const filters: ReportFilters = {
         engagementId: engagementId || undefined,
+        agreementId: agreement?.id,
         projectId: projectId || undefined,
         note: note.trim() || undefined,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
+        startDate: agreement ? undefined : startDate || undefined,
+        endDate: agreement ? undefined : endDate || undefined,
       };
       return { filters, report: await apiClient.agency.reports.preview(filters) };
     },
@@ -198,7 +221,9 @@ function AdminReportsPage() {
   const shown: ShownReport | null =
     preview?.report ?? (reportId ? (openedQuery.data?.report ?? null) : null);
   const titleOf = (r: SavedReportSummary) =>
-    [clientNameOf(r.engagementId), r.projectTitle, reportPeriod(r)].filter(Boolean).join(" · ");
+    [clientNameOf(r.engagementId), r.agreementTitle, r.projectTitle, reportPeriod(r)]
+      .filter(Boolean)
+      .join(" · ");
 
   return (
     <div className="flex flex-col gap-6">
@@ -221,6 +246,7 @@ function AdminReportsPage() {
                 key={preset.label}
                 size="sm"
                 variant="outline"
+                disabled={!!agreement}
                 onClick={() => {
                   const range = preset.range(new Date());
                   setStartDate(range.start);
@@ -248,6 +274,7 @@ function AdminReportsPage() {
                     value={engagementId}
                     onValueChange={(value) => {
                       setEngagementId(value);
+                      setAgreementId("");
                       setProjectId("");
                     }}
                     emptyLabel="All clients"
@@ -263,22 +290,45 @@ function AdminReportsPage() {
                     options={projectOptions.map((p) => ({ value: p.id, label: p.title }))}
                   />
                 </Field>
-                <Field label="Start date" htmlFor="report-start">
-                  <Input
-                    id="report-start"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
-                </Field>
-                <Field label="End date" htmlFor="report-end">
-                  <Input
-                    id="report-end"
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                  />
-                </Field>
+                {agreements.length > 0 && (
+                  <Field label="Agreement" htmlFor="report-agreement">
+                    <ChoiceSelect
+                      id="report-agreement"
+                      value={agreementId}
+                      onValueChange={setAgreementId}
+                      emptyLabel="Any agreement (use dates)"
+                      options={agreements.map((a) => ({
+                        value: a.id,
+                        label: `${a.title} (${formatPeriod(a.startDate, a.endDate)})`,
+                      }))}
+                    />
+                  </Field>
+                )}
+                {agreement ? (
+                  <p className="text-sm text-muted-foreground sm:col-span-2">
+                    Covers {formatPeriod(agreement.startDate, agreement.endDate)} and every budget
+                    attached to {agreement.title}.
+                  </p>
+                ) : (
+                  <>
+                    <Field label="Start date" htmlFor="report-start">
+                      <Input
+                        id="report-start"
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="End date" htmlFor="report-end">
+                      <Input
+                        id="report-end"
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                      />
+                    </Field>
+                  </>
+                )}
               </div>
               <ReportNoteField id="report-note" value={note} onChange={setNote} />
             </FieldGroup>

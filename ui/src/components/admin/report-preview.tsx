@@ -48,6 +48,15 @@ export type ReportViewData = {
     spentByToken: TokenAmount[];
     builders?: string[];
   }>;
+  agreement?: {
+    title: string;
+    kind: "retainer" | "project";
+    startDate: string;
+    endDate: string;
+    tokenId: string;
+    agreedAmount: string;
+    allocated: string;
+  } | null;
   notes?: string;
 };
 
@@ -247,6 +256,20 @@ export function ReportPreview({ report, showBuilders = true, actions }: ReportPr
             <div className="sm:col-span-2">
               <StatCard label="Period" value={report.overview.period} />
             </div>
+            {report.agreement && (
+              <>
+                <div className="sm:col-span-2">
+                  <StatCard
+                    label={report.agreement.kind === "retainer" ? "Retainer" : "Project agreement"}
+                    value={report.agreement.title}
+                  />
+                </div>
+                <StatCard
+                  label="Allocated of agreed"
+                  value={`${formatTokenAmount(report.agreement.allocated, report.agreement.tokenId)} of ${formatTokenAmount(report.agreement.agreedAmount, report.agreement.tokenId)}`}
+                />
+              </>
+            )}
           </div>
           <DataTable
             columns={tokenSummaryColumns}

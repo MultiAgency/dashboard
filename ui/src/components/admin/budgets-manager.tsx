@@ -28,6 +28,7 @@ import {
   TableRow,
 } from "@/components";
 import {
+  AgreementLine,
   BudgetEntryActions,
   DeletedBudgetEntries,
   EditedLine,
@@ -41,6 +42,7 @@ import {
   resolveBudgetAuditDropdownOptions,
 } from "@/lib/admin-filter-graph";
 import { useApiClient } from "@/lib/api";
+import { formatPeriod } from "@/lib/budget-periods";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminBudgetsLogQueryKey,
@@ -49,6 +51,7 @@ import {
   adminProjectsForTokenQueryKey,
   adminProjectsListQueryOptions,
   adminTokensQueryOptions,
+  agreementsListQueryOptions,
   clientPortalProjectBudgetQueryOptions,
   engagementsListQueryOptions,
   refreshAfter,
@@ -168,6 +171,10 @@ function AgencyAuditLogPanel({
 }) {
   const apiClient = useApiClient();
   const projectById = new Map(projects.map((p) => [p.id, p] as const));
+  const agreementsQuery = useQuery(agreementsListQueryOptions(apiClient, {}));
+  const agreementById = new Map(
+    (agreementsQuery.data?.data ?? []).map((agreement) => [agreement.id, agreement] as const),
+  );
 
   const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
@@ -388,6 +395,7 @@ function AgencyAuditLogPanel({
                         {a.fundingDaoAccountId && (
                           <span className="block">from {a.fundingDaoAccountId}</span>
                         )}
+                        <AgreementLine agreement={agreementById.get(a.agreementId ?? "")} />
                         <EditedLine entry={a} />
                       </TableCell>
                       {canAccessAdmin && (
@@ -650,6 +658,14 @@ export function ProjectBudgetPanel({
   });
 
   const budgetRows = budgetsQuery.data?.pages.flatMap((p) => p.data) ?? [];
+  const agreementsQuery = useQuery({
+    ...agreementsListQueryOptions(apiClient, { projectId }),
+    enabled: !readOnly && !clientPortal,
+  });
+  const agreements = agreementsQuery.data?.data ?? [];
+  const requiresAgreement = agreementsQuery.data?.requiresAgreement ?? false;
+  const agreementById = new Map(agreements.map((agreement) => [agreement.id, agreement] as const));
+  const [agreementId, setAgreementId] = useState("");
 
   const tokensQuery = useQuery({
     ...adminTokensQueryOptions(apiClient),
@@ -685,6 +701,7 @@ export function ProjectBudgetPanel({
           amount: amountInBase,
           note: note.trim() || undefined,
           effectiveOn: effectiveOn || undefined,
+          agreementId: agreementId || undefined,
         },
         {
           onSuccess: () => {
@@ -705,6 +722,7 @@ export function ProjectBudgetPanel({
           amount: amountInBase,
           note: note.trim() || undefined,
           effectiveOn: effectiveOn || undefined,
+          agreementId: agreementId || undefined,
         },
         {
           onSuccess: () => {
@@ -717,7 +735,12 @@ export function ProjectBudgetPanel({
   };
 
   const isPending = createMutation.isPending || deallocateMutation.isPending;
-  const canSubmit = effectiveTokenId.length > 0 && isValidAmount && !isPending;
+  const agreementOptions = agreements.filter((a) => a.tokenId === effectiveTokenId);
+  const canSubmit =
+    effectiveTokenId.length > 0 &&
+    isValidAmount &&
+    (!requiresAgreement || agreementOptions.some((a) => a.id === agreementId)) &&
+    !isPending;
 
   if (budgetQuery.isError) {
     return <AdminError error={budgetQuery.error} />;
@@ -823,6 +846,32 @@ export function ProjectBudgetPanel({
                     )}
                   </p>
                 )}
+                {requiresAgreement &&
+                  (agreementOptions.length > 0 ? (
+                    <Field label="Agreement" htmlFor="budget-agreement">
+                      <ChoiceSelect
+                        id="budget-agreement"
+                        value={agreementId}
+                        onValueChange={(value) => {
+                          setAgreementId(value);
+                          const picked = agreementById.get(value);
+                          if (picked) setEffectiveOn(picked.startDate);
+                        }}
+                        placeholder="Pick an agreement"
+                        disabled={isPending}
+                        options={agreementOptions.map((a) => ({
+                          value: a.id,
+                          label: `${a.title} (${formatPeriod(a.startDate, a.endDate)})`,
+                        }))}
+                      />
+                    </Field>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      This project is shared with a client, so its budget belongs to one of their
+                      agreements. Add an agreement in {effectiveTokenId || "this token"} on the
+                      client's engagement page first.
+                    </p>
+                  ))}
                 <Field label="Budget date" htmlFor="budget-effective-on">
                   <Input
                     id="budget-effective-on"
@@ -906,6 +955,7 @@ export function ProjectBudgetPanel({
                           {a.fundingDaoAccountId && (
                             <span className="block">from {a.fundingDaoAccountId}</span>
                           )}
+                          <AgreementLine agreement={agreementById.get(a.agreementId ?? "")} />
                           <EditedLine entry={a} />
                         </TableCell>
                         {canAccessAdmin && (

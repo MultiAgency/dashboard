@@ -19,6 +19,7 @@ import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
 import { createAgencyDaoService } from "./services/agency-dao";
 import { createAgentLinksService } from "./services/agent-links";
+import { agreementsOfEngagement, createAgreementsService } from "./services/agreements";
 import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
 import { createBillingsService } from "./services/billings";
@@ -164,6 +165,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         organizations: organizationDirectory,
       });
       const agentLinks = createAgentLinksService({ db });
+      const agreements = createAgreementsService(db);
       const clientPortal = createClientPortalService(
         access,
         agency,
@@ -171,6 +173,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         reports,
         directory,
         projectLedgers,
+        (engagementId) => agreementsOfEngagement(db, engagementId),
       );
       const me = createMeService({
         db,
@@ -207,6 +210,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         budgets,
         billings,
         reports,
+        agreements,
         clientPortal,
         me,
         proposals,
@@ -244,6 +248,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       budgets,
       billings,
       reports,
+      agreements,
       clientPortal,
       me,
       proposals,
@@ -653,6 +658,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
             ),
         },
 
+        agreements: {
+          list: builder.clientPortal.agreements.list
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.listAgreements(context, input)),
+        },
+
         reports: {
           preview: builder.clientPortal.reports.preview
             .use(auth.requireAuth)
@@ -773,6 +784,24 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context, input }) =>
             runEffect(assignments.delete(context.scope, input)),
           ),
+      },
+
+      agreements: {
+        list: builder.agreements.list
+          .use(agencyMember)
+          .handler(async ({ context, input }) => agreements.list(context.scope, input)),
+
+        create: builder.agreements.create
+          .use(agencyManager)
+          .handler(async ({ context, input }) => agreements.create(context.scope, input)),
+
+        update: builder.agreements.update
+          .use(agencyManager)
+          .handler(async ({ context, input }) => agreements.update(context.scope, input)),
+
+        delete: builder.agreements.delete
+          .use(agencyManager)
+          .handler(async ({ context, input }) => agreements.remove(context.scope, input)),
       },
 
       budgets: {

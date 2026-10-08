@@ -8,10 +8,13 @@ import {
   type BudgetRevision,
   budgetRevisions,
   budgets,
+  type ClientAgreement,
+  clientAgreements,
   engagementProjects,
   engagements,
   organizationDaos,
 } from "../db/schema";
+import { clientEngagementIdsForProject } from "./agreements";
 import {
   type BillingStatuses,
   type ChainStatusFetcher,
@@ -123,6 +126,7 @@ export type BudgetListItem = Pick<
   | "engagementId"
   | "fundingDaoAccountId"
   | "effectiveOn"
+  | "agreementId"
   | "createdAt"
 > & { lastEdit: BudgetEdit | null };
 
@@ -166,6 +170,7 @@ export async function listBudgets(
       engagementId: budgets.engagementId,
       fundingDaoAccountId: budgets.fundingDaoAccountId,
       effectiveOn: budgets.effectiveOn,
+      agreementId: budgets.agreementId,
       createdAt: budgets.createdAt,
     })
     .from(budgets)
@@ -238,6 +243,7 @@ async function recordRevision(
     relatedBudgetId: row.relatedBudgetId,
     engagementId: row.engagementId,
     fundingDaoAccountId: row.fundingDaoAccountId,
+    agreementId: row.agreementId,
     actorAccountId: row.actorAccountId,
     budgetCreatedAt: row.createdAt,
     changedBy,
@@ -249,6 +255,7 @@ export interface EditBudgetInput {
   amount?: string;
   note?: string | null;
   effectiveOn?: string | null;
+  agreementId?: string | null;
   actorAccountId: string;
 }
 
@@ -276,7 +283,15 @@ export async function editBudget(db: Database, input: EditBudgetInput): Promise<
           : input.amount;
     const note = input.note === undefined ? row.note : input.note?.trim() || null;
     const effectiveOn = input.effectiveOn === undefined ? row.effectiveOn : input.effectiveOn;
-    if (amount === row.amount && note === row.note && effectiveOn === row.effectiveOn) return row;
+    const agreementId = input.agreementId === undefined ? row.agreementId : input.agreementId;
+    if (
+      amount === row.amount &&
+      note === row.note &&
+      effectiveOn === row.effectiveOn &&
+      agreementId === row.agreementId
+    ) {
+      return row;
+    }
 
     const delta = BigInt(amount) - BigInt(row.amount);
     if (delta !== 0n) {
@@ -286,7 +301,7 @@ export async function editBudget(db: Database, input: EditBudgetInput): Promise<
     await recordRevision(tx as Database, row, "edited", input.actorAccountId);
     const [updated] = await tx
       .update(budgets)
-      .set({ amount, note, effectiveOn })
+      .set({ amount, note, effectiveOn, agreementId })
       .where(eq(budgets.id, row.id))
       .returning();
     if (!updated) throw new Error("budgets update returned no row");
@@ -353,6 +368,7 @@ export interface CreateBudgetInput {
   actorAccountId: string;
   fundingDaoAccountId?: string | null;
   effectiveOn?: string | null;
+  agreementId?: string | null;
 }
 
 export async function createBudget(db: Database, input: CreateBudgetInput): Promise<Budget> {
@@ -367,6 +383,7 @@ export async function createBudget(db: Database, input: CreateBudgetInput): Prom
       actorAccountId: input.actorAccountId,
       fundingDaoAccountId: input.fundingDaoAccountId ?? null,
       effectiveOn: input.effectiveOn ?? null,
+      agreementId: input.agreementId ?? null,
     })
     .returning();
   if (!row) throw new Error("budgets insert returned no row");
@@ -590,6 +607,43 @@ export async function writeEngagementEntries(
   });
 }
 
+export async function resolveAgreement(
+  db: Database,
+  organizationId: string | null,
+  input: { projectId: string; tokenId: string; agreementId?: string | null },
+  options: { required: boolean },
+): Promise<ClientAgreement | null> {
+  const engagementIds = await clientEngagementIdsForProject(db, organizationId, input.projectId);
+  if (!input.agreementId) {
+    if (options.required && engagementIds.length > 0) {
+      throw new ORPCError("BAD_REQUEST", {
+        message:
+          "This project is shared with a client, so the budget needs to be attached to one of their agreements.",
+        data: { reason: "AGREEMENT_REQUIRED" },
+      });
+    }
+    return null;
+  }
+  const [agreement] = await db
+    .select()
+    .from(clientAgreements)
+    .where(eq(clientAgreements.id, input.agreementId))
+    .limit(1);
+  if (!agreement || !engagementIds.includes(agreement.engagementId)) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "That agreement doesn't cover this project",
+      data: { reason: "AGREEMENT_NOT_FOR_PROJECT" },
+    });
+  }
+  if (agreement.tokenId !== input.tokenId) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "The budget's token must match the agreement's token",
+      data: { reason: "AGREEMENT_TOKEN_MISMATCH" },
+    });
+  }
+  return agreement;
+}
+
 const toOrpcError = (err: unknown) =>
   err instanceof ORPCError
     ? err
@@ -631,12 +685,13 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
 
   const entryInAgency = async (scope: TreasuryScope, id: string) => {
     const [row] = await db
-      .select({ projectId: budgets.projectId })
+      .select({ projectId: budgets.projectId, tokenId: budgets.tokenId })
       .from(budgets)
       .where(eq(budgets.id, id))
       .limit(1);
     if (!row) throw new BudgetEntryError("NOT_FOUND", "Budget entry not found");
     await directory.forAgency(scope).require(row.projectId);
+    return row;
   };
 
   const inAgency = <A>(scope: TreasuryScope, projectIds: string[], run: () => Promise<A>) =>
@@ -693,16 +748,24 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
         amount: string;
         note?: string;
         effectiveOn?: string;
+        agreementId?: string;
       },
     ) =>
-      inAgency(scope, [input.projectId], async () => ({
-        budget: await createBudget(db, {
-          ...input,
-          note: input.note ?? null,
-          actorAccountId: scope.actorId,
-          fundingDaoAccountId: scope.agencyDao,
-        }),
-      })),
+      inAgency(scope, [input.projectId], async () => {
+        const agreement = await resolveAgreement(db, scope.organizationId, input, {
+          required: true,
+        });
+        return {
+          budget: await createBudget(db, {
+            ...input,
+            note: input.note ?? null,
+            effectiveOn: input.effectiveOn ?? agreement?.startDate ?? null,
+            agreementId: agreement?.id ?? null,
+            actorAccountId: scope.actorId,
+            fundingDaoAccountId: scope.agencyDao,
+          }),
+        };
+      }),
 
     deallocate: (
       scope: TreasuryScope,
@@ -712,16 +775,24 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
         amount: string;
         note?: string;
         effectiveOn?: string;
+        agreementId?: string;
       },
     ) =>
-      inAgency(scope, [input.projectId], async () => ({
-        budget: await deallocateBudget(db, {
-          ...input,
-          note: input.note ?? null,
-          actorAccountId: scope.actorId,
-          fundingDaoAccountId: scope.agencyDao,
-        }),
-      })),
+      inAgency(scope, [input.projectId], async () => {
+        const agreement = await resolveAgreement(db, scope.organizationId, input, {
+          required: true,
+        });
+        return {
+          budget: await deallocateBudget(db, {
+            ...input,
+            note: input.note ?? null,
+            effectiveOn: input.effectiveOn ?? agreement?.startDate ?? null,
+            agreementId: agreement?.id ?? null,
+            actorAccountId: scope.actorId,
+            fundingDaoAccountId: scope.agencyDao,
+          }),
+        };
+      }),
 
     transfer: (
       scope: TreasuryScope,
@@ -745,11 +816,25 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
 
     update: (
       scope: TreasuryScope,
-      input: { id: string; amount?: string; note?: string | null; effectiveOn?: string | null },
+      input: {
+        id: string;
+        amount?: string;
+        note?: string | null;
+        effectiveOn?: string | null;
+        agreementId?: string | null;
+      },
     ) =>
       Effect.tryPromise({
         try: async () => {
-          await entryInAgency(scope, input.id);
+          const entry = await entryInAgency(scope, input.id);
+          if (input.agreementId) {
+            await resolveAgreement(
+              db,
+              scope.organizationId,
+              { ...entry, agreementId: input.agreementId },
+              { required: false },
+            );
+          }
           return { budget: await editBudget(db, { ...input, actorAccountId: scope.actorId }) };
         },
         catch: toOrpcError,

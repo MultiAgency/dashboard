@@ -454,6 +454,32 @@ export function adminSavedReportQueryOptions(apiClient: ApiClient, id: string) {
   });
 }
 
+export const agreementsQueryKey = ["agreements"] as const;
+
+export function agreementsListQueryOptions(
+  apiClient: ApiClient,
+  filter: { engagementId?: string; projectId?: string },
+) {
+  return queryOptions({
+    queryKey: [
+      ...agreementsQueryKey,
+      ...workspaceKey(),
+      filter.engagementId ?? null,
+      filter.projectId ?? null,
+    ] as const,
+    queryFn: () => apiClient.agreements.list(filter),
+    retry: false,
+  });
+}
+
+export function clientAgreementsQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...agreementsQueryKey, "client", ...workspaceKey(), engagementId] as const,
+    queryFn: () => apiClient.clientPortal.agreements.list({ engagementId }),
+    retry: false,
+  });
+}
+
 export function clientSavedReportsQueryOptions(apiClient: ApiClient, engagementId: string) {
   return queryOptions({
     queryKey: [...savedReportsQueryKey, "client", ...workspaceKey(), engagementId] as const,
@@ -580,6 +606,7 @@ export type DataChange =
   | { type: "ideas" }
   | { type: "agentLinks" }
   | { type: "reports" }
+  | { type: "agreements" }
   | { type: "settings" };
 
 function staleKeys(change: DataChange): QueryKey[] {
@@ -593,6 +620,7 @@ function staleKeys(change: DataChange): QueryKey[] {
           projectId,
         ]),
         clientPortalQueryKey,
+        agreementsQueryKey,
       ];
     case "billings":
       return [
@@ -654,6 +682,8 @@ function staleKeys(change: DataChange): QueryKey[] {
       return [agentLinksQueryKey];
     case "reports":
       return [savedReportsQueryKey];
+    case "agreements":
+      return [agreementsQueryKey];
     case "settings":
       return [adminSettingsQueryKey, publicSettingsQueryKey];
   }

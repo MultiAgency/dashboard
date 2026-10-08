@@ -301,6 +301,20 @@ const reportOutput = z.object({
       builders: z.array(z.string()).optional(),
     }),
   ),
+  agreement: z
+    .object({
+      id: z.string(),
+      engagementId: z.string(),
+      title: z.string(),
+      kind: z.enum(["retainer", "project"]),
+      startDate: z.string(),
+      endDate: z.string(),
+      tokenId: z.string(),
+      agreedAmount: z.string(),
+      allocated: z.string(),
+    })
+    .nullable()
+    .optional(),
   notes: z.string(),
   generatedAt: z.string(),
 });
@@ -315,6 +329,7 @@ const savedReportSummary = z.object({
   endDate: z.string().nullable(),
   note: z.string().nullable(),
   projectTitle: z.string().nullable().optional(),
+  agreementTitle: z.string().nullable().optional(),
   sharedAt: z.date().nullable().optional(),
   fromAgency: z.boolean().optional(),
   canDelete: z.boolean().optional(),
@@ -325,6 +340,7 @@ const savedReportSummary = z.object({
 const savedReport = savedReportSummary.extend({ report: reportOutput });
 
 const reportFilters = {
+  agreementId: z.string().optional(),
   projectId: z.string().optional(),
   note: z.string().max(4000).optional(),
   startDate: reportDate,
@@ -374,6 +390,7 @@ const budget = z.object({
   engagementId: z.string().nullable(),
   fundingDaoAccountId: z.string().nullable(),
   effectiveOn: z.string().nullable(),
+  agreementId: z.string().nullable().optional(),
   createdAt: z.date(),
   lastEdit: z
     .object({
@@ -386,6 +403,37 @@ const budget = z.object({
     .nullable()
     .optional(),
 });
+
+const agreementDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const agreementKind = z.enum(["retainer", "project"]);
+
+const agreement = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  kind: agreementKind,
+  title: z.string(),
+  startDate: z.string(),
+  endDate: z.string(),
+  tokenId: z.string(),
+  agreedAmount: z.string(),
+  note: z.string().nullable(),
+  allocated: z.string(),
+  budgetCount: z.number().int().nonnegative(),
+  createdBy: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+const agreementFields = {
+  kind: agreementKind,
+  title: z.string().trim().min(1).max(120),
+  startDate: agreementDay,
+  endDate: agreementDay,
+  tokenId,
+  agreedAmount: baseAmount,
+  note: z.string().max(2000).nullable().optional(),
+};
 
 const deletedBudget = z.object({
   id: z.string(),
@@ -1257,12 +1305,21 @@ export const contract = oc.router({
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
     },
 
+    agreements: {
+      list: oc
+        .route({ method: "GET", path: "/client/{engagementId}/agreements" })
+        .input(z.object({ engagementId: z.string().min(1) }))
+        .output(z.object({ data: z.array(agreement) }))
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+    },
+
     reports: {
       preview: oc
         .route({ method: "POST", path: "/client/{engagementId}/reports/preview" })
         .input(
           z.object({
             engagementId: z.string().min(1),
+            agreementId: z.string().min(1).optional(),
             projectId: z.string().min(1).optional(),
             note: z.string().max(4000).optional(),
             startDate: reportDate,
@@ -1277,6 +1334,7 @@ export const contract = oc.router({
         .input(
           z.object({
             engagementId: z.string().min(1),
+            agreementId: z.string().min(1).optional(),
             projectId: z.string().min(1).optional(),
             note: z.string().max(4000).optional(),
             startDate: reportDate,
@@ -1432,6 +1490,43 @@ export const contract = oc.router({
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
   },
 
+  agreements: {
+    list: oc
+      .route({ method: "GET", path: "/agreements" })
+      .input(z.object({ engagementId: z.string().optional(), projectId: z.string().optional() }))
+      .output(z.object({ data: z.array(agreement), requiresAgreement: z.boolean() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    create: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/agreements" })
+      .input(z.object({ engagementId: z.string().min(1), ...agreementFields }))
+      .output(agreement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    update: oc
+      .route({ method: "PATCH", path: "/agreements/{id}" })
+      .input(
+        z.object({
+          id: z.string().min(1),
+          kind: agreementFields.kind.optional(),
+          title: agreementFields.title.optional(),
+          startDate: agreementDay.optional(),
+          endDate: agreementDay.optional(),
+          tokenId: tokenId.optional(),
+          agreedAmount: baseAmount.optional(),
+          note: agreementFields.note,
+        }),
+      )
+      .output(agreement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    delete: oc
+      .route({ method: "DELETE", path: "/agreements/{id}" })
+      .input(z.object({ id: z.string().min(1) }))
+      .output(z.object({ deleted: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
   budgets: {
     list: oc
       .route({ method: "GET", path: "/admin/budgets" })
@@ -1459,6 +1554,7 @@ export const contract = oc.router({
           amount: baseAmount,
           note: z.string().max(2000).optional(),
           effectiveOn: reportDate,
+          agreementId: z.string().optional(),
         }),
       )
       .output(z.object({ budget }))
@@ -1473,6 +1569,7 @@ export const contract = oc.router({
           amount: baseAmount,
           note: z.string().max(2000).optional(),
           effectiveOn: reportDate,
+          agreementId: z.string().optional(),
         }),
       )
       .output(z.object({ budget }))
@@ -1513,6 +1610,7 @@ export const contract = oc.router({
             .regex(/^\d{4}-\d{2}-\d{2}$/)
             .nullable()
             .optional(),
+          agreementId: z.string().nullable().optional(),
         }),
       )
       .output(z.object({ budget }))

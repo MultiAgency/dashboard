@@ -120,6 +120,13 @@
       "when": 1792195200000,
       "tag": "0017_budget_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792281600000,
+      "tag": "0018_client_agreements",
+      "breakpoints": true
     }
   ]
 }

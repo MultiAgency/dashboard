@@ -42,6 +42,7 @@ import {
   TabsTrigger,
 } from "@/components";
 import { AgentLinksPanel } from "@/components/admin/agent-links-panel";
+import { AgreementsPanel } from "@/components/admin/agreements-panel";
 import { IdeasInbox } from "@/components/admin/ideas-inbox";
 import { PrepaymentsPanel } from "@/components/admin/prepayments-panel";
 import { AdminError } from "@/components/admin-error";
@@ -68,7 +69,14 @@ import {
   engagementDetailQueryOptions,
 } from "@/lib/queries";
 
-const ENGAGEMENT_TABS = ["projects", "prepayments", "plan", "ideas", "links"] as const;
+const ENGAGEMENT_TABS = [
+  "projects",
+  "agreements",
+  "prepayments",
+  "plan",
+  "ideas",
+  "links",
+] as const;
 
 type EngagementTab = (typeof ENGAGEMENT_TABS)[number];
 
@@ -210,6 +218,9 @@ function EngagementDetailPage() {
         >
           <ScrollableTabsList>
             <TabsTrigger value="projects">Shared Projects</TabsTrigger>
+            {engagement.kind === "client" && (
+              <TabsTrigger value="agreements">Agreements</TabsTrigger>
+            )}
             {prepaymentsEnabled && <TabsTrigger value="prepayments">Prepayments</TabsTrigger>}
             {allocationPlanEnabled && (
               <TabsTrigger value="plan">
@@ -227,6 +238,11 @@ function EngagementDetailPage() {
           <TabsContent value="projects" className="mt-4">
             <SharedProjects engagement={engagement} />
           </TabsContent>
+          {engagement.kind === "client" && (
+            <TabsContent value="agreements" className="mt-4">
+              <AgreementsPanel engagement={engagement} canManage={canAccessAdmin} />
+            </TabsContent>
+          )}
           {prepaymentsEnabled && (
             <TabsContent value="prepayments" className="mt-4">
               <PrepaymentsPanel engagement={engagement} />

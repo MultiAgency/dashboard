@@ -34,8 +34,10 @@ import {
   SavedReportsList,
 } from "@/components/saved-reports";
 import { type ApiClient, useApiClient } from "@/lib/api";
+import { formatPeriod } from "@/lib/budget-periods";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 import {
+  clientAgreementsQueryOptions,
   clientPortalProjectsListQueryOptions,
   clientSavedReportQueryOptions,
   clientSavedReportsQueryOptions,
@@ -45,6 +47,7 @@ import { formatAllocatedSpent } from "@/lib/report-amounts";
 import { MONTH_PRESETS } from "@/lib/report-dates";
 
 const ALL_PROJECTS = "all";
+const NO_AGREEMENT = "none";
 
 type ClientReportFilters = Parameters<ApiClient["clientPortal"]["reports"]["preview"]>[0];
 type PreviewReport = Awaited<ReturnType<ApiClient["clientPortal"]["reports"]["preview"]>>;
@@ -80,15 +83,20 @@ export function ClientReports({
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const agreements =
+    useQuery(clientAgreementsQueryOptions(apiClient, engagement.id)).data?.data ?? [];
+  const [agreementId, setAgreementId] = useState(NO_AGREEMENT);
+  const agreement = agreements.find((a) => a.id === agreementId);
   const openReport = onOpenReport;
 
   const previewMutation = useMutation({
     mutationFn: async () => {
       const filters = {
+        agreementId: agreement?.id,
         projectId: projectId === ALL_PROJECTS ? undefined : projectId,
         note: note.trim() || undefined,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
+        startDate: agreement ? undefined : startDate || undefined,
+        endDate: agreement ? undefined : endDate || undefined,
       };
       return {
         filters,
@@ -205,27 +213,52 @@ export function ClientReports({
                 </SelectContent>
               </Select>
             </Field>
+            {agreements.length > 0 && (
+              <Field>
+                <FieldLabel htmlFor="client-report-agreement">Agreement</FieldLabel>
+                <Select value={agreementId} onValueChange={setAgreementId}>
+                  <SelectTrigger id="client-report-agreement" className="w-full sm:w-80">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_AGREEMENT}>Any agreement (use dates)</SelectItem>
+                    {agreements.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.title} ({formatPeriod(a.startDate, a.endDate)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
             <ReportNoteField id="client-report-note" value={note} onChange={setNote} />
-            <div className="grid items-start gap-4 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="client-report-start">Start date (optional)</FieldLabel>
-                <Input
-                  id="client-report-start"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="client-report-end">End date (optional)</FieldLabel>
-                <Input
-                  id="client-report-end"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </Field>
-            </div>
+            {agreement ? (
+              <p className="text-sm text-muted-foreground">
+                Covers {formatPeriod(agreement.startDate, agreement.endDate)} and every budget
+                attached to {agreement.title}.
+              </p>
+            ) : (
+              <div className="grid items-start gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="client-report-start">Start date (optional)</FieldLabel>
+                  <Input
+                    id="client-report-start"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="client-report-end">End date (optional)</FieldLabel>
+                  <Input
+                    id="client-report-end"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </Field>
+              </div>
+            )}
           </FieldGroup>
         </CardContent>
         <CardFooter className="flex-wrap justify-end gap-2">
@@ -288,7 +321,11 @@ export function ClientReports({
               setPreview(null);
               openReport(id);
             }}
-            titleOf={(r) => `${r.projectTitle ?? "All shared projects"} · ${reportPeriod(r)}`}
+            titleOf={(r) =>
+              [r.agreementTitle, r.projectTitle ?? "All shared projects", reportPeriod(r)]
+                .filter(Boolean)
+                .join(" · ")
+            }
             agencyName={engagement.agency.name}
             onDelete={deleteReport}
           />

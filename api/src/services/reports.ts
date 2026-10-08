@@ -5,6 +5,7 @@ import type { Database } from "../db";
 import {
   billings,
   budgets,
+  clientAgreements,
   engagementProjects,
   engagements,
   projectContributors,
@@ -28,6 +29,7 @@ export type ReportInput = {
   endDate?: string;
   subcontractorDao?: string;
   forClient?: boolean;
+  agreementId?: string;
 };
 
 export type ReportOwner = { organizationId: string; userId: string };
@@ -51,6 +53,7 @@ function summaryOf(row: ReportSnapshotRow, viewer?: ReportViewer) {
     endDate: row.endDate,
     note: row.note,
     projectTitle: projectTitleOf(row.payload),
+    agreementTitle: agreementTitleOf(row.payload),
     sharedAt: row.sharedAt,
     fromAgency: !own,
     canDelete: !!viewer && own && (viewer.canManage || row.generatedByUserId === viewer.userId),
@@ -71,6 +74,15 @@ export function clientSafe<R extends { contributorStats: unknown[] }>(report: R)
   return { ...report, contributorStats: [] };
 }
 
+function agreementTitleOf(payload: string): string | null {
+  try {
+    const parsed = JSON.parse(payload) as { agreement?: { title?: string } | null };
+    return parsed.agreement?.title ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function projectTitleOf(payload: string): string | null {
   try {
     const parsed = JSON.parse(payload) as { project?: { title?: string } | null };
@@ -87,8 +99,34 @@ export function createReportsService(
   organizations: Pick<OrganizationDirectory, "get">,
   notifications?: Pick<NotificationsService, "notify">,
 ) {
-  const generate = (scope: AgencyScope, input: ReportInput) =>
+  const generate = (scope: AgencyScope, requested: ReportInput) =>
     Effect.gen(function* () {
+      const agreement = requested.agreementId
+        ? yield* Effect.promise(async () => {
+            const [row] = await db
+              .select()
+              .from(clientAgreements)
+              .where(eq(clientAgreements.id, requested.agreementId!))
+              .limit(1);
+            return row ?? null;
+          })
+        : null;
+      if (
+        requested.agreementId &&
+        (!agreement ||
+          (requested.engagementId !== undefined &&
+            requested.engagementId !== agreement.engagementId))
+      ) {
+        return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Agreement not found" }));
+      }
+      const input: ReportInput = agreement
+        ? {
+            ...requested,
+            engagementId: agreement.engagementId,
+            startDate: agreement.startDate,
+            endDate: agreement.endDate,
+          }
+        : requested;
       const { agencyDao } = scope;
       const { subcontractorDao } = input;
       const allProjects = yield* Effect.promise(async () =>
@@ -187,7 +225,7 @@ export function createReportsService(
       // Allocation plan omitted for now: budget is allocated to the Project, so a shared Project
       // reports all of its Budget entries, not only entries attributed to the Engagement.
       const budgetRows = budgetRowsAll
-        .filter(budgetInPeriod)
+        .filter(agreement ? (b) => b.agreementId === agreement.id : budgetInPeriod)
         .filter(
           (b) =>
             !ALLOCATION_PLAN_ENABLED ||
@@ -344,6 +382,22 @@ export function createReportsService(
         })),
         projectBreakdown,
         clientBreakdown,
+        agreement: agreement
+          ? {
+              id: agreement.id,
+              engagementId: agreement.engagementId,
+              title: agreement.title,
+              kind: agreement.kind,
+              startDate: agreement.startDate,
+              endDate: agreement.endDate,
+              tokenId: agreement.tokenId,
+              agreedAmount: agreement.agreedAmount,
+              allocated: budgetRows
+                .filter((b) => b.tokenId === agreement.tokenId)
+                .reduce((sum, b) => sum + BigInt(b.amount), 0n)
+                .toString(),
+            }
+          : null,
         notes: input.note ?? "",
         generatedAt: new Date().toISOString(),
       };
@@ -433,10 +487,10 @@ export function createReportsService(
           db.insert(reportSnapshots).values({
             id,
             organizationId: owner.organizationId,
-            engagementId: input.engagementId ?? null,
+            engagementId: report.agreement?.engagementId ?? input.engagementId ?? null,
             generatedByUserId: owner.userId,
-            startDate: input.startDate ?? null,
-            endDate: input.endDate ?? null,
+            startDate: report.agreement?.startDate ?? input.startDate ?? null,
+            endDate: report.agreement?.endDate ?? input.endDate ?? null,
             note: input.note?.trim() || null,
             payload: JSON.stringify(report),
           }),

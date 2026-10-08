@@ -2,6 +2,7 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { PluginContext } from "../lib/organizations";
 import type { AgencyService } from "./agency";
+import type { AgreementView } from "./agreements";
 import type { BillingsService } from "./billings";
 import type { ProjectLedgers } from "./ledger";
 import {
@@ -28,6 +29,7 @@ function withTreasury(scope: AgencyScope): TreasuryScope | null {
 
 type ClientReportInput = {
   engagementId: string;
+  agreementId?: string;
   projectId?: string;
   note?: string;
   startDate?: string;
@@ -38,6 +40,7 @@ function clientReportInput(engagement: SharedEngagement, input: ClientReportInpu
   if (input.projectId) assertShared(engagement, input.projectId);
   return {
     engagementId: engagement.engagement.id,
+    agreementId: input.agreementId,
     projectId: input.projectId,
     forClient: true,
     note: input.note,
@@ -64,6 +67,7 @@ export function createClientPortalService(
   reports: ReportsService,
   directory: ProjectDirectory,
   projectLedgers: ProjectLedgers,
+  agreementsOf: (engagementId: string) => Promise<AgreementView[]> = async () => [],
 ) {
   const shared = (context: PluginContext, engagementId: string) =>
     Effect.tryPromise({
@@ -202,6 +206,12 @@ export function createClientPortalService(
         input.id,
         clientViewer(context, engagement),
       );
+    },
+
+    listAgreements: async (context: PluginContext, input: { engagementId: string }) => {
+      const engagement = await access.sharedWith(context, input.engagementId);
+      if (engagement.engagement.kind !== "client") return { data: [] };
+      return { data: await agreementsOf(engagement.engagement.id) };
     },
 
     deleteReport: async (context: PluginContext, input: { engagementId: string; id: string }) => {

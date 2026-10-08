@@ -203,6 +203,33 @@ export const projectContributors = pgTable(
   }),
 );
 
+export const AGREEMENT_KINDS = ["retainer", "project"] as const;
+
+export const clientAgreements = pgTable(
+  "client_agreements",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    kind: text("kind", { enum: AGREEMENT_KINDS }).notNull(),
+    title: text("title").notNull(),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    tokenId: text("token_id").notNull(),
+    agreedAmount: text("agreed_amount").notNull(),
+    note: text("note"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("client_agreements_engagement").on(t.engagementId, t.startDate),
+  }),
+);
+
+export type ClientAgreement = typeof clientAgreements.$inferSelect;
+
 export const budgets = pgTable(
   "budgets",
   {
@@ -218,9 +245,11 @@ export const budgets = pgTable(
     }),
     fundingDaoAccountId: text("funding_dao_account_id"),
     effectiveOn: date("effective_on"),
+    agreementId: text("agreement_id").references(() => clientAgreements.id),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
+    agreementIdx: index("budgets_agreement_id").on(t.agreementId),
     cursor: index("budgets_cursor").on(t.createdAt, t.id),
     projectIdx: index("budgets_project_id").on(t.projectId),
     engagementIdx: index("budgets_engagement_id").on(t.engagementId),
@@ -245,6 +274,7 @@ export const budgetRevisions = pgTable(
     relatedBudgetId: text("related_budget_id"),
     engagementId: text("engagement_id"),
     fundingDaoAccountId: text("funding_dao_account_id"),
+    agreementId: text("agreement_id"),
     actorAccountId: text("actor_account_id").notNull(),
     budgetCreatedAt: timestamp("budget_created_at", { withTimezone: false }).notNull(),
     changedBy: text("changed_by").notNull(),

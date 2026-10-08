@@ -6,7 +6,10 @@ const update = vi.fn();
 const remove = vi.fn();
 
 vi.mock("@/lib/api", () => ({
-  useApiClient: () => ({ budgets: { update, delete: remove } }),
+  useApiClient: () => ({
+    budgets: { update, delete: remove },
+    agreements: { list: async () => ({ data: [], requiresAgreement: false }) },
+  }),
 }));
 
 const { BudgetEntryActions, EditedLine } = await import(

@@ -18,11 +18,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components";
-import { Field } from "@/components/admin-form";
+import { ChoiceSelect, Field } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type ApiClient, useApiClient } from "@/lib/api";
+import { formatPeriod } from "@/lib/budget-periods";
 import { baseToDecimal, formatTokenAmount } from "@/lib/format-amount";
-import { adminDeletedBudgetsQueryKey, refreshAfter } from "@/lib/queries";
+import {
+  adminDeletedBudgetsQueryKey,
+  agreementsListQueryOptions,
+  refreshAfter,
+} from "@/lib/queries";
 import { deriveBaseAmount, type KnownToken } from "./token-amount-fields";
 
 export type BudgetEntry = Awaited<ReturnType<ApiClient["budgets"]["list"]>>["data"][number];
@@ -33,6 +38,19 @@ function day(value: string | Date): string {
 
 function magnitude(amount: string): string {
   return amount.startsWith("-") ? amount.slice(1) : amount;
+}
+
+export function AgreementLine({
+  agreement,
+}: {
+  agreement: { title: string; startDate: string; endDate: string } | undefined;
+}) {
+  if (!agreement) return null;
+  return (
+    <span className="block">
+      under {agreement.title} ({formatPeriod(agreement.startDate, agreement.endDate)})
+    </span>
+  );
 }
 
 export function EditedLine({ entry }: { entry: BudgetEntry }) {
@@ -130,6 +148,13 @@ function BudgetEditForm({
   );
   const [effectiveOn, setEffectiveOn] = useState(entry.effectiveOn ?? day(entry.createdAt));
   const [note, setNote] = useState(entry.note ?? "");
+  const [agreementId, setAgreementId] = useState(entry.agreementId ?? "");
+  const agreementsQuery = useQuery(
+    agreementsListQueryOptions(apiClient, { projectId: entry.projectId }),
+  );
+  const agreementOptions = (agreementsQuery.data?.data ?? []).filter(
+    (a) => a.tokenId === entry.tokenId,
+  );
   const { value: amountInBase, error: amountError } = deriveBaseAmount(amount, token);
   const isDeallocation = entry.amount.startsWith("-");
 
@@ -140,6 +165,7 @@ function BudgetEditForm({
         amount: amountInBase,
         note: note.trim() || null,
         effectiveOn: effectiveOn || null,
+        ...(agreementId !== (entry.agreementId ?? "") ? { agreementId: agreementId || null } : {}),
       }),
     onSuccess: async () => {
       await refreshAfter(queryClient, { type: "budgetEntries", projectIds: [entry.projectId] });
@@ -175,6 +201,25 @@ function BudgetEditForm({
           />
         </Field>
         {amountError && <p className="text-sm text-destructive">{amountError}</p>}
+        {(agreementOptions.length > 0 || entry.agreementId) && (
+          <Field label="Agreement" htmlFor="edit-budget-agreement">
+            <ChoiceSelect
+              id="edit-budget-agreement"
+              value={agreementId}
+              onValueChange={(value) => {
+                setAgreementId(value);
+                const picked = agreementOptions.find((a) => a.id === value);
+                if (picked && !entry.effectiveOn) setEffectiveOn(picked.startDate);
+              }}
+              emptyLabel="No agreement"
+              disabled={save.isPending}
+              options={agreementOptions.map((a) => ({
+                value: a.id,
+                label: `${a.title} (${formatPeriod(a.startDate, a.endDate)})`,
+              }))}
+            />
+          </Field>
+        )}
         <Field label="Budget date" htmlFor="edit-budget-date">
           <Input
             id="edit-budget-date"
