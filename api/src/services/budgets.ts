@@ -611,19 +611,9 @@ export async function resolveAgreement(
   db: Database,
   organizationId: string | null,
   input: { projectId: string; tokenId: string; agreementId?: string | null },
-  options: { required: boolean },
 ): Promise<ClientAgreement | null> {
+  if (!input.agreementId) return null;
   const engagementIds = await clientEngagementIdsForProject(db, organizationId, input.projectId);
-  if (!input.agreementId) {
-    if (options.required && engagementIds.length > 0) {
-      throw new ORPCError("BAD_REQUEST", {
-        message:
-          "This project is shared with a client, so the budget needs to be attached to one of their agreements.",
-        data: { reason: "AGREEMENT_REQUIRED" },
-      });
-    }
-    return null;
-  }
   const [agreement] = await db
     .select()
     .from(clientAgreements)
@@ -752,9 +742,7 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
       },
     ) =>
       inAgency(scope, [input.projectId], async () => {
-        const agreement = await resolveAgreement(db, scope.organizationId, input, {
-          required: true,
-        });
+        const agreement = await resolveAgreement(db, scope.organizationId, input);
         return {
           budget: await createBudget(db, {
             ...input,
@@ -779,9 +767,7 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
       },
     ) =>
       inAgency(scope, [input.projectId], async () => {
-        const agreement = await resolveAgreement(db, scope.organizationId, input, {
-          required: true,
-        });
+        const agreement = await resolveAgreement(db, scope.organizationId, input);
         return {
           budget: await deallocateBudget(db, {
             ...input,
@@ -828,12 +814,10 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
         try: async () => {
           const entry = await entryInAgency(scope, input.id);
           if (input.agreementId) {
-            await resolveAgreement(
-              db,
-              scope.organizationId,
-              { ...entry, agreementId: input.agreementId },
-              { required: false },
-            );
+            await resolveAgreement(db, scope.organizationId, {
+              ...entry,
+              agreementId: input.agreementId,
+            });
           }
           return { budget: await editBudget(db, { ...input, actorAccountId: scope.actorId }) };
         },

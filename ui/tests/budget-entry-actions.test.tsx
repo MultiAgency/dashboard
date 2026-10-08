@@ -8,7 +8,7 @@ const remove = vi.fn();
 vi.mock("@/lib/api", () => ({
   useApiClient: () => ({
     budgets: { update, delete: remove },
-    agreements: { list: async () => ({ data: [], requiresAgreement: false }) },
+    agreements: { list: async () => ({ data: [] }) },
   }),
 }));
 

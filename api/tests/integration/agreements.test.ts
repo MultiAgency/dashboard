@@ -124,20 +124,19 @@ describe("client agreements", () => {
     expect((await agreements.list(await studio(), { engagementId: acme })).data).toEqual([]);
   });
 
-  test("a budget on a client's project is attached to one of their agreements; an internal one needn't be", async () => {
+  test("a budget can be attached to one of the client's agreements, or to none", async () => {
     const budgetsService = createBudgetsService(db, world.directory);
     const october = await create();
 
-    await refused(
-      run(
-        budgetsService.create(await treasury(), {
-          projectId: "site",
-          tokenId: "near",
-          amount: "1000",
-        }),
-      ),
-      "AGREEMENT_REQUIRED",
+    const plain = await run(
+      budgetsService.create(await treasury(), {
+        projectId: "site",
+        tokenId: "near",
+        amount: "400",
+        effectiveOn: "2026-10-03",
+      }),
     );
+    expect(plain.budget).toMatchObject({ agreementId: null, effectiveOn: "2026-10-03" });
     const { budget } = await run(
       budgetsService.create(await treasury(), {
         projectId: "site",
@@ -170,23 +169,13 @@ describe("client agreements", () => {
       ),
       "AGREEMENT_NOT_FOR_PROJECT",
     );
-    const internal = await run(
-      budgetsService.create(await treasury(), {
-        projectId: "internal",
-        tokenId: "near",
-        amount: "5",
-      }),
-    );
-    expect(internal.budget.agreementId).toBeNull();
 
     const listed = await agreements.list(await studio(), { engagementId: acme });
     expect(listed.data[0]).toMatchObject({ allocated: "1000", budgetCount: 1 });
-    expect((await agreements.list(await studio(), { projectId: "site" })).requiresAgreement).toBe(
-      true,
-    );
     expect(
-      (await agreements.list(await studio(), { projectId: "internal" })).requiresAgreement,
-    ).toBe(false);
+      (await agreements.list(await studio(), { projectId: "site" })).data.map((a) => a.id),
+    ).toEqual([october.id]);
+    expect((await agreements.list(await studio(), { projectId: "internal" })).data).toEqual([]);
   });
 
   test("editing an existing budget attaches it to an agreement, never to another client's", async () => {

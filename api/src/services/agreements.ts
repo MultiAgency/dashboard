@@ -148,7 +148,7 @@ export function createAgreementsService(db: Database) {
     list: async (
       scope: OrganizationScope,
       input: { engagementId?: string; projectId?: string },
-    ): Promise<{ data: AgreementView[]; requiresAgreement: boolean }> => {
+    ): Promise<{ data: AgreementView[] }> => {
       let engagementIds: string[];
       if (input.engagementId) {
         await agencyEngagement(scope, input.engagementId, false);
@@ -173,14 +173,13 @@ export function createAgreementsService(db: Database) {
             )
         ).map((r) => r.id);
       }
-      const requiresAgreement = input.projectId !== undefined && engagementIds.length > 0;
-      if (engagementIds.length === 0) return { data: [], requiresAgreement };
+      if (engagementIds.length === 0) return { data: [] };
       const rows = await db
         .select()
         .from(clientAgreements)
         .where(inArray(clientAgreements.engagementId, engagementIds))
         .orderBy(desc(clientAgreements.startDate), asc(clientAgreements.title));
-      return { data: await withAllocations(db, rows), requiresAgreement };
+      return { data: await withAllocations(db, rows) };
     },
 
     create: async (

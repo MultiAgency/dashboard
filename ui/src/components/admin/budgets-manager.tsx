@@ -671,7 +671,6 @@ export function ProjectBudgetPanel({
     enabled: !readOnly && !clientPortal,
   });
   const agreements = agreementsQuery.data?.data ?? [];
-  const requiresAgreement = agreementsQuery.data?.requiresAgreement ?? false;
   const agreementById = new Map(agreements.map((agreement) => [agreement.id, agreement] as const));
   const [agreementId, setAgreementId] = useState("");
 
@@ -747,7 +746,7 @@ export function ProjectBudgetPanel({
   const canSubmit =
     effectiveTokenId.length > 0 &&
     isValidAmount &&
-    (!requiresAgreement || agreementOptions.some((a) => a.id === agreementId)) &&
+    (!agreementId || agreementOptions.some((a) => a.id === agreementId)) &&
     !isPending;
 
   if (budgetQuery.isError) {
@@ -854,32 +853,25 @@ export function ProjectBudgetPanel({
                     )}
                   </p>
                 )}
-                {requiresAgreement &&
-                  (agreementOptions.length > 0 ? (
-                    <Field label="Agreement" htmlFor="budget-agreement">
-                      <ChoiceSelect
-                        id="budget-agreement"
-                        value={agreementId}
-                        onValueChange={(value) => {
-                          setAgreementId(value);
-                          const picked = agreementById.get(value);
-                          if (picked) setEffectiveOn(picked.startDate);
-                        }}
-                        placeholder="Pick an agreement"
-                        disabled={isPending}
-                        options={agreementOptions.map((a) => ({
-                          value: a.id,
-                          label: `${a.title} (${formatPeriod(a.startDate, a.endDate)})`,
-                        }))}
-                      />
-                    </Field>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      This project is shared with a client, so its budget belongs to one of their
-                      agreements. Add an agreement in {effectiveTokenId || "this token"} on the
-                      client's engagement page first.
-                    </p>
-                  ))}
+                {agreementOptions.length > 0 && (
+                  <Field label="Agreement (optional)" htmlFor="budget-agreement">
+                    <ChoiceSelect
+                      id="budget-agreement"
+                      value={agreementId}
+                      onValueChange={(value) => {
+                        setAgreementId(value);
+                        const picked = agreementById.get(value);
+                        if (picked) setEffectiveOn(picked.startDate);
+                      }}
+                      emptyLabel="No agreement"
+                      disabled={isPending}
+                      options={agreementOptions.map((a) => ({
+                        value: a.id,
+                        label: `${a.title} (${formatPeriod(a.startDate, a.endDate)})`,
+                      }))}
+                    />
+                  </Field>
+                )}
                 <Field label="Budget date" htmlFor="budget-effective-on">
                   <Input
                     id="budget-effective-on"

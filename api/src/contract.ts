@@ -1494,7 +1494,7 @@ export const contract = oc.router({
     list: oc
       .route({ method: "GET", path: "/agreements" })
       .input(z.object({ engagementId: z.string().optional(), projectId: z.string().optional() }))
-      .output(z.object({ data: z.array(agreement), requiresAgreement: z.boolean() }))
+      .output(z.object({ data: z.array(agreement) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
     create: oc

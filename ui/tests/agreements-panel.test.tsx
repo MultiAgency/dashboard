@@ -79,7 +79,7 @@ function renderPanel() {
 
 describe("AgreementsPanel", () => {
   test("lists agreements with what is allocated of the agreed amount", async () => {
-    list.mockResolvedValue({ data: [october], requiresAgreement: false });
+    list.mockResolvedValue({ data: [october] });
     renderPanel();
 
     expect(await screen.findByText("NF · October")).toBeDefined();
@@ -89,7 +89,7 @@ describe("AgreementsPanel", () => {
   });
 
   test("renew fills in the next cycle with the same amount, and saves a new agreement", async () => {
-    list.mockResolvedValue({ data: [october], requiresAgreement: false });
+    list.mockResolvedValue({ data: [october] });
     create.mockResolvedValue({ ...october, id: "a2" });
     renderPanel();
 
@@ -121,7 +121,7 @@ describe("AgreementsPanel", () => {
   });
 
   test("an agreement in use explains why it can't be deleted", async () => {
-    list.mockResolvedValue({ data: [october], requiresAgreement: false });
+    list.mockResolvedValue({ data: [october] });
     renderPanel();
 
     fireEvent.keyDown(await screen.findByRole("button", { name: "Agreement actions" }), {
