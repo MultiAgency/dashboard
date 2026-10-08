@@ -231,6 +231,33 @@ export const budgets = pgTable(
 export type Budget = typeof budgets.$inferSelect;
 export type NewBudget = typeof budgets.$inferInsert;
 
+export const budgetRevisions = pgTable(
+  "budget_revisions",
+  {
+    id: text("id").primaryKey(),
+    budgetId: text("budget_id").notNull(),
+    action: text("action", { enum: ["edited", "deleted"] }).notNull(),
+    projectId: text("project_id").notNull(),
+    tokenId: text("token_id").notNull(),
+    amount: text("amount").notNull(),
+    note: text("note"),
+    effectiveOn: date("effective_on"),
+    relatedBudgetId: text("related_budget_id"),
+    engagementId: text("engagement_id"),
+    fundingDaoAccountId: text("funding_dao_account_id"),
+    actorAccountId: text("actor_account_id").notNull(),
+    budgetCreatedAt: timestamp("budget_created_at", { withTimezone: false }).notNull(),
+    changedBy: text("changed_by").notNull(),
+    changedAt: timestamp("changed_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    budgetIdx: index("budget_revisions_budget").on(t.budgetId),
+    projectIdx: index("budget_revisions_project").on(t.projectId, t.changedAt),
+  }),
+);
+
+export type BudgetRevision = typeof budgetRevisions.$inferSelect;
+
 export const prepayments = pgTable(
   "prepayments",
   {

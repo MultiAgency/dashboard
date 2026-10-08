@@ -375,6 +375,31 @@ const budget = z.object({
   fundingDaoAccountId: z.string().nullable(),
   effectiveOn: z.string().nullable(),
   createdAt: z.date(),
+  lastEdit: z
+    .object({
+      changedAt: z.date(),
+      changedBy: z.string(),
+      previousAmount: z.string(),
+      previousNote: z.string().nullable(),
+      previousEffectiveOn: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+const deletedBudget = z.object({
+  id: z.string(),
+  budgetId: z.string(),
+  projectId: z.string(),
+  tokenId: z.string(),
+  amount: z.string(),
+  note: z.string().nullable(),
+  effectiveOn: z.string().nullable(),
+  relatedBudgetId: z.string().nullable(),
+  actorAccountId: z.string(),
+  budgetCreatedAt: z.date(),
+  changedBy: z.string(),
+  changedAt: z.date(),
 });
 
 const prepaymentPeriod = z
@@ -1475,6 +1500,40 @@ export const contract = oc.router({
       )
       .output(z.object({ from: budget, to: budget }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    update: oc
+      .route({ method: "PATCH", path: "/admin/budgets/{id}" })
+      .input(
+        z.object({
+          id: z.string().min(1),
+          amount: baseAmount.optional(),
+          note: z.string().max(2000).nullable().optional(),
+          effectiveOn: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullable()
+            .optional(),
+        }),
+      )
+      .output(z.object({ budget }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    delete: oc
+      .route({ method: "DELETE", path: "/admin/budgets/{id}" })
+      .input(z.object({ id: z.string().min(1) }))
+      .output(z.object({ deleted: z.number().int().nonnegative() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    deleted: oc
+      .route({ method: "GET", path: "/admin/budgets/deleted" })
+      .input(
+        z.object({
+          projectId: z.string().optional(),
+          limit: z.number().int().min(1).max(200).default(100),
+        }),
+      )
+      .output(z.object({ data: z.array(deletedBudget) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
   },
 
   billings: {

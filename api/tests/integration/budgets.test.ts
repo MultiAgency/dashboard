@@ -1,11 +1,16 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { budgetRevisions, budgets } from "../../src/db/schema";
 import {
+  BudgetEntryError,
   BudgetInsufficientError,
   createBudget,
   deallocateBudget,
+  deleteBudget,
+  editBudget,
   listBudgets,
+  listDeletedBudgets,
   transferBudget,
 } from "../../src/services/budgets";
 import { applyAllMigrations } from "./_pg";
@@ -267,5 +272,156 @@ describe("budgets service — persistence and corrections", () => {
       cursor = out.nextCursor;
     }
     expect(seen).toEqual(["r4", "r3", "r2", "r1", "r0"]);
+  });
+
+  describe("editing and deleting", () => {
+    const allocate = (amount: string, note: string | null = "kickoff") =>
+      createBudget(db as never, {
+        projectId: PROJECT_A,
+        tokenId: "near",
+        amount,
+        note,
+        actorAccountId: "alice.near",
+        effectiveOn: "2026-09-01",
+      });
+
+    test("an edit changes the entry in place and keeps the previous version", async () => {
+      const row = await allocate("1000");
+
+      const edited = await editBudget(db as never, {
+        id: row.id,
+        amount: "750",
+        note: "September retainer",
+        effectiveOn: "2026-09-15",
+        actorAccountId: "james.near",
+      });
+
+      expect(edited).toMatchObject({
+        id: row.id,
+        amount: "750",
+        note: "September retainer",
+        effectiveOn: "2026-09-15",
+        actorAccountId: "alice.near",
+      });
+      const listed = await listBudgets(db as never, { projectIds: [PROJECT_A], limit: 10 });
+      expect(listed.data[0]?.lastEdit).toMatchObject({
+        changedBy: "james.near",
+        previousAmount: "1000",
+        previousNote: "kickoff",
+        previousEffectiveOn: "2026-09-01",
+      });
+    });
+
+    test("an edit that changes nothing records nothing", async () => {
+      const row = await allocate("1000");
+
+      await editBudget(db as never, { id: row.id, amount: "1000", actorAccountId: "james.near" });
+
+      expect(await db.select().from(budgetRevisions)).toEqual([]);
+    });
+
+    test("editing a deallocation keeps it a deallocation", async () => {
+      await allocate("1000");
+      const cut = await deallocateBudget(db as never, {
+        projectId: PROJECT_A,
+        tokenId: "near",
+        amount: "300",
+        note: null,
+        actorAccountId: "alice.near",
+      });
+
+      const edited = await editBudget(db as never, {
+        id: cut.id,
+        amount: "200",
+        actorAccountId: "james.near",
+      });
+
+      expect(edited.amount).toBe("-200");
+    });
+
+    test("an edit or delete that would take the budget below zero is refused", async () => {
+      const row = await allocate("1000");
+      await deallocateBudget(db as never, {
+        projectId: PROJECT_A,
+        tokenId: "near",
+        amount: "800",
+        note: null,
+        actorAccountId: "alice.near",
+      });
+
+      await expect(
+        editBudget(db as never, { id: row.id, amount: "500", actorAccountId: "james.near" }),
+      ).rejects.toBeInstanceOf(BudgetInsufficientError);
+      await expect(
+        deleteBudget(db as never, { id: row.id, actorAccountId: "james.near" }),
+      ).rejects.toBeInstanceOf(BudgetInsufficientError);
+      expect(await db.select().from(budgetRevisions)).toEqual([]);
+    });
+
+    test("an amount of zero is refused, and a transfer can't be edited", async () => {
+      const row = await allocate("1000");
+      const { from } = await transferBudget(db as never, {
+        fromProjectId: PROJECT_A,
+        toProjectId: PROJECT_B,
+        tokenId: "near",
+        amount: "100",
+        note: null,
+        actorAccountId: "alice.near",
+      });
+
+      await expect(
+        editBudget(db as never, { id: row.id, amount: "0", actorAccountId: "james.near" }),
+      ).rejects.toMatchObject({ reason: "AMOUNT_NOT_POSITIVE" });
+      await expect(
+        editBudget(db as never, { id: from.id, note: "x", actorAccountId: "james.near" }),
+      ).rejects.toMatchObject({ reason: "TRANSFER_NOT_EDITABLE" });
+      await expect(
+        editBudget(db as never, { id: "missing", note: "x", actorAccountId: "james.near" }),
+      ).rejects.toBeInstanceOf(BudgetEntryError);
+    });
+
+    test("a delete removes the entry from totals and keeps it in the deleted list", async () => {
+      const keep = await allocate("400", "keep");
+      const mistake = await allocate("1000", "typo");
+
+      expect(
+        await deleteBudget(db as never, { id: mistake.id, actorAccountId: "james.near" }),
+      ).toEqual({ deleted: 1 });
+
+      expect((await db.select().from(budgets)).map((b) => b.id)).toEqual([keep.id]);
+      const deleted = await listDeletedBudgets(db as never, { projectIds: [PROJECT_A], limit: 10 });
+      expect(deleted).toEqual([
+        expect.objectContaining({
+          budgetId: mistake.id,
+          action: "deleted",
+          amount: "1000",
+          note: "typo",
+          changedBy: "james.near",
+          actorAccountId: "alice.near",
+        }),
+      ]);
+      expect(await listDeletedBudgets(db as never, { projectIds: [PROJECT_B], limit: 10 })).toEqual(
+        [],
+      );
+    });
+
+    test("deleting either side of a transfer deletes both", async () => {
+      await allocate("1000");
+      const { to } = await transferBudget(db as never, {
+        fromProjectId: PROJECT_A,
+        toProjectId: PROJECT_B,
+        tokenId: "near",
+        amount: "100",
+        note: null,
+        actorAccountId: "alice.near",
+      });
+
+      expect(await deleteBudget(db as never, { id: to.id, actorAccountId: "james.near" })).toEqual({
+        deleted: 2,
+      });
+
+      expect((await db.select().from(budgets)).every((b) => b.relatedBudgetId === null)).toBe(true);
+      expect(await db.select().from(budgetRevisions)).toHaveLength(2);
+    });
   });
 });

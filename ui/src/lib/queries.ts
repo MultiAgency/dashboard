@@ -224,6 +224,10 @@ export function adminProjectBudgetsLogQueryKey(projectId: string) {
   return ["admin", "budgets", "project", ...workspaceKey(), projectId] as const;
 }
 
+export function adminDeletedBudgetsQueryKey(projectId: string | null) {
+  return ["admin", "budgets", "deleted", ...workspaceKey(), projectId] as const;
+}
+
 export function adminProjectsForTokenQueryKey(tokenId: string) {
   return ["admin", "budgets", "projects-for-token", ...workspaceKey(), tokenId] as const;
 }

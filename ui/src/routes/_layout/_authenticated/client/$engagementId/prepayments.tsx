@@ -1,7 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { PrepaidBalanceCard, PrepaymentTable } from "@/components/prepayments";
+import { prepaymentsEnabled } from "@/lib/prepayments";
 
 export const Route = createFileRoute("/_layout/_authenticated/client/$engagementId/prepayments")({
+  beforeLoad: ({ params }) => {
+    // Prepayments omitted for now: send old links back to the Engagement overview.
+    if (!prepaymentsEnabled) {
+      throw redirect({ to: "/client/$engagementId", params });
+    }
+  },
   component: EngagementPrepayments,
 });
 

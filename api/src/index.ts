@@ -793,6 +793,20 @@ export default createPlugin.withPlugins<PluginsClient>()({
         transfer: builder.budgets.transfer
           .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(budgets.transfer(context.scope, input))),
+
+        update: builder.budgets.update
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => runEffect(budgets.update(context.scope, input))),
+
+        delete: builder.budgets.delete
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => runEffect(budgets.remove(context.scope, input))),
+
+        deleted: builder.budgets.deleted
+          .use(treasuryMember)
+          .handler(async ({ context, input }) =>
+            runEffect(budgets.listDeleted(context.scope, input)),
+          ),
       },
 
       billings: {

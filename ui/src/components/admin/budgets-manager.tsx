@@ -27,9 +27,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components";
+import {
+  BudgetEntryActions,
+  DeletedBudgetEntries,
+  EditedLine,
+} from "@/components/admin/budget-entry-actions";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Empty, Field } from "@/components/admin-form";
 import { useBudgetActions } from "@/hooks/use-budget-actions";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import {
   reconcileBudgetAuditFilters,
   resolveBudgetAuditDropdownOptions,
@@ -268,6 +274,7 @@ function AgencyAuditLogPanel({
 
   const rows = logQuery.data?.pages.flatMap((p) => p.data) ?? [];
   const filtersActive = filterProject !== "" || filterToken !== "" || filterEngagement !== "";
+  const { canAccessAdmin } = useMeRoles();
 
   return (
     <Card>
@@ -345,6 +352,11 @@ function AgencyAuditLogPanel({
                   <TableHead scope="col">Amount</TableHead>
                   <TableHead scope="col">Project</TableHead>
                   <TableHead scope="col">Details</TableHead>
+                  {canAccessAdmin && (
+                    <TableHead scope="col">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -376,7 +388,13 @@ function AgencyAuditLogPanel({
                         {a.fundingDaoAccountId && (
                           <span className="block">from {a.fundingDaoAccountId}</span>
                         )}
+                        <EditedLine entry={a} />
                       </TableCell>
+                      {canAccessAdmin && (
+                        <TableCell>
+                          <BudgetEntryActions entry={a} tokens={tokens} />
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
@@ -394,6 +412,10 @@ function AgencyAuditLogPanel({
             label={filtersActive ? "No events match these filters" : "No budget events yet"}
           />
         )}
+        <DeletedBudgetEntries
+          projectId={filterProject || undefined}
+          projectTitleOf={(id) => projectById.get(id)?.title ?? id}
+        />
       </CardContent>
     </Card>
   );
@@ -484,8 +506,7 @@ function TransferPanel({
           <h2>Transfer between projects</h2>
         </CardTitle>
         <CardDescription>
-          Moves your own budget atomically, as two linked audit rows. Budget attributed to a
-          Client's Engagement moves only through Change orders.
+          Moves budget between projects atomically, as two linked audit rows.
         </CardDescription>
       </CardHeader>
       <form
@@ -609,6 +630,7 @@ export function ProjectBudgetPanel({
   const apiClient = useApiClient();
   const clientPortal = engagementId !== undefined;
   const { allocate, deallocate } = useBudgetActions(projectId);
+  const { canAccessAdmin } = useMeRoles();
 
   const adminBudgetQuery = useQuery({
     ...adminProjectBudgetQueryOptions(apiClient, projectId),
@@ -858,6 +880,11 @@ export function ProjectBudgetPanel({
                       <TableHead scope="col">Event</TableHead>
                       <TableHead scope="col">Amount</TableHead>
                       <TableHead scope="col">Details</TableHead>
+                      {canAccessAdmin && (
+                        <TableHead scope="col">
+                          <span className="sr-only">Actions</span>
+                        </TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -879,7 +906,13 @@ export function ProjectBudgetPanel({
                           {a.fundingDaoAccountId && (
                             <span className="block">from {a.fundingDaoAccountId}</span>
                           )}
+                          <EditedLine entry={a} />
                         </TableCell>
+                        {canAccessAdmin && (
+                          <TableCell>
+                            <BudgetEntryActions entry={a} tokens={tokens} />
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -893,6 +926,7 @@ export function ProjectBudgetPanel({
             ) : (
               <Empty icon={<ListBulletsIcon aria-hidden />} label="No budget events yet" />
             )}
+            <DeletedBudgetEntries projectId={projectId} />
           </CardContent>
         </Card>
       )}

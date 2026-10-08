@@ -1,4 +1,5 @@
 import { allocationPlanEnabled } from "@/lib/change-orders";
+import { prepaymentsEnabled } from "@/lib/prepayments";
 
 export type WorkspaceRole = "owner" | "admin" | "member";
 
@@ -128,7 +129,7 @@ export function clientEngagementSections(engagementId: string, kind: EngagementK
   return [
     { to: base, label: "Overview" },
     { to: `${base}/projects`, label: "Shared projects" },
-    { to: `${base}/prepayments`, label: "Prepayments" },
+    ...(prepaymentsEnabled ? [{ to: `${base}/prepayments`, label: "Prepayments" }] : []),
     ...(allocationPlanEnabled ? [{ to: `${base}/plan`, label: "Plan & Change orders" }] : []),
     { to: `${base}/billings`, label: "Billings" },
     { to: `${base}/reports`, label: "Reports" },

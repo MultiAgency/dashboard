@@ -5,6 +5,8 @@ import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import {
   type Budget,
+  type BudgetRevision,
+  budgetRevisions,
   budgets,
   engagementProjects,
   engagements,
@@ -37,6 +39,16 @@ export class BudgetInsufficientError extends Error {
       `Insufficient budget for project=${projectId} token=${tokenId}: sum=${currentSum.toString()} delta=${delta.toString()} would go negative`,
     );
     this.name = "BudgetInsufficientError";
+  }
+}
+
+export class BudgetEntryError extends Error {
+  constructor(
+    readonly reason: "NOT_FOUND" | "TRANSFER_NOT_EDITABLE" | "AMOUNT_NOT_POSITIVE",
+    message: string,
+  ) {
+    super(message);
+    this.name = "BudgetEntryError";
   }
 }
 
@@ -112,7 +124,15 @@ export type BudgetListItem = Pick<
   | "fundingDaoAccountId"
   | "effectiveOn"
   | "createdAt"
->;
+> & { lastEdit: BudgetEdit | null };
+
+export type BudgetEdit = {
+  changedAt: Date;
+  changedBy: string;
+  previousAmount: string;
+  previousNote: string | null;
+  previousEffectiveOn: string | null;
+};
 
 export interface ListBudgetsInput {
   projectIds: string[] | null;
@@ -160,11 +180,169 @@ export async function listBudgets(
     .orderBy(desc(budgets.createdAt), desc(budgets.id))
     .limit(input.limit);
 
+  const edits =
+    rows.length > 0
+      ? await db
+          .select()
+          .from(budgetRevisions)
+          .where(
+            and(
+              inArray(
+                budgetRevisions.budgetId,
+                rows.map((r) => r.id),
+              ),
+              eq(budgetRevisions.action, "edited"),
+            ),
+          )
+          .orderBy(desc(budgetRevisions.changedAt), desc(budgetRevisions.id))
+      : [];
+  const lastEdit = new Map<string, BudgetEdit>();
+  for (const edit of edits) {
+    if (lastEdit.has(edit.budgetId)) continue;
+    lastEdit.set(edit.budgetId, {
+      changedAt: edit.changedAt,
+      changedBy: edit.changedBy,
+      previousAmount: edit.amount,
+      previousNote: edit.note,
+      previousEffectiveOn: edit.effectiveOn,
+    });
+  }
+
   const last = rows[rows.length - 1];
   return {
-    data: rows,
+    data: rows.map((row) => ({ ...row, lastEdit: lastEdit.get(row.id) ?? null })),
     nextCursor: rows.length === input.limit && last ? cursorOf(last.createdAt, last.id) : null,
   };
+}
+
+async function lockBudget(tx: Database, id: string): Promise<Budget | null> {
+  const [row] = await tx.select().from(budgets).where(eq(budgets.id, id)).for("update");
+  return row ?? null;
+}
+
+async function recordRevision(
+  tx: Database,
+  row: Budget,
+  action: BudgetRevision["action"],
+  changedBy: string,
+) {
+  await tx.insert(budgetRevisions).values({
+    id: crypto.randomUUID(),
+    budgetId: row.id,
+    action,
+    projectId: row.projectId,
+    tokenId: row.tokenId,
+    amount: row.amount,
+    note: row.note,
+    effectiveOn: row.effectiveOn,
+    relatedBudgetId: row.relatedBudgetId,
+    engagementId: row.engagementId,
+    fundingDaoAccountId: row.fundingDaoAccountId,
+    actorAccountId: row.actorAccountId,
+    budgetCreatedAt: row.createdAt,
+    changedBy,
+  });
+}
+
+export interface EditBudgetInput {
+  id: string;
+  amount?: string;
+  note?: string | null;
+  effectiveOn?: string | null;
+  actorAccountId: string;
+}
+
+export async function editBudget(db: Database, input: EditBudgetInput): Promise<Budget> {
+  return db.transaction(async (tx) => {
+    const row = await lockBudget(tx as Database, input.id);
+    if (!row) throw new BudgetEntryError("NOT_FOUND", "Budget entry not found");
+    if (row.relatedBudgetId) {
+      throw new BudgetEntryError(
+        "TRANSFER_NOT_EDITABLE",
+        "A transfer can't be edited. Delete it and transfer again.",
+      );
+    }
+    if (input.amount !== undefined && BigInt(input.amount) <= 0n) {
+      throw new BudgetEntryError(
+        "AMOUNT_NOT_POSITIVE",
+        "The amount must be more than zero. Delete the entry instead.",
+      );
+    }
+    const amount =
+      input.amount === undefined
+        ? row.amount
+        : row.amount.startsWith("-")
+          ? `-${input.amount}`
+          : input.amount;
+    const note = input.note === undefined ? row.note : input.note?.trim() || null;
+    const effectiveOn = input.effectiveOn === undefined ? row.effectiveOn : input.effectiveOn;
+    if (amount === row.amount && note === row.note && effectiveOn === row.effectiveOn) return row;
+
+    const delta = BigInt(amount) - BigInt(row.amount);
+    if (delta !== 0n) {
+      const sums = await lockedBudgetSums(tx as Database, row.projectId, row.tokenId);
+      requireOwnBudget(sums, row.projectId, row.tokenId, delta);
+    }
+    await recordRevision(tx as Database, row, "edited", input.actorAccountId);
+    const [updated] = await tx
+      .update(budgets)
+      .set({ amount, note, effectiveOn })
+      .where(eq(budgets.id, row.id))
+      .returning();
+    if (!updated) throw new Error("budgets update returned no row");
+    return updated;
+  });
+}
+
+export async function deleteBudget(
+  db: Database,
+  input: { id: string; actorAccountId: string },
+): Promise<{ deleted: number }> {
+  return db.transaction(async (tx) => {
+    const row = await lockBudget(tx as Database, input.id);
+    if (!row) throw new BudgetEntryError("NOT_FOUND", "Budget entry not found");
+    const related = row.relatedBudgetId
+      ? await lockBudget(tx as Database, row.relatedBudgetId)
+      : null;
+    const rows = related ? [row, related] : [row];
+    for (const entry of rows) {
+      const delta = -BigInt(entry.amount);
+      if (delta < 0n) {
+        const sums = await lockedBudgetSums(tx as Database, entry.projectId, entry.tokenId);
+        requireOwnBudget(sums, entry.projectId, entry.tokenId, delta);
+      }
+    }
+    for (const entry of rows) {
+      await recordRevision(tx as Database, entry, "deleted", input.actorAccountId);
+    }
+    await tx.delete(budgets).where(
+      inArray(
+        budgets.id,
+        rows.map((r) => r.id),
+      ),
+    );
+    return { deleted: rows.length };
+  });
+}
+
+export async function listDeletedBudgets(
+  db: Database,
+  input: { projectIds: string[] | null; limit: number },
+): Promise<BudgetRevision[]> {
+  if (input.projectIds !== null && input.projectIds.length === 0) return [];
+  return db
+    .select()
+    .from(budgetRevisions)
+    .where(
+      and(
+        eq(budgetRevisions.action, "deleted"),
+        input.projectIds !== null
+          ? inArray(budgetRevisions.projectId, input.projectIds)
+          : undefined,
+      ),
+    )
+    .orderBy(desc(budgetRevisions.changedAt), desc(budgetRevisions.id))
+    .limit(input.limit);
 }
 
 export interface CreateBudgetInput {
@@ -415,13 +593,17 @@ export async function writeEngagementEntries(
 const toOrpcError = (err: unknown) =>
   err instanceof ORPCError
     ? err
-    : err instanceof BudgetInsufficientError
-      ? new ORPCError("BAD_REQUEST", { message: err.message })
-      : err instanceof EngagementBudgetError
-        ? new ORPCError("BAD_REQUEST", { message: err.message, data: { reason: err.reason } })
-        : new ORPCError("INTERNAL_SERVER_ERROR", {
-            message: err instanceof Error ? err.message : String(err),
-          });
+    : err instanceof BudgetEntryError
+      ? err.reason === "NOT_FOUND"
+        ? new ORPCError("NOT_FOUND", { message: err.message })
+        : new ORPCError("BAD_REQUEST", { message: err.message, data: { reason: err.reason } })
+      : err instanceof BudgetInsufficientError
+        ? new ORPCError("BAD_REQUEST", { message: err.message })
+        : err instanceof EngagementBudgetError
+          ? new ORPCError("BAD_REQUEST", { message: err.message, data: { reason: err.reason } })
+          : new ORPCError("INTERNAL_SERVER_ERROR", {
+              message: err instanceof Error ? err.message : String(err),
+            });
 
 const engagementNotFound = () => new ORPCError("NOT_FOUND", { message: "Engagement not found" });
 
@@ -445,6 +627,16 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
       .from(engagementProjects)
       .where(eq(engagementProjects.engagementId, engagementId));
     return rows.map((r) => r.projectId);
+  };
+
+  const entryInAgency = async (scope: TreasuryScope, id: string) => {
+    const [row] = await db
+      .select({ projectId: budgets.projectId })
+      .from(budgets)
+      .where(eq(budgets.id, id))
+      .limit(1);
+    if (!row) throw new BudgetEntryError("NOT_FOUND", "Budget entry not found");
+    await directory.forAgency(scope).require(row.projectId);
   };
 
   const inAgency = <A>(scope: TreasuryScope, projectIds: string[], run: () => Promise<A>) =>
@@ -550,6 +742,40 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
           fundingDaoAccountId: scope.agencyDao,
         }),
       ),
+
+    update: (
+      scope: TreasuryScope,
+      input: { id: string; amount?: string; note?: string | null; effectiveOn?: string | null },
+    ) =>
+      Effect.tryPromise({
+        try: async () => {
+          await entryInAgency(scope, input.id);
+          return { budget: await editBudget(db, { ...input, actorAccountId: scope.actorId }) };
+        },
+        catch: toOrpcError,
+      }),
+
+    remove: (scope: TreasuryScope, input: { id: string }) =>
+      Effect.tryPromise({
+        try: async () => {
+          await entryInAgency(scope, input.id);
+          return deleteBudget(db, { id: input.id, actorAccountId: scope.actorId });
+        },
+        catch: toOrpcError,
+      }),
+
+    listDeleted: (scope: TreasuryScope, input: { projectId?: string; limit: number }) =>
+      Effect.gen(function* () {
+        const projects = directory.forAgency(scope);
+        const projectIds = input.projectId
+          ? [(yield* Effect.promise(() => projects.require(input.projectId!))).id]
+          : (yield* Effect.promise(() => projects.list())).map((p) => p.id);
+        return {
+          data: yield* Effect.promise(() =>
+            listDeletedBudgets(db, { projectIds, limit: input.limit }),
+          ),
+        };
+      }),
   };
 }
 

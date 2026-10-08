@@ -324,8 +324,8 @@ const FOR_AGENCIES: Feature[] = [
   },
   {
     icon: CalendarCheckIcon,
-    title: "Prepayments that plan themselves",
-    body: "Record a Prepayment and the Allocation plan applies to each monthly budget.",
+    title: "Budgets and reports per Client",
+    body: "Allocate budget to each Project and share period reports with the Client.",
   },
   {
     icon: TreeStructureIcon,
@@ -341,8 +341,8 @@ const STEPS = [
     body: "Invite a Client and share the Projects you work on together.",
   },
   {
-    title: "Agree the plan",
-    body: "Prepayments and an Allocation plan set each month's Budget entries.",
+    title: "Allocate budgets",
+    body: "Record each Project's budget for the period you agreed with the Client.",
   },
   {
     title: "Work and bill on chain",

@@ -7,6 +7,7 @@ import {
   viewForPath,
   workspaceNavigation,
 } from "../src/lib/navigation";
+import { prepaymentsEnabled } from "../src/lib/prepayments";
 
 // The plan test is skipped while the Allocation plan is omitted for now; see allocationPlanEnabled.
 
@@ -117,6 +118,12 @@ describe("clientEngagementSections", () => {
       );
     },
   );
+
+  it.skipIf(prepaymentsEnabled)("leaves out Prepayments while they are omitted", () => {
+    expect(clientEngagementSections("e1", "client").map((s) => s.label)).not.toContain(
+      "Prepayments",
+    );
+  });
 
   it("leaves out ideas for a Subcontractor, who does not submit ideas to the hiring Agency", () => {
     expect(clientEngagementSections("e1", "subcontract").map((s) => s.label)).not.toContain(

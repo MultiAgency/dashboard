@@ -61,6 +61,7 @@ import { agentLinksEnabled } from "@/lib/agent-links";
 import { useApiClient } from "@/lib/api";
 import { allocationPlanEnabled, awaitingCountFor } from "@/lib/change-orders";
 import { acceptsIdeas } from "@/lib/navigation";
+import { prepaymentsEnabled } from "@/lib/prepayments";
 import {
   adminProjectsListQueryOptions,
   awaitingChangeOrdersQueryOptions,
@@ -192,7 +193,9 @@ function EngagementDetailPage() {
       ) : (
         <Tabs
           value={
-            (tab === "plan" && !allocationPlanEnabled) || (tab === "links" && !agentLinksEnabled)
+            (tab === "plan" && !allocationPlanEnabled) ||
+            (tab === "links" && !agentLinksEnabled) ||
+            (tab === "prepayments" && !prepaymentsEnabled)
               ? "projects"
               : (tab ?? "projects")
           }
@@ -207,7 +210,7 @@ function EngagementDetailPage() {
         >
           <ScrollableTabsList>
             <TabsTrigger value="projects">Shared Projects</TabsTrigger>
-            <TabsTrigger value="prepayments">Prepayments</TabsTrigger>
+            {prepaymentsEnabled && <TabsTrigger value="prepayments">Prepayments</TabsTrigger>}
             {allocationPlanEnabled && (
               <TabsTrigger value="plan">
                 Plan and Change orders
@@ -224,9 +227,11 @@ function EngagementDetailPage() {
           <TabsContent value="projects" className="mt-4">
             <SharedProjects engagement={engagement} />
           </TabsContent>
-          <TabsContent value="prepayments" className="mt-4">
-            <PrepaymentsPanel engagement={engagement} />
-          </TabsContent>
+          {prepaymentsEnabled && (
+            <TabsContent value="prepayments" className="mt-4">
+              <PrepaymentsPanel engagement={engagement} />
+            </TabsContent>
+          )}
           {allocationPlanEnabled && (
             <TabsContent value="plan" className="mt-4">
               <ChangeOrdersPanel
