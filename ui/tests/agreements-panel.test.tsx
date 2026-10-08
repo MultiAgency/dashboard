@@ -124,7 +124,10 @@ describe("AgreementsPanel", () => {
     list.mockResolvedValue({ data: [october], requiresAgreement: false });
     renderPanel();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    fireEvent.keyDown(await screen.findByRole("button", { name: "Agreement actions" }), {
+      key: "Enter",
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
 
     expect(screen.getByText(/has budget entries attached/)).toBeDefined();
   });

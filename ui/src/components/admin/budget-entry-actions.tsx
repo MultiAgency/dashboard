@@ -1,3 +1,4 @@
+import { DotsThreeIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -20,6 +21,12 @@ import {
 } from "@/components";
 import { ChoiceSelect, Field } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { formatPeriod } from "@/lib/budget-periods";
 import { baseToDecimal, formatTokenAmount } from "@/lib/format-amount";
@@ -40,16 +47,31 @@ function magnitude(amount: string): string {
   return amount.startsWith("-") ? amount.slice(1) : amount;
 }
 
-export function AgreementLine({
+export function EntryDetails({
+  entry,
   agreement,
 }: {
+  entry: BudgetEntry;
   agreement: { title: string; startDate: string; endDate: string } | undefined;
 }) {
-  if (!agreement) return null;
+  const meta = [
+    entry.effectiveOn ? `for ${entry.effectiveOn}` : null,
+    agreement ? `under ${agreement.title}` : null,
+    `by ${entry.actorAccountId}`,
+  ].filter(Boolean);
   return (
-    <span className="block">
-      under {agreement.title} ({formatPeriod(agreement.startDate, agreement.endDate)})
-    </span>
+    <div
+      className="flex min-w-48 flex-col gap-0.5 text-muted-foreground"
+      title={
+        agreement
+          ? `${agreement.title}: ${formatPeriod(agreement.startDate, agreement.endDate)}`
+          : undefined
+      }
+    >
+      {entry.note && <span className="text-foreground">{entry.note}</span>}
+      <span>{meta.join(" · ")}</span>
+      <EditedLine entry={entry} />
+    </div>
   );
 }
 
@@ -95,15 +117,22 @@ export function BudgetEntryActions({
   });
 
   return (
-    <div className="flex flex-wrap justify-end gap-2">
-      {!isTransfer && (
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-          Edit
-        </Button>
-      )}
-      <Button variant="ghost" size="sm" onClick={() => setDeleting(true)}>
-        Delete
-      </Button>
+    <div className="flex justify-end">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon-sm" aria-label="Entry actions">
+            <DotsThreeIcon aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {!isTransfer && (
+            <DropdownMenuItem onSelect={() => setEditing(true)}>Edit</DropdownMenuItem>
+          )}
+          <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+            {isTransfer ? "Delete transfer" : "Delete"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent className="sm:max-w-md">
           {editing && (

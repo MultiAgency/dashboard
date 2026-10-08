@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import {
   Alert,
   AlertDescription,
-  Badge,
   Budget,
   Button,
   Card,
@@ -28,10 +27,9 @@ import {
   TableRow,
 } from "@/components";
 import {
-  AgreementLine,
   BudgetEntryActions,
   DeletedBudgetEntries,
-  EditedLine,
+  EntryDetails,
 } from "@/components/admin/budget-entry-actions";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Empty, Field } from "@/components/admin-form";
@@ -65,16 +63,34 @@ function budgetVerb(amount: string, relatedBudgetId: string | null): string {
   return negative ? "deallocate" : "budget";
 }
 
-function VerbTag({ verb }: { verb: string }) {
+function formatTimestamp(value: string | Date): string {
+  return new Date(value).toISOString().slice(0, 16).replace("T", " ");
+}
+
+function EntryDate({ value }: { value: string | Date }) {
+  const full = formatTimestamp(value);
   return (
-    <Badge variant={verb === "deallocate" || verb === "transfer out" ? "outline" : "secondary"}>
-      {verb}
-    </Badge>
+    <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums" title={full}>
+      {full.slice(0, 10)}
+    </TableCell>
   );
 }
 
-function formatTimestamp(value: string | Date): string {
-  return new Date(value).toISOString().slice(0, 16).replace("T", " ");
+function EntryAmount({
+  amount,
+  tokenId,
+  relatedBudgetId,
+}: {
+  amount: string;
+  tokenId: string;
+  relatedBudgetId: string | null;
+}) {
+  return (
+    <TableCell className="whitespace-nowrap">
+      <span className="block font-medium tabular-nums">{formatTokenAmount(amount, tokenId)}</span>
+      <span className="block text-muted-foreground">{budgetVerb(amount, relatedBudgetId)}</span>
+    </TableCell>
+  );
 }
 
 function ListSkeleton() {
@@ -354,8 +370,7 @@ function AgencyAuditLogPanel({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead scope="col">When</TableHead>
-                  <TableHead scope="col">Event</TableHead>
+                  <TableHead scope="col">Date</TableHead>
                   <TableHead scope="col">Amount</TableHead>
                   <TableHead scope="col">Project</TableHead>
                   <TableHead scope="col">Details</TableHead>
@@ -371,16 +386,13 @@ function AgencyAuditLogPanel({
                   const project = projectById.get(a.projectId);
                   return (
                     <TableRow key={a.id}>
-                      <TableCell className="text-muted-foreground tabular-nums">
-                        {formatTimestamp(a.createdAt)}
-                      </TableCell>
-                      <TableCell>
-                        <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
-                      </TableCell>
-                      <TableCell className="font-medium tabular-nums">
-                        {formatTokenAmount(a.amount, a.tokenId)}
-                      </TableCell>
-                      <TableCell>
+                      <EntryDate value={a.createdAt} />
+                      <EntryAmount
+                        amount={a.amount}
+                        tokenId={a.tokenId}
+                        relatedBudgetId={a.relatedBudgetId}
+                      />
+                      <TableCell className="whitespace-normal">
                         {project ? project.title : a.projectId}
                         {a.engagementId && (
                           <span className="block text-muted-foreground">
@@ -388,15 +400,11 @@ function AgencyAuditLogPanel({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="whitespace-normal text-muted-foreground">
-                        {a.note && <span className="block text-foreground">{a.note}</span>}
-                        {a.effectiveOn && <span className="block">for {a.effectiveOn}</span>}
-                        <span className="block">by {a.actorAccountId}</span>
-                        {a.fundingDaoAccountId && (
-                          <span className="block">from {a.fundingDaoAccountId}</span>
-                        )}
-                        <AgreementLine agreement={agreementById.get(a.agreementId ?? "")} />
-                        <EditedLine entry={a} />
+                      <TableCell className="whitespace-normal">
+                        <EntryDetails
+                          entry={a}
+                          agreement={agreementById.get(a.agreementId ?? "")}
+                        />
                       </TableCell>
                       {canAccessAdmin && (
                         <TableCell>
@@ -925,8 +933,7 @@ export function ProjectBudgetPanel({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead scope="col">When</TableHead>
-                      <TableHead scope="col">Event</TableHead>
+                      <TableHead scope="col">Date</TableHead>
                       <TableHead scope="col">Amount</TableHead>
                       <TableHead scope="col">Details</TableHead>
                       {canAccessAdmin && (
@@ -939,24 +946,17 @@ export function ProjectBudgetPanel({
                   <TableBody>
                     {budgetRows.map((a) => (
                       <TableRow key={a.id}>
-                        <TableCell className="text-muted-foreground tabular-nums">
-                          {formatTimestamp(a.createdAt)}
-                        </TableCell>
-                        <TableCell>
-                          <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
-                        </TableCell>
-                        <TableCell className="font-medium tabular-nums">
-                          {formatTokenAmount(a.amount, a.tokenId)}
-                        </TableCell>
-                        <TableCell className="whitespace-normal text-muted-foreground">
-                          {a.note && <span className="block text-foreground">{a.note}</span>}
-                          {a.effectiveOn && <span className="block">for {a.effectiveOn}</span>}
-                          <span className="block">by {a.actorAccountId}</span>
-                          {a.fundingDaoAccountId && (
-                            <span className="block">from {a.fundingDaoAccountId}</span>
-                          )}
-                          <AgreementLine agreement={agreementById.get(a.agreementId ?? "")} />
-                          <EditedLine entry={a} />
+                        <EntryDate value={a.createdAt} />
+                        <EntryAmount
+                          amount={a.amount}
+                          tokenId={a.tokenId}
+                          relatedBudgetId={a.relatedBudgetId}
+                        />
+                        <TableCell className="whitespace-normal">
+                          <EntryDetails
+                            entry={a}
+                            agreement={agreementById.get(a.agreementId ?? "")}
+                          />
                         </TableCell>
                         {canAccessAdmin && (
                           <TableCell>

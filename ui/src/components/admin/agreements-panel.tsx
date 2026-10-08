@@ -1,3 +1,4 @@
+import { DotsThreeIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -29,6 +30,12 @@ import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Empty, Field } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import type { EngagementView } from "@/components/engagement-status";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { formatPeriod, nextCycle, periodError } from "@/lib/budget-periods";
 import { baseToDecimal, formatTokenAmount } from "@/lib/format-amount";
@@ -176,16 +183,16 @@ export function AgreementsPanel({
                       <span className="block text-sm text-muted-foreground">{agreement.note}</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground tabular-nums">
+                  <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums">
                     {formatPeriod(agreement.startDate, agreement.endDate)}
                   </TableCell>
-                  <TableCell className="tabular-nums">
+                  <TableCell className="whitespace-nowrap tabular-nums">
                     {formatTokenAmount(agreement.allocated, agreement.tokenId)} of{" "}
                     {formatTokenAmount(agreement.agreedAmount, agreement.tokenId)}
                   </TableCell>
                   {writable && (
                     <TableCell>
-                      <div className="flex flex-wrap justify-end gap-2">
+                      <div className="flex items-center justify-end gap-2">
                         {agreement.kind === "retainer" && (
                           <Button
                             size="sm"
@@ -195,16 +202,24 @@ export function AgreementsPanel({
                             Renew
                           </Button>
                         )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setDraft(draftOf(agreement, tokens))}
-                        >
-                          Edit
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setDeleting(agreement)}>
-                          Delete
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" aria-label="Agreement actions">
+                              <DotsThreeIcon aria-hidden />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => setDraft(draftOf(agreement, tokens))}>
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onSelect={() => setDeleting(agreement)}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </TableCell>
                   )}

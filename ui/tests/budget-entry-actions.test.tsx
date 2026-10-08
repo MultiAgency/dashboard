@@ -49,6 +49,16 @@ const entry = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   }) as never;
 
+function openMenu() {
+  const trigger = screen.getByRole("button", { name: "Entry actions" });
+  fireEvent.keyDown(trigger, { key: "Enter" });
+}
+
+function pick(name: string) {
+  openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name }));
+}
+
 function renderActions(row: ReturnType<typeof entry>) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -63,7 +73,7 @@ describe("BudgetEntryActions", () => {
     update.mockResolvedValue({ budget: entry() });
     renderActions(entry());
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    pick("Edit");
     expect((screen.getByLabelText("Amount (NEAR)") as HTMLInputElement).value).toBe("1000");
     expect((screen.getByLabelText("Budget date") as HTMLInputElement).value).toBe("2026-10-07");
     fireEvent.change(screen.getByLabelText("Amount (NEAR)"), { target: { value: "1250" } });
@@ -83,7 +93,7 @@ describe("BudgetEntryActions", () => {
   test("a deallocation is edited by its size, without the minus sign", () => {
     renderActions(entry({ amount: `-${yocto(300)}` }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    pick("Edit");
 
     expect(screen.getByText("Edit deallocation")).toBeDefined();
     expect((screen.getByLabelText("Amount (NEAR)") as HTMLInputElement).value).toBe("300");
@@ -93,8 +103,9 @@ describe("BudgetEntryActions", () => {
     remove.mockResolvedValue({ deleted: 2 });
     renderActions(entry({ relatedBudgetId: "b2" }));
 
-    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    openMenu();
+    expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete transfer" }));
     expect(screen.getByText(/Both sides of the transfer are deleted/)).toBeDefined();
     expect(remove).not.toHaveBeenCalled();
 
