@@ -315,10 +315,21 @@ const savedReportSummary = z.object({
   endDate: z.string().nullable(),
   note: z.string().nullable(),
   projectTitle: z.string().nullable().optional(),
+  sharedAt: z.date().nullable().optional(),
+  fromAgency: z.boolean().optional(),
+  canDelete: z.boolean().optional(),
+  canShare: z.boolean().optional(),
   createdAt: z.date(),
 });
 
 const savedReport = savedReportSummary.extend({ report: reportOutput });
+
+const reportFilters = {
+  projectId: z.string().optional(),
+  note: z.string().max(4000).optional(),
+  startDate: reportDate,
+  endDate: reportDate,
+};
 
 const notification = z.object({
   id: z.string(),
@@ -788,18 +799,40 @@ export const contract = oc.router({
     },
 
     reports: {
+      preview: oc
+        .route({ method: "POST", path: "/admin/reports/preview" })
+        .input(z.object({ engagementId: z.string().optional(), ...reportFilters }))
+        .output(reportOutput)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
       generate: oc
         .route({ method: "POST", path: "/admin/reports/generate" })
         .input(
           z.object({
             engagementId: z.string().optional(),
-            projectId: z.string().optional(),
-            note: z.string().max(4000).optional(),
-            startDate: reportDate,
-            endDate: reportDate,
+            ...reportFilters,
+            share: z.boolean().optional(),
           }),
         )
         .output(generatedReport)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+      share: oc
+        .route({ method: "POST", path: "/admin/reports/{id}/share" })
+        .input(z.object({ id: z.string().min(1) }))
+        .output(savedReportSummary)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+      unshare: oc
+        .route({ method: "POST", path: "/admin/reports/{id}/unshare" })
+        .input(z.object({ id: z.string().min(1) }))
+        .output(savedReportSummary)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      delete: oc
+        .route({ method: "DELETE", path: "/admin/reports/{id}" })
+        .input(z.object({ id: z.string().min(1) }))
+        .output(z.object({ deleted: z.literal(true) }))
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
       list: oc
@@ -1201,6 +1234,20 @@ export const contract = oc.router({
     },
 
     reports: {
+      preview: oc
+        .route({ method: "POST", path: "/client/{engagementId}/reports/preview" })
+        .input(
+          z.object({
+            engagementId: z.string().min(1),
+            projectId: z.string().min(1).optional(),
+            note: z.string().max(4000).optional(),
+            startDate: reportDate,
+            endDate: reportDate,
+          }),
+        )
+        .output(reportOutput)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
       generate: oc
         .route({ method: "POST", path: "/client/{engagementId}/reports/generate" })
         .input(
@@ -1213,6 +1260,12 @@ export const contract = oc.router({
           }),
         )
         .output(generatedReport)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      delete: oc
+        .route({ method: "DELETE", path: "/client/{engagementId}/reports/{id}" })
+        .input(z.object({ engagementId: z.string().min(1), id: z.string().min(1) }))
+        .output(z.object({ deleted: z.literal(true) }))
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
       list: oc

@@ -36,11 +36,16 @@ import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
 import { createNotifications } from "./services/notifications";
 import { resendEmailSender } from "./services/notify";
-import { createOrganizationAccess, ROLE_MATRIX } from "./services/organization-access";
+import {
+  createOrganizationAccess,
+  hasRole,
+  type OrganizationScope,
+  ROLE_MATRIX,
+} from "./services/organization-access";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
-import { createReportsService } from "./services/reports";
+import { createReportsService, type ReportViewer } from "./services/reports";
 import {
   getAdminSettings,
   getResolvedPublicSettings,
@@ -121,7 +126,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const assignments = createAssignmentsService(db, directory, access, organizationDirectory);
       const budgets = createBudgetsService(db, directory);
       const billings = createBillingsService(db, directory, access);
-      const reports = createReportsService(db, directory, plugins, organizationDirectory);
+      const reports = createReportsService(
+        db,
+        directory,
+        plugins,
+        organizationDirectory,
+        notifications,
+      );
       const changeOrders = createChangeOrdersService({
         db,
         organizations: organizationDirectory,
@@ -252,6 +263,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
       defaultOrganizationMember,
       defaultOrganizationManager,
     } = access.middleware(builder);
+    const agencyReportViewer = (context: {
+      scope: OrganizationScope;
+      userId?: string | null;
+    }): ReportViewer => ({
+      organizationId: context.scope.organizationId,
+      userId: context.userId ?? context.scope.actorId,
+      canManage: hasRole(ROLE_MATRIX.manage, context.scope.role),
+      side: "agency",
+    });
 
     return {
       ping: builder.ping.handler(async () => ({
@@ -373,27 +393,61 @@ export default createPlugin.withPlugins<PluginsClient>()({
         },
 
         reports: {
-          generate: builder.agency.reports.generate
+          preview: builder.agency.reports.preview
             .use(agencyMember)
             .handler(async ({ context, input }) =>
-              runEffect(
-                reports.generateSaved(context.scope, input, {
-                  organizationId: context.scope.organizationId,
-                  userId: context.userId ?? context.scope.actorId,
-                }),
-              ),
+              runEffect(reports.generate(context.scope, input)),
             ),
+
+          generate: builder.agency.reports.generate
+            .use(agencyMember)
+            .handler(async ({ context, input }) => {
+              const { share, ...reportInput } = input;
+              const viewer = agencyReportViewer(context);
+              if (share) await reports.assertShareable(viewer, reportInput.engagementId ?? null);
+              const saved = await runEffect(
+                reports.generateSaved(context.scope, reportInput, {
+                  organizationId: viewer.organizationId,
+                  userId: viewer.userId,
+                }),
+              );
+              if (share) await reports.setShared(viewer, saved.id, true);
+              return saved;
+            }),
 
           list: builder.agency.reports.list
             .use(agencyMember)
             .handler(async ({ context, input }) =>
-              reports.listSaved(context.scope.organizationId, input),
+              reports.listSaved(context.scope.organizationId, input, agencyReportViewer(context)),
             ),
 
           get: builder.agency.reports.get
             .use(agencyMember)
             .handler(async ({ context, input }) =>
-              reports.getSaved(context.scope.organizationId, input.id),
+              reports.getSaved(
+                context.scope.organizationId,
+                input.id,
+                {},
+                agencyReportViewer(context),
+              ),
+            ),
+
+          share: builder.agency.reports.share
+            .use(agencyMember)
+            .handler(async ({ context, input }) =>
+              reports.setShared(agencyReportViewer(context), input.id, true),
+            ),
+
+          unshare: builder.agency.reports.unshare
+            .use(agencyMember)
+            .handler(async ({ context, input }) =>
+              reports.setShared(agencyReportViewer(context), input.id, false),
+            ),
+
+          delete: builder.agency.reports.delete
+            .use(agencyMember)
+            .handler(async ({ context, input }) =>
+              reports.deleteSaved(agencyReportViewer(context), input.id),
             ),
         },
       },
@@ -600,6 +654,16 @@ export default createPlugin.withPlugins<PluginsClient>()({
         },
 
         reports: {
+          preview: builder.clientPortal.reports.preview
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) =>
+              runEffect(clientPortal.previewReport(context, input)),
+            ),
+
+          delete: builder.clientPortal.reports.delete
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.deleteReport(context, input)),
+
           generate: builder.clientPortal.reports.generate
             .use(auth.requireAuth)
             .handler(async ({ context, input }) =>

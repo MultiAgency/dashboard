@@ -503,10 +503,13 @@ export const reportSnapshots = pgTable(
     endDate: text("end_date"),
     note: text("note"),
     payload: text("payload").notNull(),
+    sharedAt: timestamp("shared_at", { withTimezone: false }),
+    sharedByUserId: text("shared_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     organizationIdx: index("report_snapshots_organization").on(t.organizationId, t.createdAt, t.id),
+    engagementSharedIdx: index("report_snapshots_engagement_shared").on(t.engagementId, t.sharedAt),
   }),
 );
 

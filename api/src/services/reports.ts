@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
@@ -14,7 +14,8 @@ import {
 import type { OrganizationDirectory } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 import { ALLOCATION_PLAN_ENABLED } from "./budgets";
-import type { AgencyScope } from "./organization-access";
+import type { NotificationsService } from "./notifications";
+import { type AgencyScope, SHARED_STATUSES } from "./organization-access";
 import { type ProjectDirectory, withoutClientIdeas } from "./project-directory";
 import { sumByToken } from "./report-tokens";
 import { enrichWithChainStatus } from "./sputnik";
@@ -31,9 +32,17 @@ export type ReportInput = {
 
 export type ReportOwner = { organizationId: string; userId: string };
 
+export type ReportViewer = {
+  organizationId: string;
+  userId: string;
+  canManage: boolean;
+  side: "agency" | "client";
+};
+
 const reportNotFound = () => new ORPCError("NOT_FOUND", { message: "Report not found" });
 
-function summaryOf(row: ReportSnapshotRow) {
+function summaryOf(row: ReportSnapshotRow, viewer?: ReportViewer) {
+  const own = !viewer || row.organizationId === viewer.organizationId;
   return {
     id: row.id,
     engagementId: row.engagementId,
@@ -42,8 +51,24 @@ function summaryOf(row: ReportSnapshotRow) {
     endDate: row.endDate,
     note: row.note,
     projectTitle: projectTitleOf(row.payload),
+    sharedAt: row.sharedAt,
+    fromAgency: !own,
+    canDelete: !!viewer && own && (viewer.canManage || row.generatedByUserId === viewer.userId),
+    canShare:
+      !!viewer && own && viewer.side === "agency" && viewer.canManage && row.engagementId !== null,
     createdAt: row.createdAt,
   };
+}
+
+function periodOf(row: Pick<ReportSnapshotRow, "startDate" | "endDate">): string {
+  if (row.startDate && row.endDate) return `${row.startDate} – ${row.endDate}`;
+  if (row.startDate) return `from ${row.startDate}`;
+  if (row.endDate) return `through ${row.endDate}`;
+  return "all time";
+}
+
+export function clientSafe<R extends { contributorStats: unknown[] }>(report: R): R {
+  return { ...report, contributorStats: [] };
 }
 
 function projectTitleOf(payload: string): string | null {
@@ -60,6 +85,7 @@ export function createReportsService(
   directory: ProjectDirectory,
   plugins: PluginsClient,
   organizations: Pick<OrganizationDirectory, "get">,
+  notifications?: Pick<NotificationsService, "notify">,
 ) {
   const generate = (scope: AgencyScope, input: ReportInput) =>
     Effect.gen(function* () {
@@ -325,6 +351,77 @@ export function createReportsService(
 
   type Report = Effect.Effect.Success<ReturnType<typeof generate>>;
 
+  const clientVisible = (
+    engagement: { id: string; agencyOrganizationId: string },
+    clientOrganizationId: string,
+  ) =>
+    and(
+      eq(reportSnapshots.engagementId, engagement.id),
+      or(
+        eq(reportSnapshots.organizationId, clientOrganizationId),
+        and(
+          eq(reportSnapshots.organizationId, engagement.agencyOrganizationId),
+          isNotNull(reportSnapshots.sharedAt),
+        ),
+      ),
+    );
+
+  function requireSharer(viewer: ReportViewer) {
+    if (viewer.side !== "agency" || !viewer.canManage) {
+      throw new ORPCError("FORBIDDEN", {
+        message: "Only an owner or admin can share reports with a client",
+        data: { reason: "MANAGER_REQUIRED" },
+      });
+    }
+  }
+
+  async function shareableEngagement(viewer: ReportViewer, engagementId: string | null) {
+    requireSharer(viewer);
+    const [engagement] = engagementId
+      ? await db.select().from(engagements).where(eq(engagements.id, engagementId)).limit(1)
+      : [];
+    if (
+      !engagement ||
+      engagement.kind !== "client" ||
+      engagement.agencyOrganizationId !== viewer.organizationId ||
+      !SHARED_STATUSES.includes(engagement.status)
+    ) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "Only a report for one client can be shared with that client",
+        data: { reason: "NOT_CLIENT_REPORT" },
+      });
+    }
+    return engagement;
+  }
+
+  async function tellClient(
+    engagement: { id: string; agencyOrganizationId: string; clientOrganizationId: string },
+    row: ReportSnapshotRow,
+    actorUserId: string,
+  ) {
+    if (!notifications) return;
+    try {
+      const [agency, client] = await Promise.all([
+        organizations.get(engagement.agencyOrganizationId),
+        organizations.get(engagement.clientOrganizationId),
+      ]);
+      await notifications.notify({
+        organizationId: engagement.clientOrganizationId,
+        kind: "report_shared",
+        payload: {
+          agencyName: agency?.name ?? engagement.agencyOrganizationId,
+          clientName: client?.name ?? engagement.clientOrganizationId,
+          engagementId: engagement.id,
+          period: periodOf(row),
+        },
+        link: `/client/${engagement.id}/reports?report=${row.id}`,
+        excludeUserId: actorUserId,
+      });
+    } catch (err) {
+      console.warn("[API] notification failed:", err instanceof Error ? err.message : err);
+    }
+  }
+
   return {
     generate,
 
@@ -347,7 +444,11 @@ export function createReportsService(
         return { ...report, id };
       }),
 
-    listSaved: async (organizationId: string, filter: { engagementId?: string } = {}) => {
+    listSaved: async (
+      organizationId: string,
+      filter: { engagementId?: string } = {},
+      viewer?: ReportViewer,
+    ) => {
       const rows = await db
         .select()
         .from(reportSnapshots)
@@ -359,13 +460,14 @@ export function createReportsService(
         )
         .orderBy(desc(reportSnapshots.createdAt), desc(reportSnapshots.id))
         .limit(200);
-      return { data: rows.map(summaryOf) };
+      return { data: rows.map((row) => summaryOf(row, viewer)) };
     },
 
     getSaved: async (
       organizationId: string,
       id: string,
       filter: { engagementId?: string } = {},
+      viewer?: ReportViewer,
     ) => {
       const [row] = await db
         .select()
@@ -375,7 +477,99 @@ export function createReportsService(
       if (!row || (filter.engagementId && row.engagementId !== filter.engagementId)) {
         throw reportNotFound();
       }
-      return { ...summaryOf(row), report: JSON.parse(row.payload) as Report };
+      return { ...summaryOf(row, viewer), report: JSON.parse(row.payload) as Report };
+    },
+
+    listForClient: async (
+      engagement: { id: string; agencyOrganizationId: string },
+      viewer: ReportViewer,
+    ) => {
+      const rows = await db
+        .select()
+        .from(reportSnapshots)
+        .where(clientVisible(engagement, viewer.organizationId))
+        .orderBy(desc(reportSnapshots.createdAt), desc(reportSnapshots.id))
+        .limit(200);
+      return { data: rows.map((row) => summaryOf(row, viewer)) };
+    },
+
+    getForClient: async (
+      engagement: { id: string; agencyOrganizationId: string },
+      id: string,
+      viewer: ReportViewer,
+    ) => {
+      const [row] = await db
+        .select()
+        .from(reportSnapshots)
+        .where(and(eq(reportSnapshots.id, id), clientVisible(engagement, viewer.organizationId)))
+        .limit(1);
+      if (!row) throw reportNotFound();
+      return {
+        ...summaryOf(row, viewer),
+        report: clientSafe(JSON.parse(row.payload) as Report),
+      };
+    },
+
+    deleteSaved: async (
+      viewer: ReportViewer,
+      id: string,
+      filter: { engagementId?: string } = {},
+    ) => {
+      const [row] = await db
+        .select()
+        .from(reportSnapshots)
+        .where(
+          and(
+            eq(reportSnapshots.id, id),
+            eq(reportSnapshots.organizationId, viewer.organizationId),
+          ),
+        )
+        .limit(1);
+      if (!row || (filter.engagementId && row.engagementId !== filter.engagementId)) {
+        throw reportNotFound();
+      }
+      if (!summaryOf(row, viewer).canDelete) {
+        throw new ORPCError("FORBIDDEN", {
+          message: "Only the person who saved a report or an owner or admin can delete it",
+          data: { reason: "NOT_REPORT_AUTHOR" },
+        });
+      }
+      await db.delete(reportSnapshots).where(eq(reportSnapshots.id, row.id));
+      return { deleted: true as const };
+    },
+
+    assertShareable: shareableEngagement,
+
+    setShared: async (viewer: ReportViewer, id: string, shared: boolean) => {
+      requireSharer(viewer);
+      const [row] = await db
+        .select()
+        .from(reportSnapshots)
+        .where(
+          and(
+            eq(reportSnapshots.id, id),
+            eq(reportSnapshots.organizationId, viewer.organizationId),
+          ),
+        )
+        .limit(1);
+      if (!row) throw reportNotFound();
+      if (!shared) {
+        const [updated] = await db
+          .update(reportSnapshots)
+          .set({ sharedAt: null, sharedByUserId: null })
+          .where(eq(reportSnapshots.id, row.id))
+          .returning();
+        return summaryOf(updated!, viewer);
+      }
+      const engagement = await shareableEngagement(viewer, row.engagementId);
+      const wasShared = row.sharedAt !== null;
+      const [updated] = await db
+        .update(reportSnapshots)
+        .set({ sharedAt: row.sharedAt ?? new Date(), sharedByUserId: viewer.userId })
+        .where(eq(reportSnapshots.id, row.id))
+        .returning();
+      if (!wasShared) await tellClient(engagement, updated!, viewer.userId);
+      return summaryOf(updated!, viewer);
     },
   };
 }

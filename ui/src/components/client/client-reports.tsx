@@ -28,8 +28,12 @@ import { ReportPreview, reportOverviewCsvValues } from "@/components/admin/repor
 import { AdminError } from "@/components/admin-error";
 import type { EngagementView } from "@/components/engagement-status";
 import { ReportNoteField } from "@/components/report-note-field";
-import { SavedReportsList } from "@/components/saved-reports";
-import { useApiClient } from "@/lib/api";
+import {
+  reportPeriod,
+  type SavedReportSummary,
+  SavedReportsList,
+} from "@/components/saved-reports";
+import { type ApiClient, useApiClient } from "@/lib/api";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 import {
   clientPortalProjectsListQueryOptions,
@@ -42,6 +46,9 @@ import { MONTH_PRESETS } from "@/lib/report-dates";
 
 const ALL_PROJECTS = "all";
 
+type ClientReportFilters = Parameters<ApiClient["clientPortal"]["reports"]["preview"]>[0];
+type PreviewReport = Awaited<ReturnType<ApiClient["clientPortal"]["reports"]["preview"]>>;
+
 export function ClientReports({
   engagement,
   reportId,
@@ -50,7 +57,7 @@ export function ClientReports({
 }: {
   engagement: EngagementView;
   reportId: string | undefined;
-  onOpenReport: (id: string) => void;
+  onOpenReport: (id: string | undefined) => void;
   initialProjectId?: string;
 }) {
   const apiClient = useApiClient();
@@ -60,7 +67,12 @@ export function ClientReports({
     ...clientSavedReportQueryOptions(apiClient, engagement.id, reportId ?? ""),
     enabled: !!reportId,
   });
-  const report = reportId ? (openedQuery.data?.report ?? null) : null;
+  const [preview, setPreview] = useState<{
+    filters: Omit<ClientReportFilters, "engagementId">;
+    report: PreviewReport;
+  } | null>(null);
+  const report: PreviewReport | null =
+    preview?.report ?? (reportId ? (openedQuery.data?.report ?? null) : null);
   const projects =
     useQuery(clientPortalProjectsListQueryOptions(apiClient, engagement.id)).data?.data ?? [];
   const [pickedProjectId, setProjectId] = useState(initialProjectId ?? ALL_PROJECTS);
@@ -70,22 +82,53 @@ export function ClientReports({
   const [endDate, setEndDate] = useState("");
   const openReport = onOpenReport;
 
-  const generateMutation = useMutation({
-    mutationFn: () =>
-      apiClient.clientPortal.reports.generate({
-        engagementId: engagement.id,
+  const previewMutation = useMutation({
+    mutationFn: async () => {
+      const filters = {
         projectId: projectId === ALL_PROJECTS ? undefined : projectId,
         note: note.trim() || undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
-      }),
-    onSuccess: async (data) => {
-      await refreshAfter(queryClient, { type: "reports" });
-      openReport(data.id);
-      toast.success("Report generated and saved");
+      };
+      return {
+        filters,
+        report: await apiClient.clientPortal.reports.preview({
+          engagementId: engagement.id,
+          ...filters,
+        }),
+      };
     },
+    onSuccess: (result) => setPreview(result),
     onError: (err: Error) => toast.error(err.message || "Failed to generate report"),
   });
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      if (!preview) throw new Error("Generate a report first");
+      return apiClient.clientPortal.reports.generate({
+        engagementId: engagement.id,
+        ...preview.filters,
+      });
+    },
+    onSuccess: async (data) => {
+      await refreshAfter(queryClient, { type: "reports" });
+      setPreview(null);
+      openReport(data.id);
+      toast.success("Report saved");
+    },
+    onError: (err: Error) => toast.error(err.message || "Failed to save report"),
+  });
+
+  const deleteReport = async (saved: SavedReportSummary) => {
+    try {
+      await apiClient.clientPortal.reports.delete({ engagementId: engagement.id, id: saved.id });
+      if (saved.id === reportId) openReport(undefined);
+      await refreshAfter(queryClient, { type: "reports" });
+      toast.success("Report deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete report");
+    }
+  };
 
   const handleDownload = () => {
     if (!report) return;
@@ -120,8 +163,8 @@ export function ClientReports({
     <div className="flex flex-col gap-6">
       <p className="max-w-2xl text-sm text-pretty text-muted-foreground print:hidden">
         Generate a report of the Projects {engagement.agency.name} shares with you, with their
-        budget and billings. Reports are saved with their memo, so everyone on your team can open
-        them later.
+        budget and billings. Save a report to keep it with its memo, so everyone on your team can
+        open it later. Reports {engagement.agency.name} shares with you show up here too.
       </p>
       <Card className="print:hidden">
         <CardHeader>
@@ -198,12 +241,34 @@ export function ClientReports({
               </Button>
             </>
           )}
-          <Button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
-            {generateMutation.isPending && <Spinner data-icon="inline-start" />}
-            Generate report
+          {preview && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setPreview(null)}
+                disabled={saveMutation.isPending}
+              >
+                Discard
+              </Button>
+              <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+                {saveMutation.isPending && <Spinner data-icon="inline-start" />}
+                Save report
+              </Button>
+            </>
+          )}
+          <Button
+            variant={preview ? "outline" : "default"}
+            onClick={() => previewMutation.mutate()}
+            disabled={previewMutation.isPending}
+          >
+            {previewMutation.isPending && <Spinner data-icon="inline-start" />}
+            Generate preview
           </Button>
         </CardFooter>
       </Card>
+
+      {openedQuery.isError && !preview && <AdminError error={openedQuery.error} />}
+      {report && <ReportPreview report={report} showBuilders={false} />}
 
       <section className="flex flex-col gap-3 print:hidden" aria-labelledby="client-saved-reports">
         <SectionHeader id="client-saved-reports" title="Saved reports" />
@@ -218,15 +283,17 @@ export function ClientReports({
         ) : (
           <SavedReportsList
             reports={savedQuery.data?.data ?? []}
-            selectedId={reportId}
-            onOpen={openReport}
-            describe={(r) => r.projectTitle ?? "All shared projects"}
+            selectedId={preview ? undefined : reportId}
+            onOpen={(id) => {
+              setPreview(null);
+              openReport(id);
+            }}
+            titleOf={(r) => `${r.projectTitle ?? "All shared projects"} · ${reportPeriod(r)}`}
+            agencyName={engagement.agency.name}
+            onDelete={deleteReport}
           />
         )}
       </section>
-
-      {openedQuery.isError && <AdminError error={openedQuery.error} />}
-      {report && <ReportPreview report={report} showBuilders={false} />}
     </div>
   );
 }

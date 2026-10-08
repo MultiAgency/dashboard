@@ -94,6 +94,10 @@ export const NOTIFICATION_KINDS = {
     title: `${p.agencyName} declined your idea`,
     body: `${p.agencyName} declined the idea "${p.ideaTitle}" from ${p.clientName}.`,
   }),
+  report_shared: (p) => ({
+    title: `${p.agencyName} shared a report`,
+    body: `${p.agencyName} shared a report with ${p.clientName} covering ${p.period}.`,
+  }),
   plan_shortfall: (p) => ({
     title: `The Allocation plan for ${p.period} was not fully applied`,
     body: `The Prepaid balance of ${p.clientName} with ${p.agencyName} did not cover ${p.count} plan line(s) for ${p.period} (${p.amounts}). They were skipped.`,
