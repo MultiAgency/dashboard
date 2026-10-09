@@ -22,6 +22,7 @@ import { BuilderSummaryPanel } from "@/components/admin/builder-summary-panel";
 import {
   ContributorProfileForm,
   RemoveBuilderButton,
+  VerifiedGithub,
 } from "@/components/admin/contributors-section";
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
 import { BuilderAvatar } from "@/components/builder-avatar";
@@ -174,6 +175,7 @@ function ContributorDetailPage() {
               : "Profile, project assignments and billing history."
           }
         />
+        {contributor.githubLogin && <VerifiedGithub login={contributor.githubLogin} />}
         {contributorQuery.data?.canDelete && (
           <RemoveBuilderButton
             nearAccount={nearAccount}
@@ -187,7 +189,9 @@ function ContributorDetailPage() {
         <ContributorProfileForm nearAccount={nearAccount} contributor={contributor} />
       ) : (
         <p className="text-sm text-muted-foreground">
-          This builder manages their own profile, so only they or a platform admin can edit it.
+          {contributor.githubLogin
+            ? "This builder is a member of the contribution board, which verifies their identity, so only they or a platform admin can edit their profile."
+            : "This builder manages their own profile, so only they or a platform admin can edit it."}
         </p>
       )}
 
