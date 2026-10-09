@@ -44,7 +44,7 @@ import { adminContributorsListQueryOptions, refreshAfter } from "@/lib/queries";
 
 type Contributor = Awaited<ReturnType<ApiClient["contributors"]["list"]>>["data"][number];
 
-function VerifiedGithub({ login }: { login: string }) {
+export function VerifiedGithub({ login }: { login: string }) {
   return (
     <a
       href={githubProfileUrl(login)}

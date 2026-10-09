@@ -96,6 +96,9 @@ const notYourBuilder = () =>
 
 const asManager = (context: PluginContext): PluginContext => ({ ...context, trusted: true });
 
+const asOrpcError = (err: unknown) =>
+  err instanceof ORPCError ? err : new ORPCError("INTERNAL_SERVER_ERROR", { message: String(err) });
+
 export function createContributorsService(db: Database, plugins: PluginsClient) {
   async function managesBuilder(manager: ManagerScope | undefined, nearAccount: string) {
     if (!manager) return false;
@@ -327,6 +330,21 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           db.delete(organizationBuilders).where(eq(organizationBuilders.nearAccount, nearAccount)),
         );
         return result;
+      }),
+
+    members: (context: PluginContext) =>
+      Effect.tryPromise({
+        try: () => plugins.builders(context).listMembersWithAgreements({}),
+        catch: asOrpcError,
+      }),
+
+    recordAgreement: (
+      context: PluginContext,
+      input: { githubLogin: string; version: string; attestedAt: string; proof: string },
+    ) =>
+      Effect.tryPromise({
+        try: () => plugins.builders(context).recordAgreement(input),
+        catch: asOrpcError,
       }),
   };
 }

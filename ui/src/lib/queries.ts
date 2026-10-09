@@ -167,6 +167,16 @@ export function adminContributorsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const platformMembersQueryKey = ["platform", "members"] as const;
+
+export function platformMembersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: platformMembersQueryKey,
+    queryFn: () => apiClient.members.list(),
+    retry: false,
+  });
+}
+
 export const adminAssignmentsListQueryKey = ["admin", "assignments", "list"] as const;
 
 export function adminAssignmentsListQueryOptions(apiClient: ApiClient) {

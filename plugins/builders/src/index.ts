@@ -171,6 +171,14 @@ export default createPlugin({
         return await runEffect(services.member.putMember(input));
       }),
 
+      listMembersWithAgreements: builder.listMembersWithAgreements
+        .use(auth.requireAuth)
+        .handler(async ({ context }) => {
+          return {
+            data: await runEffect(services.member.listMembersWithAgreements(callerOf(context))),
+          };
+        }),
+
       recordAgreement: builder.recordAgreement
         .use(auth.requireAuth)
         .handler(async ({ input, context }) => {

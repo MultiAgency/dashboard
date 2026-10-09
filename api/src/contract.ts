@@ -227,6 +227,34 @@ const contributor = z.object({
   updatedAt: z.string(),
 });
 
+const registryNetwork = z.enum(["testnet", "mainnet"]);
+
+const registryMember = z.object({
+  githubLogin: z.string(),
+  kind: z.enum(["human", "agent"]),
+  operatorGithubLogin: z.string().nullable(),
+  name: z.string().nullable(),
+  skills: z.array(z.string()),
+  nearAccount: z.string().nullable(),
+  accounts: z.array(z.object({ network: registryNetwork, account: z.string() })),
+  admissions: z.array(
+    z.object({
+      network: registryNetwork,
+      status: z.enum(["admitted", "suspended", "removed"]),
+      proofUrl: z.string().nullable(),
+      admittedAt: z.string().nullable(),
+    }),
+  ),
+  agreement: z
+    .object({
+      version: z.string(),
+      attestedAt: z.string(),
+      recordedBy: z.string(),
+      recordedAt: z.string(),
+    })
+    .nullable(),
+});
+
 const engagementParty = z.object({ id: z.string(), name: z.string(), slug: z.string() });
 
 const engagementStatus = z.enum(["proposed", "active", "declined", "ended"]);
@@ -1430,6 +1458,26 @@ export const contract = oc.router({
       .input(z.object({ nearAccount: nearAccountId }))
       .output(z.object({ deleted: z.boolean() }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  members: {
+    list: oc
+      .route({ method: "GET", path: "/platform/members" })
+      .output(z.object({ data: z.array(registryMember) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    recordAgreement: oc
+      .route({ method: "PUT", path: "/platform/members/{githubLogin}/agreement" })
+      .input(
+        z.object({
+          githubLogin: z.string().trim().toLowerCase().min(1).max(60),
+          version: z.string().trim().min(1).max(100),
+          attestedAt: z.iso.datetime(),
+          proof: z.string().trim().min(1).max(2000),
+        }),
+      )
+      .output(z.object({ recorded: z.boolean() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
   },
 
   assignments: {
