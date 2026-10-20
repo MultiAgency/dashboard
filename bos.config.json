@@ -13,10 +13,10 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-301-ui-dashboard-multiagency-db3e13c3c-ze.zephyrcloud.app",
-      "integrity": "sha384-ikHbJ3jPXrpP8Togh0bnmCZb0ZIz53My3BSUbPJ0KKH1Ks2WAeZbcr0EhDXQE0jq",
-      "ssr": "https://multiagentic-305-ui-dashboard-multiagency-42362a5da-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-+8oRjM01p91CvdO+GnSvAf4WgGyBcVAZAECC19cR4r4WF4rtWl1+tjp6xl8HcNyH"
+      "production": "https://multiagentic-316-ui-dashboard-multiagency-351ba702b-ze.zephyrcloud.app",
+      "integrity": "sha384-Ks7dn+EGnfIucoShazdeNP6RzTcqXVdNF2AQpZhL1NEEnAEdDw0FsyhYq8rjmu21",
+      "ssr": "https://multiagentic-320-ui-dashboard-multiagency-2d9c2e171-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-xC+pypKnqsxJK1shMSgNRby904WD1c1tLrbr7YhXZbCvnCKsSsIftTcptJ9o4S8P"
     },
     "api": {
       "name": "api",
@@ -37,8 +37,8 @@
         "APP_ORIGIN",
         "FASTNEAR_API_KEY"
       ],
-      "production": "https://multiagentic-304-api-dashboard-multiagency-0eb735dda-ze.zephyrcloud.app",
-      "integrity": "sha384-qmekkNZyj8V9kebDPUIiNsxMjN5mPN74tsTDVXbEySn3sVhsdLc8PUOek/O5zWCT"
+      "production": "https://multiagentic-319-api-dashboard-multiagency-d83707fcb-ze.zephyrcloud.app",
+      "integrity": "sha384-kkE+VfwmdrPJPCJvXIrgisKChnD4UAu9h7GA2+ROPrEC9bS6161AygyyT6mK2OoA"
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
@@ -65,7 +65,7 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-302-everything-dev-projects-plugin-d-1ec6a682d-ze.zephyrcloud.app",
+      "production": "https://multiagentic-318-everything-dev-projects-plugin-d-ebcf3903c-ze.zephyrcloud.app",
       "integrity": "sha384-qPOhAJTs/T7AsUmqhbdUnrcWJc4R5zW8DtsCJLScSOOyQS46quiS1qmJ/PfVmlH8"
     },
     "builders": {
@@ -75,8 +75,7 @@
         "REGISTRY_TOKEN_TESTNET",
         "REGISTRY_TOKEN_MAINNET"
       ],
-      "production": "https://multiagentic-303-everything-dev-builders-plugin-d-d00a4c1b2-ze.zephyrcloud.app",
-      "integrity": "sha384-HVd3JBtogajDWoxVKGoFBiF93pb1sojI3kwzQgyhXrqVfldRO/Ynj6u87XeCpPpA"
+      "production": "https://multiagentic-317-everything-dev-builders-plugin-d-274dda0d1-ze.zephyrcloud.app"
     }
   }
 }
