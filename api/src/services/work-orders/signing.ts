@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { PDFDocument, type PDFFont, type PDFPage, rgb, StandardFonts } from "pdf-lib";
+import type { PDFFont, PDFPage } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib/dist/pdf-lib.esm.js";
 
 export type SignerRecord = {
   role: "contractor" | "representative";
