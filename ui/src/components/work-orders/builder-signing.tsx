@@ -56,6 +56,7 @@ export function BuilderSigning({
   });
 
   const waiting = wo.status === "offered";
+  const esign = wo.signing.esign?.sent ? wo.signing.esign : null;
   const signedByBuilder = wo.signing.builder;
   const complete = signedByBuilder && wo.signing.representative;
 
@@ -66,13 +67,15 @@ export function BuilderSigning({
           <h2>{waiting ? `Sign Work Order ${wo.code}` : "Work order document"}</h2>
         </CardTitle>
         <CardDescription>
-          {waiting
-            ? `${wo.agencyName} sent you this work order to sign. Read it, then sign with your full name below. You're signed in with ${wo.builder.nearAccount}, the account you'll be paid to.`
-            : complete
-              ? `Signed by you on ${signedByBuilder.signedAt.slice(0, 10)} and countersigned by ${wo.signing.representative?.name} on ${wo.signing.representative?.signedAt.slice(0, 10)}.`
-              : signedByBuilder
-                ? `You signed on ${signedByBuilder.signedAt.slice(0, 10)}. Waiting for ${wo.agencyName} to countersign.`
-                : "The document of this work order."}
+          {waiting && esign
+            ? `${wo.agencyName} sent you this work order to sign. Documenso emailed you a signing request; you can also open it from here. You'll be paid to ${wo.builder.nearAccount}.`
+            : waiting
+              ? `${wo.agencyName} sent you this work order to sign. Read it, then sign with your full name below. You're signed in with ${wo.builder.nearAccount}, the account you'll be paid to.`
+              : complete
+                ? `Signed by you on ${signedByBuilder.signedAt.slice(0, 10)} and countersigned by ${wo.signing.representative?.name} on ${wo.signing.representative?.signedAt.slice(0, 10)}.`
+                : signedByBuilder
+                  ? `You signed on ${signedByBuilder.signedAt.slice(0, 10)}. Waiting for ${wo.agencyName} to countersign.`
+                  : "The document of this work order."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -83,7 +86,27 @@ export function BuilderSigning({
         ) : (
           <p className="text-sm text-muted-foreground">Loading the document…</p>
         )}
-        {waiting && document.data && (
+        {waiting && esign && (
+          <div className="flex flex-wrap gap-2 border-t pt-4">
+            {esign.builderUrl && (
+              <Button asChild>
+                <a href={esign.builderUrl} target="_blank" rel="noreferrer">
+                  Sign in Documenso
+                </a>
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              onClick={() => queryClient.invalidateQueries({ queryKey: myWorkOrdersQueryKey })}
+            >
+              I've signed: refresh
+            </Button>
+            <Button variant="ghost" onClick={onDecline}>
+              Decline
+            </Button>
+          </div>
+        )}
+        {waiting && !esign && document.data && (
           <form
             className="flex flex-col gap-4 border-t pt-4"
             onSubmit={(e) => {

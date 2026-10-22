@@ -162,6 +162,13 @@
       "when": 1792713600000,
       "tag": "0023_payout_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792800000000,
+      "tag": "0024_work_order_documenso",
+      "breakpoints": true
     }
   ]
 }

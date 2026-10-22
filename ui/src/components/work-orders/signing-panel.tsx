@@ -67,8 +67,9 @@ export function SigningPanel({
           <h2>Signature and payout account</h2>
         </CardTitle>
         <CardDescription>
-          The builder either e-signs the work order document in Google Docs or accepts the terms in
-          MultiAgency. A payout account this Agency hasn't paid before is confirmed by its wallet.
+          Offering the work order sends it for e-signature: the builder signs first, then the
+          representative. A payout account this Agency hasn't paid before is confirmed by its
+          wallet.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -181,7 +182,9 @@ function SignatureStatus({
     onError: (err: Error) => toast.error(err.message || "Couldn't countersign"),
   });
   const day = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : "");
-  const { builder, representative } = wo.signing;
+  const { builder, representative, esign } = wo.signing;
+  const check = () => queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+  const esignError = esign?.error ? <span className="text-destructive">{esign.error}</span> : null;
 
   if (wo.signature.method === "google_esign") {
     return (
@@ -201,6 +204,31 @@ function SignatureStatus({
         Signed by {builder.name} on {day(builder.signedAt)} and countersigned by{" "}
         {representative.name} on {day(representative.signedAt)}.
       </span>
+    );
+  }
+  if (builder && esign?.sent) {
+    return (
+      <div className="flex flex-col gap-3">
+        <span>
+          Signed by {builder.name} in Documenso on {day(builder.signedAt)}.{" "}
+          {canManage
+            ? "Documenso emailed the representative to countersign."
+            : "Waiting for the representative's countersignature."}
+        </span>
+        {esignError}
+        <div className="flex flex-wrap gap-2">
+          {canManage && esign.representativeUrl && (
+            <Button size="sm" asChild>
+              <a href={esign.representativeUrl} target="_blank" rel="noreferrer">
+                Countersign in Documenso
+              </a>
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={check}>
+            Check signatures
+          </Button>
+        </div>
+      </div>
     );
   }
   if (builder) {
@@ -251,6 +279,20 @@ function SignatureStatus({
       </div>
     );
   }
+  if (wo.status === "offered" && esign?.sent) {
+    return (
+      <div className="flex flex-col gap-3">
+        <span className="text-muted-foreground">
+          Sent through Documenso on {day(wo.offeredAt)}: it emailed the builder a signing request.
+          Waiting for their signature; you're asked to countersign after them.
+        </span>
+        {esignError}
+        <Button size="sm" variant="outline" className="self-start" onClick={check}>
+          Check signatures
+        </Button>
+      </div>
+    );
+  }
   if (wo.status === "offered") {
     return (
       <span className="text-muted-foreground">
@@ -262,9 +304,13 @@ function SignatureStatus({
     return <span>Accepted by the builder in MultiAgency on {day(wo.acceptedAt)}.</span>;
   }
   return (
-    <span className="text-muted-foreground">
-      Not sent yet. Offer to builder prepares the document and emails the builder to sign it.
-    </span>
+    <div className="flex flex-col gap-1">
+      <span className="text-muted-foreground">
+        Not sent yet. Offer to builder prepares the document and sends the builder a signing
+        request.
+      </span>
+      {esignError}
+    </div>
   );
 }
 

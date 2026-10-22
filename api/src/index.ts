@@ -60,6 +60,7 @@ import {
 import { fullAccessKeys, getProposal, getProposalBond, getRoles } from "./services/sputnik";
 import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
+import { createDocumenso } from "./services/work-orders/documenso";
 import { testEvent } from "./services/work-orders/events";
 import { cachedOwnership, createGitHub } from "./services/work-orders/github";
 import {
@@ -114,6 +115,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
     GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
     NEAR_INTENTS_AGENT_API_KEY: z.string().optional(),
     NEAR_INTENTS_AGENT_API_URL: z.string().optional(),
+    DOCUMENSO_API_KEY: z.string().optional(),
+    DOCUMENSO_API_URL: z.string().optional(),
     PAYOUTS_SECRET_KEY: z.string().optional(),
   }),
 
@@ -293,6 +296,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
         proposal: (daoAccountId, proposalId) => getProposal(db, daoAccountId, proposalId),
         proposalBond: getProposalBond,
         prices: createPriceFeed(),
+        esign: config.secrets.DOCUMENSO_API_KEY
+          ? createDocumenso({
+              apiKey: config.secrets.DOCUMENSO_API_KEY,
+              apiUrl: config.secrets.DOCUMENSO_API_URL,
+            })
+          : null,
         notifications,
         thresholds: config.variables.workOrderRenewal,
         outbox: workOrderOutbox,

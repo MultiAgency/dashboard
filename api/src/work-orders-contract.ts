@@ -88,9 +88,18 @@ export const workOrder = z.object({
     builder: z.object({ name: z.string(), signedAt: z.string() }).nullable(),
     representative: z.object({ name: z.string(), signedAt: z.string() }).nullable(),
     needsCountersign: z.boolean(),
+    esign: z
+      .object({
+        provider: z.literal("documenso"),
+        sent: z.boolean(),
+        builderUrl: z.string().nullable(),
+        representativeUrl: z.string().nullable(),
+        error: z.string().nullable(),
+      })
+      .nullable(),
   }),
   signature: z.object({
-    method: z.enum(["in_app", "google_esign"]).nullable(),
+    method: z.enum(["in_app", "google_esign", "documenso"]).nullable(),
     signedAt: z.string().nullable(),
     signers: z.array(
       z.object({

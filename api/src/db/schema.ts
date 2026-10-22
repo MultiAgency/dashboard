@@ -584,7 +584,7 @@ export const WORK_ORDER_STATUSES = [
 
 export const RENEWAL_STATUSES = ["renewed", "needs_approval", "declined"] as const;
 
-export const SIGNATURE_METHODS = ["in_app", "google_esign"] as const;
+export const SIGNATURE_METHODS = ["in_app", "google_esign", "documenso"] as const;
 
 export const workOrders = pgTable(
   "work_orders",
@@ -627,6 +627,10 @@ export const workOrders = pgTable(
     payeeConfirmedBy: text("payee_confirmed_by"),
     documentSha256: text("document_sha256"),
     documentUrl: text("document_url"),
+    esignEnvelopeId: text("esign_envelope_id"),
+    esignBuilderUrl: text("esign_builder_url"),
+    esignRepresentativeUrl: text("esign_representative_url"),
+    esignError: text("esign_error"),
     activatedAt: timestamp("activated_at", { withTimezone: false }),
     activatedBy: text("activated_by"),
     lastCollectedAt: timestamp("last_collected_at", { withTimezone: false }),

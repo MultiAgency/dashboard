@@ -178,3 +178,85 @@ export async function signedPdf(input: {
   );
   return doc.save({ useObjectStreams: false });
 }
+
+export type SignatureSlot = {
+  role: "contractor" | "representative";
+  name: string;
+  email: string;
+};
+
+export type SignatureBoxes = Record<
+  "contractor" | "representative",
+  {
+    signature: { page: number; x: number; y: number; width: number; height: number };
+    date: { page: number; x: number; y: number; width: number; height: number };
+  }
+>;
+
+export async function withSignaturePage(input: {
+  original: Uint8Array;
+  title: string;
+  signers: SignatureSlot[];
+}): Promise<{ pdf: Uint8Array; boxes: SignatureBoxes }> {
+  const doc = await PDFDocument.load(input.original);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const page = doc.addPage([PAGE.width, PAGE.height]);
+  const pageNumber = doc.getPageCount();
+  const percentX = (pt: number) => (pt / PAGE.width) * 100;
+  const percentY = (pt: number) => (pt / PAGE.height) * 100;
+  const muted = rgb(0.35, 0.35, 0.35);
+  let top = PAGE.margin;
+  const draw = (text: string, size: number, useBold = false, color = rgb(0, 0, 0)) => {
+    page.drawText(plain(text), {
+      x: PAGE.margin,
+      y: PAGE.height - top - size,
+      size,
+      font: useBold ? bold : font,
+      color,
+    });
+    top += size * 1.5;
+  };
+  draw("Signatures", 16, true);
+  draw(input.title, 11);
+  top += 12;
+  const boxes = {} as SignatureBoxes;
+  for (const signer of input.signers) {
+    draw(ROLE_LABEL[signer.role], 11, true);
+    draw(`${signer.name} <${signer.email}>`, 10, false, muted);
+    top += 4;
+    const signature = { x: PAGE.margin, top, width: 300, height: 60 };
+    const date = { x: PAGE.margin + 330, top: top + 30, width: 170, height: 30 };
+    page.drawLine({
+      start: { x: signature.x, y: PAGE.height - signature.top - signature.height },
+      end: { x: signature.x + signature.width, y: PAGE.height - signature.top - signature.height },
+      thickness: 0.5,
+      color: muted,
+    });
+    page.drawLine({
+      start: { x: date.x, y: PAGE.height - date.top - date.height },
+      end: { x: date.x + date.width, y: PAGE.height - date.top - date.height },
+      thickness: 0.5,
+      color: muted,
+    });
+    top += signature.height + 4;
+    page.drawText("Signature", {
+      x: signature.x,
+      y: PAGE.height - top - 8,
+      size: 8,
+      font,
+      color: muted,
+    });
+    page.drawText("Date", { x: date.x, y: PAGE.height - top - 8, size: 8, font, color: muted });
+    top += 40;
+    const box = (b: { x: number; top: number; width: number; height: number }) => ({
+      page: pageNumber,
+      x: percentX(b.x),
+      y: percentY(b.top),
+      width: percentX(b.width),
+      height: percentY(b.height),
+    });
+    boxes[signer.role] = { signature: box(signature), date: box(date) };
+  }
+  return { pdf: await doc.save({ useObjectStreams: false }), boxes };
+}

@@ -42,6 +42,8 @@
         "GOOGLE_SERVICE_ACCOUNT_JSON",
         "NEAR_INTENTS_AGENT_API_KEY",
         "NEAR_INTENTS_AGENT_API_URL",
+        "DOCUMENSO_API_KEY",
+        "DOCUMENSO_API_URL",
         "PAYOUTS_SECRET_KEY"
       ],
       "production": "https://multiagentic-319-api-dashboard-multiagency-d83707fcb-ze.zephyrcloud.app",

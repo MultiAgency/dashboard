@@ -25,6 +25,7 @@ import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organizat
 import type { Project, ProjectDirectory } from "../project-directory";
 import type { DaoProposal } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
+import type { EsignPort } from "./documenso";
 import {
   codeIn,
   documentFields,
@@ -47,7 +48,14 @@ import {
   sha256Hex,
   templateAssessment,
 } from "./report";
-import { fromBase64, sha256Bytes, signedPdf, termsPdf, toBase64 } from "./signing";
+import {
+  fromBase64,
+  sha256Bytes,
+  signedPdf,
+  termsPdf,
+  toBase64,
+  withSignaturePage,
+} from "./signing";
 import type { Summarizer } from "./summarizer";
 import { addDays, dateOf, nextPeriod, startOfDay, windowOf } from "./time";
 import type {
@@ -95,6 +103,7 @@ export type WorkOrderDeps = {
   proposal: (daoAccountId: string, proposalId: number) => Promise<DaoProposal | null>;
   proposalBond: (daoAccountId: string) => Promise<string>;
   prices?: PriceFeed | null;
+  esign?: EsignPort | null;
   payouts?: {
     readiness(
       organizationId: string,
@@ -898,6 +907,17 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         signedAt: s.signedAt,
       })),
     });
+    return storeSigned(row, offered, final, ordered, "in_app");
+  }
+
+  async function storeSigned(
+    row: WorkOrderRow,
+    offered: WorkOrderDocumentRow,
+    final: Uint8Array,
+    ordered: { name: string; role: "contractor" | "representative"; signedAt: Date }[],
+    method: "in_app" | "documenso",
+  ) {
+    const completedAt = now();
     const sha256 = sha256Bytes(final);
     const fileName = `Work Order ${row.code} (signed).pdf`;
     let driveFileId: string | null = null;
@@ -922,7 +942,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           sha256,
           workOrderId: row.id,
           outcome: "attached",
-          note: "Signed in MultiAgency",
+          note: method === "documenso" ? "Signed in Documenso" : "Signed in MultiAgency",
         });
       } catch (error) {
         await recordGoogle(
@@ -944,7 +964,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       createdAt: completedAt,
     });
     const signed = await update(row.id, {
-      signatureMethod: "in_app",
+      signatureMethod: method,
       signedAt: completedAt,
       signers: JSON.stringify(
         ordered.map((s) => ({ name: s.name, role: s.role, signedAt: s.signedAt.toISOString() })),
@@ -1142,10 +1162,28 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       );
   }
 
+  function esignOf(row: WorkOrderRow) {
+    if (!row.esignEnvelopeId && !row.esignError) return null;
+    return {
+      provider: "documenso" as const,
+      sent: !!row.esignEnvelopeId,
+      builderUrl: row.esignBuilderUrl,
+      representativeUrl: row.esignRepresentativeUrl,
+      error: row.esignError,
+    };
+  }
+
   async function signingOf(row: WorkOrderRow) {
+    const esign = esignOf(row);
     const offered = await latestDocument(row.id, "offered");
     if (!offered || offered.termsHash !== termsHash(row)) {
-      return { documentSha256: null, builder: null, representative: null, needsCountersign: false };
+      return {
+        documentSha256: null,
+        builder: null,
+        representative: null,
+        needsCountersign: false,
+        esign,
+      };
     }
     const signatures = await signaturesOf(row.id, offered.sha256);
     const signer = (role: "contractor" | "representative") => {
@@ -1159,7 +1197,141 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       builder,
       representative,
       needsCountersign: builder !== null && representative === null,
+      esign,
     };
+  }
+
+  async function sendForSignature(row: WorkOrderRow) {
+    const esign = deps.esign;
+    if (!esign) return row;
+    const builder = await deps.builders.get(row.builderNearAccount).catch(() => null);
+    const contacts = await contactsOf(row, builder);
+    const offered = await latestDocument(row.id, "offered");
+    if (!offered) throw badRequest("NO_DOCUMENT", "The work order document wasn't prepared");
+    const agencyName = await deps
+      .organizationName(row.organizationId)
+      .catch(() => row.organizationId);
+    const signers = [
+      {
+        role: "contractor" as const,
+        name: row.contractorName ?? builder?.name ?? row.builderNearAccount,
+        email: contacts.contractorEmail ?? "",
+      },
+      {
+        role: "representative" as const,
+        name: row.representativeName ?? agencyName,
+        email: contacts.representativeEmail ?? "",
+      },
+    ];
+    const title = `Work Order ${row.code}: ${row.title}`;
+    const { pdf, boxes } = await withSignaturePage({
+      original: fromBase64(offered.pdf),
+      title,
+      signers,
+    });
+    const sha256 = sha256Bytes(pdf);
+    try {
+      const sent = await esign.send({
+        title,
+        externalId: row.id,
+        fileName: offered.fileName,
+        pdf,
+        subject: `Please sign Work Order ${row.code}`,
+        message: `${agencyName} sent you Work Order ${row.code} (${row.title}) to review and sign.`,
+        redirectUrl: absolute(builderLink(row.id)),
+        signers: signers.map((signer) => ({ ...signer, ...boxes[signer.role] })),
+      });
+      await db
+        .update(workOrderDocuments)
+        .set({ pdf: toBase64(pdf), sha256 })
+        .where(eq(workOrderDocuments.id, offered.id));
+      return await update(row.id, {
+        esignEnvelopeId: sent.envelopeId,
+        esignBuilderUrl: sent.signingUrls.contractor ?? null,
+        esignRepresentativeUrl: sent.signingUrls.representative ?? null,
+        esignError: null,
+      });
+    } catch (error) {
+      const message = `Couldn't send ${row.code} for signature: ${errorText(error)}`;
+      await update(row.id, { esignError: message });
+      throw badRequest("ESIGN_FAILED", message);
+    }
+  }
+
+  async function syncSignatures(row: WorkOrderRow): Promise<WorkOrderRow> {
+    const esign = deps.esign;
+    if (!esign || !row.esignEnvelopeId || row.signedAt) return row;
+    if (row.status !== "offered" && row.status !== "accepted") return row;
+    let state: Awaited<ReturnType<EsignPort["status"]>>;
+    try {
+      state = await esign.status(row.esignEnvelopeId);
+    } catch (error) {
+      return update(row.id, { esignError: `Couldn't check Documenso: ${errorText(error)}` });
+    }
+    const offered = await latestDocument(row.id, "offered");
+    if (!offered) return row;
+    let current = row.esignError ? await update(row.id, { esignError: null }) : row;
+    if (state.status === "rejected") {
+      if (current.status !== "offered") return current;
+      const reason = state.signers.find((s) => s.rejected)?.rejectionReason ?? "";
+      const declined = await update(row.id, {
+        status: "draft",
+        offeredAt: null,
+        esignEnvelopeId: null,
+        esignBuilderUrl: null,
+        esignRepresentativeUrl: null,
+        esignError: `Declined in Documenso${reason ? `: ${reason}` : ""}`,
+      });
+      await notifyManagers(
+        declined,
+        "work_order_declined",
+        await payloadOf(declined, { note: reason }),
+      );
+      return declined;
+    }
+    const existing = await signaturesOf(row.id, offered.sha256);
+    for (const signer of state.signers) {
+      if (!signer.signedAt || existing.some((s) => s.role === signer.role)) continue;
+      await db.insert(workOrderSignatures).values({
+        id: crypto.randomUUID(),
+        workOrderId: row.id,
+        documentSha256: offered.sha256,
+        role: signer.role,
+        name: signer.name,
+        email: signer.email,
+        userId: null,
+        nearAccount: signer.role === "contractor" ? row.builderNearAccount : null,
+        ip: null,
+        userAgent: null,
+        signedAt: new Date(signer.signedAt),
+      });
+    }
+    const contractor = state.signers.find((s) => s.role === "contractor");
+    if (current.status === "offered" && contractor?.signedAt) {
+      current = await update(row.id, {
+        status: "accepted",
+        acceptedAt: new Date(contractor.signedAt),
+        acceptedTermsHash: termsHash(row),
+        signatureMethod: "documenso",
+        payeeConfirmedAt: row.payeeConfirmedAt ?? now(),
+        payeeConfirmedBy: row.payeeConfirmedBy ?? row.builderNearAccount,
+      });
+      await notifyManagers(current, "work_order_accepted", await payloadOf(current));
+    }
+    if (state.status !== "completed") return current;
+    let final: Uint8Array;
+    try {
+      final = await esign.downloadSigned(row.esignEnvelopeId);
+    } catch (error) {
+      return update(row.id, {
+        esignError: `Couldn't download the signed PDF: ${errorText(error)}`,
+      });
+    }
+    const signatures = await signaturesOf(row.id, offered.sha256);
+    const ordered = (["contractor", "representative"] as const)
+      .map((role) => signatures.find((s) => s.role === role))
+      .filter((s): s is WorkOrderSignatureRow => Boolean(s));
+    return storeSigned(current, offered, final, ordered, "documenso");
   }
 
   function scopeOf(row: WorkOrderRow): WorkOrderScope {
@@ -1312,6 +1484,20 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       createdAt: request.createdAt.toISOString(),
       updatedAt: request.updatedAt.toISOString(),
     };
+  }
+
+  function adminView<T extends { signing: { esign: ReturnType<typeof esignOf> } }>(value: T): T {
+    const esign = value.signing.esign;
+    return esign
+      ? { ...value, signing: { ...value.signing, esign: { ...esign, builderUrl: null } } }
+      : value;
+  }
+
+  function builderView<T extends { signing: { esign: ReturnType<typeof esignOf> } }>(value: T): T {
+    const esign = value.signing.esign;
+    return esign
+      ? { ...value, signing: { ...value.signing, esign: { ...esign, representativeUrl: null } } }
+      : value;
   }
 
   async function view(row: WorkOrderRow, cache?: { projects?: Map<string, Project> }) {
@@ -2120,11 +2306,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             .catch(() => [])
         ).map((p) => [p.id, p]),
       );
-      return { data: await Promise.all(rows.map((row) => view(row, { projects }))) };
+      return {
+        data: await Promise.all(rows.map(async (row) => adminView(await view(row, { projects })))),
+      };
     },
 
     get: async (scope: OrganizationScope, input: { id: string }) =>
-      detail(await ownRow(scope, input.id)),
+      adminView(await detail(await syncSignatures(await ownRow(scope, input.id)))),
 
     create: async (scope: OrganizationScope, input: WorkOrderFields) => {
       const code = input.code?.trim() || (await nextCode(scope.organizationId));
@@ -2256,6 +2444,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
               acceptedTermsHash: null,
               preparedDocumentUrl: null,
               signatureMethod: null,
+              esignEnvelopeId: null,
+              esignBuilderUrl: null,
+              esignRepresentativeUrl: null,
+              esignError: null,
               signers: null,
               signedAt: null,
               documentSha256: null,
@@ -2339,11 +2531,23 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (!row.githubLogin) {
         throw badRequest("NO_GITHUB_LOGIN", "Add the builder's GitHub login before offering it");
       }
-      const prepared = await prepareOfferDocument(row);
+      if (deps.esign) {
+        const contacts = await contactsOf(
+          row,
+          await deps.builders.get(row.builderNearAccount).catch(() => null),
+        );
+        if (!contacts.contractorEmail || !contacts.representativeEmail) {
+          throw badRequest(
+            "NO_EMAILS",
+            "Add the builder's and the representative's email: the signing request goes to both",
+          );
+        }
+      }
+      const prepared = await sendForSignature(await prepareOfferDocument(row));
       const offered = await update(prepared.id, { status: "offered", offeredAt: now() });
       await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
-      await announce(offered, "work_order.offered");
-      return view(offered);
+      if (!offered.esignEnvelopeId) await announce(offered, "work_order.offered");
+      return adminView(await view(offered));
     },
 
     document: async (scope: OrganizationScope, input: { id: string }) =>
@@ -2924,7 +3128,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       return {
         data: await Promise.all(
           visible.map(async (row) => ({
-            ...(await view(row)),
+            ...builderView(await view(row)),
             agencyName: await deps
               .organizationName(row.organizationId)
               .catch(() => row.organizationId),
@@ -2934,10 +3138,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     },
 
     mineGet: async (context: PluginContext, input: { id: string }) => {
-      const row = await mustRow(input.id);
+      const row = await syncSignatures(await mustRow(input.id));
       requireBuilder(context, row);
       return {
-        ...(await detail(row)),
+        ...builderView(await detail(row)),
         agencyName: await deps.organizationName(row.organizationId).catch(() => row.organizationId),
         termsHash: termsHash(row),
       };
@@ -3021,7 +3225,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       requireBuilder(context, row);
       if (row.status !== "offered")
         throw badRequest("NOT_OFFERED", `Work order ${row.code} isn't waiting for you`);
-      const declined = await update(row.id, { status: "draft", offeredAt: null });
+      const declined = await update(row.id, {
+        status: "draft",
+        offeredAt: null,
+        esignEnvelopeId: null,
+        esignBuilderUrl: null,
+        esignRepresentativeUrl: null,
+      });
       await notifyManagers(
         declined,
         "work_order_declined",
@@ -3154,6 +3364,24 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (!(await claimLock(holder))) return { ran: false, counts: {} as Record<string, number> };
       const counts: Record<string, number> = {};
       try {
+        if (deps.esign) {
+          const signing = await db
+            .select()
+            .from(workOrders)
+            .where(
+              and(
+                inArray(workOrders.status, ["offered", "accepted"]),
+                isNotNull(workOrders.esignEnvelopeId),
+              ),
+            );
+          for (const row of signing) {
+            try {
+              await syncSignatures(row);
+            } catch (error) {
+              console.warn(`[API] work order ${row.code} signature check failed`, error);
+            }
+          }
+        }
         const rows = await db
           .select()
           .from(workOrders)
