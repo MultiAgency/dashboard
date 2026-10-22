@@ -2,6 +2,7 @@ import {
   AgentApiError,
   AgentApiRequestError,
   AgentApiResponseTooLargeError,
+  type BalancesView,
   createGrantCredential,
   type GenerateIntentResponse,
   type Policy,
@@ -21,7 +22,15 @@ import {
   workOrders,
 } from "../../db/schema";
 import { open, seal } from "./crypto";
-import { allowsPayee, buildPolicy, diffPolicy, NEAR_ASSET, nearToAtomic, payeesOf } from "./policy";
+import {
+  allowsPayee,
+  atomicToNear,
+  buildPolicy,
+  diffPolicy,
+  NEAR_ASSET,
+  nearToAtomic,
+  payeesOf,
+} from "./policy";
 
 export type PayoutAction = (typeof PAYOUT_ACTIONS)[number];
 
@@ -37,6 +46,7 @@ export type AgentApiPort = {
   }): Promise<StatusResponse>;
   getStatus(correlationId: string, options?: { waitMs?: number }): Promise<StatusResponse>;
   getPolicy(agentId: string): Promise<PolicyView>;
+  getBalances(agentId: string, query?: { asset?: string }): Promise<BalancesView>;
   deposit(
     agentId: string,
     request: { origin_asset: string; destination_asset: string },
@@ -170,6 +180,19 @@ export function createPayoutAgents(deps: {
     return api().getPolicy(row.agentId);
   }
 
+  async function balanceOf(agentId: string) {
+    try {
+      const view = await api().getBalances(agentId, { asset: NEAR_ASSET });
+      const entry = view.balances.find((b) => b.asset_id === NEAR_ASSET);
+      const raw = BigInt(entry?.balance_raw ?? "0");
+      const near = atomicToNear(raw);
+      const usd = entry?.price != null ? (Number(near) * entry.price).toFixed(2) : null;
+      return { near, usd };
+    } catch {
+      return null;
+    }
+  }
+
   async function view(organizationId: string) {
     const row = await settings(organizationId);
     const base = {
@@ -192,6 +215,7 @@ export function createPayoutAgents(deps: {
         policy: null,
         changes: [] as string[],
         ready: false,
+        balance: null,
         blockers: !available
           ? [unavailableReason]
           : !row
@@ -201,7 +225,7 @@ export function createPayoutAgents(deps: {
       };
     }
     try {
-      const current = await livePolicy(row);
+      const [current, balance] = await Promise.all([livePolicy(row), balanceOf(row.agentId)]);
       const signed = current?.policy ?? null;
       const wanted = await wantedPolicy(row, signed?.frozen ?? false);
       const blockers: string[] = [];
@@ -226,6 +250,7 @@ export function createPayoutAgents(deps: {
             }
           : null,
         changes: signed ? diffPolicy(signed, wanted) : [],
+        balance,
         ready: blockers.length === 0,
         blockers,
         error: null as string | null,
@@ -235,6 +260,7 @@ export function createPayoutAgents(deps: {
         ...base,
         policy: null,
         changes: [] as string[],
+        balance: null,
         ready: false,
         blockers: ["The Agent API couldn't be reached"],
         error: errorText(error),

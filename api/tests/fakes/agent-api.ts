@@ -110,6 +110,28 @@ export class FakeAgentApi implements AgentApiPort {
     } as never;
   }
 
+  balanceRaw = "0";
+
+  async getBalances() {
+    return {
+      near_account_id: "agent.near",
+      source: "public",
+      balances: [
+        {
+          asset_id: "nep141:wrap.near",
+          symbol: "wNEAR",
+          decimals: 24,
+          blockchain: "near",
+          price: 2,
+          price_updated_at: null,
+          price_expires_at: null,
+          balance_raw: this.balanceRaw,
+          balance: null,
+        },
+      ],
+    } as never;
+  }
+
   async deposit() {
     return this.status("dep-1", "PENDING_DEPOSIT", { deposit_address: "deposit.near", memo: null });
   }

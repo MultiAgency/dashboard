@@ -14,6 +14,15 @@ export function nearToAtomic(near: string): string {
   ).toString();
 }
 
+export function atomicToNear(atomic: bigint, digits = 4): string {
+  const unit = 10n ** BigInt(NEAR_DECIMALS);
+  const scale = 10n ** BigInt(digits);
+  const scaled = (atomic * scale) / unit;
+  const whole = scaled / scale;
+  const fraction = (scaled % scale).toString().padStart(digits, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
 export function buildPolicy(input: {
   payees: string[];
   maxPayoutNear: string;

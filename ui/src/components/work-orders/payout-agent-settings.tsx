@@ -155,6 +155,23 @@ export function PayoutAgentSettings() {
                 {data.ready ? "Paying automatically" : "Not paying automatically yet"}
               </Badge>
               {data.policy?.frozen && <Badge variant="destructive">Frozen</Badge>}
+              {data.balance && (
+                <Badge variant="outline">
+                  Agent holds {data.balance.near} NEAR
+                  {data.balance.usd ? ` (~$${data.balance.usd})` : ""}
+                </Badge>
+              )}
+              {data.agentId && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2"
+                  disabled={query.isFetching}
+                  onClick={() => query.refetch()}
+                >
+                  {query.isFetching ? "Checking…" : "Refresh"}
+                </Button>
+              )}
               {data.policy?.monthlySpentUsd && (
                 <Badge variant="outline">
                   ${data.policy.monthlySpentUsd} of ${data.policy.monthlyLimitUsd ?? "?"} this month

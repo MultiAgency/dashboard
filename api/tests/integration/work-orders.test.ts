@@ -1234,6 +1234,9 @@ describe("work orders", () => {
         agentId: "agent-1",
       });
       expect(view.policy?.payees).toEqual([CAROL]);
+      expect(view.balance).toEqual({ near: "0", usd: "0.00" });
+      agent.balanceRaw = `12345${"0".repeat(20)}`;
+      expect((await payouts.view("studio")).balance).toEqual({ near: "1.2345", usd: "2.47" });
       expect(wo.status).toBe("active");
     });
 

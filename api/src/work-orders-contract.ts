@@ -289,6 +289,7 @@ const payoutAgent = z.object({
     })
     .nullable(),
   changes: z.array(z.string()),
+  balance: z.object({ near: z.string(), usd: z.string().nullable() }).nullable(),
   ready: z.boolean(),
   blockers: z.array(z.string()),
   error: z.string().nullable(),
