@@ -1,4 +1,6 @@
 import { createSign } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/drive",
@@ -35,6 +37,20 @@ export class GoogleError extends Error {
   ) {
     super(message);
     this.name = "GoogleError";
+  }
+}
+
+export function readServiceAccount(value: string | null | undefined): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  if (text.startsWith("{")) return text;
+  try {
+    return readFileSync(text.replace(/^~(?=\/)/, homedir()), "utf8");
+  } catch (error) {
+    console.warn(
+      `[API] GOOGLE_SERVICE_ACCOUNT_JSON: couldn't read ${text}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
   }
 }
 

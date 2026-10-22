@@ -59,7 +59,12 @@ import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
 import { testEvent } from "./services/work-orders/events";
 import { cachedOwnership, createGitHub } from "./services/work-orders/github";
-import { createGoogle, googleIdOf, parseServiceAccount } from "./services/work-orders/google";
+import {
+  createGoogle,
+  googleIdOf,
+  parseServiceAccount,
+  readServiceAccount,
+} from "./services/work-orders/google";
 import { createWorkOrderIntegrations, createWorkOrderOutbox } from "./services/work-orders/outbox";
 import { createPriceFeed } from "./services/work-orders/prices";
 import { createWorkOrdersService } from "./services/work-orders/service";
@@ -227,7 +232,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
         immediate: true,
       });
       const workOrderAiDrafts = !!config.secrets.ANTHROPIC_API_KEY;
-      const serviceAccount = parseServiceAccount(config.secrets.GOOGLE_SERVICE_ACCOUNT_JSON);
+      const serviceAccount = parseServiceAccount(
+        readServiceAccount(config.secrets.GOOGLE_SERVICE_ACCOUNT_JSON),
+      );
       const google = serviceAccount ? createGoogle(serviceAccount) : null;
       const userEmail = async (userId: string) => {
         if (!authPool) return null;
