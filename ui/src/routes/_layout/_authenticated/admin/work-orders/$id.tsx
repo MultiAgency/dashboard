@@ -27,6 +27,7 @@ import { AdminError } from "@/components/admin-error";
 import { Field, Loading } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EvidenceList } from "@/components/work-orders/evidence-list";
+import { PayeePayoutsPrompt } from "@/components/work-orders/payee-payouts-prompt";
 import { RenewalPanel } from "@/components/work-orders/renewal-panel";
 import { RequestsPanel } from "@/components/work-orders/requests-panel";
 import { SigningPanel } from "@/components/work-orders/signing-panel";
@@ -156,6 +157,7 @@ function WorkOrderPage() {
       {wo.activationBlockers.length > 0 && (
         <Alert>
           <AlertTitle>Before it can start</AlertTitle>
+          <AlertDescription>It starts automatically once these are done.</AlertDescription>
           <AlertDescription>
             <ul className="list-disc pl-5">
               {wo.activationBlockers.map((b) => (
@@ -165,6 +167,8 @@ function WorkOrderPage() {
           </AlertDescription>
         </Alert>
       )}
+
+      {canManage && <PayeePayoutsPrompt workOrder={wo} />}
 
       <Summary workOrder={wo} />
       <SigningPanel workOrder={wo} canManage={canManage} onAttach={() => setDocumenting(true)} />
@@ -231,7 +235,10 @@ function Summary({ workOrder: wo }: { workOrder: WorkOrderDetail }) {
       </span>,
     ],
     ["Project", wo.projectTitle],
-    ["Period", `${wo.periodStart} → ${wo.periodEnd} (+ ${wo.graceDays} grace days)`],
+    [
+      "Period",
+      `${wo.periodStart} → ${wo.periodEnd} (+ ${wo.graceDays} grace days), days end at midnight ${wo.timeZone}`,
+    ],
     [
       "Budget",
       `${formatTokenAmount(wo.budgetAmount, wo.tokenId)} cap · ${formatTokenAmount(wo.committedAmount, wo.tokenId)} committed · ${formatTokenAmount(wo.paidAmount, wo.tokenId)} paid · ${formatTokenAmount(wo.remainingAmount, wo.tokenId)} left`,

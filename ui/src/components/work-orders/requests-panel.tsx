@@ -71,7 +71,8 @@ export function RequestsPanel({
         </CardTitle>
         <CardDescription>
           The builder submits a report for a period; you approve an amount up to the remaining
-          budget, then pay it through a transfer proposal of the Agency DAO.
+          budget. When the payout agent is ready it pays the builder right away; otherwise pay it
+          through a transfer proposal of the Agency DAO.
         </CardDescription>
         {canDraft && (
           <CardAction>
@@ -166,6 +167,16 @@ function RequestItem({
         </span>
       </div>
       {request.note && <p className="text-sm text-muted-foreground">{request.note}</p>}
+      {request.autoPayBlocked && (
+        <p className="text-sm text-muted-foreground">
+          Waiting to be paid automatically since{" "}
+          {request.autoPayBlocked.since.slice(0, 16).replace("T", " ")} UTC
+          {request.autoPayBlocked.triedAt
+            ? `, last tried ${request.autoPayBlocked.triedAt.slice(11, 16)} UTC`
+            : ""}
+          .
+        </p>
+      )}
       {request.overlaps.length > 0 && (
         <p className="text-sm text-destructive">
           Its dates overlap {request.overlaps.join(", ")}, already approved or paid: check the same
@@ -293,6 +304,8 @@ function ApproveForm({
   const [value, setValue] = useState(toDecimal(request.requestedAmount));
   const pending = workOrder.evidence.filter((e) => !e.authorized && e.kind === "unlinked_pr");
   const [confirmed, setConfirmed] = useState<string[]>([]);
+  const [withoutEvidence, setWithoutEvidence] = useState(false);
+  const needsEvidenceConfirm = request.authorizedEvidence === 0 && confirmed.length === 0;
   let base = "";
   let error = "";
   try {
@@ -301,12 +314,14 @@ function ApproveForm({
     error = (e as Error).message;
   }
   const over = base && BigInt(base) > BigInt(workOrder.remainingAmount);
+  const blocked = needsEvidenceConfirm && !withoutEvidence;
   const approve = useMutation({
     mutationFn: () =>
       apiClient.workOrders.approveRequest({
         requestId: request.id,
         amount: base,
         confirmEvidenceIds: confirmed,
+        allowWithoutEvidence: needsEvidenceConfirm && withoutEvidence,
       }),
     onSuccess: async (updated) => {
       await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
@@ -328,7 +343,7 @@ function ApproveForm({
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (base && !error && !over) approve.mutate();
+        if (base && !error && !over && !blocked) approve.mutate();
       }}
     >
       <DialogHeader>
@@ -378,9 +393,23 @@ function ApproveForm({
             ))}
           </fieldset>
         )}
+        {needsEvidenceConfirm && (
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={withoutEvidence}
+              onChange={(e) => setWithoutEvidence(e.target.checked)}
+            />
+            <span>
+              No work in this request was approved by the repository owner. Approve it anyway, based
+              on the report.
+            </span>
+          </label>
+        )}
       </FieldGroup>
       <DialogFooter>
-        <Button type="submit" disabled={!base || !!error || !!over || approve.isPending}>
+        <Button type="submit" disabled={!base || !!error || !!over || blocked || approve.isPending}>
           {approve.isPending ? "Approving…" : "Approve"}
         </Button>
       </DialogFooter>

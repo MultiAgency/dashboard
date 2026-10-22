@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib/dist/pdf-lib.esm.js";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Database } from "../../src/db";
 import { billings, notifications, workOrders } from "../../src/db/schema";
 import { requireTreasury } from "../../src/services/organization-access";
@@ -22,6 +22,7 @@ import {
 import type { WorkOrderEvent } from "../../src/services/work-orders/events";
 import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
 import { usdToTokens } from "../../src/services/work-orders/prices";
+import { scheduleWorkOrders, stopWorkOrders } from "../../src/services/work-orders/scheduler";
 import {
   type BuilderProfile,
   createWorkOrdersService,
@@ -149,11 +150,14 @@ describe("work orders", () => {
     const created = await service.create(await studio(), fields(over));
     await service.offer(await studio(), { id: created.id });
     await signAsBuilder(created.id);
-    await service.countersign(await studio(), { id: created.id, name: "Rita Rep" });
     const prior = clock;
     clock = new Date("2026-08-31T12:00:00.000Z");
-    const activated = await service.activate(await studio(), { id: created.id });
+    const activated = await service.countersign(await studio(), {
+      id: created.id,
+      name: "Rita Rep",
+    });
     clock = prior;
+    expect(activated.status).toBe("active");
     return activated;
   }
 
@@ -225,15 +229,14 @@ describe("work orders", () => {
       expect(accepted.signing.builder?.name).toBe("Carol");
       expect(accepted.activationBlockers).toContain("Countersign the work order");
       await refused(service.activate(await studio(), { id: created.id }), "ACTIVATION_BLOCKED");
-      const countersigned = await service.countersign(await studio(), {
+      const activated = await service.countersign(await studio(), {
         id: created.id,
         name: "Rita Rep",
       });
-      expect(countersigned.signing.needsCountersign).toBe(false);
-      expect(countersigned.activationBlockers).toEqual([]);
-
-      const activated = await service.activate(await studio(), { id: created.id });
+      expect(activated.signing.needsCountersign).toBe(false);
+      expect(activated.activationBlockers).toEqual([]);
       expect(activated.status).toBe("active");
+      await refused(service.activate(await studio(), { id: created.id }), "NOT_ACCEPTED");
       expect(activated.builder.githubLogin).toBe("carol-gh");
       expect((await notificationsOf("carol")).map((n) => n.kind)).toContain("work_order_activated");
     });
@@ -279,9 +282,10 @@ describe("work orders", () => {
       );
       await service.offer(await studio(), { id: created.id });
       await signAsBuilder(created.id, signedIn("nogit", null, "nogit.near"), "No Git");
-      await service.countersign(await studio(), { id: created.id, name: "Rita Rep" });
       clock = new Date("2026-08-31T12:00:00.000Z");
-      expect((await service.activate(await studio(), { id: created.id })).status).toBe("active");
+      expect(
+        (await service.countersign(await studio(), { id: created.id, name: "Rita Rep" })).status,
+      ).toBe("active");
     });
 
     test("only managers write; members read; other agencies see nothing", async () => {
@@ -762,7 +766,7 @@ describe("work orders", () => {
       const confirmed = await service.confirmPayee(carol(), { id: created.id });
       expect(confirmed.payee.confirmedAt).not.toBeNull();
       expect(events.map((e) => e.type)).toContain("work_order.payee_confirmed");
-      expect((await service.activate(await studio(), { id: created.id })).status).toBe("active");
+      expect(confirmed.status).toBe("active");
       expect(events.map((e) => e.type)).toContain("work_order.active");
     });
 
@@ -781,12 +785,16 @@ describe("work orders", () => {
         await studio(),
         fields({ tokenId: REAL_USDC, representativeName: "Rita Rep" }),
       );
-      await service.attachSignedDocument("studio", { code: "WO-0001", ...signedPdf() });
+      clock = new Date("2026-08-31T12:00:00.000Z");
+      const result = await service.attachSignedDocument("studio", {
+        code: "WO-0001",
+        ...signedPdf(),
+      });
+      expect(result.status).toBe("active");
       expect(events.map((e) => e.type)).not.toContain("work_order.confirm_payee");
       const signed = await service.get(await studio(), { id: created.id });
-      expect(signed.payee).toMatchObject({ paidBefore: true, needsConfirmation: false });
-      clock = new Date("2026-08-31T12:00:00.000Z");
-      expect((await service.activate(await studio(), { id: created.id })).status).toBe("active");
+      expect(signed.payee.needsConfirmation).toBe(false);
+      expect(signed.activatedAt).toBe("2026-08-31T12:00:00.000Z");
     });
 
     test("accepting in the app proves the payout account", async () => {
@@ -1162,8 +1170,8 @@ describe("work orders", () => {
       expect(signed.documentSha256).toBe(
         createHash("sha256").update("%PDF-1.7 signed envelope_1 %%EOF").digest("hex"),
       );
-      const activated = await service.activate(await studio(), { id: created.id });
-      expect(activated.status).toBe("active");
+      expect(signed.status).toBe("active");
+      expect((await notificationsOf("carol")).map((n) => n.kind)).toContain("work_order_activated");
     });
 
     test("the background check picks up the builder's signature without anyone opening the page", async () => {
@@ -1470,6 +1478,109 @@ describe("work orders", () => {
       expect((await service.payNow(await studio(), { requestId: draft.id })).status).toBe("paid");
     });
 
+    test("a payout that ends failed goes back to approved and the managers are told", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { status: "PROCESSING" };
+      const paying = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(paying.status).toBe("paying");
+      agent.statuses.set("pay-1", { status: "FAILED", details: {} });
+      const tick = await service.tick("t1");
+      expect(tick.ran).toBe(true);
+      const detail = await service.get(await studio(), { id: paying.workOrderId });
+      const request = detail.requests.find((r) => r.id === draft.id);
+      expect(request?.status).toBe("approved");
+      expect(request?.note).toMatch(/needs a person to check it/);
+      expect(request?.autoPayBlocked).toBeNull();
+      expect((await notificationsOf("studio-admin")).map((n) => n.kind)).toContain(
+        "compensation_request_payout_failed",
+      );
+      clock = new Date(clock.getTime() + 10 * 60_000);
+      await service.tick("t2");
+      expect(agent.withdrawals).toHaveLength(1);
+    });
+
+    test("a refused payout waits for funds, tells the managers once and pays on its own once funded", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      const blocked = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(blocked.status).toBe("approved");
+      expect(blocked.autoPayBlocked?.reason).toMatch(/insufficient_balance/);
+      expect(blocked.note).toMatch(/tried again automatically/);
+      await service.tick("t1");
+      expect(agent.withdrawals).toHaveLength(1);
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("t2");
+      expect(agent.withdrawals).toHaveLength(2);
+      const told = (await notificationsOf("studio-admin")).filter(
+        (n) => n.kind === "compensation_request_payout_blocked",
+      );
+      expect(told).toHaveLength(1);
+      agent.nextWithdraw = { status: "SUCCESS", details: { tx_hash: "TX9" } };
+      await service.tick("t3");
+      expect(agent.withdrawals).toHaveLength(2);
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      const result = await service.tick("t4");
+      expect(result.counts.paid).toBe(1);
+      const detail = await service.get(await studio(), { id: blocked.workOrderId });
+      const request = detail.requests.find((r) => r.id === draft.id);
+      expect(request?.status).toBe("paid");
+      expect(request?.autoPayBlocked).toBeNull();
+      expect(agent.withdrawals.map((w) => w.key)).toEqual([
+        `multiagency:${draft.id}:a1`,
+        `multiagency:${draft.id}:a2`,
+        `multiagency:${draft.id}:a3`,
+      ]);
+    });
+
+    test("a builder the rules don't allow yet is paid by the scheduler once the update is signed", async () => {
+      await setUpAgent();
+      const { draft } = await approvedRequest();
+      const approved = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(approved.status).toBe("approved");
+      expect(approved.autoPayBlocked?.reason).toMatch(/sign the updated rules/);
+      expect((await notificationsOf("studio-admin")).map((n) => n.kind)).toContain(
+        "compensation_request_payout_blocked",
+      );
+      const sync = await payouts.prepare("studio", { action: "sync_policy" });
+      await payouts.submit("studio", {
+        correlationId: sync.correlationId,
+        signedData: { ...sync.intent, public_key: "ed25519:owner", signature: "sig" },
+      });
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick();
+      const detail = await service.get(await studio(), { id: approved.workOrderId });
+      expect(detail.requests.find((r) => r.id === draft.id)?.status).toBe("paid");
+    });
+
+    test("the run and the tick settling the same payout record one billing", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { status: "PROCESSING" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      agent.statuses.set("pay-1", { status: "SUCCESS", details: { tx_hash: "TXONCE" } });
+      await Promise.all([service.run("r"), service.tick("t")]);
+      const rows = await db
+        .select()
+        .from(billings)
+        .where(eq(billings.proposalId, "intents:TXONCE"));
+      expect(rows).toHaveLength(1);
+      const paid = (await notificationsOf("carol")).filter(
+        (n) => n.kind === "compensation_request_paid",
+      );
+      expect(paid).toHaveLength(1);
+    });
+
     test("only what MultiAgency prepared, signed by the owner, is accepted", async () => {
       await payouts.saveSettings("studio", "studio-admin", {
         ownerAccountId: "someone-else.near",
@@ -1502,6 +1613,237 @@ describe("work orders", () => {
       expect((await payouts.view("studio")).blockers).toEqual([
         "Create the payout agent with your wallet",
       ]);
+    });
+  });
+
+  describe("automation", () => {
+    async function noEvidenceRequest() {
+      const wo = await active();
+      const draft = await service.mineDraftRequest(carol(), { id: wo.id });
+      const submitted = await service.submitRequest(carol(), { requestId: draft.id });
+      return { wo, request: submitted };
+    }
+
+    test("approving a request with no approved work needs an explicit confirmation", async () => {
+      const { request } = await noEvidenceRequest();
+      expect(request.authorizedEvidence).toBe(0);
+      await refused(
+        service.approveRequest(await studio(), { requestId: request.id, amount: "100000000" }),
+        "NO_EVIDENCE",
+      );
+      const approved = await service.approveRequest(await studio(), {
+        requestId: request.id,
+        amount: "100000000",
+        allowWithoutEvidence: true,
+      });
+      expect(approved.status).toBe("approved");
+    });
+
+    test("confirming merged work counts as evidence", async () => {
+      github.issue(REPO, 7).assign("carol-gh", "2026-09-02T10:00:00Z");
+      github.pull(REPO, 77, {
+        author: "carol-gh",
+        createdAt: "2026-09-03T10:00:00Z",
+        mergedAt: "2026-09-04T10:00:00Z",
+        mergedBy: "writer-gh",
+        closes: [7],
+      });
+      const { wo, request } = await noEvidenceRequest();
+      const pr = (await service.get(await studio(), { id: wo.id })).evidence.find((e) =>
+        e.url.endsWith("/pull/77"),
+      );
+      expect(pr?.authorized).toBe(false);
+      const approved = await service.approveRequest(await studio(), {
+        requestId: request.id,
+        amount: "100000000",
+        confirmEvidenceIds: [pr!.id],
+      });
+      expect(approved.status).toBe("approved");
+    });
+
+    test("drafting collects the latest evidence first, and a GitHub outage doesn't stop it", async () => {
+      const wo = await active();
+      strongEvidence();
+      const draft = await service.mineDraftRequest(carol(), { id: wo.id });
+      expect(draft.contributionsMd).toContain("pull/200");
+      await service.rejectRequest(await studio(), {
+        requestId: (await service.submitRequest(carol(), { requestId: draft.id })).id,
+        note: "Split it",
+      });
+      github.failNext("getRepoOwnership", new Error("GitHub is down"));
+      const again = await service.mineDraftRequest(carol(), { id: wo.id });
+      expect(again.status).toBe("draft");
+    });
+
+    test("the default amount is the budget share of the covered days, capped by what remains", async () => {
+      const wo = await active();
+      const half = await service.mineDraftRequest(carol(), {
+        id: wo.id,
+        coversFrom: "2026-09-01",
+        coversTo: "2026-09-15",
+      });
+      expect(half.requestedAmount).toBe("500000000");
+      const submitted = await service.submitRequest(carol(), { requestId: half.id });
+      await service.approveRequest(await studio(), {
+        requestId: submitted.id,
+        amount: "700000000",
+        allowWithoutEvidence: true,
+      });
+      const rest = await service.mineDraftRequest(carol(), {
+        id: wo.id,
+        coversFrom: "2026-09-16",
+        coversTo: "2026-09-30",
+      });
+      expect(rest.requestedAmount).toBe("300000000");
+    });
+
+    test("signing in Documenso activates it from the background tick", async () => {
+      const documenso = new FakeDocumenso();
+      service = createWorkOrdersService({ ...serviceDeps, esign: documenso });
+      const created = await service.create(
+        await studio(),
+        fields({ representativeName: "Rita Rep", representativeEmail: "rita@example.com" }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      documenso.sign("contractor", "2026-09-20T13:00:00.000Z");
+      documenso.sign("representative", "2026-09-20T14:00:00.000Z");
+      const result = await service.tick();
+      expect(result.counts.signaturesChecked).toBe(1);
+      const [row] = await db.select().from(workOrders).where(eq(workOrders.id, created.id));
+      expect(row?.status).toBe("active");
+      expect(row?.activatedBy).toBe("system");
+      expect(events.map((e) => e.type)).toContain("work_order.active");
+    });
+
+    test("a signed work order that can't start tells the managers, then starts once it can", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ representativeName: "Rita Rep", contractorEmail: "carol@example.com" }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      await signAsBuilder(created.id);
+      await db
+        .update(workOrders)
+        .set({ payeeConfirmedAt: null, payeeConfirmedBy: null })
+        .where(eq(workOrders.id, created.id));
+      const signed = await service.countersign(await studio(), {
+        id: created.id,
+        name: "Rita Rep",
+      });
+      expect(signed.status).toBe("accepted");
+      const told = (await notificationsOf("studio-admin")).find(
+        (n) => n.kind === "work_order_activation_blocked",
+      );
+      expect(told?.payload).toContain("hasn't confirmed the payout account");
+      await db
+        .update(workOrders)
+        .set({ payeeConfirmedAt: clock, payeeConfirmedBy: "carol" })
+        .where(eq(workOrders.id, created.id));
+      const result = await service.tick();
+      expect(result.counts.activated).toBe(1);
+      expect((await service.get(await studio(), { id: created.id })).status).toBe("active");
+    });
+
+    test("activation asks the payout agent to allow the builder and says what's missing", async () => {
+      const allowed: string[] = [];
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        payouts: {
+          readiness: async () => ({ ready: false, reason: "No payout agent" }),
+          send: async () => {
+            throw new Error("not used");
+          },
+          refresh: async (payout) => payout,
+          latest: async () => null,
+          ensurePayees: async (organizationId) => {
+            allowed.push(organizationId);
+            return { ok: false, reason: "Sign the updated rules" };
+          },
+        },
+      });
+      const wo = await active({ tokenId: "usd" });
+      expect(wo.status).toBe("active");
+      expect(allowed).toEqual(["studio"]);
+      const told = (await notificationsOf("studio-admin")).find(
+        (n) => n.kind === "work_order_payee_not_allowed",
+      );
+      expect(told?.payload).toContain("Sign the updated rules");
+    });
+
+    test("an Agency without a payout agent approves without a note or a retry", async () => {
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        payouts: {
+          readiness: async () => ({ ready: false, reason: "No payout agent" }),
+          send: async () => {
+            throw new Error("not used");
+          },
+          refresh: async (payout) => payout,
+          latest: async () => null,
+        },
+      });
+      const wo = await active({ tokenId: "usd" });
+      const draft = await service.mineDraftRequest(carol(), { id: wo.id });
+      await service.submitRequest(carol(), { requestId: draft.id });
+      const approved = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "100000000",
+        allowWithoutEvidence: true,
+      });
+      expect(approved.note).toBeNull();
+      expect(approved.autoPayBlocked).toBeNull();
+    });
+
+    test("evidence windows follow the Agency's time zone", async () => {
+      github.pull(REPO, 300, {
+        author: "carol-gh",
+        createdAt: "2026-08-31T19:30:00Z",
+        mergedAt: "2026-08-31T20:00:00Z",
+      });
+      const utc = await active();
+      expect(utc.timeZone).toBe("UTC");
+      const inUtc = await service.collect(await studio(), { id: utc.id });
+      expect(inUtc.evidence.some((e) => e.url.endsWith("/pull/300"))).toBe(false);
+      service = createWorkOrdersService({ ...serviceDeps, timeZone: "Asia/Karachi" });
+      const inKarachi = await service.collect(await studio(), { id: utc.id });
+      expect(inKarachi.timeZone).toBe("Asia/Karachi");
+      expect(inKarachi.evidence.some((e) => e.url.endsWith("/pull/300"))).toBe(true);
+    });
+
+    test("the period ends at midnight in the Agency's time zone", async () => {
+      service = createWorkOrdersService({ ...serviceDeps, timeZone: "Asia/Karachi" });
+      const wo = await active({ graceDays: 0 });
+      clock = new Date("2026-09-30T19:30:00.000Z");
+      await service.run();
+      expect((await service.get(await studio(), { id: wo.id })).status).toBe("ended");
+    });
+
+    test("the scheduler runs the tick often and the full run rarely, never two at once", async () => {
+      vi.useFakeTimers();
+      try {
+        let running = 0;
+        let overlap = false;
+        const calls: string[] = [];
+        const job = (name: string) => async () => {
+          calls.push(name);
+          running += 1;
+          if (running > 1) overlap = true;
+          await new Promise((resolve) => setTimeout(resolve, 20_000));
+          running -= 1;
+        };
+        const timers = scheduleWorkOrders(
+          { tick: job("tick"), run: job("run") },
+          { tickSeconds: 15, runMinutes: 360, firstRunSeconds: 30 },
+        );
+        await vi.advanceTimersByTimeAsync(120_000);
+        stopWorkOrders(timers);
+        expect(calls[0]).toBe("tick");
+        expect(calls).toContain("run");
+        expect(calls.filter((c) => c === "run")).toHaveLength(1);
+        expect(overlap).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

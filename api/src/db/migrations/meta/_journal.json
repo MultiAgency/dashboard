@@ -169,6 +169,13 @@
       "when": 1792800000000,
       "tag": "0024_work_order_documenso",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0025_work_order_auto_pay",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../../db";
 import {
@@ -57,7 +57,7 @@ import {
   withSignaturePage,
 } from "./signing";
 import type { Summarizer } from "./summarizer";
-import { addDays, dateOf, nextPeriod, startOfDay, windowOf } from "./time";
+import { addDays, dateOf, daysBetween, nextPeriod, startOfDay, UTC, windowOf } from "./time";
 import type {
   CollectedEvidence,
   EvidenceDetails,
@@ -115,6 +115,7 @@ export type WorkOrderDeps = {
     ): Promise<AgentPayoutView>;
     refresh(payout: AgentPayoutView): Promise<AgentPayoutView>;
     latest(requestId: string): Promise<AgentPayoutView | null>;
+    ensurePayees?(organizationId: string): Promise<{ ok: boolean; reason: string | null }>;
   } | null;
   notifications: WorkOrderNotifier;
   thresholds: RenewalThresholds;
@@ -130,6 +131,7 @@ export type WorkOrderDeps = {
   google?: GooglePort | null;
   userEmail?: (userId: string) => Promise<string | null>;
   appOrigin?: string;
+  timeZone?: string;
   now?: () => Date;
 };
 
@@ -217,6 +219,10 @@ const RECENT_MS = 7 * 86_400_000;
 const ENDING_SOON_DAYS = 3;
 const LOCK_ID = "work-orders";
 const LOCK_MS = 15 * 60_000;
+const TICK_LOCK_ID = "work-orders-tick";
+const TICK_LOCK_MS = 2 * 60_000;
+const AUTO_PAY_RETRY_MS = 5 * 60_000;
+const NO_AGENT = "No payout agent";
 const REPO = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
 const CODE = /^[A-Za-z0-9._-]{1,40}$/;
 const GITHUB_LOGIN = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/;
@@ -417,7 +423,10 @@ const sum = (amounts: (string | null)[]) =>
 export function createWorkOrdersService(deps: WorkOrderDeps) {
   const { db, directory } = deps;
   const now = () => deps.now?.() ?? new Date();
-  const today = () => dateOf(now());
+  const timeZone = deps.timeZone ?? UTC;
+  const today = () => dateOf(now(), timeZone);
+  const windowOfRow = (row: Pick<WorkOrderRow, "periodStart" | "periodEnd" | "graceDays">) =>
+    windowOf({ ...row, timeZone });
   const display = (amount: string | bigint, tokenId: string) => {
     if (tokenId !== USD) return baseUnitsToDisplay(amount.toString(), tokenId);
     const value = BigInt(amount);
@@ -605,7 +614,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       await announce(signed, "work_order.confirm_payee");
       await notifyBuilder(signed, "work_order_confirm_payee", payload);
     }
-    return signed;
+    return autoActivate(signed, true);
   }
 
   async function integrationOf(organizationId: string) {
@@ -625,6 +634,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   }
 
   const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+  const reasonOf = (error: unknown) =>
+    error instanceof ORPCError
+      ? ((error.data as { reason?: string } | undefined)?.reason ?? null)
+      : null;
 
   async function fillGoogleDocument(row: WorkOrderRow): Promise<WorkOrderRow | null> {
     const google = deps.google;
@@ -978,7 +991,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     await announce(signed, "work_order.signed", {
       document: driveUrl ?? absolute(builderLink(row.id)),
     });
-    return signed;
+    return autoActivate(signed, true);
   }
 
   function clientMeta(meta: { ip?: string | null; userAgent?: string | null } = {}) {
@@ -1357,7 +1370,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   }
 
   function scopeOf(row: WorkOrderRow): WorkOrderScope {
-    const activated = row.activatedAt ? dateOf(row.activatedAt) : null;
+    const activated = row.activatedAt ? dateOf(row.activatedAt, timeZone) : null;
     const start =
       !activated || activated <= row.periodStart
         ? row.periodStart
@@ -1371,6 +1384,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       periodStart: start,
       periodEnd: row.periodEnd,
       graceDays: row.graceDays,
+      timeZone,
     };
   }
 
@@ -1430,8 +1444,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     request: CompensationRequestRow,
     row: WorkOrderRow,
     siblings?: CompensationRequestRow[],
+    evidence?: WorkOrderEvidenceRow[],
   ) {
     const others = siblings ?? (await requestsOf(row.id));
+    const authorizedEvidence = countAuthorized(
+      row,
+      request,
+      evidence ?? (await evidenceOf(row.id)),
+    );
     const overlaps = others
       .filter(
         (other) =>
@@ -1449,7 +1469,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             daoAccountId: daoAccountId ?? "",
             proposalId: request.proposalId,
             approvedBy: request.approvedBy ?? "",
-            paidOn: request.paidAt ? dateOf(request.paidAt) : today(),
+            paidOn: request.paidAt ? dateOf(request.paidAt, timeZone) : today(),
           })
         : null;
     return {
@@ -1474,6 +1494,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         : null,
       reportSha256: request.reportSha256,
       overlaps,
+      authorizedEvidence,
+      autoPayBlocked:
+        request.status === "approved" && request.autoPayBlockedReason && request.autoPayBlockedAt
+          ? {
+              reason: request.autoPayBlockedReason,
+              since: request.autoPayBlockedAt.toISOString(),
+              triedAt: request.autoPayTriedAt?.toISOString() ?? null,
+            }
+          : null,
       agentPayout:
         deps.payouts && ["paying", "paid", "approved"].includes(request.status)
           ? await deps.payouts
@@ -1563,6 +1592,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       periodStart: row.periodStart,
       periodEnd: row.periodEnd,
       graceDays: row.graceDays,
+      timeZone,
       tokenId: row.tokenId,
       payoutTokenId: payoutTokenOf(row),
       budgetAmount: row.budgetAmount,
@@ -1636,7 +1666,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       ...base,
       evidence: evidence.map(evidenceView),
       activity: summarizeActivity(collected, scopeOf(row)),
-      requests: await Promise.all(requests.map((r) => requestView(r, row, requests))),
+      requests: await Promise.all(requests.map((r) => requestView(r, row, requests, evidence))),
       repoOwners,
     };
   }
@@ -1748,6 +1778,71 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     };
   }
 
+  async function allowPayee(row: WorkOrderRow) {
+    const payouts = deps.payouts;
+    if (!payouts?.ensurePayees || payoutTokenOf(row) !== NATIVE_TOKEN_ID) return;
+    const result = await payouts
+      .ensurePayees(row.organizationId)
+      .catch((error: unknown) => ({ ok: false, reason: errorText(error) }));
+    if (result.ok) return;
+    await notifyManagers(
+      row,
+      "work_order_payee_not_allowed",
+      await payloadOf(row, {
+        payee: row.builderNearAccount,
+        reason: result.reason ?? "the signed rules don't allow it yet",
+      }),
+    );
+  }
+
+  async function activateRow(row: WorkOrderRow, actor: string): Promise<WorkOrderRow> {
+    const activated = await update(row.id, {
+      status: "active",
+      activatedAt: now(),
+      activatedBy: actor,
+    });
+    await notifyBuilder(activated, "work_order_activated", await payloadOf(activated));
+    await announce(activated, "work_order.active");
+    await allowPayee(activated);
+    return activated;
+  }
+
+  async function blockersOf(row: WorkOrderRow) {
+    const builder = await deps.builders.get(row.builderNearAccount).catch(() => null);
+    const payee = await payeeOf(row);
+    const signing = await signingOf(row);
+    return activationBlockers(row, builder, payee.needsConfirmation, signing.needsCountersign);
+  }
+
+  async function autoActivate(row: WorkOrderRow, tellBlockers = false): Promise<WorkOrderRow> {
+    if (row.status !== "accepted" || !row.signedAt) return row;
+    const blockers = await blockersOf(row);
+    if (blockers.length === 0) return activateRow(row, "system");
+    if (tellBlockers) {
+      await notifyManagers(
+        row,
+        "work_order_activation_blocked",
+        await payloadOf(row, { blockers: blockers.join("; ") }),
+      );
+    }
+    return row;
+  }
+
+  async function activateReady(counts: Record<string, number>) {
+    const ready = await db
+      .select()
+      .from(workOrders)
+      .where(and(eq(workOrders.status, "accepted"), isNotNull(workOrders.signedAt)));
+    for (const row of ready) {
+      try {
+        const activated = await autoActivate(row);
+        if (activated.status === "active") counts.activated = (counts.activated ?? 0) + 1;
+      } catch (error) {
+        console.warn(`[API] work order ${row.code} couldn't be activated`, error);
+      }
+    }
+  }
+
   function requireBuilder(context: PluginContext, row: WorkOrderRow) {
     if (row.status === "draft" || !nearAccountsOf(context).includes(row.builderNearAccount)) {
       throw notFound();
@@ -1849,14 +1944,52 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     coversTo: string,
   ) {
     const grace = coversTo === row.periodEnd ? row.graceDays : 0;
-    const from = startOfDay(coversFrom);
-    const to = startOfDay(addDays(coversTo, grace + 1)) - 1;
+    const from = startOfDay(coversFrom, timeZone);
+    const to = startOfDay(addDays(coversTo, grace + 1), timeZone) - 1;
     return evidence.filter((e) => {
       if (e.kind === "assigned_issue") return true;
       if (!e.occurredAt) return false;
       const at = e.occurredAt.getTime();
       return at >= from && at <= to;
     });
+  }
+
+  function evidenceOfRequest(
+    row: WorkOrderRow,
+    request: CompensationRequestRow,
+    evidence: WorkOrderEvidenceRow[],
+  ) {
+    const ids = parseJson<string[] | null>(request.evidenceIds, null);
+    return ids
+      ? evidence.filter((e) => ids.includes(e.id))
+      : evidenceFor(row, evidence, request.coversFrom, request.coversTo);
+  }
+
+  const delivered = (e: Pick<WorkOrderEvidenceRow, "kind" | "state">) =>
+    e.kind !== "assigned_issue" || e.state === "done";
+
+  function countAuthorized(
+    row: WorkOrderRow,
+    request: CompensationRequestRow,
+    evidence: WorkOrderEvidenceRow[],
+    confirmIds: string[] = [],
+  ) {
+    const confirmed = new Set(confirmIds);
+    const counted = new Set(
+      evidenceOfRequest(row, request, evidence)
+        .filter((e) => e.authorized && delivered(e))
+        .map((e) => e.id),
+    );
+    for (const e of evidence) if (confirmed.has(e.id) && delivered(e)) counted.add(e.id);
+    return counted.size;
+  }
+
+  async function authorizedEvidenceOf(
+    row: WorkOrderRow,
+    request: CompensationRequestRow,
+    confirmIds: string[] = [],
+  ) {
+    return countAuthorized(row, request, await evidenceOf(row.id), confirmIds);
   }
 
   function contributionsOf(
@@ -1880,13 +2013,46 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return `${contributionsMd}\n\n## Assessment\n${assessmentMd}`;
   }
 
-  async function draftRequest(
+  function proratedAmount(
     row: WorkOrderRow,
+    remaining: bigint,
+    coversFrom: string,
+    coversTo: string,
+  ): bigint {
+    const periodDays = BigInt(daysBetween(row.periodStart, row.periodEnd) + 1);
+    const coveredDays = BigInt(daysBetween(coversFrom, coversTo) + 1);
+    const share = (BigInt(row.budgetAmount) * coveredDays) / periodDays;
+    const amount = share < remaining ? share : remaining;
+    return amount > 0n ? amount : remaining;
+  }
+
+  async function draftRequest(
+    initial: WorkOrderRow,
     input: { coversFrom?: string; coversTo?: string },
     auto = false,
   ): Promise<CompensationRequestRow> {
+    let row = initial;
     if (row.status !== "active" && row.status !== "ended") {
       throw badRequest("NOT_OPEN", `Work order ${row.code} is ${row.status}: no new requests`);
+    }
+    const existing = await requestsOf(row.id);
+    if (existing.some((r) => r.status === "draft")) {
+      throw badRequest("DRAFT_EXISTS", "A draft request already exists for this work order");
+    }
+    const coversFrom = input.coversFrom ?? row.periodStart;
+    const coversTo = input.coversTo ?? row.periodEnd;
+    if (coversFrom > coversTo || coversFrom < row.periodStart || coversTo > row.periodEnd) {
+      throw badRequest("INVALID_PERIOD", "The covered dates must lie inside the work order period");
+    }
+    if (amountsOf(row, existing).remaining <= 0n) {
+      throw badRequest("BUDGET_USED", "The work order budget is used up");
+    }
+    if (!auto) {
+      try {
+        row = await collect(row);
+      } catch (error) {
+        console.warn(`[API] collecting ${row.code} before drafting failed`, error);
+      }
     }
     const requests = await requestsOf(row.id);
     if (requests.some((r) => r.status === "draft")) {
@@ -1894,11 +2060,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     }
     const { remaining } = amountsOf(row, requests);
     if (remaining <= 0n) throw badRequest("BUDGET_USED", "The work order budget is used up");
-    const coversFrom = input.coversFrom ?? row.periodStart;
-    const coversTo = input.coversTo ?? row.periodEnd;
-    if (coversFrom > coversTo || coversFrom < row.periodStart || coversTo > row.periodEnd) {
-      throw badRequest("INVALID_PERIOD", "The covered dates must lie inside the work order period");
-    }
     const evidence = evidenceFor(row, await evidenceOf(row.id), coversFrom, coversTo);
     const seq = (requests.at(-1)?.seq ?? 0) + 1;
     const project = await projectOf(row);
@@ -1926,7 +2087,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         coversFrom,
         coversTo,
         status: "draft",
-        requestedAmount: remaining.toString(),
+        requestedAmount: proratedAmount(row, remaining, coversFrom, coversTo).toString(),
         summary: draft?.summary ?? null,
         contributionsMd,
         assessmentMd,
@@ -1952,6 +2113,17 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   ): Promise<CompensationRequestRow> {
     const dao = await deps.agencyDaoOf(row.organizationId).catch(() => null);
     const paid = await db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .update(compensationRequests)
+        .set({ status: "paid", updatedAt: now() })
+        .where(
+          and(
+            eq(compensationRequests.id, request.id),
+            inArray(compensationRequests.status, ["approved", "paying"]),
+          ),
+        )
+        .returning({ id: compensationRequests.id });
+      if (!claimed) return null;
       const [billing] = await tx
         .insert(billings)
         .values({
@@ -1974,12 +2146,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           billingId: billing!.id,
           payoutTokenId: NATIVE_TOKEN_ID,
           payoutAmount: payout.amount,
+          autoPayBlockedReason: null,
+          autoPayBlockedAt: null,
           updatedAt: now(),
         })
         .where(eq(compensationRequests.id, request.id))
         .returning();
       return updated!;
     });
+    if (!paid) return mustRequest(request.id);
     if (
       amountsOf(row, await requestsOf(row.id)).remaining === 0n &&
       (row.status === "active" || row.status === "ended")
@@ -2003,6 +2178,33 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return paid;
   }
 
+  async function blockPayout(
+    request: CompensationRequestRow,
+    row: WorkOrderRow,
+    reason: string,
+    note: string,
+  ): Promise<CompensationRequestRow> {
+    const blocked = await updateRequest(request.id, {
+      status: "approved",
+      note,
+      autoPayBlockedReason: reason,
+      autoPayBlockedAt: request.autoPayBlockedAt ?? now(),
+      autoPayTriedAt: now(),
+    });
+    if (!request.autoPayBlockedAt) {
+      await notifyManagers(
+        row,
+        "compensation_request_payout_blocked",
+        await payloadOf(row, {
+          requestCode: `${row.code}-R${request.seq}`,
+          approved: display(request.approvedAmount ?? "0", row.tokenId),
+          reason,
+        }),
+      );
+    }
+    return blocked;
+  }
+
   async function settleAgentPayout(
     request: CompensationRequestRow,
     row: WorkOrderRow,
@@ -2010,18 +2212,40 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   ): Promise<CompensationRequestRow> {
     if (payout.status === "paid") return markPaidByAgent(request, row, payout);
     if (payout.status === "refused" || (payout.status === "failed" && payout.provenUnsent)) {
-      return updateRequest(request.id, {
-        status: "approved",
-        note: `The automatic payout didn't go out: ${payout.reason ?? payout.status}. Pay it again or through a DAO proposal.`,
-      });
+      const reason = payout.reason ?? payout.status;
+      return blockPayout(
+        request,
+        row,
+        reason,
+        `The automatic payout didn't go out: ${reason}. It's tried again automatically, or pay it through a DAO proposal.`,
+      );
     }
     if (payout.status === "failed" || payout.status === "needs_review") {
-      return updateRequest(request.id, {
-        status: "paying",
-        note: `The automatic payout needs a person to check it: ${payout.reason ?? payout.status}.`,
+      const reason = payout.reason ?? payout.status;
+      const review = await updateRequest(request.id, {
+        status: "approved",
+        note: `The automatic payout needs a person to check it: ${reason}. Check the payout agent's history before paying it again, or pay it through a DAO proposal.`,
+        autoPayBlockedReason: null,
+        autoPayBlockedAt: null,
       });
+      await notifyManagers(
+        row,
+        "compensation_request_payout_failed",
+        await payloadOf(row, {
+          requestCode: `${row.code}-R${request.seq}`,
+          approved: display(request.approvedAmount ?? "0", row.tokenId),
+          reason,
+        }),
+      );
+      return review;
     }
-    return request.status === "paying" ? request : updateRequest(request.id, { status: "paying" });
+    if (request.status === "paying" && !request.autoPayBlockedAt) return request;
+    return updateRequest(request.id, {
+      status: "paying",
+      note: null,
+      autoPayBlockedReason: null,
+      autoPayBlockedAt: null,
+    });
   }
 
   async function autoPay(
@@ -2037,17 +2261,128 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       };
     }
     const readiness = await payouts.readiness(row.organizationId, row.builderNearAccount);
-    if (!readiness.ready) return { request, reason: readiness.reason };
+    if (!readiness.ready) {
+      const reason = readiness.reason ?? "The payout agent isn't ready";
+      if (reason === NO_AGENT) return { request, reason };
+      return {
+        request: await blockPayout(
+          request,
+          row,
+          reason,
+          `Not paid automatically yet: ${reason}. It's tried again automatically, or pay it through a DAO proposal.`,
+        ),
+        reason,
+      };
+    }
     const quote = await quotePayout(row, request);
     const payout = await payouts.send(row.organizationId, {
       requestId: request.id,
       recipient: row.builderNearAccount,
       amount: quote.amount,
     });
+    const settled = await settleAgentPayout(await mustRequest(request.id), row, payout);
     return {
-      request: await settleAgentPayout(await mustRequest(request.id), row, payout),
-      reason: null,
+      request: settled,
+      reason: settled.status === "approved" ? (settled.autoPayBlockedReason ?? settled.note) : null,
     };
+  }
+
+  async function tryAutoPay(
+    request: CompensationRequestRow,
+    row: WorkOrderRow,
+  ): Promise<{ request: CompensationRequestRow; reason: string | null }> {
+    try {
+      return await autoPay(request, row);
+    } catch (error) {
+      const reason = errorText(error);
+      if (reasonOf(error) === "PAYOUT_EXISTS") return { request, reason };
+      const fresh = await mustRequest(request.id);
+      if (fresh.status !== "approved") return { request: fresh, reason };
+      return {
+        request: await blockPayout(
+          fresh,
+          row,
+          reason,
+          `Not paid automatically yet: ${reason}. It's tried again automatically, or pay it through a DAO proposal.`,
+        ),
+        reason,
+      };
+    }
+  }
+
+  async function followUpPayouts(counts: Record<string, number>) {
+    const payouts = deps.payouts;
+    if (!payouts) return;
+    const paying = await db
+      .select()
+      .from(compensationRequests)
+      .where(eq(compensationRequests.status, "paying"));
+    for (const request of paying) {
+      try {
+        const payout = await payouts.latest(request.id);
+        if (!payout) continue;
+        const fresh = await payouts.refresh(payout);
+        const settled = await settleAgentPayout(
+          await mustRequest(request.id),
+          await mustRow(request.workOrderId),
+          fresh,
+        );
+        if (settled.status !== "paying") {
+          counts[settled.status] = (counts[settled.status] ?? 0) + 1;
+        }
+      } catch (error) {
+        console.warn(`[API] payout of request ${request.id} couldn't be checked`, error);
+      }
+    }
+  }
+
+  async function retryBlockedPayouts(counts: Record<string, number>) {
+    if (!deps.payouts) return;
+    const due = new Date(now().getTime() - AUTO_PAY_RETRY_MS);
+    const blocked = await db
+      .select()
+      .from(compensationRequests)
+      .where(
+        and(
+          eq(compensationRequests.status, "approved"),
+          isNotNull(compensationRequests.autoPayBlockedAt),
+          or(
+            isNull(compensationRequests.autoPayTriedAt),
+            lt(compensationRequests.autoPayTriedAt, due),
+          ),
+        ),
+      );
+    for (const request of blocked) {
+      try {
+        const row = await mustRow(request.workOrderId);
+        if (FINAL.includes(row.status)) {
+          await updateRequest(request.id, { autoPayBlockedReason: null, autoPayBlockedAt: null });
+          continue;
+        }
+        const [claimed] = await db
+          .update(compensationRequests)
+          .set({ autoPayTriedAt: now() })
+          .where(
+            and(
+              eq(compensationRequests.id, request.id),
+              eq(compensationRequests.status, "approved"),
+              or(
+                isNull(compensationRequests.autoPayTriedAt),
+                lt(compensationRequests.autoPayTriedAt, due),
+              ),
+            ),
+          )
+          .returning();
+        if (!claimed) continue;
+        const result = await tryAutoPay(claimed, row);
+        counts.retried = (counts.retried ?? 0) + 1;
+        if (result.request.status !== "approved") {
+          counts[result.request.status] = (counts[result.request.status] ?? 0) + 1;
+        }
+      } catch (error) {
+        console.warn(`[API] payout of request ${request.id} couldn't be retried`, error);
+      }
+    }
   }
 
   async function syncPayment(request: CompensationRequestRow): Promise<CompensationRequestRow> {
@@ -2158,7 +2493,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           acceptedTermsHash: termsHash(base),
           documentSha256: parent.documentSha256,
           documentUrl: parent.documentUrl,
-          activatedAt: new Date(startOfDay(period.periodStart)),
+          activatedAt: new Date(startOfDay(period.periodStart, timeZone)),
           activatedBy: decidedBy === "auto" ? "renewal" : parent.activatedBy,
           renewedFrom: parent.id,
           renewalRoot: root,
@@ -2200,7 +2535,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     let row = initial;
     if (!row.autoRenew || row.renewalStatus !== null) return;
     if (row.status !== "ended" && row.status !== "exhausted") return;
-    if (now().getTime() <= Date.parse(windowOf(row).to)) return;
+    if (now().getTime() <= Date.parse(windowOfRow(row).to)) return;
     try {
       row = await collect(row);
     } catch (error) {
@@ -2244,7 +2579,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   }
 
   async function step(row: WorkOrderRow, counts: Record<string, number>) {
-    const end = Date.parse(windowOf(row).to);
+    const end = Date.parse(windowOfRow(row).to);
     const time = now().getTime();
     let current = row;
     if (current.status !== "exhausted" && !(current.status === "ended" && time > end + RECENT_MS)) {
@@ -2283,26 +2618,32 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     await assessIfDue(await mustRow(current.id));
   }
 
-  async function claimLock(holder: string): Promise<boolean> {
-    const until = new Date(now().getTime() + LOCK_MS);
+  async function claimLock(holder: string, id = LOCK_ID, ms = LOCK_MS): Promise<boolean> {
+    const until = new Date(now().getTime() + ms);
     const inserted = await db
       .insert(workOrderJobLock)
-      .values({ id: LOCK_ID, holder, until })
+      .values({ id, holder, until })
       .onConflictDoNothing()
       .returning();
     if (inserted.length) return true;
     const taken = await db
       .update(workOrderJobLock)
       .set({ holder, until })
-      .where(and(eq(workOrderJobLock.id, LOCK_ID), lt(workOrderJobLock.until, now())))
+      .where(and(eq(workOrderJobLock.id, id), lt(workOrderJobLock.until, now())))
       .returning();
     return taken.length > 0;
   }
 
-  async function releaseLock(holder: string) {
+  async function releaseLock(holder: string, id = LOCK_ID) {
     await db
       .delete(workOrderJobLock)
-      .where(and(eq(workOrderJobLock.id, LOCK_ID), eq(workOrderJobLock.holder, holder)));
+      .where(and(eq(workOrderJobLock.id, id), eq(workOrderJobLock.holder, holder)));
+  }
+
+  async function deliverOutbox() {
+    await deps.outbox
+      ?.deliver?.()
+      .catch((error: unknown) => console.warn("[API] work order deliveries failed", error));
   }
 
   return {
@@ -2503,10 +2844,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       const keepsAcceptance = row.status === "accepted" && row.acceptedTermsHash === termsHash(row);
       const next = { ...row, githubLogin: login };
       return view(
-        await update(row.id, {
-          githubLogin: login,
-          ...(keepsAcceptance ? { acceptedTermsHash: termsHash(next) } : {}),
-        }),
+        await autoActivate(
+          await update(row.id, {
+            githubLogin: login,
+            ...(keepsAcceptance ? { acceptedTermsHash: termsHash(next) } : {}),
+          }),
+        ),
       );
     },
 
@@ -2583,6 +2926,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       const row = await ownRow(scope, input.id);
       const name = input.name.trim();
       if (name.length < 2) throw badRequest("NAME_REQUIRED", "Type your full name to sign");
+      if (row.signedAt && row.status !== "draft" && row.status !== "offered") {
+        throw badRequest("ALREADY_SIGNED", `Work order ${row.code} is already signed`);
+      }
       if (row.status !== "accepted") {
         throw badRequest(
           "NOT_SIGNED_BY_BUILDER",
@@ -2638,34 +2984,19 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
     activate: async (scope: OrganizationScope, input: { id: string }) => {
       const row = await ownRow(scope, input.id);
-      const builder = await deps.builders.get(row.builderNearAccount).catch(() => null);
       if (row.status !== "accepted") {
         throw badRequest(
           "NOT_ACCEPTED",
           `Work order ${row.code} is ${row.status}: the builder must accept it first`,
         );
       }
-      const payee = await payeeOf(row);
-      const signing = await signingOf(row);
-      const blockers = activationBlockers(
-        row,
-        builder,
-        payee.needsConfirmation,
-        signing.needsCountersign,
-      );
+      const blockers = await blockersOf(row);
       if (blockers.length)
         throw badRequest(
           "ACTIVATION_BLOCKED",
           `Can't activate ${row.code} yet: ${blockers.join("; ")}`,
         );
-      const activated = await update(row.id, {
-        status: "active",
-        activatedAt: now(),
-        activatedBy: scope.actorId,
-      });
-      await notifyBuilder(activated, "work_order_activated", await payloadOf(activated));
-      await announce(activated, "work_order.active");
-      return view(activated);
+      return view(await activateRow(row, scope.actorId));
     },
 
     terminate: async (scope: OrganizationScope, input: { id: string }) => {
@@ -2700,7 +3031,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
     approveRequest: async (
       scope: OrganizationScope,
-      input: { requestId: string; amount: string; confirmEvidenceIds?: string[] },
+      input: {
+        requestId: string;
+        amount: string;
+        confirmEvidenceIds?: string[];
+        allowWithoutEvidence?: boolean;
+      },
     ) => {
       const request = await mustRequest(input.requestId);
       const row = await ownRow(scope, request.workOrderId);
@@ -2712,6 +3048,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       }
       if (BigInt(input.amount) <= 0n)
         throw badRequest("AMOUNT_NOT_POSITIVE", "Approve more than zero");
+      if (
+        !input.allowWithoutEvidence &&
+        (await authorizedEvidenceOf(row, request, input.confirmEvidenceIds ?? [])) === 0
+      ) {
+        throw badRequest(
+          "NO_EVIDENCE",
+          `${row.code}-R${request.seq} has no work the repository owner approved: confirm you want to approve it anyway`,
+        );
+      }
       const approved = await db.transaction(async (tx) => {
         const [fresh] = await tx
           .select()
@@ -2754,6 +3099,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             approvedBy: scope.actorId,
             decidedAt: now(),
             note: null,
+            autoPayBlockedReason: null,
+            autoPayBlockedAt: null,
+            autoPayTriedAt: null,
             updatedAt: now(),
           })
           .where(eq(compensationRequests.id, request.id))
@@ -2769,10 +3117,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         }),
       );
       await announce(row, "request.approved", { request: approved });
-      const paid = await autoPay(approved, row).catch((error: unknown) => ({
-        request: approved,
-        reason: error instanceof Error ? error.message : String(error),
-      }));
+      const paid = await tryAutoPay(approved, row);
       return requestView(paid.request, row);
     },
 
@@ -3239,7 +3584,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       });
       await notifyManagers(confirmed, "work_order_payee_confirmed", await payloadOf(confirmed));
       await announce(confirmed, "work_order.payee_confirmed");
-      return view(confirmed);
+      return view(await autoActivate(confirmed));
     },
 
     decline: async (context: PluginContext, input: { id: string; note?: string | null }) => {
@@ -3384,11 +3729,29 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
     syncPendingSignatures,
 
+    tick: async (holder: string = crypto.randomUUID()) => {
+      if (!(await claimLock(holder, TICK_LOCK_ID, TICK_LOCK_MS))) {
+        return { ran: false, counts: {} as Record<string, number> };
+      }
+      const counts: Record<string, number> = {};
+      try {
+        counts.signaturesChecked = await syncPendingSignatures();
+        await activateReady(counts);
+        await followUpPayouts(counts);
+        await retryBlockedPayouts(counts);
+        await deliverOutbox();
+      } finally {
+        await releaseLock(holder, TICK_LOCK_ID);
+      }
+      return { ran: true, counts };
+    },
+
     run: async (holder: string = crypto.randomUUID()) => {
       if (!(await claimLock(holder))) return { ran: false, counts: {} as Record<string, number> };
       const counts: Record<string, number> = {};
       try {
         counts.signaturesChecked = await syncPendingSignatures();
+        await activateReady(counts);
         const rows = await db
           .select()
           .from(workOrders)
@@ -3400,29 +3763,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             console.warn(`[API] work order ${row.code} step failed`, error);
           }
         }
-        if (deps.payouts) {
-          const paying = await db
-            .select()
-            .from(compensationRequests)
-            .where(eq(compensationRequests.status, "paying"));
-          for (const request of paying) {
-            try {
-              const payout = await deps.payouts.latest(request.id);
-              if (!payout) continue;
-              const fresh = await deps.payouts.refresh(payout);
-              const settled = await settleAgentPayout(
-                request,
-                await mustRow(request.workOrderId),
-                fresh,
-              );
-              if (settled.status !== "paying") {
-                counts[settled.status] = (counts[settled.status] ?? 0) + 1;
-              }
-            } catch (error) {
-              console.warn(`[API] payout of request ${request.id} couldn't be checked`, error);
-            }
-          }
-        }
+        await followUpPayouts(counts);
+        await retryBlockedPayouts(counts);
         const proposed = await db
           .select()
           .from(compensationRequests)
@@ -3441,9 +3783,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           const checked = await checkSignedDocuments(organizationId).catch(() => null);
           if (checked) counts.signed = (counts.signed ?? 0) + checked.attached;
         }
-        await deps.outbox
-          ?.deliver?.()
-          .catch((error: unknown) => console.warn("[API] work order deliveries failed", error));
+        await deliverOutbox();
       } finally {
         await releaseLock(holder);
       }

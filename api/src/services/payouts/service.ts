@@ -603,9 +603,10 @@ export function createPayoutAgents(deps: {
       reason,
       needsSignature,
     });
-    if (!available) return refuse(unavailableReason);
+    const none = { ok: true, reason: null, needsSignature: false };
+    if (!available) return none;
     const row = await settings(organizationId);
-    if (!row?.agentId) return refuse("Create the payout agent first");
+    if (!row?.agentId) return none;
     let current: PolicyView;
     try {
       current = await api().getPolicy(row.agentId);

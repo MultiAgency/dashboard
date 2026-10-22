@@ -142,7 +142,7 @@ function MyWorkOrderPage() {
           <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[10rem_1fr]">
             <dt className="text-muted-foreground">Period</dt>
             <dd>
-              {wo.periodStart} → {wo.periodEnd} (+ {wo.graceDays} grace days)
+              {wo.periodStart} → {wo.periodEnd} (+ {wo.graceDays} grace days, {wo.timeZone})
             </dd>
             <dt className="text-muted-foreground">Budget</dt>
             <dd className="tabular-nums">

@@ -72,8 +72,10 @@ import {
 } from "./services/work-orders/google";
 import { createWorkOrderIntegrations, createWorkOrderOutbox } from "./services/work-orders/outbox";
 import { createPriceFeed } from "./services/work-orders/prices";
+import { scheduleWorkOrders, stopWorkOrders } from "./services/work-orders/scheduler";
 import { createWorkOrdersService } from "./services/work-orders/service";
 import { createSummarizer } from "./services/work-orders/summarizer";
+import { isTimeZone, UTC } from "./services/work-orders/time";
 import { DEFAULT_RENEWAL } from "./services/work-orders/types";
 
 export default createPlugin.withPlugins<PluginsClient>()({
@@ -99,6 +101,17 @@ export default createPlugin.withPlugins<PluginsClient>()({
         maxUnapprovedPrs: z.number().int().min(0).default(DEFAULT_RENEWAL.maxUnapprovedPrs),
       })
       .default(DEFAULT_RENEWAL),
+    workOrderTimezone: z
+      .string()
+      .refine(isTimeZone, "Use an IANA time zone, e.g. Asia/Karachi")
+      .default(UTC),
+    workOrderSchedule: z
+      .object({
+        tickSeconds: z.number().int().min(0).default(15),
+        runMinutes: z.number().int().min(0).default(360),
+        firstRunSeconds: z.number().int().min(0).default(30),
+      })
+      .default({ tickSeconds: 15, runMinutes: 360, firstRunSeconds: 30 }),
   }),
 
   secrets: z.object({
@@ -313,20 +326,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
         google,
         userEmail,
         appOrigin,
+        timeZone: config.variables.workOrderTimezone,
       });
-      if (config.secrets.DOCUMENSO_API_KEY) {
-        let checking = false;
-        setInterval(() => {
-          if (checking) return;
-          checking = true;
-          workOrders
-            .syncPendingSignatures()
-            .catch((error: unknown) => console.warn("[API] signature check failed:", error))
-            .finally(() => {
-              checking = false;
-            });
-        }, 30_000).unref?.();
-      }
+      const workOrderTimers = scheduleWorkOrders(workOrders, config.variables.workOrderSchedule);
       const workOrdersRunSecret = config.secrets.WORK_ORDERS_RUN_SECRET ?? null;
 
       yield* Effect.logInfo(`[API] plugins.projects available: ${typeof plugins?.projects}`);
@@ -369,11 +371,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
         appOrigin,
         google,
         payoutAgents,
+        workOrderTimers,
       };
     }),
 
   shutdown: (services) =>
     Effect.gen(function* () {
+      stopWorkOrders(services.workOrderTimers);
       if (services.authPool) yield* Effect.promise(() => services.authPool!.end());
       yield* Effect.logInfo("[API] Shutdown");
     }),

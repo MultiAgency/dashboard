@@ -58,6 +58,7 @@ export type WorkOrderScope = {
   periodStart: string;
   periodEnd: string;
   graceDays: number;
+  timeZone?: string;
 };
 
 export type RenewalThresholds = {

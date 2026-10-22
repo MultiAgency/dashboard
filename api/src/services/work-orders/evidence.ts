@@ -32,7 +32,7 @@ export async function collectEvidence(
   const { github } = ctx;
   const { from, to } = windowOf(scope);
   const [fromMs, toMs] = [Date.parse(from), Date.parse(to)];
-  const assignCutoffMs = startOfDay(addDays(scope.periodEnd, 1)) - 1;
+  const assignCutoffMs = startOfDay(addDays(scope.periodEnd, 1), scope.timeZone) - 1;
   const inWindow = (at: string | null) =>
     at !== null && Date.parse(at) >= fromMs && Date.parse(at) <= toMs;
   const login = scope.contractorGithub.toLowerCase();
@@ -215,13 +215,13 @@ function reviewEvidence(
 
 export function summarizeActivity(
   evidence: CollectedEvidence[],
-  scope: Pick<WorkOrderScope, "periodStart" | "periodEnd">,
+  scope: Pick<WorkOrderScope, "periodStart" | "periodEnd" | "timeZone">,
 ): ActivitySummary {
   const weeksInPeriod = Math.max(
     1,
     Math.ceil((daysBetween(scope.periodStart, scope.periodEnd) + 1) / 7),
   );
-  const start = startOfDay(scope.periodStart);
+  const start = startOfDay(scope.periodStart, scope.timeZone);
   const weeks = new Set<number>();
   let prsMerged = 0;
   let issuesClosed = 0;

@@ -116,7 +116,15 @@ export const NOTIFICATION_KINDS = {
   }),
   work_order_signed: (p) => ({
     title: `Work Order ${p.code} is signed`,
-    body: `Work Order ${p.code} on ${p.projectTitle} was e-signed by both parties. It can be activated once the builder's payout account is confirmed.`,
+    body: `Work Order ${p.code} on ${p.projectTitle} was signed by both parties. It starts automatically once nothing else blocks it.`,
+  }),
+  work_order_activation_blocked: (p) => ({
+    title: `Work Order ${p.code} is signed but can't start yet`,
+    body: `Work Order ${p.code} on ${p.projectTitle} is signed. Before it starts: ${p.blockers}. It starts automatically once these are done.`,
+  }),
+  work_order_payee_not_allowed: (p) => ({
+    title: `Allow payouts to ${p.builderName}`,
+    body: `The payout agent can't pay ${p.payee} for Work Order ${p.code} yet: ${p.reason}. Open the work order to allow it with your wallet.`,
   }),
   work_order_confirm_payee: (p) => ({
     title: `Confirm your payout account for Work Order ${p.code}`,
@@ -144,7 +152,15 @@ export const NOTIFICATION_KINDS = {
   }),
   compensation_request_approved: (p) => ({
     title: `${p.requestCode} approved for ${p.approved}`,
-    body: `${p.agencyName} approved ${p.approved} for ${p.requestCode}. It is paid from the Agency DAO once its transfer proposal is approved.`,
+    body: `${p.agencyName} approved ${p.approved} for ${p.requestCode}. It is paid through the Agency's payout agent, or from the Agency DAO once its transfer proposal is approved.`,
+  }),
+  compensation_request_payout_blocked: (p) => ({
+    title: `${p.requestCode} is approved but not paid yet`,
+    body: `The automatic payout of ${p.approved} for ${p.requestCode} didn't go out: ${p.reason}. It is tried again automatically once that's fixed, or pay it through a DAO proposal.`,
+  }),
+  compensation_request_payout_failed: (p) => ({
+    title: `The automatic payout of ${p.requestCode} needs a check`,
+    body: `The payout agent couldn't confirm the payment of ${p.approved} for ${p.requestCode}: ${p.reason}. Check the agent's history before paying it again, or pay it through a DAO proposal.`,
   }),
   compensation_request_rejected: (p) => ({
     title: `${p.requestCode} was rejected`,

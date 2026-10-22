@@ -123,7 +123,7 @@ function WorkOrdersPage() {
     <div className="flex flex-col gap-8">
       <PageHeader
         title="Work orders"
-        description="Each builder works under a work order: a period, a budget cap and the repositories in scope. Work counts once the repository owner approves or merges it on GitHub; payouts go through your Agency DAO."
+        description="Each builder works under a work order: a period, a budget cap and the repositories in scope. Work counts once the repository owner approves or merges it on GitHub; approved requests are paid automatically by your payout agent once it's set up, otherwise through your Agency DAO."
         actions={
           canManage && (
             <Button size="sm" onClick={() => setCreating(true)}>

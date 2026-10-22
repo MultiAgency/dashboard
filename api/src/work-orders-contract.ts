@@ -116,6 +116,7 @@ export const workOrder = z.object({
   periodStart: z.string(),
   periodEnd: z.string(),
   graceDays: z.number().int(),
+  timeZone: z.string(),
   tokenId: z.string(),
   payoutTokenId: z.string(),
   budgetAmount: z.string(),
@@ -191,6 +192,10 @@ export const compensationRequest = z.object({
   reportMd: z.string().nullable(),
   reportSha256: z.string().nullable(),
   overlaps: z.array(z.string()),
+  authorizedEvidence: z.number().int(),
+  autoPayBlocked: z
+    .object({ reason: z.string(), since: z.string(), triedAt: z.string().nullable() })
+    .nullable(),
   agentPayout: z
     .object({
       status: z.enum([
@@ -480,6 +485,7 @@ export const workOrdersContract = {
         requestId: z.string().min(1),
         amount,
         confirmEvidenceIds: z.array(z.string()).max(500).optional(),
+        allowWithoutEvidence: z.boolean().optional(),
       }),
     )
     .output(compensationRequest)
