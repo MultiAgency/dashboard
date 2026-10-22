@@ -571,6 +571,32 @@ export const workOrdersContract = {
     .output(z.object({ status: z.string(), failureCode: z.string().nullable(), view: payoutAgent }))
     .errors(errors),
 
+  payoutFunding: oc
+    .route({ method: "GET", path: "/admin/payout-agent/funding" })
+    .input(z.object({}))
+    .output(
+      z.object({
+        items: z.array(
+          z.object({
+            id: z.string(),
+            code: z.string(),
+            title: z.string(),
+            project: z.string().nullable(),
+            builderNearAccount: z.string(),
+            periodEnd: z.string(),
+            unpaid: z.string(),
+            near: z.string(),
+          }),
+        ),
+        priceUsd: z.string().nullable(),
+        bufferPercent: z.number(),
+        neededNear: z.string(),
+        balanceNear: z.string().nullable(),
+        topUpNear: z.string(),
+      }),
+    )
+    .errors(errors),
+
   payoutTopUp: oc
     .route({ method: "POST", path: "/admin/payout-agent/top-up" })
     .input(

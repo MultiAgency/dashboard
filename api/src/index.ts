@@ -46,7 +46,7 @@ import {
   type OrganizationScope,
   ROLE_MATRIX,
 } from "./services/organization-access";
-import { nearToAtomic } from "./services/payouts/policy";
+import { atomicToNear, nearToAtomic, topUpFor } from "./services/payouts/policy";
 import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
@@ -1126,6 +1126,29 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context, input }) =>
             payoutAgents.submit(context.scope.organizationId, input),
           ),
+
+        payoutFunding: builder.workOrders.payoutFunding
+          .use(treasuryManager)
+          .handler(async ({ context }) => {
+            const [needs, agent] = await Promise.all([
+              workOrders.fundingNeeds(context.scope),
+              payoutAgents.view(context.scope.organizationId),
+            ]);
+            const bufferPercent = needs.priceUsd ? 2 : 0;
+            const needed = needs.near + (needs.near * BigInt(bufferPercent)) / 100n;
+            const balance = agent.balance ? BigInt(nearToAtomic(agent.balance.near)) : null;
+            return {
+              items: needs.items.map((item) => ({
+                ...item,
+                near: atomicToNear(BigInt(item.near)),
+              })),
+              priceUsd: needs.priceUsd,
+              bufferPercent,
+              neededNear: atomicToNear(needed),
+              balanceNear: agent.balance?.near ?? null,
+              topUpNear: atomicToNear(topUpFor(needed, balance ?? 0n)),
+            };
+          }),
 
         payoutTopUp: builder.workOrders.payoutTopUp
           .use(treasuryManager)

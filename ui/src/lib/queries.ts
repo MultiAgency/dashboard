@@ -284,6 +284,14 @@ export function payoutAgentQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export function payoutFundingQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...payoutAgentQueryKey, "funding", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.payoutFunding({}),
+    retry: false,
+  });
+}
+
 export const myWorkOrdersQueryKey = ["me", "work-orders"] as const;
 
 export function myWorkOrdersQueryOptions(apiClient: ApiClient) {

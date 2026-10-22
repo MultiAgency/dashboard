@@ -2550,6 +2550,69 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       return requestView(paid.request, row);
     },
 
+    fundingNeeds: async (scope: OrganizationScope) => {
+      const rows = await db
+        .select()
+        .from(workOrders)
+        .where(
+          and(
+            eq(workOrders.organizationId, scope.organizationId),
+            inArray(workOrders.status, ["accepted", "active", "ended"]),
+            inArray(workOrders.tokenId, [USD, NATIVE_TOKEN_ID]),
+          ),
+        )
+        .orderBy(asc(workOrders.periodEnd), asc(workOrders.code));
+      const decimals = getTokenMetadata(NATIVE_TOKEN_ID)?.decimals ?? 24;
+      let quote: PriceQuote | null = null;
+      if (rows.some((row) => row.tokenId === USD)) {
+        if (!deps.prices) {
+          throw badRequest("NO_PRICES", "USD prices aren't available on this server");
+        }
+        try {
+          quote = await deps.prices.price(NATIVE_TOKEN_ID);
+        } catch (error) {
+          throw badRequest(
+            "NO_PRICE",
+            `Couldn't get the NEAR price: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+      const items: {
+        id: string;
+        code: string;
+        title: string;
+        project: string | null;
+        builderNearAccount: string;
+        periodEnd: string;
+        unpaid: string;
+        near: string;
+      }[] = [];
+      for (const row of rows) {
+        const { paid } = amountsOf(row, await requestsOf(row.id));
+        const budget = BigInt(row.budgetAmount);
+        const unpaid = budget > paid ? budget - paid : 0n;
+        if (unpaid <= 0n) continue;
+        const near =
+          row.tokenId === USD && quote ? usdToTokens(unpaid, quote.priceUsd, decimals) : unpaid;
+        const project = await projectOf(row);
+        items.push({
+          id: row.id,
+          code: row.code,
+          title: row.title,
+          project: project?.title ?? null,
+          builderNearAccount: row.builderNearAccount,
+          periodEnd: row.periodEnd,
+          unpaid: display(unpaid, row.tokenId),
+          near: near.toString(),
+        });
+      }
+      return {
+        items,
+        near: items.reduce((total, item) => total + BigInt(item.near), 0n),
+        priceUsd: quote?.priceUsd ?? null,
+      };
+    },
+
     payNow: async (scope: OrganizationScope, input: { requestId: string }) => {
       const request = await mustRequest(input.requestId);
       const row = await ownRow(scope, request.workOrderId);

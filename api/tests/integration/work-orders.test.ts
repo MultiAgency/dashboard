@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import { billings, notifications, workOrders } from "../../src/db/schema";
 import { requireTreasury } from "../../src/services/organization-access";
+import { topUpFor } from "../../src/services/payouts/policy";
 import {
   createPayoutAgents,
   type PayoutAgents,
@@ -1238,6 +1239,24 @@ describe("work orders", () => {
       agent.balanceRaw = `12345${"0".repeat(20)}`;
       expect((await payouts.view("studio")).balance).toEqual({ near: "1.2345", usd: "2.47" });
       expect(wo.status).toBe("active");
+    });
+
+    test("the top-up covers the unpaid budget of active work orders, less the agent's balance", async () => {
+      const { wo, draft } = await approvedRequest();
+      await setUpAgent();
+      const before = await service.fundingNeeds(await studio());
+      expect(before.items).toEqual([
+        expect.objectContaining({ code: wo.code, unpaid: "$1,000", builderNearAccount: CAROL }),
+      ]);
+      expect(before.near).toBe(usdToTokens(1_000_000_000n, "4.99", 24));
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      const after = await service.fundingNeeds(await studio());
+      expect(after.items[0]?.unpaid).toBe("$400");
+      expect(after.near).toBe(usdToTokens(400_000_000n, "4.99", 24));
+      const near = 10n ** 24n;
+      expect(topUpFor(80n * near, 0n)).toBe(80n * near);
+      expect(topUpFor(80n * near + 1n, 0n)).toBe(8001n * 10n ** 22n);
+      expect(topUpFor(80n * near, 100n * near)).toBe(0n);
     });
 
     test("approving pays the builder in NEAR right away and records the billing", async () => {

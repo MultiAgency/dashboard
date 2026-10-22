@@ -23,6 +23,12 @@ export function atomicToNear(atomic: bigint, digits = 4): string {
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
+export function topUpFor(needed: bigint, balance: bigint): bigint {
+  const step = 10n ** BigInt(NEAR_DECIMALS - 2);
+  const missing = needed > balance ? needed - balance : 0n;
+  return ((missing + step - 1n) / step) * step;
+}
+
 export function buildPolicy(input: {
   payees: string[];
   maxPayoutNear: string;

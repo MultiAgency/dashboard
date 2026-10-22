@@ -21,7 +21,11 @@ import { useMeRoles } from "@/hooks/use-me-roles";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { useAuthClient } from "@/lib/auth";
 import { signAgentIntent } from "@/lib/payout-agent-signing";
-import { payoutAgentQueryKey, payoutAgentQueryOptions } from "@/lib/queries";
+import {
+  payoutAgentQueryKey,
+  payoutAgentQueryOptions,
+  payoutFundingQueryOptions,
+} from "@/lib/queries";
 
 type PayoutAgent = Awaited<ReturnType<ApiClient["workOrders"]["payoutAgent"]>>;
 type Action = "create_agent" | "issue_grant" | "sync_policy" | "freeze" | "unfreeze";
@@ -53,6 +57,10 @@ export function PayoutAgentSettings() {
   const query = useQuery(payoutAgentQueryOptions(apiClient));
   const [form, setForm] = useState<{ owner: string; budget: string; cap: string } | null>(null);
   const [topUp, setTopUp] = useState("");
+  const funding = useQuery({
+    ...payoutFundingQueryOptions(apiClient),
+    enabled: !!query.data?.agentId && !!agencyDao,
+  });
 
   const setData = (data: PayoutAgent) =>
     queryClient.setQueryData(payoutAgentQueryOptions(apiClient).queryKey, data);
@@ -93,8 +101,8 @@ export function PayoutAgentSettings() {
   });
 
   const fund = useMutation({
-    mutationFn: async () => {
-      const tx = await apiClient.workOrders.payoutTopUp({ amountNear: topUp.trim() });
+    mutationFn: async (amountNear: string) => {
+      const tx = await apiClient.workOrders.payoutTopUp({ amountNear });
       await authClient.near.ensureConnected();
       const signer = authClient.near.getAccountId();
       if (!signer) throw new Error("Connect your NEAR wallet first");
@@ -106,14 +114,14 @@ export function PayoutAgentSettings() {
           attachedDeposit: BigInt(tx.deposit),
         })
         .send({ waitUntil: "FINAL" });
-      return { id: proposalIdOf(outcome), dao: tx.daoAccountId, address: tx.address };
+      return { id: proposalIdOf(outcome), dao: tx.daoAccountId, address: tx.address, amountNear };
     },
-    onSuccess: ({ id, dao }) => {
+    onSuccess: ({ id, dao, amountNear }) => {
       setTopUp("");
       toast.success(
         id
-          ? `Top-up proposal #${id} created in ${dao}; it funds the agent once the DAO approves it`
-          : "Top-up proposal created; it funds the agent once the DAO approves it",
+          ? `Top-up proposal #${id} for ${amountNear} NEAR created in ${dao}; it funds the agent once the DAO approves it`
+          : `Top-up proposal for ${amountNear} NEAR created; it funds the agent once the DAO approves it`,
       );
     },
     onError: (err: Error) => toast.error(err.message || "Couldn't create the top-up proposal"),
@@ -167,7 +175,7 @@ export function PayoutAgentSettings() {
                   variant="ghost"
                   className="h-6 px-2"
                   disabled={query.isFetching}
-                  onClick={() => query.refetch()}
+                  onClick={() => queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey })}
                 >
                   {query.isFetching ? "Checking…" : "Refresh"}
                 </Button>
@@ -288,15 +296,78 @@ export function PayoutAgentSettings() {
             )}
 
             {data.agentId && agencyDao && (
+              <div className="flex flex-col gap-3 border-t pt-4">
+                <span className="text-sm font-medium">Fund the agent from {agencyDao}</span>
+                {funding.isLoading && (
+                  <p className="text-sm text-muted-foreground">Adding up active work orders…</p>
+                )}
+                {funding.isError && (
+                  <p className="text-sm text-destructive">
+                    {funding.error.message || "Couldn't add up the active work orders"}
+                  </p>
+                )}
+                {funding.data && (
+                  <div className="flex flex-col gap-2">
+                    {funding.data.items.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No active work order has an unpaid budget.
+                      </p>
+                    ) : (
+                      <ul className="flex flex-col gap-1 text-sm">
+                        {funding.data.items.map((item) => (
+                          <li key={item.id} className="flex flex-wrap justify-between gap-2">
+                            <span>
+                              {item.code} · {item.title}
+                              <span className="text-muted-foreground">
+                                {" "}
+                                ({item.builderNearAccount}, ends {item.periodEnd})
+                              </span>
+                            </span>
+                            <span className="tabular-nums">
+                              {item.unpaid}
+                              {item.unpaid.endsWith("NEAR") ? "" : ` ≈ ${item.near} NEAR`}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Needed: {funding.data.neededNear} NEAR
+                      {funding.data.bufferPercent > 0 &&
+                        ` (incl. ${funding.data.bufferPercent}% for price moves, at $${Number(funding.data.priceUsd).toFixed(2)}/NEAR)`}
+                      {" · "}agent holds {funding.data.balanceNear ?? "?"} NEAR
+                    </p>
+                    {Number(funding.data.topUpNear) > 0 ? (
+                      <Button
+                        size="sm"
+                        className="self-start"
+                        disabled={busy}
+                        onClick={() => fund.mutate(funding.data.topUpNear)}
+                      >
+                        {fund.isPending
+                          ? "Waiting for the wallet…"
+                          : `Top up ${funding.data.topUpNear} NEAR for all active work orders`}
+                      </Button>
+                    ) : (
+                      funding.data.items.length > 0 && (
+                        <p className="text-sm">The agent already holds enough.</p>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {data.agentId && agencyDao && (
               <form
                 className="flex flex-col gap-2 border-t pt-4"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  if (/^\d+(\.\d+)?$/.test(topUp.trim())) fund.mutate();
+                  if (/^\d+(\.\d+)?$/.test(topUp.trim())) fund.mutate(topUp.trim());
                 }}
               >
                 <Field
-                  label="Top up the agent from the DAO (NEAR)"
+                  label="Or top up a custom amount (NEAR)"
                   htmlFor="payout-topup"
                   helper={`Creates a transfer proposal in ${agencyDao} to the agent's deposit address. Try a small amount first.`}
                 >
