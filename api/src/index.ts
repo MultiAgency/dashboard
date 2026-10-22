@@ -233,7 +233,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const workOrderIntegrations = createWorkOrderIntegrations({ db });
       const workOrderOutbox = createWorkOrderOutbox({
         db,
-        integrations: workOrderIntegrations,
         sendEmail,
         immediate: true,
       });

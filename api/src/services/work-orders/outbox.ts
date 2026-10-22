@@ -10,29 +10,12 @@ import {
 } from "../../db/schema";
 import type { EmailSender } from "../notify";
 import { composeEmails, emailHtml, type WorkOrderEmail } from "./emails";
-import { signEvent, type WorkOrderEvent } from "./events";
+import type { WorkOrderEvent } from "./events";
 
 const FIRST_RETRY_MS = 60_000;
 const MAX_RETRY_MS = 3_600_000;
 const GIVE_UP_MS = 24 * 3_600_000;
 const BATCH = 50;
-const N8N_TIMEOUT_MS = 15_000;
-
-export type HttpPost = (
-  url: string,
-  body: string,
-  headers: Record<string, string>,
-) => Promise<{ status: number }>;
-
-export const fetchPost: HttpPost = async (url, body, headers) => {
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body,
-    signal: AbortSignal.timeout(N8N_TIMEOUT_MS),
-  });
-  return { status: response.status };
-};
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
@@ -141,7 +124,12 @@ export function createWorkOrderIntegrations(deps: { db: Database; now?: () => Da
       db
         .select()
         .from(workOrderOutbox)
-        .where(eq(workOrderOutbox.organizationId, organizationId))
+        .where(
+          and(
+            eq(workOrderOutbox.organizationId, organizationId),
+            eq(workOrderOutbox.channel, "email"),
+          ),
+        )
         .orderBy(desc(workOrderOutbox.createdAt))
         .limit(limit),
   };
@@ -151,14 +139,11 @@ export type WorkOrderIntegrations = ReturnType<typeof createWorkOrderIntegration
 
 export function createWorkOrderOutbox(deps: {
   db: Database;
-  integrations: WorkOrderIntegrations;
   sendEmail: EmailSender | null;
-  post?: HttpPost;
   immediate?: boolean;
   now?: () => Date;
 }) {
-  const { db, integrations, sendEmail } = deps;
-  const post = deps.post ?? fetchPost;
+  const { db, sendEmail } = deps;
   const now = () => deps.now?.() ?? new Date();
 
   async function attempt(row: WorkOrderOutboxRow): Promise<boolean> {
@@ -173,20 +158,9 @@ export function createWorkOrderOutbox(deps: {
       return false;
     };
     try {
-      if (row.channel === "email") {
-        if (!sendEmail) return retry("email is not configured (RESEND_API_KEY, NOTIFY_FROM_EMAIL)");
-        const email = JSON.parse(row.payload) as WorkOrderEmail;
-        await sendEmail({ to: email.to, subject: email.subject, html: emailHtml(email.text) });
-      } else {
-        const settings = await integrations.settings(row.organizationId);
-        if (!settings?.n8nWebhookUrl) return retry("n8n is not connected for this Agency");
-        const { status } = await post(settings.n8nWebhookUrl, row.payload, {
-          "Content-Type": "application/json",
-          "X-AP-Event": row.eventType,
-          "X-AP-Signature": signEvent(row.payload, settings.webhookSecret),
-        });
-        if (status < 200 || status >= 300) return retry(`n8n answered ${status}`);
-      }
+      if (!sendEmail) return retry("email is not configured (RESEND_API_KEY, NOTIFY_FROM_EMAIL)");
+      const email = JSON.parse(row.payload) as WorkOrderEmail;
+      await sendEmail({ to: email.to, subject: email.subject, html: emailHtml(email.text) });
       await db
         .update(workOrderOutbox)
         .set({ attempts, deliveredAt: now(), lastError: null })
@@ -199,6 +173,7 @@ export function createWorkOrderOutbox(deps: {
 
   async function deliver(filter: { ids?: string[] } = {}) {
     const conditions = [
+      eq(workOrderOutbox.channel, "email"),
       isNull(workOrderOutbox.deliveredAt),
       lte(workOrderOutbox.nextAttemptAt, now()),
       gt(workOrderOutbox.createdAt, new Date(now().getTime() - GIVE_UP_MS)),
@@ -222,15 +197,12 @@ export function createWorkOrderOutbox(deps: {
 
   return {
     enqueue: async (organizationId: string, workOrderId: string | null, event: WorkOrderEvent) => {
-      const settings = await integrations.settings(organizationId);
-      const viaN8n = !!settings?.n8nWebhookUrl;
-      const emails = viaN8n && event.type === "work_order.created" ? [] : composeEmails(event);
       const rows = [
-        ...(viaN8n
-          ? [{ channel: "n8n" as const, payload: JSON.stringify({ ...event, emails }) }]
-          : []),
-        ...(!viaN8n && sendEmail
-          ? emails.map((email) => ({ channel: "email" as const, payload: JSON.stringify(email) }))
+        ...(sendEmail
+          ? composeEmails(event).map((email) => ({
+              channel: "email" as const,
+              payload: JSON.stringify(email),
+            }))
           : []),
       ].map((row) => ({
         id: crypto.randomUUID(),

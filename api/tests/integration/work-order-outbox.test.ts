@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import { workOrderOutbox } from "../../src/db/schema";
@@ -42,13 +41,11 @@ function event(type: WorkOrderEvent["type"], over: Partial<WorkOrderEvent> = {})
   };
 }
 
-describe("work order emails and n8n deliveries", () => {
+describe("work order emails", () => {
   const database = migratedDatabase({ perTest: true });
   let db: Database;
   let clock: Date;
   let sent: EmailMessage[];
-  let posts: { url: string; body: string; headers: Record<string, string> }[];
-  let status: number;
   let integrations: ReturnType<typeof createWorkOrderIntegrations>;
   let outbox: ReturnType<typeof createWorkOrderOutbox>;
 
@@ -56,18 +53,11 @@ describe("work order emails and n8n deliveries", () => {
     db = database.db;
     clock = new Date("2026-09-20T12:00:00.000Z");
     sent = [];
-    posts = [];
-    status = 200;
     integrations = createWorkOrderIntegrations({ db, now: () => clock });
     outbox = createWorkOrderOutbox({
       db,
-      integrations,
       sendEmail: async (message) => {
         sent.push(message);
-      },
-      post: async (url, body, headers) => {
-        posts.push({ url, body, headers });
-        return { status };
       },
       now: () => clock,
     });
@@ -95,7 +85,7 @@ describe("work order emails and n8n deliveries", () => {
     expect(composeEmails(noEmail).map((m) => m.to)).toEqual(["rita@example.com"]);
   });
 
-  test("emails go out once; without n8n nothing else is queued", async () => {
+  test("emails go out once through Resend", async () => {
     const signed = event("work_order.signed");
     signed.links.document = "https://drive.example/signed?id=1&v=2";
     const ids = await outbox.enqueue("studio", "wo1", signed);
@@ -105,55 +95,36 @@ describe("work order emails and n8n deliveries", () => {
     expect(sent[0]?.html).toContain('<a href="https://drive.example/signed?id=1&amp;v=2">');
     expect(sent[0]?.subject).toBe("Work Order SI-004 is signed");
     expect(await outbox.deliver()).toEqual({ delivered: 0, failed: 0 });
-    expect(posts).toHaveLength(0);
   });
 
-  test("n8n gets the signed event; a failure is retried with backoff", async () => {
-    const { inboundToken } = await integrations.save(
-      "studio",
-      "rita",
-      "https://n8n.example/webhook/wo",
-    );
-    expect(inboundToken).toMatch(/^wo_/);
-    const settings = await integrations.settings("studio");
-    status = 502;
+  test("an n8n webhook saved earlier is ignored: emails still go through Resend", async () => {
+    await integrations.save("studio", "rita", "https://n8n.example/webhook/wo");
     await outbox.enqueue("studio", "wo1", event("work_order.created"));
-    expect((await outbox.deliver()).failed).toBe(1);
-    const [row] = (await db.select().from(workOrderOutbox)).filter((r) => r.channel === "n8n");
-    expect(row?.lastError).toBe("n8n answered 502");
-    expect(row?.nextAttemptAt.getTime()).toBe(clock.getTime() + 60_000);
+    const rows = await db.select().from(workOrderOutbox);
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
+    await outbox.deliver();
+    expect(sent.map((m) => m.to)).toEqual(["rita@example.com"]);
+  });
 
-    status = 200;
+  test("a failed email is retried with backoff", async () => {
+    let fail = true;
+    outbox = createWorkOrderOutbox({
+      db,
+      sendEmail: async (message) => {
+        if (fail) throw new Error("Resend answered 502");
+        sent.push(message);
+      },
+      now: () => clock,
+    });
+    await outbox.enqueue("studio", "wo1", event("work_order.active"));
+    expect((await outbox.deliver()).failed).toBe(2);
+    const [row] = await db.select().from(workOrderOutbox);
+    expect(row?.lastError).toBe("Resend answered 502");
+    expect(row?.nextAttemptAt.getTime()).toBe(clock.getTime() + 60_000);
+    fail = false;
     expect((await outbox.deliver()).delivered).toBe(0);
     clock = new Date(clock.getTime() + 61_000);
-    expect((await outbox.deliver()).delivered).toBe(1);
-    const last = posts.at(-1);
-    expect(last?.url).toBe("https://n8n.example/webhook/wo");
-    expect(last?.headers["X-AP-Event"]).toBe("work_order.created");
-    expect(last?.headers["X-AP-Signature"]).toBe(
-      `sha256=${createHmac("sha256", settings?.webhookSecret ?? "")
-        .update(last?.body ?? "")
-        .digest("hex")}`,
-    );
-    expect(JSON.parse(last?.body ?? "{}").workOrder.id).toBe("SI-004");
-  });
-
-  test("with n8n connected the emails travel in the event and Gmail sends them, not MultiAgency", async () => {
-    await integrations.save("studio", "rita", "https://n8n.example/webhook/wo");
-    await outbox.enqueue("studio", "wo1", event("work_order.active"));
-    const rows = await db.select().from(workOrderOutbox);
-    expect(rows.map((r) => r.channel)).toEqual(["n8n"]);
-    await outbox.deliver();
-    expect(sent).toHaveLength(0);
-    const body = JSON.parse(posts.at(-1)?.body ?? "{}") as WorkOrderEvent;
-    expect(body.emails?.map((m) => m.to)).toEqual(["carol@example.com", "rita@example.com"]);
-    expect(body.emails?.[0]?.subject).toBe("Work Order SI-004 is active");
-
-    await outbox.enqueue("studio", "wo1", event("work_order.created"));
-    const queued = (await db.select().from(workOrderOutbox)).find(
-      (r) => r.eventType === "work_order.created",
-    );
-    expect((JSON.parse(queued?.payload ?? "{}") as WorkOrderEvent).emails).toEqual([]);
+    expect((await outbox.deliver()).delivered).toBe(2);
   });
 
   test("an Agency's inbound token is its own, and rotating it replaces it", async () => {
@@ -171,8 +142,13 @@ describe("work order emails and n8n deliveries", () => {
   });
 
   test("deliveries older than a day are given up", async () => {
-    await integrations.save("studio", "rita", "https://n8n.example/hook");
-    status = 500;
+    outbox = createWorkOrderOutbox({
+      db,
+      sendEmail: async () => {
+        throw new Error("down");
+      },
+      now: () => clock,
+    });
     await outbox.enqueue("studio", "wo1", event("work_order.created"));
     clock = new Date(clock.getTime() + 25 * 3_600_000);
     expect(await outbox.deliver()).toEqual({ delivered: 0, failed: 0 });
