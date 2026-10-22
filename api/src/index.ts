@@ -311,6 +311,19 @@ export default createPlugin.withPlugins<PluginsClient>()({
         userEmail,
         appOrigin,
       });
+      if (config.secrets.DOCUMENSO_API_KEY) {
+        let checking = false;
+        setInterval(() => {
+          if (checking) return;
+          checking = true;
+          workOrders
+            .syncPendingSignatures()
+            .catch((error: unknown) => console.warn("[API] signature check failed:", error))
+            .finally(() => {
+              checking = false;
+            });
+        }, 30_000).unref?.();
+      }
       const workOrdersRunSecret = config.secrets.WORK_ORDERS_RUN_SECRET ?? null;
 
       yield* Effect.logInfo(`[API] plugins.projects available: ${typeof plugins?.projects}`);

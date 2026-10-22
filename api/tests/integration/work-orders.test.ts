@@ -1166,6 +1166,19 @@ describe("work orders", () => {
       expect(activated.status).toBe("active");
     });
 
+    test("the background check picks up the builder's signature without anyone opening the page", async () => {
+      const created = await offered();
+      expect(await service.syncPendingSignatures()).toBe(1);
+      documenso.sign("contractor", "2026-09-20T13:00:00.000Z");
+      await service.syncPendingSignatures();
+      const [row] = await db.select().from(workOrders).where(eq(workOrders.id, created.id));
+      expect(row?.status).toBe("accepted");
+      expect(row?.signatureMethod).toBe("documenso");
+      documenso.sign("representative", "2026-09-20T14:00:00.000Z");
+      await service.syncPendingSignatures();
+      expect(await service.syncPendingSignatures()).toBe(0);
+    });
+
     test("declining in Documenso puts the work order back to draft with the reason", async () => {
       const created = await offered();
       documenso.reject("contractor");

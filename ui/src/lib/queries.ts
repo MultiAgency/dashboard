@@ -248,6 +248,18 @@ export function adminApplicationsListQueryKey(kind?: string | null, status?: str
 
 export const adminWorkOrdersQueryKey = ["admin", "work-orders"] as const;
 
+const SIGNATURE_POLL_MS = 10_000;
+
+function awaitingSignature(wo: {
+  status: string;
+  signing: { representative: unknown; esign: { sent: boolean } | null };
+}) {
+  return (
+    !!wo.signing.esign?.sent &&
+    (wo.status === "offered" || (wo.status === "accepted" && !wo.signing.representative))
+  );
+}
+
 export function adminWorkOrdersQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...adminWorkOrdersQueryKey, "list", ...workspaceKey()] as const,
@@ -261,6 +273,8 @@ export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
     queryKey: [...adminWorkOrdersQueryKey, "detail", ...workspaceKey(), id] as const,
     queryFn: () => apiClient.workOrders.get({ id }),
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data && awaitingSignature(query.state.data) ? SIGNATURE_POLL_MS : false,
   });
 }
 
@@ -307,6 +321,8 @@ export function myWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
     queryKey: [...myWorkOrdersQueryKey, "detail", id] as const,
     queryFn: () => apiClient.myWorkOrders.get({ id }),
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data && awaitingSignature(query.state.data) ? SIGNATURE_POLL_MS : false,
   });
 }
 

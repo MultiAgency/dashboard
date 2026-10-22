@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../../db";
 import {
@@ -1199,6 +1199,28 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       needsCountersign: builder !== null && representative === null,
       esign,
     };
+  }
+
+  async function syncPendingSignatures(): Promise<number> {
+    if (!deps.esign) return 0;
+    const pending = await db
+      .select()
+      .from(workOrders)
+      .where(
+        and(
+          inArray(workOrders.status, ["offered", "accepted"]),
+          isNotNull(workOrders.esignEnvelopeId),
+          isNull(workOrders.signedAt),
+        ),
+      );
+    for (const row of pending) {
+      try {
+        await syncSignatures(row);
+      } catch (error) {
+        console.warn(`[API] work order ${row.code} signature check failed`, error);
+      }
+    }
+    return pending.length;
   }
 
   async function sendForSignature(row: WorkOrderRow) {
@@ -3360,28 +3382,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       return requestView(submitted, row);
     },
 
+    syncPendingSignatures,
+
     run: async (holder: string = crypto.randomUUID()) => {
       if (!(await claimLock(holder))) return { ran: false, counts: {} as Record<string, number> };
       const counts: Record<string, number> = {};
       try {
-        if (deps.esign) {
-          const signing = await db
-            .select()
-            .from(workOrders)
-            .where(
-              and(
-                inArray(workOrders.status, ["offered", "accepted"]),
-                isNotNull(workOrders.esignEnvelopeId),
-              ),
-            );
-          for (const row of signing) {
-            try {
-              await syncSignatures(row);
-            } catch (error) {
-              console.warn(`[API] work order ${row.code} signature check failed`, error);
-            }
-          }
-        }
+        counts.signaturesChecked = await syncPendingSignatures();
         const rows = await db
           .select()
           .from(workOrders)
