@@ -64,6 +64,8 @@ import { safeHttpHref } from "@/lib/url";
 const PROJECT_TABS = ["overview", "budget", "listings", "billings", "settings"] as const;
 type ProjectTab = (typeof PROJECT_TABS)[number];
 
+import { WorkOrdersCard } from "@/components/work-orders/work-orders-card";
+
 export const Route = createFileRoute("/_layout/_authenticated/admin/projects/$slug")({
   head: ({ params }) => ({
     meta: [{ title: `${params.slug} | Admin · Projects` }],
@@ -231,7 +233,13 @@ function AdminProjectDetail() {
           {needsTreasury ? (
             <ConnectTreasuryPrompt />
           ) : agencyDao ? (
-            <ProjectBudgetPanel projectId={project.id} showAgencyBudgetLink />
+            <div className="flex flex-col gap-6">
+              <ProjectBudgetPanel projectId={project.id} showAgencyBudgetLink />
+              <WorkOrdersCard
+                filter={{ projectId: project.id }}
+                description="Builders contracted on this project: each work order's budget cap and what's committed under it."
+              />
+            </div>
           ) : null}
         </TabsContent>
 

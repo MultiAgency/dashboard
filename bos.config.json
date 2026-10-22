@@ -35,7 +35,10 @@
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",
         "APP_ORIGIN",
-        "FASTNEAR_API_KEY"
+        "FASTNEAR_API_KEY",
+        "GITHUB_TOKEN",
+        "WORK_ORDERS_RUN_SECRET",
+        "ANTHROPIC_API_KEY"
       ],
       "production": "https://multiagentic-319-api-dashboard-multiagency-d83707fcb-ze.zephyrcloud.app",
       "integrity": "sha384-kkE+VfwmdrPJPCJvXIrgisKChnD4UAu9h7GA2+ROPrEC9bS6161AygyyT6mK2OoA"

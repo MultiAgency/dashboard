@@ -57,6 +57,7 @@ interface SputnikRole {
 
 interface SputnikPolicy {
   roles: SputnikRole[];
+  proposal_bond?: string;
 }
 
 const policyCache = new Map<string, { policy: SputnikPolicy; expiresAt: number }>();
@@ -76,6 +77,11 @@ async function fetchPolicy(daoAccountId: string): Promise<SputnikPolicy> {
     }
     throw err;
   }
+}
+
+export async function getProposalBond(daoAccountId: string): Promise<string> {
+  const policy = await fetchPolicy(daoAccountId);
+  return policy.proposal_bond ?? "0";
 }
 
 export interface DaoRole {

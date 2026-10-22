@@ -1,0 +1,321 @@
+{
+  "name": "MultiAgency: signed work orders from Drive",
+  "nodes": [
+    {
+      "id": "99c55821-4229-4ab8-bef8-fef726c85f52",
+      "name": "New signed work order (Drive)",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyHour"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "",
+          "mode": "list"
+        },
+        "event": "fileCreated",
+        "options": {}
+      }
+    },
+    {
+      "id": "0e2eff25-88d6-44d8-afda-0fa750653a4f",
+      "name": "Download PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c6d28bf2-231e-4bc2-b9f3-d6e350db2e40",
+      "name": "Extract PDF text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      }
+    },
+    {
+      "id": "1cc02909-7820-4960-9900-24d0dedbad89",
+      "name": "Extract fields (Claude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "anthropic-beta",
+              "value": "server-side-fallback-2026-07-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.anthropicRequest) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "b4f291af-93e4-4fe6-9651-120ed846685b",
+      "name": "Map to signed-document request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Builds AttachSignedDocumentRequest for the draft with the same Work Order ID.\nconst out = [];\nfor (const item of $input.all()) {\n  const res = item.json;\n  if (res.stop_reason === 'refusal') throw new Error('Claude declined to read this document');\n  const textBlock = (res.content || []).find((b) => b.type === 'text');\n  if (!textBlock) throw new Error('No text in the extraction response');\n  const f = JSON.parse(textBlock.text);\n  if (!f.fullySigned) throw new Error(`${f.workOrderId}: not signed by all parties yet; not importing`);\n  const sha = $('Fingerprint PDF (SHA-256)').item.json.pdfSha256;\n  const file = $('New signed work order (Drive)').item.json;\n  out.push({ json: {\n    workOrderId: f.workOrderId,\n    body: {\n      method: 'google_esign',\n      documentSha256: sha,\n      documentUrl: file.webViewLink || null,\n      signedAt: f.signers.map((s) => s.signedAt).filter(Boolean).sort().pop() || null,\n      signers: f.signers.map((s) => ({ name: s.name, role: s.role, signedAt: s.signedAt || null })),\n      extracted: {\n        workOrderId: f.workOrderId, project: f.project, contractorName: f.contractorName,\n        representativeName: f.representativeName, periodStart: f.periodStart, periodEnd: f.periodEnd,\n        budgetUsd: f.budgetUsd, payee: f.payee || null, contractorGithub: f.contractorGithub || null,\n        repos: f.repos && f.repos.length ? f.repos : null,\n      },\n    },\n  } });\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "087b6dc0-f4a5-4487-8829-df9dfaa34221",
+      "name": "Attach to draft work order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=PASTE_PUBLIC_URL_HERE/api/work-orders/{{ $json.workOrderId }}/signed-document",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "f3b46fb6-4064-4cd0-a005-b0fd194bd234",
+      "name": "Fingerprint PDF (SHA-256)",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        330,
+        160
+      ],
+      "parameters": {
+        "action": "hash",
+        "type": "SHA256",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "dataPropertyName": "pdfSha256",
+        "encoding": "hex"
+      }
+    },
+    {
+      "id": "9094b3c8-2884-42e4-8151-469e116a8c84",
+      "name": "Download PDF again (for text)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        440,
+        160
+      ],
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('New signed work order (Drive)').item.json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f3d25ea3-2af8-4c95-a6a9-d4d083e26da3",
+      "name": "Is it a PDF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        110,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "812831e5-495c-4914-b39f-f5f97136011b",
+              "leftValue": "={{ $json.mimeType }}",
+              "rightValue": "application/pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8fe248ba-85f0-4550-926b-d66d108125e3",
+      "name": "Build Claude request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Builds the Anthropic Messages API request (a Code node, because '}}' inside an n8n\n// expression ends the expression and the nested JSON schema has many of them).\nconst schema = {\n  \"type\": \"object\",\n  \"additionalProperties\": false,\n  \"required\": [\n    \"workOrderId\",\n    \"title\",\n    \"project\",\n    \"contractorName\",\n    \"contractorEmail\",\n    \"representativeName\",\n    \"representativeEmail\",\n    \"effectiveDate\",\n    \"periodStart\",\n    \"periodEnd\",\n    \"budgetUsd\",\n    \"ipModel\",\n    \"servicesAgreementDate\",\n    \"signers\",\n    \"fullySigned\",\n    \"payee\",\n    \"contractorGithub\",\n    \"repos\"\n  ],\n  \"properties\": {\n    \"workOrderId\": {\n      \"type\": \"string\",\n      \"description\": \"Work Order ID exactly as written in the header, e.g. SI-002\"\n    },\n    \"title\": {\n      \"type\": \"string\",\n      \"description\": \"Document title, e.g. 'MultiAgency Work Order | Contributor Role'\"\n    },\n    \"project\": {\n      \"type\": \"string\"\n    },\n    \"contractorName\": {\n      \"type\": \"string\"\n    },\n    \"contractorEmail\": {\n      \"type\": \"string\",\n      \"description\": \"Contractor email if present anywhere (signature block or audit trail), else empty string\"\n    },\n    \"representativeName\": {\n      \"type\": \"string\"\n    },\n    \"representativeEmail\": {\n      \"type\": \"string\",\n      \"description\": \"Representative email if present, else empty string\"\n    },\n    \"effectiveDate\": {\n      \"type\": \"string\",\n      \"description\": \"YYYY-MM-DD\"\n    },\n    \"periodStart\": {\n      \"type\": \"string\",\n      \"description\": \"Work period start, YYYY-MM-DD\"\n    },\n    \"periodEnd\": {\n      \"type\": \"string\",\n      \"description\": \"Work period end, YYYY-MM-DD\"\n    },\n    \"budgetUsd\": {\n      \"type\": \"string\",\n      \"description\": \"Approved budget in USD as a plain decimal, e.g. '1000'\"\n    },\n    \"ipModel\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"assignment\",\n        \"license\",\n        \"open_source\",\n        \"other\",\n        \"\"\n      ]\n    },\n    \"servicesAgreementDate\": {\n      \"type\": \"string\",\n      \"description\": \"YYYY-MM-DD or empty string\"\n    },\n    \"payee\": {\n      \"type\": \"string\",\n      \"description\": \"Payout account (NEAR) from Schedule A, or empty string\"\n    },\n    \"contractorGithub\": {\n      \"type\": \"string\",\n      \"description\": \"Contractor GitHub account from Schedule A, or empty string\"\n    },\n    \"repos\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      },\n      \"description\": \"Repositories in scope from Schedule A (owner/name), or empty\"\n    },\n    \"signers\": {\n      \"type\": \"array\",\n      \"description\": \"Each signer from the signature block / audit trail\",\n      \"items\": {\n        \"type\": \"object\",\n        \"additionalProperties\": false,\n        \"required\": [\n          \"name\",\n          \"role\",\n          \"signedAt\"\n        ],\n        \"properties\": {\n          \"name\": {\n            \"type\": \"string\"\n          },\n          \"role\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"contractor\",\n              \"representative\"\n            ]\n          },\n          \"signedAt\": {\n            \"type\": \"string\",\n            \"description\": \"ISO 8601 time from the audit trail, or empty string\"\n          }\n        }\n      }\n    },\n    \"fullySigned\": {\n      \"type\": \"boolean\",\n      \"description\": \"True only if the audit trail says it was signed by all signers / completed\"\n    }\n  }\n};\nreturn $input.all().map((item) => ({ json: { anthropicRequest: {\n  model: 'claude-opus-5-5',\n  max_tokens: 4000,\n  fallbacks: 'default',\n  output_config: { effort: 'low', format: { type: 'json_schema', schema } },\n  system: 'You extract fields from a signed work order. Copy values exactly as written; convert dates to YYYY-MM-DD. Use an empty string when a field is absent. Never invent values.',\n  messages: [{ role: 'user', content: 'Work order text:\\n\\n' + (item.json.text || '') }],\n} } }));"
+      }
+    }
+  ],
+  "connections": {
+    "New signed work order (Drive)": {
+      "main": [
+        [
+          {
+            "node": "Is it a PDF?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF": {
+      "main": [
+        [
+          {
+            "node": "Fingerprint PDF (SHA-256)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF text": {
+      "main": [
+        [
+          {
+            "node": "Build Claude request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract fields (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Map to signed-document request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fingerprint PDF (SHA-256)": {
+      "main": [
+        [
+          {
+            "node": "Download PDF again (for text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map to signed-document request": {
+      "main": [
+        [
+          {
+            "node": "Attach to draft work order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download PDF again (for text)": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is it a PDF?": {
+      "main": [
+        [
+          {
+            "node": "Download PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Build Claude request": {
+      "main": [
+        [
+          {
+            "node": "Extract fields (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

@@ -34,12 +34,14 @@ import { Route as LayoutAuthenticatedAdminRouteRouteImport } from './routes/_lay
 import { Route as LayoutAuthenticatedPlatformIndexRouteImport } from './routes/_layout/_authenticated/platform/index'
 import { Route as LayoutAuthenticatedClientIndexRouteImport } from './routes/_layout/_authenticated/client/index'
 import { Route as LayoutAuthenticatedAdminIndexRouteImport } from './routes/_layout/_authenticated/admin/index'
+import { Route as LayoutAuthenticatedWorkOrdersIdRouteImport } from './routes/_layout/_authenticated/work-orders/$id'
 import { Route as LayoutAuthenticatedClientReportsRouteImport } from './routes/_layout/_authenticated/client/reports'
 import { Route as LayoutAuthenticatedAdminSettingsRouteImport } from './routes/_layout/_authenticated/admin/settings'
 import { Route as LayoutAuthenticatedAdminMembersRouteImport } from './routes/_layout/_authenticated/admin/members'
 import { Route as LayoutAuthenticatedClientEngagementIdRouteRouteImport } from './routes/_layout/_authenticated/client/$engagementId/route'
 import { Route as LayoutAuthenticatedClientProjectsIndexRouteImport } from './routes/_layout/_authenticated/client/projects/index'
 import { Route as LayoutAuthenticatedClientEngagementIdIndexRouteImport } from './routes/_layout/_authenticated/client/$engagementId/index'
+import { Route as LayoutAuthenticatedAdminWorkOrdersIndexRouteImport } from './routes/_layout/_authenticated/admin/work-orders/index'
 import { Route as LayoutAuthenticatedAdminReportsIndexRouteImport } from './routes/_layout/_authenticated/admin/reports/index'
 import { Route as LayoutAuthenticatedAdminProjectsIndexRouteImport } from './routes/_layout/_authenticated/admin/projects/index'
 import { Route as LayoutAuthenticatedAdminEngagementsIndexRouteImport } from './routes/_layout/_authenticated/admin/engagements/index'
@@ -52,6 +54,7 @@ import { Route as LayoutAuthenticatedClientEngagementIdPrepaymentsRouteImport } 
 import { Route as LayoutAuthenticatedClientEngagementIdPlanRouteImport } from './routes/_layout/_authenticated/client/$engagementId/plan'
 import { Route as LayoutAuthenticatedClientEngagementIdIdeasRouteImport } from './routes/_layout/_authenticated/client/$engagementId/ideas'
 import { Route as LayoutAuthenticatedClientEngagementIdBillingsRouteImport } from './routes/_layout/_authenticated/client/$engagementId/billings'
+import { Route as LayoutAuthenticatedAdminWorkOrdersIdRouteImport } from './routes/_layout/_authenticated/admin/work-orders/$id'
 import { Route as LayoutAuthenticatedAdminProjectsSlugRouteImport } from './routes/_layout/_authenticated/admin/projects/$slug'
 import { Route as LayoutAuthenticatedAdminEngagementsEngagementIdRouteImport } from './routes/_layout/_authenticated/admin/engagements/$engagementId'
 import { Route as LayoutAuthenticatedAdminContributorsNearAccountRouteImport } from './routes/_layout/_authenticated/admin/contributors/$nearAccount'
@@ -193,6 +196,12 @@ const LayoutAuthenticatedAdminIndexRoute =
     path: '/',
     getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
+const LayoutAuthenticatedWorkOrdersIdRoute =
+  LayoutAuthenticatedWorkOrdersIdRouteImport.update({
+    id: '/work-orders/$id',
+    path: '/work-orders/$id',
+    getParentRoute: () => LayoutAuthenticatedRoute,
+  } as any)
 const LayoutAuthenticatedClientReportsRoute =
   LayoutAuthenticatedClientReportsRouteImport.update({
     id: '/reports',
@@ -228,6 +237,12 @@ const LayoutAuthenticatedClientEngagementIdIndexRoute =
     id: '/',
     path: '/',
     getParentRoute: () => LayoutAuthenticatedClientEngagementIdRouteRoute,
+  } as any)
+const LayoutAuthenticatedAdminWorkOrdersIndexRoute =
+  LayoutAuthenticatedAdminWorkOrdersIndexRouteImport.update({
+    id: '/work-orders/',
+    path: '/work-orders/',
+    getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
   } as any)
 const LayoutAuthenticatedAdminReportsIndexRoute =
   LayoutAuthenticatedAdminReportsIndexRouteImport.update({
@@ -301,6 +316,12 @@ const LayoutAuthenticatedClientEngagementIdBillingsRoute =
     path: '/billings',
     getParentRoute: () => LayoutAuthenticatedClientEngagementIdRouteRoute,
   } as any)
+const LayoutAuthenticatedAdminWorkOrdersIdRoute =
+  LayoutAuthenticatedAdminWorkOrdersIdRouteImport.update({
+    id: '/work-orders/$id',
+    path: '/work-orders/$id',
+    getParentRoute: () => LayoutAuthenticatedAdminRouteRoute,
+  } as any)
 const LayoutAuthenticatedAdminProjectsSlugRoute =
   LayoutAuthenticatedAdminProjectsSlugRouteImport.update({
     id: '/projects/$slug',
@@ -363,12 +384,14 @@ export interface FileRoutesByFullPath {
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/client/reports': typeof LayoutAuthenticatedClientReportsRoute
+  '/work-orders/$id': typeof LayoutAuthenticatedWorkOrdersIdRoute
   '/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/platform/': typeof LayoutAuthenticatedPlatformIndexRoute
   '/admin/contributors/$nearAccount': typeof LayoutAuthenticatedAdminContributorsNearAccountRoute
   '/admin/engagements/$engagementId': typeof LayoutAuthenticatedAdminEngagementsEngagementIdRoute
   '/admin/projects/$slug': typeof LayoutAuthenticatedAdminProjectsSlugRoute
+  '/admin/work-orders/$id': typeof LayoutAuthenticatedAdminWorkOrdersIdRoute
   '/client/$engagementId/billings': typeof LayoutAuthenticatedClientEngagementIdBillingsRoute
   '/client/$engagementId/ideas': typeof LayoutAuthenticatedClientEngagementIdIdeasRoute
   '/client/$engagementId/plan': typeof LayoutAuthenticatedClientEngagementIdPlanRoute
@@ -381,6 +404,7 @@ export interface FileRoutesByFullPath {
   '/admin/engagements/': typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   '/admin/projects/': typeof LayoutAuthenticatedAdminProjectsIndexRoute
   '/admin/reports/': typeof LayoutAuthenticatedAdminReportsIndexRoute
+  '/admin/work-orders/': typeof LayoutAuthenticatedAdminWorkOrdersIndexRoute
   '/client/$engagementId/': typeof LayoutAuthenticatedClientEngagementIdIndexRoute
   '/client/projects/': typeof LayoutAuthenticatedClientProjectsIndexRoute
   '/client/$engagementId/projects/$slug': typeof LayoutAuthenticatedClientEngagementIdProjectsSlugRoute
@@ -408,12 +432,14 @@ export interface FileRoutesByTo {
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/client/reports': typeof LayoutAuthenticatedClientReportsRoute
+  '/work-orders/$id': typeof LayoutAuthenticatedWorkOrdersIdRoute
   '/admin': typeof LayoutAuthenticatedAdminIndexRoute
   '/client': typeof LayoutAuthenticatedClientIndexRoute
   '/platform': typeof LayoutAuthenticatedPlatformIndexRoute
   '/admin/contributors/$nearAccount': typeof LayoutAuthenticatedAdminContributorsNearAccountRoute
   '/admin/engagements/$engagementId': typeof LayoutAuthenticatedAdminEngagementsEngagementIdRoute
   '/admin/projects/$slug': typeof LayoutAuthenticatedAdminProjectsSlugRoute
+  '/admin/work-orders/$id': typeof LayoutAuthenticatedAdminWorkOrdersIdRoute
   '/client/$engagementId/billings': typeof LayoutAuthenticatedClientEngagementIdBillingsRoute
   '/client/$engagementId/ideas': typeof LayoutAuthenticatedClientEngagementIdIdeasRoute
   '/client/$engagementId/plan': typeof LayoutAuthenticatedClientEngagementIdPlanRoute
@@ -426,6 +452,7 @@ export interface FileRoutesByTo {
   '/admin/engagements': typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   '/admin/projects': typeof LayoutAuthenticatedAdminProjectsIndexRoute
   '/admin/reports': typeof LayoutAuthenticatedAdminReportsIndexRoute
+  '/admin/work-orders': typeof LayoutAuthenticatedAdminWorkOrdersIndexRoute
   '/client/$engagementId': typeof LayoutAuthenticatedClientEngagementIdIndexRoute
   '/client/projects': typeof LayoutAuthenticatedClientProjectsIndexRoute
   '/client/$engagementId/projects/$slug': typeof LayoutAuthenticatedClientEngagementIdProjectsSlugRoute
@@ -460,12 +487,14 @@ export interface FileRoutesById {
   '/_layout/_authenticated/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/_layout/_authenticated/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/_layout/_authenticated/client/reports': typeof LayoutAuthenticatedClientReportsRoute
+  '/_layout/_authenticated/work-orders/$id': typeof LayoutAuthenticatedWorkOrdersIdRoute
   '/_layout/_authenticated/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/_layout/_authenticated/client/': typeof LayoutAuthenticatedClientIndexRoute
   '/_layout/_authenticated/platform/': typeof LayoutAuthenticatedPlatformIndexRoute
   '/_layout/_authenticated/admin/contributors/$nearAccount': typeof LayoutAuthenticatedAdminContributorsNearAccountRoute
   '/_layout/_authenticated/admin/engagements/$engagementId': typeof LayoutAuthenticatedAdminEngagementsEngagementIdRoute
   '/_layout/_authenticated/admin/projects/$slug': typeof LayoutAuthenticatedAdminProjectsSlugRoute
+  '/_layout/_authenticated/admin/work-orders/$id': typeof LayoutAuthenticatedAdminWorkOrdersIdRoute
   '/_layout/_authenticated/client/$engagementId/billings': typeof LayoutAuthenticatedClientEngagementIdBillingsRoute
   '/_layout/_authenticated/client/$engagementId/ideas': typeof LayoutAuthenticatedClientEngagementIdIdeasRoute
   '/_layout/_authenticated/client/$engagementId/plan': typeof LayoutAuthenticatedClientEngagementIdPlanRoute
@@ -478,6 +507,7 @@ export interface FileRoutesById {
   '/_layout/_authenticated/admin/engagements/': typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   '/_layout/_authenticated/admin/projects/': typeof LayoutAuthenticatedAdminProjectsIndexRoute
   '/_layout/_authenticated/admin/reports/': typeof LayoutAuthenticatedAdminReportsIndexRoute
+  '/_layout/_authenticated/admin/work-orders/': typeof LayoutAuthenticatedAdminWorkOrdersIndexRoute
   '/_layout/_authenticated/client/$engagementId/': typeof LayoutAuthenticatedClientEngagementIdIndexRoute
   '/_layout/_authenticated/client/projects/': typeof LayoutAuthenticatedClientProjectsIndexRoute
   '/_layout/_authenticated/client/$engagementId/projects/$slug': typeof LayoutAuthenticatedClientEngagementIdProjectsSlugRoute
@@ -511,12 +541,14 @@ export interface FileRouteTypes {
     | '/admin/members'
     | '/admin/settings'
     | '/client/reports'
+    | '/work-orders/$id'
     | '/admin/'
     | '/client/'
     | '/platform/'
     | '/admin/contributors/$nearAccount'
     | '/admin/engagements/$engagementId'
     | '/admin/projects/$slug'
+    | '/admin/work-orders/$id'
     | '/client/$engagementId/billings'
     | '/client/$engagementId/ideas'
     | '/client/$engagementId/plan'
@@ -529,6 +561,7 @@ export interface FileRouteTypes {
     | '/admin/engagements/'
     | '/admin/projects/'
     | '/admin/reports/'
+    | '/admin/work-orders/'
     | '/client/$engagementId/'
     | '/client/projects/'
     | '/client/$engagementId/projects/$slug'
@@ -556,12 +589,14 @@ export interface FileRouteTypes {
     | '/admin/members'
     | '/admin/settings'
     | '/client/reports'
+    | '/work-orders/$id'
     | '/admin'
     | '/client'
     | '/platform'
     | '/admin/contributors/$nearAccount'
     | '/admin/engagements/$engagementId'
     | '/admin/projects/$slug'
+    | '/admin/work-orders/$id'
     | '/client/$engagementId/billings'
     | '/client/$engagementId/ideas'
     | '/client/$engagementId/plan'
@@ -574,6 +609,7 @@ export interface FileRouteTypes {
     | '/admin/engagements'
     | '/admin/projects'
     | '/admin/reports'
+    | '/admin/work-orders'
     | '/client/$engagementId'
     | '/client/projects'
     | '/client/$engagementId/projects/$slug'
@@ -607,12 +643,14 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/admin/members'
     | '/_layout/_authenticated/admin/settings'
     | '/_layout/_authenticated/client/reports'
+    | '/_layout/_authenticated/work-orders/$id'
     | '/_layout/_authenticated/admin/'
     | '/_layout/_authenticated/client/'
     | '/_layout/_authenticated/platform/'
     | '/_layout/_authenticated/admin/contributors/$nearAccount'
     | '/_layout/_authenticated/admin/engagements/$engagementId'
     | '/_layout/_authenticated/admin/projects/$slug'
+    | '/_layout/_authenticated/admin/work-orders/$id'
     | '/_layout/_authenticated/client/$engagementId/billings'
     | '/_layout/_authenticated/client/$engagementId/ideas'
     | '/_layout/_authenticated/client/$engagementId/plan'
@@ -625,6 +663,7 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/admin/engagements/'
     | '/_layout/_authenticated/admin/projects/'
     | '/_layout/_authenticated/admin/reports/'
+    | '/_layout/_authenticated/admin/work-orders/'
     | '/_layout/_authenticated/client/$engagementId/'
     | '/_layout/_authenticated/client/projects/'
     | '/_layout/_authenticated/client/$engagementId/projects/$slug'
@@ -813,6 +852,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedAdminIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
     }
+    '/_layout/_authenticated/work-orders/$id': {
+      id: '/_layout/_authenticated/work-orders/$id'
+      path: '/work-orders/$id'
+      fullPath: '/work-orders/$id'
+      preLoaderRoute: typeof LayoutAuthenticatedWorkOrdersIdRouteImport
+      parentRoute: typeof LayoutAuthenticatedRoute
+    }
     '/_layout/_authenticated/client/reports': {
       id: '/_layout/_authenticated/client/reports'
       path: '/reports'
@@ -854,6 +900,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/client/$engagementId/'
       preLoaderRoute: typeof LayoutAuthenticatedClientEngagementIdIndexRouteImport
       parentRoute: typeof LayoutAuthenticatedClientEngagementIdRouteRoute
+    }
+    '/_layout/_authenticated/admin/work-orders/': {
+      id: '/_layout/_authenticated/admin/work-orders/'
+      path: '/work-orders'
+      fullPath: '/admin/work-orders/'
+      preLoaderRoute: typeof LayoutAuthenticatedAdminWorkOrdersIndexRouteImport
+      parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
     }
     '/_layout/_authenticated/admin/reports/': {
       id: '/_layout/_authenticated/admin/reports/'
@@ -939,6 +992,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LayoutAuthenticatedClientEngagementIdBillingsRouteImport
       parentRoute: typeof LayoutAuthenticatedClientEngagementIdRouteRoute
     }
+    '/_layout/_authenticated/admin/work-orders/$id': {
+      id: '/_layout/_authenticated/admin/work-orders/$id'
+      path: '/work-orders/$id'
+      fullPath: '/admin/work-orders/$id'
+      preLoaderRoute: typeof LayoutAuthenticatedAdminWorkOrdersIdRouteImport
+      parentRoute: typeof LayoutAuthenticatedAdminRouteRoute
+    }
     '/_layout/_authenticated/admin/projects/$slug': {
       id: '/_layout/_authenticated/admin/projects/$slug'
       path: '/projects/$slug'
@@ -991,6 +1051,7 @@ interface LayoutAuthenticatedAdminRouteRouteChildren {
   LayoutAuthenticatedAdminContributorsNearAccountRoute: typeof LayoutAuthenticatedAdminContributorsNearAccountRoute
   LayoutAuthenticatedAdminEngagementsEngagementIdRoute: typeof LayoutAuthenticatedAdminEngagementsEngagementIdRoute
   LayoutAuthenticatedAdminProjectsSlugRoute: typeof LayoutAuthenticatedAdminProjectsSlugRoute
+  LayoutAuthenticatedAdminWorkOrdersIdRoute: typeof LayoutAuthenticatedAdminWorkOrdersIdRoute
   LayoutAuthenticatedAdminApplicationsIndexRoute: typeof LayoutAuthenticatedAdminApplicationsIndexRoute
   LayoutAuthenticatedAdminBillingsIndexRoute: typeof LayoutAuthenticatedAdminBillingsIndexRoute
   LayoutAuthenticatedAdminBudgetsIndexRoute: typeof LayoutAuthenticatedAdminBudgetsIndexRoute
@@ -998,6 +1059,7 @@ interface LayoutAuthenticatedAdminRouteRouteChildren {
   LayoutAuthenticatedAdminEngagementsIndexRoute: typeof LayoutAuthenticatedAdminEngagementsIndexRoute
   LayoutAuthenticatedAdminProjectsIndexRoute: typeof LayoutAuthenticatedAdminProjectsIndexRoute
   LayoutAuthenticatedAdminReportsIndexRoute: typeof LayoutAuthenticatedAdminReportsIndexRoute
+  LayoutAuthenticatedAdminWorkOrdersIndexRoute: typeof LayoutAuthenticatedAdminWorkOrdersIndexRoute
 }
 
 const LayoutAuthenticatedAdminRouteRouteChildren: LayoutAuthenticatedAdminRouteRouteChildren =
@@ -1012,6 +1074,8 @@ const LayoutAuthenticatedAdminRouteRouteChildren: LayoutAuthenticatedAdminRouteR
       LayoutAuthenticatedAdminEngagementsEngagementIdRoute,
     LayoutAuthenticatedAdminProjectsSlugRoute:
       LayoutAuthenticatedAdminProjectsSlugRoute,
+    LayoutAuthenticatedAdminWorkOrdersIdRoute:
+      LayoutAuthenticatedAdminWorkOrdersIdRoute,
     LayoutAuthenticatedAdminApplicationsIndexRoute:
       LayoutAuthenticatedAdminApplicationsIndexRoute,
     LayoutAuthenticatedAdminBillingsIndexRoute:
@@ -1026,6 +1090,8 @@ const LayoutAuthenticatedAdminRouteRouteChildren: LayoutAuthenticatedAdminRouteR
       LayoutAuthenticatedAdminProjectsIndexRoute,
     LayoutAuthenticatedAdminReportsIndexRoute:
       LayoutAuthenticatedAdminReportsIndexRoute,
+    LayoutAuthenticatedAdminWorkOrdersIndexRoute:
+      LayoutAuthenticatedAdminWorkOrdersIndexRoute,
   }
 
 const LayoutAuthenticatedAdminRouteRouteWithChildren =
@@ -1118,6 +1184,7 @@ interface LayoutAuthenticatedRouteChildren {
   LayoutAuthenticatedNotificationsRoute: typeof LayoutAuthenticatedNotificationsRoute
   LayoutAuthenticatedProfileRoute: typeof LayoutAuthenticatedProfileRoute
   LayoutAuthenticatedWelcomeRoute: typeof LayoutAuthenticatedWelcomeRoute
+  LayoutAuthenticatedWorkOrdersIdRoute: typeof LayoutAuthenticatedWorkOrdersIdRoute
 }
 
 const LayoutAuthenticatedRouteChildren: LayoutAuthenticatedRouteChildren = {
@@ -1131,6 +1198,7 @@ const LayoutAuthenticatedRouteChildren: LayoutAuthenticatedRouteChildren = {
   LayoutAuthenticatedNotificationsRoute: LayoutAuthenticatedNotificationsRoute,
   LayoutAuthenticatedProfileRoute: LayoutAuthenticatedProfileRoute,
   LayoutAuthenticatedWelcomeRoute: LayoutAuthenticatedWelcomeRoute,
+  LayoutAuthenticatedWorkOrdersIdRoute: LayoutAuthenticatedWorkOrdersIdRoute,
 }
 
 const LayoutAuthenticatedRouteWithChildren =

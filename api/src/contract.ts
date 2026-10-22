@@ -7,6 +7,11 @@ import {
 } from "every-plugin/errors";
 import { oc } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
+import {
+  myWorkOrdersContract,
+  workOrderIntakeContract,
+  workOrdersContract,
+} from "./work-orders-contract";
 
 const tokenList = z.object({
   tokens: z.array(
@@ -637,6 +642,11 @@ export const proposalListItem = proposalPublicItem.extend({
 });
 
 export const contract = oc.router({
+  workOrders: workOrdersContract,
+
+  myWorkOrders: myWorkOrdersContract,
+  workOrderIntake: workOrderIntakeContract,
+
   ping: oc.route({ method: "GET", path: "/ping" }).output(
     z.object({
       status: z.literal("ok"),

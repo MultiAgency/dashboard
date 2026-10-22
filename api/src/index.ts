@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createPlugin } from "every-plugin";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
@@ -38,6 +39,7 @@ import { createNearnService } from "./services/nearn";
 import { createNotifications } from "./services/notifications";
 import { resendEmailSender } from "./services/notify";
 import {
+  agencyDaoOf,
   createOrganizationAccess,
   hasRole,
   type OrganizationScope,
@@ -52,15 +54,39 @@ import {
   getResolvedPublicSettings,
   upsertSettings,
 } from "./services/settings-admin";
-import { getRoles } from "./services/sputnik";
+import { getProposal, getProposalBond, getRoles } from "./services/sputnik";
 import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
+import { testEvent } from "./services/work-orders/events";
+import { cachedOwnership, createGitHub } from "./services/work-orders/github";
+import { createWorkOrderIntegrations, createWorkOrderOutbox } from "./services/work-orders/outbox";
+import { createWorkOrdersService } from "./services/work-orders/service";
+import { createSummarizer } from "./services/work-orders/summarizer";
+import { DEFAULT_RENEWAL } from "./services/work-orders/types";
 
 export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({
     agencyDaoAccount: z.string().optional(),
     appOrigin: z.string().url().default("https://dev.multiagency.ai"),
     communityApiUrl: z.string().url().default("https://nearbuilders.org/api"),
+    workOrderRenewal: z
+      .object({
+        minActiveWeeksPct: z
+          .number()
+          .int()
+          .min(0)
+          .max(100)
+          .default(DEFAULT_RENEWAL.minActiveWeeksPct),
+        minApprovedPrs: z.number().int().min(0).default(DEFAULT_RENEWAL.minApprovedPrs),
+        minIssuesDonePct: z
+          .number()
+          .int()
+          .min(0)
+          .max(100)
+          .default(DEFAULT_RENEWAL.minIssuesDonePct),
+        maxUnapprovedPrs: z.number().int().min(0).default(DEFAULT_RENEWAL.maxUnapprovedPrs),
+      })
+      .default(DEFAULT_RENEWAL),
   }),
 
   secrets: z.object({
@@ -72,6 +98,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
     RESEND_API_KEY: z.string().optional(),
     NOTIFY_FROM_EMAIL: z.string().optional(),
     APP_ORIGIN: z.string().url().optional(),
+    GITHUB_TOKEN: z.string().optional(),
+    WORK_ORDERS_RUN_SECRET: z.string().optional(),
+    ANTHROPIC_API_KEY: z.string().optional(),
   }),
 
   context: ContextSchema,
@@ -186,6 +215,57 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const treasury = createTreasuryService(directory, projectLedgers);
       const nearn = createNearnService();
       const community = createCommunityService(config.variables.communityApiUrl);
+      const github = createGitHub(config.secrets.GITHUB_TOKEN ?? null);
+      const workOrderIntegrations = createWorkOrderIntegrations({ db });
+      const workOrderOutbox = createWorkOrderOutbox({
+        db,
+        integrations: workOrderIntegrations,
+        sendEmail,
+        immediate: true,
+      });
+      const workOrderAiDrafts = !!config.secrets.ANTHROPIC_API_KEY;
+      const userEmail = async (userId: string) => {
+        if (!authPool) return null;
+        const { rows } = await authPool.query<{ email: string | null }>(
+          'SELECT email FROM "user" WHERE id = $1 LIMIT 1',
+          [userId],
+        );
+        return rows[0]?.email ?? null;
+      };
+      const workOrders = createWorkOrdersService({
+        db,
+        directory,
+        scopeOfOrganization: (organizationId) => access.readScopeOfAgency({}, organizationId),
+        agencyDaoOf: (organizationId) => agencyDaoOf(db, organizationId),
+        organizationName: async (organizationId) =>
+          (await organizationDirectory.get(organizationId))?.name ?? organizationId,
+        builders: {
+          get: async (nearAccount) => {
+            try {
+              const { data } = await plugins.builders({}).getBuilder({ nearAccount });
+              return {
+                nearAccount: data.nearAccount,
+                name: data.name,
+                githubLogin: data.githubLogin,
+                userId: data.userId,
+              };
+            } catch {
+              return null;
+            }
+          },
+        },
+        github,
+        ownership: cachedOwnership(github, 10 * 60_000),
+        proposal: (daoAccountId, proposalId) => getProposal(db, daoAccountId, proposalId),
+        proposalBond: getProposalBond,
+        notifications,
+        thresholds: config.variables.workOrderRenewal,
+        outbox: workOrderOutbox,
+        summarizer: createSummarizer(config.secrets.ANTHROPIC_API_KEY),
+        userEmail,
+        appOrigin,
+      });
+      const workOrdersRunSecret = config.secrets.WORK_ORDERS_RUN_SECRET ?? null;
 
       yield* Effect.logInfo(`[API] plugins.projects available: ${typeof plugins?.projects}`);
       yield* Effect.logInfo("[API] Services Initialized");
@@ -218,6 +298,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
         treasury,
         nearn,
         community,
+        workOrders,
+        workOrdersRunSecret,
+        workOrderIntegrations,
+        workOrderOutbox,
+        workOrderAiDrafts,
+        workOrderEmails: sendEmail !== null,
+        appOrigin,
       };
     }),
 
@@ -256,7 +343,51 @@ export default createPlugin.withPlugins<PluginsClient>()({
       treasury,
       nearn,
       community,
+      workOrders,
+      workOrdersRunSecret,
+      workOrderIntegrations,
+      workOrderOutbox,
+      workOrderAiDrafts,
+      workOrderEmails,
+      appOrigin,
     } = services;
+
+    const integrationView = async (organizationId: string) => {
+      const [settings, deliveries] = await Promise.all([
+        workOrderIntegrations.settings(organizationId),
+        workOrderIntegrations.recent(organizationId),
+      ]);
+      return {
+        connected: !!settings?.n8nWebhookUrl,
+        webhookUrl: settings?.n8nWebhookUrl ?? null,
+        webhookSecret: settings?.webhookSecret ?? null,
+        hasInboundToken: !!settings,
+        emailEnabled: workOrderEmails,
+        aiDraftsEnabled: workOrderAiDrafts,
+        callbackBaseUrl: appOrigin,
+        deliveries: deliveries.map((d) => ({
+          id: d.id,
+          channel: d.channel,
+          eventType: d.eventType,
+          attempts: d.attempts,
+          deliveredAt: d.deliveredAt?.toISOString() ?? null,
+          lastError: d.lastError,
+          createdAt: d.createdAt.toISOString(),
+        })),
+      };
+    };
+
+    const intakeOrganization = async (headers: Headers | undefined) => {
+      const given = headers?.get("authorization") ?? "";
+      const token = given.startsWith("Bearer ") ? given.slice(7).trim() : "";
+      const organizationId = token ? await workOrderIntegrations.organizationOfToken(token) : null;
+      if (!organizationId) {
+        throw new ORPCError("UNAUTHORIZED", {
+          message: "A valid Agency integration token is required",
+        });
+      }
+      return organizationId;
+    };
     const auth = createAuthMiddleware(builder);
     const {
       member,
@@ -786,6 +917,188 @@ export default createPlugin.withPlugins<PluginsClient>()({
           ),
       },
 
+      workOrders: {
+        list: builder.workOrders.list
+          .use(agencyMember)
+          .handler(async ({ context, input }) => workOrders.list(context.scope, input)),
+
+        get: builder.workOrders.get
+          .use(agencyMember)
+          .handler(async ({ context, input }) => workOrders.get(context.scope, input)),
+
+        create: builder.workOrders.create
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.create(context.scope, input)),
+
+        update: builder.workOrders.update
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.update(context.scope, input)),
+
+        delete: builder.workOrders.delete
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.remove(context.scope, input)),
+
+        offer: builder.workOrders.offer
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.offer(context.scope, input)),
+
+        activate: builder.workOrders.activate
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.activate(context.scope, input)),
+
+        terminate: builder.workOrders.terminate
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.terminate(context.scope, input)),
+
+        attachDocument: builder.workOrders.attachDocument
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.attachDocument(context.scope, input)),
+
+        collect: builder.workOrders.collect
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.collect(context.scope, input)),
+
+        draftRequest: builder.workOrders.draftRequest
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.draftRequest(context.scope, input)),
+
+        approveRequest: builder.workOrders.approveRequest
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.approveRequest(context.scope, input)),
+
+        rejectRequest: builder.workOrders.rejectRequest
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.rejectRequest(context.scope, input)),
+
+        linkProposal: builder.workOrders.linkProposal
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => workOrders.linkProposal(context.scope, input)),
+
+        paymentProposal: builder.workOrders.paymentProposal
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => workOrders.paymentProposal(context.scope, input)),
+
+        refreshPayment: builder.workOrders.refreshPayment
+          .use(agencyMember)
+          .handler(async ({ context, input }) => workOrders.refreshPayment(context.scope, input)),
+
+        decideRenewal: builder.workOrders.decideRenewal
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.decideRenewal(context.scope, input)),
+
+        setGithubLogin: builder.workOrders.setGithubLogin
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.setGithubLogin(context.scope, input)),
+
+        prepareDocument: builder.workOrders.prepareDocument
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.prepareDocument(context.scope, input)),
+
+        requestPayeeConfirmation: builder.workOrders.requestPayeeConfirmation
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            workOrders.requestPayeeConfirmation(context.scope, input),
+          ),
+
+        integration: builder.workOrders.integration
+          .use(agencyManager)
+          .handler(async ({ context }) => integrationView(context.scope.organizationId)),
+
+        saveIntegration: builder.workOrders.saveIntegration
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { inboundToken } = await workOrderIntegrations.save(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input.webhookUrl,
+            );
+            return { ...(await integrationView(context.scope.organizationId)), inboundToken };
+          }),
+
+        rotateIntegration: builder.workOrders.rotateIntegration
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { inboundToken } = await workOrderIntegrations.rotate(
+              context.scope.organizationId,
+              context.scope.actorId,
+            );
+            return { ...(await integrationView(context.scope.organizationId)), inboundToken };
+          }),
+
+        testIntegration: builder.workOrders.testIntegration
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const organizationId = context.scope.organizationId;
+            const settings = await workOrderIntegrations.settings(organizationId);
+            if (!settings?.n8nWebhookUrl) {
+              throw new ORPCError("BAD_REQUEST", {
+                message: "Save your n8n webhook URL first",
+                data: { reason: "NOT_CONNECTED" },
+              });
+            }
+            const ids = await workOrderOutbox.enqueue(
+              organizationId,
+              null,
+              testEvent(organizationId),
+            );
+            await workOrderOutbox.deliver({ ids });
+            return integrationView(organizationId);
+          }),
+
+        run: builder.workOrders.run.handler(async ({ context }) => {
+          const given = context.reqHeaders?.get("authorization") ?? "";
+          if (!workOrdersRunSecret || !sameSecret(given, `Bearer ${workOrdersRunSecret}`)) {
+            throw new ORPCError("UNAUTHORIZED", { message: "A valid run secret is required" });
+          }
+          return workOrders.run();
+        }),
+      },
+
+      workOrderIntake: {
+        preparedDocument: builder.workOrderIntake.preparedDocument.handler(
+          async ({ context, input }) =>
+            workOrders.preparedDocument(await intakeOrganization(context.reqHeaders), input),
+        ),
+
+        signedDocument: builder.workOrderIntake.signedDocument.handler(async ({ context, input }) =>
+          workOrders.attachSignedDocument(await intakeOrganization(context.reqHeaders), input),
+        ),
+      },
+
+      myWorkOrders: {
+        list: builder.myWorkOrders.list
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => workOrders.mine(context)),
+
+        get: builder.myWorkOrders.get
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.mineGet(context, input)),
+
+        accept: builder.myWorkOrders.accept
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.accept(context, input)),
+
+        confirmPayee: builder.myWorkOrders.confirmPayee
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.confirmPayee(context, input)),
+
+        decline: builder.myWorkOrders.decline
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.decline(context, input)),
+
+        draftRequest: builder.myWorkOrders.draftRequest
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.mineDraftRequest(context, input)),
+
+        editRequest: builder.myWorkOrders.editRequest
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.editRequest(context, input)),
+
+        submitRequest: builder.myWorkOrders.submitRequest
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.submitRequest(context, input)),
+      },
+
       agreements: {
         list: builder.agreements.list
           .use(agencyMember)
@@ -1048,3 +1361,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
     };
   },
 });
+
+function sameSecret(given: string, expected: string): boolean {
+  const left = Buffer.from(given);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
+}

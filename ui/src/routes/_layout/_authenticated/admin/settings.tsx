@@ -26,6 +26,7 @@ import { TreasurySettings } from "@/components/admin/treasury-settings";
 import { AdminError } from "@/components/admin-error";
 import { Loading } from "@/components/admin-form";
 import { PageHeader } from "@/components/page-header";
+import { WorkOrderIntegrationSettings } from "@/components/work-orders/integration-settings";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import {
@@ -61,6 +62,9 @@ function AdminSettingsPage() {
       <OrganizationIdentity />
       <section id="treasury" className="scroll-mt-24">
         <TreasurySettings />
+      </section>
+      <section id="work-orders" className="scroll-mt-24">
+        <WorkOrderIntegrationSettings />
       </section>
       <AdminSettings />
     </div>

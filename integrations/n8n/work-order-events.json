@@ -1,0 +1,451 @@
+{
+  "name": "MultiAgency: work order events (emails and documents)",
+  "nodes": [
+    {
+      "id": "0d0b239b-1463-4ec5-afd0-baac00eab9c4",
+      "name": "MultiAgency work order events",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "multiagency-work-orders",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "multiagency-work-orders",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "5fb84a3a-3358-4234-bfcb-1d71328e194b",
+      "name": "Sign body (HMAC-SHA256)",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ JSON.stringify($json.body) }}",
+        "dataPropertyName": "computedSignature",
+        "secret": "PASTE_N8N_WEBHOOK_SECRET_HERE",
+        "encoding": "hex"
+      }
+    },
+    {
+      "id": "a10353e0-4244-4a25-b2e6-c5a5b9b25549",
+      "name": "Signature valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "4b309d6d-2ab9-45a6-97d2-1b7ddab82464",
+              "leftValue": "={{ $json.headers['x-ap-signature'] }}",
+              "rightValue": "={{ 'sha256=' + $json.computedSignature }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7f78fb3c-8cd5-4b86-b3f0-68b552a4c15d",
+      "name": "Emails from MultiAgency",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "// MultiAgency writes every email; this only hands them to Gmail.\n// Input: the verified webhook item ($json.body is the work order event).\nconst out = [];\nfor (const item of $input.all()) {\n  const e = item.json.body;\n  for (const m of e.emails || []) {\n    if (m && m.to) out.push({ json: { to: m.to, subject: m.subject, text: m.text, eventId: e.id, type: e.type } });\n  }\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "b01628c7-e8df-4e06-86f0-ecdc92f6794a",
+      "name": "Send email (Gmail)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        960,
+        -100
+      ],
+      "parameters": {
+        "operation": "send",
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "text",
+        "message": "={{ $json.text }}",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "03d957f6-2de1-4b78-960e-dd2ddf965d0d",
+      "name": "Work order created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        720,
+        100
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "44f924c9-b929-4cd2-b8bd-aa125faaba97",
+              "leftValue": "={{ $json.body.type }}",
+              "rightValue": "work_order.created",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "03b3585d-54ed-4ed3-811e-a155dc124eb5",
+      "name": "Prepare document fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Values for every {{placeholder}} in the work order template.\nconst e = $input.first().json.body;\nconst t = e.terms || {};\nconst long = (d) => d ? new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) : '';\nconst box = (on) => (on ? '☑' : '☐');\nconst ip = (t.ipModel || '').toLowerCase();\nconst known = ['assignment', 'license', 'open_source'];\nreturn [{ json: { fields: {\n  work_order_id: e.workOrder.id,\n  effective_date: long(t.effectiveDate || e.workOrder.periodStart),\n  contractor_name: e.contractor.name,\n  project: e.workOrder.project,\n  services_agreement_date: t.servicesAgreementDate ? long(t.servicesAgreementDate) : '',\n  representative_name: e.representative.name,\n  budget_usd: t.budgetUsd || '',\n  period_start: long(e.workOrder.periodStart),\n  period_end: long(e.workOrder.periodEnd),\n  ip_assignment: box(ip === 'assignment'),\n  ip_license: box(ip === 'license'),\n  ip_open_source: box(ip === 'open_source'),\n  ip_other: box(ip !== '' && !known.includes(ip)),\n  ip_other_text: ip !== '' && !known.includes(ip) ? t.ipModel : '',\n  payee_account: t.payee || '',\n  payout_method: t.payoutMethod === 'withdraw' ? 'Withdrawal to the NEAR wallet' : 'Transfer to the NEAR Intents balance',\n  contractor_github: t.contractorGithub || '',\n  repos: (t.repos || []).join(', '),\n  auto_renew: box(t.autoRenew === true),\n  auto_renew_text: t.autoRenew === true ? 'This work order renews monthly, with the same terms, while the base metrics are met; otherwise the representative decides whether it renews.' : '',\n  contractor_email: e.contractor.email || '',\n  representative_email: e.representative.email || '',\n} } }];"
+      }
+    },
+    {
+      "id": "4a5d538e-029a-4e7e-a18f-1d6e983f1bdf",
+      "name": "Copy template (Drive)",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1180,
+        200
+      ],
+      "parameters": {
+        "operation": "copy",
+        "fileId": {
+          "__rl": true,
+          "value": "PASTE_TEMPLATE_DOC_ID_HERE",
+          "mode": "id"
+        },
+        "name": "=Work Order {{ $('MultiAgency work order events').item.json.body.workOrder.id }} – {{ $('MultiAgency work order events').item.json.body.contractor.name }}",
+        "sameFolder": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "004dcd2e-858e-4a60-b1ac-8f1698779487",
+      "name": "Fill placeholders (Docs)",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        200
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentURL": "={{ $('Copy template (Drive)').item.json.id }}",
+        "actionsUi": {
+          "actionFields": [
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{work_order_id}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.work_order_id }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{effective_date}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.effective_date }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{contractor_name}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.contractor_name }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{project}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.project }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{services_agreement_date}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.services_agreement_date }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{representative_name}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.representative_name }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{budget_usd}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.budget_usd }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{period_start}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.period_start }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{period_end}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.period_end }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{ip_assignment}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.ip_assignment }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{ip_license}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.ip_license }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{ip_open_source}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.ip_open_source }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{ip_other}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.ip_other }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{ip_other_text}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.ip_other_text }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{payee_account}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.payee_account }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{payout_method}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.payout_method }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{contractor_github}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.contractor_github }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{repos}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.repos }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{contractor_email}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.contractor_email }}"
+            },
+            {
+              "object": "text",
+              "action": "replaceAll",
+              "text": "{{representative_email}}",
+              "matchCase": true,
+              "replaceText": "={{ $('Prepare document fields').item.json.fields.representative_email }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "66e062ff-b07f-43e0-9f1a-21234b1e12d0",
+      "name": "Save document link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1620,
+        200
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=PASTE_PUBLIC_URL_HERE/api/work-orders/{{ $('MultiAgency work order events').item.json.body.workOrder.id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ preparedDocumentUrl: 'https://docs.google.com/document/d/' + $('Copy template (Drive)').item.json.id + '/edit' }) }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Sign body (HMAC-SHA256)": {
+      "main": [
+        [
+          {
+            "node": "Signature valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature valid?": {
+      "main": [
+        [
+          {
+            "node": "Work order created?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Emails from MultiAgency",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Work order created?": {
+      "main": [
+        [
+          {
+            "node": "Prepare document fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Prepare document fields": {
+      "main": [
+        [
+          {
+            "node": "Copy template (Drive)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Copy template (Drive)": {
+      "main": [
+        [
+          {
+            "node": "Fill placeholders (Docs)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fill placeholders (Docs)": {
+      "main": [
+        [
+          {
+            "node": "Save document link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MultiAgency work order events": {
+      "main": [
+        [
+          {
+            "node": "Sign body (HMAC-SHA256)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emails from MultiAgency": {
+      "main": [
+        [
+          {
+            "node": "Send email (Gmail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

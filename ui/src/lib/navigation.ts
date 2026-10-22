@@ -78,6 +78,7 @@ export function workspaceNavigation(
       items: [
         ...(manager ? [{ to: "/admin/engagements", label: "Engagements" }] : []),
         { to: "/admin/contributors", label: "Builders", match: "/admin/contributors" },
+        { to: "/admin/work-orders", label: "Work orders", match: "/admin/work-orders" },
         ...(manager ? [{ to: "/admin/members", label: "Team" }] : []),
       ],
     },

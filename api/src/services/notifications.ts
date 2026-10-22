@@ -102,6 +102,74 @@ export const NOTIFICATION_KINDS = {
     title: `The Allocation plan for ${p.period} was not fully applied`,
     body: `The Prepaid balance of ${p.clientName} with ${p.agencyName} did not cover ${p.count} plan line(s) for ${p.period} (${p.amounts}). They were skipped.`,
   }),
+  work_order_offered: (p) => ({
+    title: `${p.agencyName} offered you Work Order ${p.code}`,
+    body: `${p.agencyName} offered you Work Order ${p.code} on ${p.projectTitle}: up to ${p.budget} for ${p.period}. Review the terms and accept or decline it on MultiAgency.`,
+  }),
+  work_order_accepted: (p) => ({
+    title: `${p.builderName} accepted Work Order ${p.code}`,
+    body: `${p.builderName} accepted Work Order ${p.code} on ${p.projectTitle}. Activate it on MultiAgency to start the work period.`,
+  }),
+  work_order_declined: (p) => ({
+    title: `${p.builderName} declined Work Order ${p.code}`,
+    body: `${p.builderName} declined Work Order ${p.code} on ${p.projectTitle}${p.note ? `: ${p.note}` : "."} It is back in draft.`,
+  }),
+  work_order_signed: (p) => ({
+    title: `Work Order ${p.code} is signed`,
+    body: `Work Order ${p.code} on ${p.projectTitle} was e-signed by both parties. It can be activated once the builder's payout account is confirmed.`,
+  }),
+  work_order_confirm_payee: (p) => ({
+    title: `Confirm your payout account for Work Order ${p.code}`,
+    body: `${p.agencyName} hasn't paid your NEAR account before. Open Work Order ${p.code} signed in with that account and confirm it; it's free and moves no money.`,
+  }),
+  work_order_payee_confirmed: (p) => ({
+    title: `${p.builderName} confirmed the payout account for ${p.code}`,
+    body: `${p.builderName} proved they control the payout account of Work Order ${p.code} on ${p.projectTitle}. You can activate it.`,
+  }),
+  work_order_activated: (p) => ({
+    title: `Work Order ${p.code} is active`,
+    body: `Work Order ${p.code} on ${p.projectTitle} is active for ${p.period}. Work counts on GitHub issues assigned to you, closed by pull requests the repository owner approves or merges.`,
+  }),
+  work_order_ending_soon: (p) => ({
+    title: `Work Order ${p.code} ends on ${p.periodEnd}`,
+    body: `Your work period for ${p.code} on ${p.projectTitle} ends on ${p.periodEnd}. Your compensation request is drafted right after; make sure your pull requests close their assigned issues.`,
+  }),
+  compensation_request_ready: (p) => ({
+    title: `Your report for Work Order ${p.code} is ready`,
+    body: `Compensation request ${p.requestCode} was drafted from your GitHub activity. Review it, edit the Assessment, add work outside GitHub and submit it on MultiAgency.`,
+  }),
+  compensation_request_submitted: (p) => ({
+    title: `${p.builderName} submitted ${p.requestCode}`,
+    body: `${p.builderName} asked for ${p.requested} under Work Order ${p.code} on ${p.projectTitle}. Review the report and approve an amount on MultiAgency.`,
+  }),
+  compensation_request_approved: (p) => ({
+    title: `${p.requestCode} approved for ${p.approved}`,
+    body: `${p.agencyName} approved ${p.approved} for ${p.requestCode}. It is paid from the Agency DAO once its transfer proposal is approved.`,
+  }),
+  compensation_request_rejected: (p) => ({
+    title: `${p.requestCode} was rejected`,
+    body: `${p.agencyName} rejected ${p.requestCode}${p.note ? `: ${p.note}` : "."}`,
+  }),
+  compensation_request_paid: (p) => ({
+    title: `${p.requestCode} is paid`,
+    body: `${p.amount} for ${p.requestCode} was paid by ${p.daoAccountId} (proposal #${p.proposalId}).`,
+  }),
+  compensation_request_failed: (p) => ({
+    title: `The payment for ${p.requestCode} didn't go through`,
+    body: `Proposal #${p.proposalId} of ${p.daoAccountId} for ${p.requestCode} ended as ${p.status}. Nothing was paid; the budget is free again.`,
+  }),
+  work_order_renewed: (p) => ({
+    title: `Work Order ${p.code} is renewed as ${p.nextCode}`,
+    body: `Work Order ${p.code} on ${p.projectTitle} continues as ${p.nextCode} for ${p.period}, with the same terms.`,
+  }),
+  work_order_renewal_needs_approval: (p) => ({
+    title: `Manual Approval Needed: renewal of ${p.code}`,
+    body: `Work Order ${p.code} on ${p.projectTitle} missed ${p.missed} for renewal. Renew it anyway or let it end on MultiAgency.`,
+  }),
+  work_order_not_renewed: (p) => ({
+    title: `Work Order ${p.code} is not renewed`,
+    body: `Work Order ${p.code} on ${p.projectTitle} ends with this period.`,
+  }),
 } satisfies Record<string, Template>;
 
 export type NotificationKind = keyof typeof NOTIFICATION_KINDS;
@@ -195,6 +263,24 @@ export function createNotifications(deps: {
       const url = appUrl(appOrigin, input.link);
       const emailed = await deliverEmails(emails, render(input.kind, input.payload), url);
       return { recipients: recipients.length, emailed };
+    },
+
+    notifyUser: async (input: {
+      userId: string;
+      organizationId: string;
+      kind: NotificationKind;
+      payload: Payload;
+      link: string;
+    }) => {
+      await db.insert(notifications).values({
+        id: crypto.randomUUID(),
+        recipientUserId: input.userId,
+        organizationId: input.organizationId,
+        kind: input.kind,
+        payload: JSON.stringify(input.payload),
+        link: input.link,
+      });
+      return { recipients: 1 };
     },
 
     list: async (userId: string, input: { cursor?: string; limit: number }) => {

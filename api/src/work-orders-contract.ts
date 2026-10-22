@@ -1,0 +1,564 @@
+import { BAD_REQUEST, FORBIDDEN, NOT_FOUND, UNAUTHORIZED } from "every-plugin/errors";
+import { oc } from "every-plugin/orpc";
+import { z } from "every-plugin/zod";
+
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const amount = z
+  .string()
+  .regex(/^\d+$/, "positive integer string in the token's smallest unit")
+  .max(80);
+const code = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._-]{1,40}$/);
+const repo = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/, "owner/name");
+const nearAccount = z.string().trim().min(2).max(64);
+const status = z.enum([
+  "draft",
+  "offered",
+  "accepted",
+  "active",
+  "ended",
+  "exhausted",
+  "terminated",
+]);
+const requestStatus = z.enum([
+  "draft",
+  "submitted",
+  "approved",
+  "proposed",
+  "paid",
+  "rejected",
+  "failed",
+]);
+
+const renewalMetric = z.object({
+  key: z.enum(["active_weeks", "approved_prs", "issues_done", "unapproved_prs", "requests"]),
+  label: z.string(),
+  value: z.string(),
+  target: z.string(),
+  met: z.boolean(),
+});
+
+const renewal = z.object({
+  status: z.enum(["renewed", "needs_approval", "declined"]),
+  assessment: z.object({
+    assessedAt: z.string(),
+    periodStart: z.string(),
+    periodEnd: z.string(),
+    passed: z.boolean(),
+    metrics: z.array(renewalMetric),
+  }),
+  decidedBy: z.string().nullable(),
+  decidedAt: z.string().nullable(),
+  note: z.string().nullable(),
+  renewedTo: z.string().nullable(),
+});
+
+export const workOrder = z.object({
+  id: z.string(),
+  code: z.string(),
+  organizationId: z.string(),
+  projectId: z.string(),
+  projectTitle: z.string(),
+  projectSlug: z.string().nullable(),
+  builder: z.object({
+    nearAccount: z.string(),
+    name: z.string().nullable(),
+    githubLogin: z.string().nullable(),
+    profileGithubLogin: z.string().nullable(),
+  }),
+  contractorName: z.string().nullable(),
+  contractorEmail: z.string().nullable(),
+  representativeName: z.string().nullable(),
+  representativeEmail: z.string().nullable(),
+  ipModel: z.string().nullable(),
+  payee: z.object({
+    account: z.string(),
+    confirmedAt: z.string().nullable(),
+    paidBefore: z.boolean().nullable(),
+    needsConfirmation: z.boolean(),
+  }),
+  signature: z.object({
+    method: z.enum(["in_app", "google_esign"]).nullable(),
+    signedAt: z.string().nullable(),
+    signers: z.array(
+      z.object({
+        name: z.string(),
+        role: z.enum(["contractor", "representative"]),
+        signedAt: z.string().nullable(),
+      }),
+    ),
+    preparedDocumentUrl: z.string().nullable(),
+  }),
+  title: z.string(),
+  scope: z.string().nullable(),
+  repos: z.array(z.string()),
+  periodStart: z.string(),
+  periodEnd: z.string(),
+  graceDays: z.number().int(),
+  tokenId: z.string(),
+  budgetAmount: z.string(),
+  committedAmount: z.string(),
+  paidAmount: z.string(),
+  remainingAmount: z.string(),
+  autoRenew: z.boolean(),
+  status,
+  offeredAt: z.string().nullable(),
+  acceptedAt: z.string().nullable(),
+  termsChanged: z.boolean(),
+  documentSha256: z.string().nullable(),
+  documentUrl: z.string().nullable(),
+  activatedAt: z.string().nullable(),
+  activationBlockers: z.array(z.string()),
+  lastCollectedAt: z.string().nullable(),
+  waiting: z.number().int(),
+  renewedFrom: z.string().nullable(),
+  renewal: renewal.nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const evidence = z.object({
+  id: z.string(),
+  kind: z.enum(["assigned_issue", "merged_pr", "unlinked_pr", "review", "manual"]),
+  repo: z.string().nullable(),
+  number: z.number().int().nullable(),
+  url: z.string(),
+  title: z.string(),
+  state: z.string(),
+  occurredAt: z.string().nullable(),
+  assignedAt: z.string().nullable(),
+  assignedBy: z.string().nullable(),
+  authorized: z.boolean(),
+  flags: z.array(z.string()),
+  links: z.array(z.string()),
+});
+
+const manualItem = z.object({
+  title: z.string().trim().min(1).max(300),
+  url: z.url().max(2000),
+  date: day.nullable(),
+  note: z.string().trim().max(500).nullable(),
+});
+
+export const compensationRequest = z.object({
+  id: z.string(),
+  workOrderId: z.string(),
+  code: z.string(),
+  seq: z.number().int(),
+  coversFrom: z.string(),
+  coversTo: z.string(),
+  status: requestStatus,
+  requestedAmount: z.string(),
+  approvedAmount: z.string().nullable(),
+  approvedBy: z.string().nullable(),
+  decidedAt: z.string().nullable(),
+  note: z.string().nullable(),
+  contributionsMd: z.string(),
+  assessmentMd: z.string(),
+  assessmentIsDraft: z.boolean(),
+  manualItems: z.array(manualItem),
+  reportMd: z.string().nullable(),
+  reportSha256: z.string().nullable(),
+  submittedAt: z.string().nullable(),
+  proposalId: z.string().nullable(),
+  payingDaoAccountId: z.string().nullable(),
+  paidAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const activity = z.object({
+  weeksActive: z.number().int(),
+  weeksInPeriod: z.number().int(),
+  prsMerged: z.number().int(),
+  issuesClosed: z.number().int(),
+  reviews: z.number().int(),
+  additions: z.number().int(),
+  deletions: z.number().int(),
+});
+
+const repoOwner = z.object({
+  repo: z.string(),
+  owner: z.string().nullable(),
+  ownerType: z.enum(["User", "Organization"]).nullable(),
+  approvers: z.array(z.string()),
+  error: z.string().nullable(),
+});
+
+export const workOrderDetail = workOrder.extend({
+  evidence: z.array(evidence),
+  activity,
+  requests: z.array(compensationRequest),
+  repoOwners: z.array(repoOwner),
+});
+
+const fields = {
+  code: code.optional(),
+  projectId: z.string().min(1),
+  builderNearAccount: nearAccount,
+  title: z.string().trim().min(1).max(200),
+  scope: z.string().max(4000).nullable().optional(),
+  repos: z.array(repo).max(20),
+  periodStart: day,
+  periodEnd: day,
+  graceDays: z.number().int().min(0).max(30).optional(),
+  tokenId: z.string().min(1).max(80),
+  budgetAmount: amount,
+  autoRenew: z.boolean().optional(),
+  githubLogin: z.string().trim().max(40).nullable().optional(),
+  contractorName: z.string().trim().max(200).nullable().optional(),
+  contractorEmail: z.string().trim().max(320).nullable().optional(),
+  representativeName: z.string().trim().max(200).nullable().optional(),
+  representativeEmail: z.string().trim().max(320).nullable().optional(),
+  ipModel: z.string().trim().max(200).nullable().optional(),
+};
+
+const byId = z.object({ id: z.string().min(1) });
+const byRequest = z.object({ requestId: z.string().min(1) });
+const range = { coversFrom: day.optional(), coversTo: day.optional() };
+const errors = { UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST };
+const CONFLICT = { status: 409, message: "Conflict" } as const;
+
+const delivery = z.object({
+  id: z.string(),
+  channel: z.enum(["email", "n8n"]),
+  eventType: z.string(),
+  attempts: z.number().int(),
+  deliveredAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+const integration = z.object({
+  connected: z.boolean(),
+  webhookUrl: z.string().nullable(),
+  webhookSecret: z.string().nullable(),
+  hasInboundToken: z.boolean(),
+  emailEnabled: z.boolean(),
+  aiDraftsEnabled: z.boolean(),
+  callbackBaseUrl: z.string(),
+  deliveries: z.array(delivery),
+});
+
+export const workOrdersContract = {
+  list: oc
+    .route({ method: "GET", path: "/admin/work-orders" })
+    .input(
+      z.object({
+        status: status.optional(),
+        projectId: z.string().optional(),
+        builderNearAccount: z.string().optional(),
+      }),
+    )
+    .output(z.object({ data: z.array(workOrder) }))
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+  get: oc
+    .route({ method: "GET", path: "/admin/work-orders/{id}" })
+    .input(byId)
+    .output(workOrderDetail)
+    .errors(errors),
+
+  create: oc
+    .route({ method: "POST", path: "/admin/work-orders" })
+    .input(z.object(fields))
+    .output(workOrder)
+    .errors(errors),
+
+  update: oc
+    .route({ method: "PATCH", path: "/admin/work-orders/{id}" })
+    .input(
+      z.object({
+        id: z.string().min(1),
+        code: fields.code,
+        projectId: fields.projectId.optional(),
+        builderNearAccount: fields.builderNearAccount.optional(),
+        title: fields.title.optional(),
+        scope: fields.scope,
+        repos: fields.repos.optional(),
+        periodStart: day.optional(),
+        periodEnd: day.optional(),
+        graceDays: fields.graceDays,
+        tokenId: fields.tokenId.optional(),
+        budgetAmount: amount.optional(),
+        autoRenew: fields.autoRenew,
+        githubLogin: fields.githubLogin,
+        contractorName: fields.contractorName,
+        contractorEmail: fields.contractorEmail,
+        representativeName: fields.representativeName,
+        representativeEmail: fields.representativeEmail,
+        ipModel: fields.ipModel,
+      }),
+    )
+    .output(workOrder)
+    .errors(errors),
+
+  delete: oc
+    .route({ method: "DELETE", path: "/admin/work-orders/{id}" })
+    .input(byId)
+    .output(z.object({ deleted: z.literal(true) }))
+    .errors(errors),
+
+  offer: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/offer" })
+    .input(byId)
+    .output(workOrder)
+    .errors(errors),
+
+  activate: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/activate" })
+    .input(byId)
+    .output(workOrder)
+    .errors(errors),
+
+  terminate: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/terminate" })
+    .input(byId)
+    .output(workOrder)
+    .errors(errors),
+
+  attachDocument: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/document" })
+    .input(
+      z.object({
+        id: z.string().min(1),
+        sha256: z.string().regex(/^[0-9a-fA-F]{64}$/, "a SHA-256 hex digest"),
+        url: z.url().max(2000).nullable().optional(),
+      }),
+    )
+    .output(workOrder)
+    .errors(errors),
+
+  collect: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/collect" })
+    .input(byId)
+    .output(workOrderDetail)
+    .errors(errors),
+
+  draftRequest: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/requests" })
+    .input(z.object({ id: z.string().min(1), ...range }))
+    .output(compensationRequest)
+    .errors(errors),
+
+  approveRequest: oc
+    .route({ method: "POST", path: "/admin/work-order-requests/{requestId}/approve" })
+    .input(
+      z.object({
+        requestId: z.string().min(1),
+        amount,
+        confirmEvidenceIds: z.array(z.string()).max(500).optional(),
+      }),
+    )
+    .output(compensationRequest)
+    .errors(errors),
+
+  rejectRequest: oc
+    .route({ method: "POST", path: "/admin/work-order-requests/{requestId}/reject" })
+    .input(z.object({ requestId: z.string().min(1), note: z.string().trim().min(1).max(2000) }))
+    .output(compensationRequest)
+    .errors(errors),
+
+  linkProposal: oc
+    .route({ method: "POST", path: "/admin/work-order-requests/{requestId}/proposal" })
+    .input(z.object({ requestId: z.string().min(1), proposalId: z.string().regex(/^\d+$/) }))
+    .output(compensationRequest)
+    .errors(errors),
+
+  paymentProposal: oc
+    .route({ method: "GET", path: "/admin/work-order-requests/{requestId}/proposal" })
+    .input(byRequest)
+    .output(
+      z.object({
+        daoAccountId: z.string(),
+        method: z.literal("add_proposal"),
+        args: z.object({
+          proposal: z.object({
+            description: z.string(),
+            kind: z.object({
+              Transfer: z.object({
+                token_id: z.string(),
+                receiver_id: z.string(),
+                amount: z.string(),
+                msg: z.null(),
+              }),
+            }),
+          }),
+        }),
+        deposit: z.string(),
+        gas: z.string(),
+      }),
+    )
+    .errors(errors),
+
+  refreshPayment: oc
+    .route({ method: "POST", path: "/admin/work-order-requests/{requestId}/refresh" })
+    .input(byRequest)
+    .output(compensationRequest)
+    .errors(errors),
+
+  setGithubLogin: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/github" })
+    .input(z.object({ id: z.string().min(1), githubLogin: z.string().trim().min(1).max(40) }))
+    .output(workOrder)
+    .errors(errors),
+
+  prepareDocument: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/document" })
+    .input(byId)
+    .output(workOrder)
+    .errors(errors),
+
+  requestPayeeConfirmation: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/payee-confirmation" })
+    .input(byId)
+    .output(workOrder)
+    .errors(errors),
+
+  integration: oc
+    .route({ method: "GET", path: "/admin/work-order-integration" })
+    .input(z.object({}))
+    .output(integration)
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+  saveIntegration: oc
+    .route({ method: "PUT", path: "/admin/work-order-integration" })
+    .input(z.object({ webhookUrl: z.url().max(2000).nullable() }))
+    .output(integration.extend({ inboundToken: z.string().nullable() }))
+    .errors(errors),
+
+  rotateIntegration: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/rotate" })
+    .input(z.object({}))
+    .output(integration.extend({ inboundToken: z.string().nullable() }))
+    .errors(errors),
+
+  testIntegration: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/test" })
+    .input(z.object({}))
+    .output(integration)
+    .errors(errors),
+
+  decideRenewal: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/renewal" })
+    .input(
+      z.object({
+        id: z.string().min(1),
+        decision: z.enum(["approve", "decline"]),
+        note: z.string().max(2000).nullable().optional(),
+      }),
+    )
+    .output(workOrder)
+    .errors(errors),
+
+  run: oc
+    .route({ method: "POST", path: "/work-orders/run" })
+    .input(z.object({}))
+    .output(z.object({ ran: z.boolean(), counts: z.record(z.string(), z.number()) }))
+    .errors({ UNAUTHORIZED }),
+};
+
+const myWorkOrder = workOrder.extend({ agencyName: z.string() });
+
+export const myWorkOrdersContract = {
+  list: oc
+    .route({ method: "GET", path: "/me/work-orders" })
+    .input(z.object({}))
+    .output(z.object({ data: z.array(myWorkOrder) }))
+    .errors({ UNAUTHORIZED }),
+
+  get: oc
+    .route({ method: "GET", path: "/me/work-orders/{id}" })
+    .input(byId)
+    .output(workOrderDetail.extend({ agencyName: z.string(), termsHash: z.string() }))
+    .errors(errors),
+
+  accept: oc
+    .route({ method: "POST", path: "/me/work-orders/{id}/accept" })
+    .input(z.object({ id: z.string().min(1), termsHash: z.string().regex(/^[0-9a-f]{64}$/) }))
+    .output(workOrder)
+    .errors(errors),
+
+  decline: oc
+    .route({ method: "POST", path: "/me/work-orders/{id}/decline" })
+    .input(z.object({ id: z.string().min(1), note: z.string().max(2000).nullable().optional() }))
+    .output(workOrder)
+    .errors(errors),
+
+  confirmPayee: oc
+    .route({ method: "POST", path: "/me/work-orders/{id}/confirm-payee" })
+    .input(byId)
+    .output(workOrder)
+    .errors(errors),
+
+  draftRequest: oc
+    .route({ method: "POST", path: "/me/work-orders/{id}/requests" })
+    .input(z.object({ id: z.string().min(1), ...range }))
+    .output(compensationRequest)
+    .errors(errors),
+
+  editRequest: oc
+    .route({ method: "PATCH", path: "/me/work-order-requests/{requestId}" })
+    .input(
+      z.object({
+        requestId: z.string().min(1),
+        assessmentMd: z.string().max(20_000).optional(),
+        manualItems: z.array(manualItem).max(50).optional(),
+        requestedAmount: amount.optional(),
+      }),
+    )
+    .output(compensationRequest)
+    .errors(errors),
+
+  submitRequest: oc
+    .route({ method: "POST", path: "/me/work-order-requests/{requestId}/submit" })
+    .input(byRequest)
+    .output(compensationRequest)
+    .errors(errors),
+};
+
+const signer = z.object({
+  name: z.string().trim().min(1).max(200),
+  role: z.enum(["contractor", "representative"]),
+  signedAt: z.string().max(64).nullable(),
+});
+
+export const workOrderIntakeContract = {
+  preparedDocument: oc
+    .route({ method: "PATCH", path: "/work-orders/{code}" })
+    .input(z.object({ code, preparedDocumentUrl: z.url().max(2000) }))
+    .output(z.object({ id: z.string(), status, preparedDocumentUrl: z.string() }))
+    .errors(errors),
+
+  signedDocument: oc
+    .route({ method: "POST", path: "/work-orders/{code}/signed-document" })
+    .input(
+      z.object({
+        code,
+        method: z.literal("google_esign"),
+        documentSha256: z.string().regex(/^[0-9a-fA-F]{64}$/),
+        documentUrl: z.url().max(2000).nullable().optional(),
+        signedAt: z.string().max(64).nullable().optional(),
+        signers: z.array(signer).max(10).optional(),
+        extracted: z.object({
+          workOrderId: z.string().max(80),
+          project: z.string().max(300),
+          contractorName: z.string().max(200),
+          representativeName: z.string().max(200),
+          periodStart: z.string().max(40),
+          periodEnd: z.string().max(40),
+          budgetUsd: z.string().max(80),
+          payee: z.string().max(80).nullable(),
+          contractorGithub: z.string().max(80).nullable(),
+          repos: z.array(z.string().max(200)).max(20).nullable(),
+        }),
+      }),
+    )
+    .output(z.object({ id: z.string(), status, mismatches: z.array(z.string()) }))
+    .errors({ ...errors, CONFLICT }),
+};

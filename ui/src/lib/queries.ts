@@ -246,6 +246,52 @@ export function adminApplicationsListQueryKey(kind?: string | null, status?: str
   return ["admin", "applications", "list", kind ?? null, status ?? null] as const;
 }
 
+export const adminWorkOrdersQueryKey = ["admin", "work-orders"] as const;
+
+export function adminWorkOrdersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "list", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.list({}),
+    retry: false,
+  });
+}
+
+export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "detail", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.workOrders.get({ id }),
+    retry: false,
+  });
+}
+
+export const workOrderIntegrationQueryKey = ["admin", "work-order-integration"] as const;
+
+export function workOrderIntegrationQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderIntegrationQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.integration({}),
+    retry: false,
+  });
+}
+
+export const myWorkOrdersQueryKey = ["me", "work-orders"] as const;
+
+export function myWorkOrdersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...myWorkOrdersQueryKey, "list"] as const,
+    queryFn: () => apiClient.myWorkOrders.list({}),
+    retry: false,
+  });
+}
+
+export function myWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...myWorkOrdersQueryKey, "detail", id] as const,
+    queryFn: () => apiClient.myWorkOrders.get({ id }),
+    retry: false,
+  });
+}
+
 export const adminTokensQueryKey = ["admin", "tokens"] as const;
 
 export function adminTokensQueryOptions(apiClient: ApiClient) {
