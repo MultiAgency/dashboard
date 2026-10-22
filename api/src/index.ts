@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { AgentApi } from "@near-intents-agent-api/sdk";
 import { createPlugin } from "every-plugin";
 import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
@@ -45,6 +46,8 @@ import {
   type OrganizationScope,
   ROLE_MATRIX,
 } from "./services/organization-access";
+import { nearToAtomic } from "./services/payouts/policy";
+import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
@@ -54,7 +57,7 @@ import {
   getResolvedPublicSettings,
   upsertSettings,
 } from "./services/settings-admin";
-import { getProposal, getProposalBond, getRoles } from "./services/sputnik";
+import { fullAccessKeys, getProposal, getProposalBond, getRoles } from "./services/sputnik";
 import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
 import { testEvent } from "./services/work-orders/events";
@@ -109,6 +112,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
     WORK_ORDERS_RUN_SECRET: z.string().optional(),
     ANTHROPIC_API_KEY: z.string().optional(),
     GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+    NEAR_INTENTS_AGENT_API_KEY: z.string().optional(),
+    NEAR_INTENTS_AGENT_API_URL: z.string().optional(),
+    PAYOUTS_SECRET_KEY: z.string().optional(),
   }),
 
   context: ContextSchema,
@@ -236,6 +242,22 @@ export default createPlugin.withPlugins<PluginsClient>()({
         readServiceAccount(config.secrets.GOOGLE_SERVICE_ACCOUNT_JSON),
       );
       const google = serviceAccount ? createGoogle(serviceAccount) : null;
+      const agentApiKey = config.secrets.NEAR_INTENTS_AGENT_API_KEY;
+      const payoutAgents = createPayoutAgents({
+        db,
+        api: agentApiKey
+          ? (new AgentApi({
+              apiKey: agentApiKey,
+              ...(config.secrets.NEAR_INTENTS_AGENT_API_URL
+                ? { baseUrl: config.secrets.NEAR_INTENTS_AGENT_API_URL }
+                : {}),
+              timeoutMs: 180_000,
+            }) as unknown as AgentApiPort)
+          : null,
+        secretKey: config.secrets.PAYOUTS_SECRET_KEY ?? null,
+        payees: workOrderPayees(db),
+        fullAccessKeys,
+      });
       const userEmail = async (userId: string) => {
         if (!authPool) return null;
         const { rows } = await authPool.query<{ email: string | null }>(
@@ -276,6 +298,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         thresholds: config.variables.workOrderRenewal,
         outbox: workOrderOutbox,
         summarizer: createSummarizer(config.secrets.ANTHROPIC_API_KEY),
+        payouts: payoutAgents.available ? payoutAgents : null,
         google,
         userEmail,
         appOrigin,
@@ -321,6 +344,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         workOrderEmails: sendEmail !== null,
         appOrigin,
         google,
+        payoutAgents,
       };
     }),
 
@@ -367,6 +391,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       workOrderEmails,
       appOrigin,
       google,
+      payoutAgents,
     } = services;
 
     const googleUrl = {
@@ -1075,6 +1100,60 @@ export default createPlugin.withPlugins<PluginsClient>()({
         paymentProposal: builder.workOrders.paymentProposal
           .use(treasuryManager)
           .handler(async ({ context, input }) => workOrders.paymentProposal(context.scope, input)),
+
+        payNow: builder.workOrders.payNow
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.payNow(context.scope, input)),
+
+        payoutAgent: builder.workOrders.payoutAgent
+          .use(agencyManager)
+          .handler(async ({ context }) => payoutAgents.view(context.scope.organizationId)),
+
+        savePayoutAgent: builder.workOrders.savePayoutAgent
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            payoutAgents.saveSettings(context.scope.organizationId, context.scope.actorId, input),
+          ),
+
+        preparePayoutAction: builder.workOrders.preparePayoutAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            payoutAgents.prepare(context.scope.organizationId, input),
+          ),
+
+        submitPayoutAction: builder.workOrders.submitPayoutAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            payoutAgents.submit(context.scope.organizationId, input),
+          ),
+
+        payoutTopUp: builder.workOrders.payoutTopUp
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => {
+            const deposit = await payoutAgents.depositAddress(context.scope.organizationId);
+            return {
+              address: deposit.address,
+              memo: deposit.memo,
+              minAmount: deposit.minAmount,
+              daoAccountId: context.scope.agencyDao,
+              method: "add_proposal" as const,
+              args: {
+                proposal: {
+                  description: `Top up the MultiAgency payout agent with ${input.amountNear} NEAR`,
+                  kind: {
+                    Transfer: {
+                      token_id: "",
+                      receiver_id: deposit.address,
+                      amount: nearToAtomic(input.amountNear),
+                      msg: null,
+                    },
+                  },
+                },
+              },
+              deposit: await getProposalBond(context.scope.agencyDao),
+              gas: "100000000000000",
+            };
+          }),
 
         refreshPayment: builder.workOrders.refreshPayment
           .use(agencyMember)

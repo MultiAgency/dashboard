@@ -697,6 +697,7 @@ export const COMPENSATION_REQUEST_STATUSES = [
   "draft",
   "submitted",
   "approved",
+  "paying",
   "proposed",
   "paid",
   "rejected",
@@ -871,3 +872,83 @@ export const workOrderSignatures = pgTable(
 );
 
 export type WorkOrderSignatureRow = typeof workOrderSignatures.$inferSelect;
+
+export const payoutAgents = pgTable("payout_agents", {
+  organizationId: text("organization_id").primaryKey(),
+  ownerAccountId: text("owner_account_id").notNull(),
+  agentId: text("agent_id"),
+  grantTokenEnc: text("grant_token_enc"),
+  grantExpiresAt: timestamp("grant_expires_at", { withTimezone: false }),
+  monthlyBudgetUsd: text("monthly_budget_usd").notNull(),
+  maxPayoutNear: text("max_payout_near").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
+
+export type PayoutAgentRow = typeof payoutAgents.$inferSelect;
+
+export const PAYOUT_ACTIONS = [
+  "create_agent",
+  "issue_grant",
+  "sync_policy",
+  "freeze",
+  "unfreeze",
+] as const;
+
+export const payoutIntents = pgTable("payout_intents", {
+  correlationId: text("correlation_id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  action: text("action", { enum: PAYOUT_ACTIONS }).notNull(),
+  intentType: text("intent_type").notNull(),
+  intent: text("intent").notNull(),
+  agentId: text("agent_id"),
+  grantTokenEnc: text("grant_token_enc"),
+  grantExpiresAt: timestamp("grant_expires_at", { withTimezone: false }),
+  status: text("status").notNull(),
+  failureCode: text("failure_code"),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
+
+export type PayoutIntentRow = typeof payoutIntents.$inferSelect;
+
+export const AGENT_PAYOUT_STATUSES = [
+  "sending",
+  "queued",
+  "processing",
+  "paid",
+  "failed",
+  "refused",
+  "uncertain",
+  "needs_review",
+] as const;
+
+export const agentPayouts = pgTable(
+  "agent_payouts",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    requestId: text("request_id").notNull(),
+    attempt: integer("attempt").notNull(),
+    status: text("status", { enum: AGENT_PAYOUT_STATUSES }).notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestBody: text("request_body").notNull(),
+    correlationId: text("correlation_id"),
+    recipient: text("recipient").notNull(),
+    amount: text("amount").notNull(),
+    assetId: text("asset_id").notNull(),
+    txHash: text("tx_hash"),
+    txUrl: text("tx_url"),
+    reason: text("reason"),
+    provenUnsent: boolean("proven_unsent").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    attempt: uniqueIndex("agent_payouts_attempt").on(t.requestId, t.attempt),
+    statusIdx: index("agent_payouts_status").on(t.status),
+  }),
+);
+
+export type AgentPayoutRow = typeof agentPayouts.$inferSelect;

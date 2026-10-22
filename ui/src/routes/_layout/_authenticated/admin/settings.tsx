@@ -27,6 +27,7 @@ import { AdminError } from "@/components/admin-error";
 import { Loading } from "@/components/admin-form";
 import { PageHeader } from "@/components/page-header";
 import { WorkOrderIntegrationSettings } from "@/components/work-orders/integration-settings";
+import { PayoutAgentSettings } from "@/components/work-orders/payout-agent-settings";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import {
@@ -65,6 +66,9 @@ function AdminSettingsPage() {
       </section>
       <section id="work-orders" className="scroll-mt-24">
         <WorkOrderIntegrationSettings />
+      </section>
+      <section id="payouts" className="scroll-mt-24">
+        <PayoutAgentSettings />
       </section>
       <AdminSettings />
     </div>

@@ -25,7 +25,8 @@ const REQUEST_STATUS: Record<
 > = {
   draft: { label: "Draft", variant: "secondary" },
   submitted: { label: "Waiting for approval", variant: "default" },
-  approved: { label: "Approved, link the proposal", variant: "default" },
+  approved: { label: "Approved, ready to pay", variant: "default" },
+  paying: { label: "Paying", variant: "outline" },
   proposed: { label: "Proposal in the DAO", variant: "outline" },
   paid: { label: "Paid", variant: "outline" },
   rejected: { label: "Rejected", variant: "destructive" },

@@ -155,6 +155,13 @@
       "when": 1792627200000,
       "tag": "0022_work_order_signing",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792713600000,
+      "tag": "0023_payout_agents",
+      "breakpoints": true
     }
   ]
 }

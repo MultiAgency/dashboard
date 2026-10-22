@@ -29,6 +29,7 @@ const requestStatus = z.enum([
   "draft",
   "submitted",
   "approved",
+  "paying",
   "proposed",
   "paid",
   "rejected",
@@ -181,6 +182,23 @@ export const compensationRequest = z.object({
   reportMd: z.string().nullable(),
   reportSha256: z.string().nullable(),
   overlaps: z.array(z.string()),
+  agentPayout: z
+    .object({
+      status: z.enum([
+        "sending",
+        "queued",
+        "processing",
+        "paid",
+        "failed",
+        "refused",
+        "uncertain",
+        "needs_review",
+      ]),
+      amount: z.string(),
+      txUrl: z.string().nullable(),
+      reason: z.string().nullable(),
+    })
+    .nullable(),
   payout: z
     .object({
       tokenId: z.string(),
@@ -249,6 +267,32 @@ const byRequest = z.object({ requestId: z.string().min(1) });
 const range = { coversFrom: day.optional(), coversTo: day.optional() };
 const errors = { UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST };
 const CONFLICT = { status: 409, message: "Conflict" } as const;
+
+const payoutAgent = z.object({
+  available: z.boolean(),
+  unavailableReason: z.string().nullable(),
+  settings: z
+    .object({ ownerAccountId: z.string(), monthlyBudgetUsd: z.string(), maxPayoutNear: z.string() })
+    .nullable(),
+  agentId: z.string().nullable(),
+  grantExpiresAt: z.string().nullable(),
+  grantValid: z.boolean(),
+  policy: z
+    .object({
+      status: z.string(),
+      frozen: z.boolean(),
+      ownerApproval: z.boolean(),
+      payees: z.array(z.string()),
+      monthlyLimitUsd: z.string().nullable(),
+      monthlySpentUsd: z.string().nullable(),
+      monthlyRemainingUsd: z.string().nullable(),
+    })
+    .nullable(),
+  changes: z.array(z.string()),
+  ready: z.boolean(),
+  blockers: z.array(z.string()),
+  error: z.string().nullable(),
+});
 
 const delivery = z.object({
   id: z.string(),
@@ -462,6 +506,88 @@ export const workOrdersContract = {
             }),
           }),
         }),
+        deposit: z.string(),
+        gas: z.string(),
+      }),
+    )
+    .errors(errors),
+
+  payNow: oc
+    .route({ method: "POST", path: "/admin/work-order-requests/{requestId}/pay" })
+    .input(byRequest)
+    .output(compensationRequest)
+    .errors(errors),
+
+  payoutAgent: oc
+    .route({ method: "GET", path: "/admin/payout-agent" })
+    .input(z.object({}))
+    .output(payoutAgent)
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+  savePayoutAgent: oc
+    .route({ method: "PUT", path: "/admin/payout-agent" })
+    .input(
+      z.object({
+        ownerAccountId: z.string().trim().min(2).max(64),
+        monthlyBudgetUsd: z
+          .string()
+          .trim()
+          .regex(/^\d+(\.\d+)?$/),
+        maxPayoutNear: z
+          .string()
+          .trim()
+          .regex(/^\d+(\.\d+)?$/),
+      }),
+    )
+    .output(payoutAgent)
+    .errors(errors),
+
+  preparePayoutAction: oc
+    .route({ method: "POST", path: "/admin/payout-agent/prepare" })
+    .input(
+      z.object({
+        action: z.enum(["create_agent", "issue_grant", "sync_policy", "freeze", "unfreeze"]),
+        publicKey: z.string().max(200).nullable().optional(),
+      }),
+    )
+    .output(
+      z.object({
+        correlationId: z.string(),
+        action: z.string(),
+        intent: z.record(z.string(), z.unknown()),
+        signerAccountId: z.string(),
+        summary: z.string().nullable(),
+        expiresAt: z.string(),
+      }),
+    )
+    .errors(errors),
+
+  submitPayoutAction: oc
+    .route({ method: "POST", path: "/admin/payout-agent/submit" })
+    .input(
+      z.object({ correlationId: z.string().min(1), signedData: z.record(z.string(), z.unknown()) }),
+    )
+    .output(z.object({ status: z.string(), failureCode: z.string().nullable(), view: payoutAgent }))
+    .errors(errors),
+
+  payoutTopUp: oc
+    .route({ method: "POST", path: "/admin/payout-agent/top-up" })
+    .input(
+      z.object({
+        amountNear: z
+          .string()
+          .trim()
+          .regex(/^\d+(\.\d+)?$/),
+      }),
+    )
+    .output(
+      z.object({
+        address: z.string(),
+        memo: z.string().nullable(),
+        minAmount: z.string().nullable(),
+        daoAccountId: z.string(),
+        method: z.literal("add_proposal"),
+        args: z.record(z.string(), z.unknown()),
         deposit: z.string(),
         gas: z.string(),
       }),

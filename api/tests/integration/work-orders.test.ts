@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import { billings, notifications, workOrders } from "../../src/db/schema";
 import { requireTreasury } from "../../src/services/organization-access";
+import {
+  createPayoutAgents,
+  type PayoutAgents,
+  workOrderPayees,
+} from "../../src/services/payouts/service";
 import type { DaoProposal } from "../../src/services/sputnik";
+import { enrichWithChainStatus } from "../../src/services/sputnik";
 import {
   contains,
   longDate,
@@ -21,6 +27,7 @@ import {
 import { fromBase64 } from "../../src/services/work-orders/signing";
 import type { ReportDraft } from "../../src/services/work-orders/summarizer";
 import { DEFAULT_RENEWAL } from "../../src/services/work-orders/types";
+import { FakeAgentApi } from "../fakes/agent-api";
 import { type EngagementWorld, engagementWorld, refused } from "../fakes/engagements";
 import { FakeGitHub } from "../fakes/github";
 import { FakeGoogle } from "../fakes/google";
@@ -45,6 +52,7 @@ describe("work orders", () => {
   let priceUsd: string;
   let builders: Map<string, BuilderProfile>;
   let service: ReturnType<typeof createWorkOrdersService>;
+  let serviceDeps: Parameters<typeof createWorkOrdersService>[0];
 
   beforeEach(async () => {
     db = database.db;
@@ -75,7 +83,7 @@ describe("work orders", () => {
         { nearAccount: "nogit.near", name: "No Git", githubLogin: null, userId: "nogit" },
       ],
     ]);
-    service = createWorkOrdersService({
+    serviceDeps = {
       db,
       directory: world.directory,
       scopeOfOrganization: (organizationId) => world.access.readScopeOfAgency({}, organizationId),
@@ -100,7 +108,8 @@ describe("work orders", () => {
       notifications: world.notifications,
       thresholds: DEFAULT_RENEWAL,
       now: () => clock,
-    });
+    };
+    service = createWorkOrdersService(serviceDeps);
   });
 
   const studio = () => world.manager("studio-admin", "studio");
@@ -1153,6 +1162,213 @@ describe("work orders", () => {
       const detail = await service.get(await studio(), { id: wo.id });
       expect(detail.committedAmount).toBe("600000000");
       expect(detail.remainingAmount).toBe("400000000");
+    });
+  });
+  describe("automatic payouts through the NEAR Intents agent", () => {
+    const usdFields = { tokenId: "usd", budgetAmount: "1000000000" };
+    let agent: FakeAgentApi;
+    let payouts: PayoutAgents;
+
+    beforeEach(() => {
+      agent = new FakeAgentApi();
+      payouts = createPayoutAgents({
+        db,
+        api: agent,
+        secretKey: "test-secret",
+        payees: workOrderPayees(db),
+        now: () => clock,
+      });
+      service = createWorkOrdersService({ ...serviceDeps, payouts });
+    });
+
+    async function setUpAgent() {
+      await payouts.saveSettings("studio", "studio-admin", {
+        ownerAccountId: "rita.near",
+        monthlyBudgetUsd: "5000",
+        maxPayoutNear: "500",
+      });
+      const create = await payouts.prepare("studio", {
+        action: "create_agent",
+        publicKey: `ed25519:${"1".repeat(44)}`,
+      });
+      await payouts.submit("studio", {
+        correlationId: create.correlationId,
+        signedData: { ...create.intent, signed_delegate: "signed" },
+      });
+      const grant = await payouts.prepare("studio", { action: "issue_grant" });
+      await payouts.submit("studio", {
+        correlationId: grant.correlationId,
+        signedData: { ...grant.intent, public_key: "ed25519:owner", signature: "sig" },
+      });
+    }
+
+    async function approvedRequest() {
+      strongEvidence();
+      const wo = await active(usdFields);
+      await service.collect(await studio(), { id: wo.id });
+      const draft = await service.mineDraftRequest(carol(), { id: wo.id });
+      await service.editRequest(carol(), { requestId: draft.id, requestedAmount: "600000000" });
+      await service.submitRequest(carol(), { requestId: draft.id });
+      return { wo, draft };
+    }
+
+    test("the agent's rules allow only active builders, pay automatically and cap each payout", async () => {
+      const { wo } = await approvedRequest();
+      await setUpAgent();
+      expect(agent.policy).toMatchObject({
+        owner_approval: false,
+        assets: ["nep141:wrap.near"],
+        actions: ["withdraw"],
+        budget: { monthly_usd: "5000" },
+        limits: { per_transaction: { "nep141:wrap.near": `500${"0".repeat(24)}` } },
+        destinations: {
+          mode: "only",
+          list: [{ action: "withdraw", chain: "near", address: CAROL, memo: null }],
+        },
+      });
+      const view = await payouts.view("studio");
+      expect(view).toMatchObject({
+        ready: true,
+        blockers: [],
+        grantValid: true,
+        agentId: "agent-1",
+      });
+      expect(view.policy?.payees).toEqual([CAROL]);
+      expect(wo.status).toBe("active");
+    });
+
+    test("approving pays the builder in NEAR right away and records the billing", async () => {
+      const { wo, draft } = await approvedRequest();
+      await setUpAgent();
+      const paid = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(paid.status).toBe("paid");
+      expect(agent.withdrawals).toEqual([
+        {
+          grant: expect.any(String),
+          key: `multiagency:${draft.id}:a1`,
+          body: {
+            asset: "nep141:wrap.near",
+            amount: "120240480961923847695390781",
+            chain: "near",
+            recipient: CAROL,
+          },
+        },
+      ]);
+      expect(paid.agentPayout).toMatchObject({
+        status: "paid",
+        txUrl: "https://nearblocks.io/txns/TXHASH1",
+      });
+      const [billing] = await db
+        .select()
+        .from(billings)
+        .where(eq(billings.proposalId, "intents:TXHASH1"));
+      expect(billing).toMatchObject({
+        tokenId: "near",
+        amount: "120240480961923847695390781",
+        nearAccount: CAROL,
+      });
+      expect((await enrichWithChainStatus(db, billing!, DAO)).status).toBe("Approved");
+      const released = events.find((e) => e.type === "request.payout_released");
+      expect(released?.payout).toEqual({
+        near: CAROL,
+        txUrl: "https://nearblocks.io/txns/TXHASH1",
+      });
+      expect((await service.get(await studio(), { id: wo.id })).paidAmount).toBe("600000000");
+    });
+
+    test("a payout still processing is followed up by the scheduled run", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { status: "PROCESSING" };
+      const paying = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(paying.status).toBe("paying");
+      agent.statuses.set("pay-1", { status: "SUCCESS", details: { intent_hash: "IH1" } });
+      await service.run("job");
+      const detail = await service.get(await studio(), { id: paying.workOrderId });
+      const request = detail.requests.find((r) => r.id === draft.id);
+      expect(request?.status).toBe("paid");
+      expect(request?.agentPayout?.txUrl).toBe(
+        "https://explorer.near-intents.org/transactions/IH1",
+      );
+    });
+
+    test("a refused payout leaves the request approved, and Pay now retries with a new key", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      const kept = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(kept.status).toBe("approved");
+      expect(kept.note).toMatch(/didn't go out: insufficient_balance/);
+      agent.nextWithdraw = { status: "SUCCESS", details: { tx_hash: "TX2" } };
+      const paid = await service.payNow(await studio(), { requestId: draft.id });
+      expect(paid.status).toBe("paid");
+      expect(agent.withdrawals.map((w) => w.key)).toEqual([
+        `multiagency:${draft.id}:a1`,
+        `multiagency:${draft.id}:a2`,
+      ]);
+    });
+
+    test("a builder the signed rules don't allow yet stays on the DAO path until you sign the update", async () => {
+      await setUpAgent();
+      const { draft } = await approvedRequest();
+      const approved = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(approved.status).toBe("approved");
+      expect(agent.withdrawals).toEqual([]);
+      expect((await payouts.view("studio")).changes).toEqual([`allow paying ${CAROL}`]);
+      await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
+      const sync = await payouts.prepare("studio", { action: "sync_policy" });
+      await payouts.submit("studio", {
+        correlationId: sync.correlationId,
+        signedData: { ...sync.intent, public_key: "ed25519:owner", signature: "sig" },
+      });
+      expect((await payouts.view("studio")).changes).toEqual([]);
+      expect((await service.payNow(await studio(), { requestId: draft.id })).status).toBe("paid");
+    });
+
+    test("only what MultiAgency prepared, signed by the owner, is accepted", async () => {
+      await payouts.saveSettings("studio", "studio-admin", {
+        ownerAccountId: "someone-else.near",
+        monthlyBudgetUsd: "5000",
+        maxPayoutNear: "500",
+      });
+      await refused(
+        payouts.prepare("studio", {
+          action: "create_agent",
+          publicKey: `ed25519:${"1".repeat(44)}`,
+        }),
+        "OWNER_MISMATCH",
+      );
+      await payouts.saveSettings("studio", "studio-admin", {
+        ownerAccountId: "rita.near",
+        monthlyBudgetUsd: "5000",
+        maxPayoutNear: "500",
+      });
+      const create = await payouts.prepare("studio", {
+        action: "create_agent",
+        publicKey: `ed25519:${"1".repeat(44)}`,
+      });
+      await refused(
+        payouts.submit("studio", {
+          correlationId: create.correlationId,
+          signedData: { standard: "nep366", payload: { receiverId: "evil.near", actions: [] } },
+        }),
+        "SIGNED_PAYLOAD_MISMATCH",
+      );
+      expect((await payouts.view("studio")).blockers).toEqual([
+        "Create the payout agent with your wallet",
+      ]);
     });
   });
 });

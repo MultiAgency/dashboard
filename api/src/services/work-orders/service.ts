@@ -95,6 +95,18 @@ export type WorkOrderDeps = {
   proposal: (daoAccountId: string, proposalId: number) => Promise<DaoProposal | null>;
   proposalBond: (daoAccountId: string) => Promise<string>;
   prices?: PriceFeed | null;
+  payouts?: {
+    readiness(
+      organizationId: string,
+      payee: string,
+    ): Promise<{ ready: boolean; reason: string | null }>;
+    send(
+      organizationId: string,
+      input: { requestId: string; recipient: string; amount: string },
+    ): Promise<AgentPayoutView>;
+    refresh(payout: AgentPayoutView): Promise<AgentPayoutView>;
+    latest(requestId: string): Promise<AgentPayoutView | null>;
+  } | null;
   notifications: WorkOrderNotifier;
   thresholds: RenewalThresholds;
   outbox?: {
@@ -134,6 +146,27 @@ export type SignedDocument = {
   extracted: ExtractedTerms;
 };
 
+export type AgentPayoutView = {
+  id: string;
+  organizationId: string;
+  requestId: string;
+  status:
+    | "sending"
+    | "queued"
+    | "processing"
+    | "paid"
+    | "failed"
+    | "refused"
+    | "uncertain"
+    | "needs_review";
+  amount: string;
+  correlationId: string | null;
+  txHash: string | null;
+  txUrl: string | null;
+  reason: string | null;
+  provenUnsent: boolean;
+};
+
 export type Signer = {
   name: string;
   role: "contractor" | "representative";
@@ -165,7 +198,7 @@ export type WorkOrderFields = {
 type WorkOrderStatus = WorkOrderRow["status"];
 type RequestStatus = CompensationRequestRow["status"];
 
-const COMMITTED: readonly RequestStatus[] = ["approved", "proposed", "paid"];
+const COMMITTED: readonly RequestStatus[] = ["approved", "paying", "proposed", "paid"];
 const OPEN_REQUEST: readonly RequestStatus[] = ["draft", "submitted"];
 const EDITABLE: readonly WorkOrderStatus[] = ["draft", "offered", "accepted"];
 const PAYABLE: readonly WorkOrderStatus[] = ["active", "ended", "exhausted"];
@@ -1247,6 +1280,22 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         : null,
       reportSha256: request.reportSha256,
       overlaps,
+      agentPayout:
+        deps.payouts && ["paying", "paid", "approved"].includes(request.status)
+          ? await deps.payouts
+              .latest(request.id)
+              .then((p) =>
+                p
+                  ? {
+                      status: p.status,
+                      amount: p.amount,
+                      txUrl: p.txUrl,
+                      reason: p.reason,
+                    }
+                  : null,
+              )
+              .catch(() => null)
+          : null,
       payout:
         request.payoutAmount && request.payoutTokenId
           ? {
@@ -1686,6 +1735,111 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       reportMd: draftReportOf(contributionsMd, assessmentMd),
     });
     return inserted!;
+  }
+
+  async function markPaidByAgent(
+    request: CompensationRequestRow,
+    row: WorkOrderRow,
+    payout: AgentPayoutView,
+  ): Promise<CompensationRequestRow> {
+    const dao = await deps.agencyDaoOf(row.organizationId).catch(() => null);
+    const paid = await db.transaction(async (tx) => {
+      const [billing] = await tx
+        .insert(billings)
+        .values({
+          id: crypto.randomUUID(),
+          projectId: row.projectId,
+          nearAccount: row.builderNearAccount,
+          tokenId: NATIVE_TOKEN_ID,
+          amount: payout.amount,
+          proposalId: `intents:${payout.txHash ?? payout.correlationId ?? payout.id}`,
+          payingDaoAccountId: dao,
+          note: `Work order ${row.code}, request ${row.code}-R${request.seq}, paid by the payout agent`,
+          createdAt: now(),
+        })
+        .returning();
+      const [updated] = await tx
+        .update(compensationRequests)
+        .set({
+          status: "paid",
+          paidAt: now(),
+          billingId: billing!.id,
+          payoutTokenId: NATIVE_TOKEN_ID,
+          payoutAmount: payout.amount,
+          updatedAt: now(),
+        })
+        .where(eq(compensationRequests.id, request.id))
+        .returning();
+      return updated!;
+    });
+    if (
+      amountsOf(row, await requestsOf(row.id)).remaining === 0n &&
+      (row.status === "active" || row.status === "ended")
+    ) {
+      await update(row.id, { status: "exhausted" });
+    }
+    const payload = await payloadOf(row, {
+      requestCode: `${row.code}-R${request.seq}`,
+      amount: display(payout.amount, NATIVE_TOKEN_ID),
+      daoAccountId: dao ?? "",
+      proposalId: payout.txHash ?? "",
+      status: "Paid",
+    });
+    await notifyBuilder(row, "compensation_request_paid", payload);
+    await notifyManagers(row, "compensation_request_paid", payload);
+    await announce(row, "request.payout_released", {
+      request: paid,
+      payout: { near: row.builderNearAccount, txUrl: payout.txUrl },
+      reportMd: (await requestView(paid, row)).reportMd,
+    });
+    return paid;
+  }
+
+  async function settleAgentPayout(
+    request: CompensationRequestRow,
+    row: WorkOrderRow,
+    payout: AgentPayoutView,
+  ): Promise<CompensationRequestRow> {
+    if (payout.status === "paid") return markPaidByAgent(request, row, payout);
+    if (payout.status === "refused" || (payout.status === "failed" && payout.provenUnsent)) {
+      return updateRequest(request.id, {
+        status: "approved",
+        note: `The automatic payout didn't go out: ${payout.reason ?? payout.status}. Pay it again or through a DAO proposal.`,
+      });
+    }
+    if (payout.status === "failed" || payout.status === "needs_review") {
+      return updateRequest(request.id, {
+        status: "paying",
+        note: `The automatic payout needs a person to check it: ${payout.reason ?? payout.status}.`,
+      });
+    }
+    return request.status === "paying" ? request : updateRequest(request.id, { status: "paying" });
+  }
+
+  async function autoPay(
+    request: CompensationRequestRow,
+    row: WorkOrderRow,
+  ): Promise<{ request: CompensationRequestRow; reason: string | null }> {
+    const payouts = deps.payouts;
+    if (!payouts) return { request, reason: "Automatic payouts aren't set up" };
+    if (payoutTokenOf(row) !== NATIVE_TOKEN_ID) {
+      return {
+        request,
+        reason: "Automatic payouts pay in NEAR; this work order pays in another token",
+      };
+    }
+    const readiness = await payouts.readiness(row.organizationId, row.builderNearAccount);
+    if (!readiness.ready) return { request, reason: readiness.reason };
+    const quote = await quotePayout(row, request);
+    const payout = await payouts.send(row.organizationId, {
+      requestId: request.id,
+      recipient: row.builderNearAccount,
+      amount: quote.amount,
+    });
+    return {
+      request: await settleAgentPayout(await mustRequest(request.id), row, payout),
+      reason: null,
+    };
   }
 
   async function syncPayment(request: CompensationRequestRow): Promise<CompensationRequestRow> {
@@ -2389,7 +2543,24 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         }),
       );
       await announce(row, "request.approved", { request: approved });
-      return requestView(approved, row);
+      const paid = await autoPay(approved, row).catch((error: unknown) => ({
+        request: approved,
+        reason: error instanceof Error ? error.message : String(error),
+      }));
+      return requestView(paid.request, row);
+    },
+
+    payNow: async (scope: OrganizationScope, input: { requestId: string }) => {
+      const request = await mustRequest(input.requestId);
+      const row = await ownRow(scope, request.workOrderId);
+      if (request.status !== "approved" || !request.approvedAmount) {
+        throw badRequest("NOT_APPROVED", "Only an approved request can be paid");
+      }
+      const result = await autoPay(request, row);
+      if (result.reason && result.request.status === "approved") {
+        throw badRequest("PAYOUTS_NOT_READY", result.reason);
+      }
+      return requestView(result.request, row);
     },
 
     rejectRequest: async (scope: OrganizationScope, input: { requestId: string; note: string }) => {
@@ -2929,6 +3100,29 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             await step(row, counts);
           } catch (error) {
             console.warn(`[API] work order ${row.code} step failed`, error);
+          }
+        }
+        if (deps.payouts) {
+          const paying = await db
+            .select()
+            .from(compensationRequests)
+            .where(eq(compensationRequests.status, "paying"));
+          for (const request of paying) {
+            try {
+              const payout = await deps.payouts.latest(request.id);
+              if (!payout) continue;
+              const fresh = await deps.payouts.refresh(payout);
+              const settled = await settleAgentPayout(
+                request,
+                await mustRow(request.workOrderId),
+                fresh,
+              );
+              if (settled.status !== "paying") {
+                counts[settled.status] = (counts[settled.status] ?? 0) + 1;
+              }
+            } catch (error) {
+              console.warn(`[API] payout of request ${request.id} couldn't be checked`, error);
+            }
           }
         }
         const proposed = await db

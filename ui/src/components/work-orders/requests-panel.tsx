@@ -29,7 +29,7 @@ import {
   tokenDecimals,
   tokenSymbol,
 } from "@/lib/format-amount";
-import { adminWorkOrdersQueryKey } from "@/lib/queries";
+import { adminWorkOrdersQueryKey, payoutAgentQueryOptions } from "@/lib/queries";
 import { ReportMarkdown } from "./report-markdown";
 import {
   type CompensationRequest,
@@ -125,6 +125,19 @@ function RequestItem({
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState<null | "approve" | "reject" | "proposal">(null);
+  const payoutAgent = useQuery({ ...payoutAgentQueryOptions(apiClient), enabled: canManage }).data;
+  const autoPays =
+    !!payoutAgent?.ready && (workOrder.tokenId === "usd" || workOrder.tokenId === "near");
+  const payNow = useMutation({
+    mutationFn: () => apiClient.workOrders.payNow({ requestId: request.id }),
+    onSuccess: async (updated) => {
+      await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      toast.success(
+        updated.status === "paid" ? `${updated.code} is paid` : "Payout sent; it settles shortly",
+      );
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't pay it"),
+  });
   const [showReport, setShowReport] = useState(request.status === "submitted");
   const amount = (value: string | null) =>
     value ? formatTokenAmount(value, workOrder.tokenId) : "—";
@@ -191,13 +204,42 @@ function RequestItem({
         )}
         {canManage && request.status === "approved" && (
           <>
-            <Button size="sm" disabled={!hasTreasury} onClick={() => setOpen("proposal")}>
-              Link the DAO proposal
+            {autoPays && (
+              <Button size="sm" disabled={payNow.isPending} onClick={() => payNow.mutate()}>
+                {payNow.isPending ? "Paying…" : "Pay now (NEAR Intents)"}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant={autoPays ? "outline" : "default"}
+              disabled={!hasTreasury}
+              onClick={() => setOpen("proposal")}
+            >
+              Pay through a DAO proposal
             </Button>
             <Button size="sm" variant="outline" onClick={() => setOpen("reject")}>
               Reject
             </Button>
           </>
+        )}
+        {request.agentPayout && request.status !== "approved" && (
+          <span className="text-sm text-muted-foreground">
+            {request.agentPayout.status === "paid" ? "Paid " : "Paying "}
+            {formatTokenAmount(request.agentPayout.amount, "near")} through the payout agent
+            {request.agentPayout.txUrl ? (
+              <>
+                {" · "}
+                <a
+                  href={request.agentPayout.txUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-4"
+                >
+                  transaction
+                </a>
+              </>
+            ) : null}
+          </span>
         )}
         {request.status === "proposed" && (
           <Button
@@ -242,6 +284,9 @@ function ApproveForm({
 }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
+  const payoutAgent = useQuery(payoutAgentQueryOptions(apiClient)).data;
+  const autoPays =
+    !!payoutAgent?.ready && (workOrder.tokenId === "usd" || workOrder.tokenId === "near");
   const decimals = tokenDecimals(workOrder.tokenId);
   const toDecimal = (value: string) =>
     decimals === undefined ? value : baseToDecimal(value, decimals);
@@ -265,7 +310,15 @@ function ApproveForm({
       }),
     onSuccess: async (updated) => {
       await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
-      toast.success(`${updated.code} approved. Create the transfer proposal, then link it.`);
+      toast.success(
+        updated.status === "paid"
+          ? `${updated.code} approved and paid through the payout agent`
+          : updated.status === "paying"
+            ? `${updated.code} approved; the payout is on its way`
+            : updated.note
+              ? `${updated.code} approved. ${updated.note}`
+              : `${updated.code} approved. Pay it through a DAO proposal.`,
+      );
       onDone();
     },
     onError: (err: Error) => toast.error(err.message || "Couldn't approve the request"),
@@ -281,8 +334,10 @@ function ApproveForm({
       <DialogHeader>
         <DialogTitle>Approve {request.code}</DialogTitle>
         <DialogDescription>
-          Up to {formatTokenAmount(workOrder.remainingAmount, workOrder.tokenId)} remains. Approving
-          reserves it; the money moves once the DAO approves the transfer proposal.
+          Up to {formatTokenAmount(workOrder.remainingAmount, workOrder.tokenId)} remains.{" "}
+          {autoPays
+            ? "Approving pays it right away in NEAR through your payout agent."
+            : "Approving reserves it; the money moves once the DAO approves the transfer proposal."}
         </DialogDescription>
       </DialogHeader>
       <FieldGroup>

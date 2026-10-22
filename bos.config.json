@@ -39,7 +39,10 @@
         "GITHUB_TOKEN",
         "WORK_ORDERS_RUN_SECRET",
         "ANTHROPIC_API_KEY",
-        "GOOGLE_SERVICE_ACCOUNT_JSON"
+        "GOOGLE_SERVICE_ACCOUNT_JSON",
+        "NEAR_INTENTS_AGENT_API_KEY",
+        "NEAR_INTENTS_AGENT_API_URL",
+        "PAYOUTS_SECRET_KEY"
       ],
       "production": "https://multiagentic-319-api-dashboard-multiagency-d83707fcb-ze.zephyrcloud.app",
       "integrity": "sha384-kkE+VfwmdrPJPCJvXIrgisKChnD4UAu9h7GA2+ROPrEC9bS6161AygyyT6mK2OoA"

@@ -274,6 +274,16 @@ export function workOrderIntegrationQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const payoutAgentQueryKey = ["admin", "payout-agent"] as const;
+
+export function payoutAgentQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...payoutAgentQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.payoutAgent({}),
+    retry: false,
+  });
+}
+
 export const myWorkOrdersQueryKey = ["me", "work-orders"] as const;
 
 export function myWorkOrdersQueryOptions(apiClient: ApiClient) {
