@@ -1758,7 +1758,25 @@ export const contract = oc.router({
               available: z.string(),
             }),
           ),
+          sources: z.array(z.enum(["sputnik", "intents"])),
         }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    getAgentHeld: oc
+      .route({ method: "GET", path: "/admin/treasury/agent-held" })
+      .output(
+        z.discriminatedUnion("status", [
+          z.object({
+            status: z.literal("available"),
+            balances: z.array(z.object({ tokenId: z.string(), balance: z.string() })),
+            updatedAt: z.string(),
+          }),
+          z.object({
+            status: z.literal("unavailable"),
+            reason: z.enum(["not-configured", "read-failed"]),
+          }),
+        ]),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN }),
 

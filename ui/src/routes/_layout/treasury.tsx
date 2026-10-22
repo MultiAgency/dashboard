@@ -71,9 +71,10 @@ import {
   refreshAfter,
   tokenStorageStatusQueryOptions,
   tokensListQueryOptions,
+  treasuryAgentHeldQueryOptions,
   treasuryPublicBalancesQueryOptions,
 } from "@/lib/queries";
-import { isDefaultOrganizationStaff } from "@/lib/treasury";
+import { agentHeldView, isDefaultOrganizationStaff } from "@/lib/treasury";
 import { trezuProposalUrl } from "@/lib/trezu";
 
 const TREASURY_TABS = ["balances", "payouts"] as const;
@@ -170,6 +171,12 @@ function TreasuryPage() {
     initialData: loaderData.balances ?? undefined,
   });
 
+  const agentHeldQuery = useQuery(treasuryAgentHeldQueryOptions(apiClient, isDefaultStaff));
+  const agentHeld = agentHeldView(agentHeldQuery.data, {
+    isLoading: agentHeldQuery.isLoading,
+    isError: agentHeldQuery.isError,
+  });
+
   const isLoading = tokensQuery.isLoading || (tokenIds.length > 0 && balancesQuery.isLoading);
   const balanceByToken = new Map(
     (balancesQuery.data?.balances ?? []).map((b) => [b.tokenId, b.balance]),
@@ -257,6 +264,7 @@ function TreasuryPage() {
             view={balancesView}
             onViewChange={setBalancesView}
           />
+          {isDefaultStaff && <AgentHeldSection view={agentHeld} />}
         </TabsContent>
         <TabsContent value="payouts" className="mt-4">
           <ProposalsList {...proposalsListProps} />
@@ -363,6 +371,57 @@ function BalancesSection({
         />
       )}
     </div>
+  );
+}
+
+function AgentHeldSection({ view }: { view: ReturnType<typeof agentHeldView> }) {
+  return (
+    <section className="mt-8 flex flex-col gap-3" aria-labelledby="agent-held-heading">
+      <div className="flex flex-col gap-1">
+        <h2 id="agent-held-heading" className="font-heading text-lg font-semibold">
+          Agent-held (NEAR Intents)
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Held by the Treasury agent, separate from the DAO balances above and not included in them.
+          {(view.kind === "balances" || view.kind === "empty") &&
+            ` Updated ${new Date(view.updatedAt).toLocaleString()}.`}
+        </p>
+      </div>
+      {view.kind === "loading" && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <TokenCardSkeleton />
+        </div>
+      )}
+      {view.kind === "unavailable" && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Unavailable. {view.message}
+        </p>
+      )}
+      {view.kind === "empty" && (
+        <p className="text-sm text-muted-foreground">The agent holds no balance on Intents.</p>
+      )}
+      {view.kind === "balances" && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {view.balances.map((b) => (
+            <Card key={b.tokenId}>
+              <CardHeader>
+                <CardDescription>
+                  <span className="block truncate">{b.tokenId}</span>
+                </CardDescription>
+                <CardAction>
+                  <Badge variant="outline">Intents</Badge>
+                </CardAction>
+              </CardHeader>
+              <CardContent>
+                <p className="font-heading text-2xl font-semibold tracking-tight tabular-nums break-words">
+                  {formatTokenAmount(b.balance, b.tokenId)}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

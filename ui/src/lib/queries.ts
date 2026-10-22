@@ -147,6 +147,16 @@ export function treasuryPublicBalancesQueryOptions(apiClient: ApiClient, tokenId
   });
 }
 
+export function treasuryAgentHeldQueryOptions(apiClient: ApiClient, enabled: boolean) {
+  return queryOptions({
+    queryKey: ["treasury", "agent-held", getNetwork()] as const,
+    queryFn: () => apiClient.treasury.getAgentHeld(),
+    enabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
 export const adminProjectsListQueryKey = ["admin", "projects", "list"] as const;
 
 export function adminProjectsListQueryOptions(apiClient: ApiClient) {

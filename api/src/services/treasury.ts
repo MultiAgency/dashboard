@@ -1,4 +1,5 @@
 import { Effect } from "every-plugin/effect";
+import { type AgentHeldSource, readAgentHeld } from "./intents";
 import type { ProjectLedgers } from "./ledger";
 import type { TreasuryScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";
@@ -6,7 +7,11 @@ import { getDaoTokenIds, getTreasuryBalances } from "./sputnik";
 import { summarizeTreasury } from "./summaries";
 import { NATIVE_TOKEN_ID } from "./tokens";
 
-export function createTreasuryService(directory: ProjectDirectory, projectLedgers: ProjectLedgers) {
+export function createTreasuryService(
+  directory: ProjectDirectory,
+  projectLedgers: ProjectLedgers,
+  agentHeldSource: AgentHeldSource | null = null,
+) {
   return {
     getPublicBalances: (scope: TreasuryScope, input: { tokenIds: string[] }) =>
       Effect.gen(function* () {
@@ -56,8 +61,12 @@ export function createTreasuryService(directory: ProjectDirectory, projectLedger
           ledger.tokenIds.length > 0
             ? yield* Effect.promise(() => getTreasuryBalances(scope.agencyDao, ledger.tokenIds))
             : {};
-        return { rollups: ledger.agencyRollups(balances) };
+        // Rollups cover Sputnik balances only; agent-held (Intents) funds are not included.
+        return { rollups: ledger.agencyRollups(balances), sources: ["sputnik" as const] };
       }),
+
+    getAgentHeld: (scope: TreasuryScope) =>
+      Effect.promise(() => readAgentHeld(agentHeldSource, scope.agencyDao)),
 
     getPublicSummary: (scope: TreasuryScope) =>
       Effect.gen(function* () {

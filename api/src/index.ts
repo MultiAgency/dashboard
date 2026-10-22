@@ -917,6 +917,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(treasuryMember)
           .handler(async ({ context }) => runEffect(treasury.getRollups(context.scope))),
 
+        getAgentHeld: builder.treasury.getAgentHeld
+          .use(treasuryManager)
+          .handler(async ({ context }) => runEffect(treasury.getAgentHeld(context.scope))),
+
         getPublicSummary: builder.treasury.getPublicSummary.handler(async ({ context }) =>
           runEffect(treasury.getPublicSummary(await access.publicScope(context))),
         ),
