@@ -615,6 +615,8 @@ export const workOrders = pgTable(
     representativeEmail: text("representative_email"),
     ipModel: text("ip_model"),
     preparedDocumentUrl: text("prepared_document_url"),
+    documentId: text("document_id"),
+    documentFields: text("document_fields"),
     signatureMethod: text("signature_method", { enum: SIGNATURE_METHODS }),
     signers: text("signers"),
     signedAt: timestamp("signed_at", { withTimezone: false }),
@@ -748,6 +750,11 @@ export const workOrderIntegrations = pgTable("work_order_integrations", {
   n8nWebhookUrl: text("n8n_webhook_url"),
   webhookSecret: text("webhook_secret").notNull(),
   inboundTokenHash: text("inbound_token_hash").notNull(),
+  googleTemplateId: text("google_template_id"),
+  googleDocumentsFolderId: text("google_documents_folder_id"),
+  googleSignedFolderId: text("google_signed_folder_id"),
+  googleCheckedAt: timestamp("google_checked_at", { withTimezone: false }),
+  googleLastError: text("google_last_error"),
   updatedBy: text("updated_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
@@ -781,3 +788,28 @@ export const workOrderOutbox = pgTable(
 );
 
 export type WorkOrderOutboxRow = typeof workOrderOutbox.$inferSelect;
+
+export const DRIVE_FILE_OUTCOMES = ["attached", "mismatch", "unmatched", "error"] as const;
+
+export const workOrderDriveFiles = pgTable(
+  "work_order_drive_files",
+  {
+    fileId: text("file_id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    name: text("name").notNull(),
+    url: text("url"),
+    sha256: text("sha256"),
+    workOrderId: text("work_order_id"),
+    outcome: text("outcome", { enum: DRIVE_FILE_OUTCOMES }).notNull(),
+    note: text("note"),
+    processedAt: timestamp("processed_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    organizationIdx: index("work_order_drive_files_organization").on(
+      t.organizationId,
+      t.processedAt,
+    ),
+  }),
+);
+
+export type WorkOrderDriveFileRow = typeof workOrderDriveFiles.$inferSelect;

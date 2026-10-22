@@ -243,6 +243,26 @@ const integration = z.object({
   aiDraftsEnabled: z.boolean(),
   callbackBaseUrl: z.string(),
   deliveries: z.array(delivery),
+  google: z.object({
+    available: z.boolean(),
+    serviceAccountEmail: z.string().nullable(),
+    templateUrl: z.string().nullable(),
+    documentsFolderUrl: z.string().nullable(),
+    signedFolderUrl: z.string().nullable(),
+    checkedAt: z.string().nullable(),
+    lastError: z.string().nullable(),
+    files: z.array(
+      z.object({
+        fileId: z.string(),
+        name: z.string(),
+        url: z.string().nullable(),
+        workOrderId: z.string().nullable(),
+        outcome: z.enum(["attached", "mismatch", "unmatched", "error"]),
+        note: z.string().nullable(),
+        processedAt: z.string(),
+      }),
+    ),
+  }),
 });
 
 export const workOrdersContract = {
@@ -436,6 +456,34 @@ export const workOrdersContract = {
     .route({ method: "POST", path: "/admin/work-order-integration/rotate" })
     .input(z.object({}))
     .output(integration.extend({ inboundToken: z.string().nullable() }))
+    .errors(errors),
+
+  saveGoogle: oc
+    .route({ method: "PUT", path: "/admin/work-order-integration/google" })
+    .input(
+      z.object({
+        templateUrl: z.string().trim().max(2000).nullable(),
+        documentsFolderUrl: z.string().trim().max(2000).nullable(),
+        signedFolderUrl: z.string().trim().max(2000).nullable(),
+      }),
+    )
+    .output(integration)
+    .errors(errors),
+
+  checkDrive: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/check" })
+    .input(z.object({}))
+    .output(
+      integration.extend({
+        result: z.object({
+          checked: z.number().int(),
+          attached: z.number().int(),
+          mismatch: z.number().int(),
+          unmatched: z.number().int(),
+          error: z.number().int(),
+        }),
+      }),
+    )
     .errors(errors),
 
   testIntegration: oc

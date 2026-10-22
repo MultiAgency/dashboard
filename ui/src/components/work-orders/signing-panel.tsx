@@ -56,8 +56,26 @@ export function SigningPanel({
   });
   const prepare = useMutation({
     mutationFn: () => apiClient.workOrders.prepareDocument({ id: wo.id }),
-    onSuccess: () => toast.success("Sent to n8n: the filled document and its email follow"),
+    onSuccess: async () => {
+      await refresh();
+      toast.success("The document is being filled; the representative gets the link");
+    },
     onError: (err: Error) => toast.error(err.message || "Couldn't send it to n8n"),
+  });
+  const checkDrive = useMutation({
+    mutationFn: () => apiClient.workOrders.checkDrive({}),
+    onSuccess: async ({ result }) => {
+      await refresh();
+      await queryClient.invalidateQueries({ queryKey: ["admin", "work-order-integration"] });
+      toast.success(
+        result.attached > 0
+          ? "Signed PDF attached"
+          : result.mismatch > 0
+            ? "A signed PDF's terms differ: the representative got the differences"
+            : "No new signed PDF for this work order",
+      );
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't check the Signed folder"),
   });
   const askPayee = useMutation({
     mutationFn: () => apiClient.workOrders.requestPayeeConfirmation({ id: wo.id }),
@@ -68,6 +86,7 @@ export function SigningPanel({
     onError: (err: Error) => toast.error(err.message || "Couldn't send the request"),
   });
 
+  const googleReady = !!integration?.google?.templateUrl && !!integration.google.documentsFolderUrl;
   const signature = wo.signature;
   const unsigned = wo.status === "draft" || wo.status === "offered";
   const date = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
@@ -111,27 +130,32 @@ export function SigningPanel({
                       Open the document to send for signature
                     </a>
                   </Button>
-                ) : canManage && integration && !integration.connected ? (
+                ) : canManage && integration && !integration.connected && !googleReady ? (
                   <span className="text-muted-foreground">
                     <Link
                       to="/admin/settings"
                       hash="work-orders"
                       className="text-foreground underline underline-offset-4"
                     >
-                      Connect n8n
+                      Set up Google Docs and Drive
                     </Link>{" "}
-                    to fill your Google Docs template, or offer it to the builder to accept in
-                    MultiAgency.
+                    to fill your template, or offer it to the builder to accept in MultiAgency.
                   </span>
                 ) : (
-                  canManage && (
+                  canManage &&
+                  !googleReady && (
                     <span className="text-muted-foreground">
-                      The filled document arrives from n8n. Then: Google Docs → Tools → eSignature →
-                      Request signature, and save the signed PDF in your Signed folder.
+                      The filled document arrives from n8n.
                     </span>
                   )
                 )}
-                {canManage && integration?.connected && (
+                {canManage && (signature.preparedDocumentUrl || googleReady) && (
+                  <span className="text-muted-foreground">
+                    In Google Docs: Tools → eSignature → Request signature (the builder and you).
+                    Once both have signed, save the signed PDF in your Signed folder.
+                  </span>
+                )}
+                {canManage && (integration?.connected || googleReady) && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -142,6 +166,17 @@ export function SigningPanel({
                     {signature.preparedDocumentUrl
                       ? "Fill the document again"
                       : "Fill the document in Google Docs"}
+                  </Button>
+                )}
+                {canManage && integration?.google?.signedFolderUrl && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="self-start"
+                    disabled={checkDrive.isPending}
+                    onClick={() => checkDrive.mutate()}
+                  >
+                    {checkDrive.isPending ? "Checking…" : "Check the Signed folder now"}
                   </Button>
                 )}
               </div>

@@ -4,7 +4,9 @@ import type { Database } from "../../src/db";
 import { billings, notifications, workOrders } from "../../src/db/schema";
 import { requireTreasury } from "../../src/services/organization-access";
 import type { DaoProposal } from "../../src/services/sputnik";
+import { contains, longDate, normalizeText } from "../../src/services/work-orders/documents";
 import type { WorkOrderEvent } from "../../src/services/work-orders/events";
+import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
 import {
   type BuilderProfile,
   createWorkOrdersService,
@@ -14,6 +16,7 @@ import type { ReportDraft } from "../../src/services/work-orders/summarizer";
 import { DEFAULT_RENEWAL } from "../../src/services/work-orders/types";
 import { type EngagementWorld, engagementWorld, refused } from "../fakes/engagements";
 import { FakeGitHub } from "../fakes/github";
+import { FakeGoogle } from "../fakes/google";
 import { signedIn } from "../fakes/organizations";
 import { migratedDatabase } from "./_pg";
 
@@ -31,6 +34,7 @@ describe("work orders", () => {
   let proposals: Map<string, DaoProposal>;
   let events: WorkOrderEvent[];
   let aiDraft: ReportDraft | null;
+  let google: FakeGoogle;
   let builders: Map<string, BuilderProfile>;
   let service: ReturnType<typeof createWorkOrdersService>;
 
@@ -42,6 +46,19 @@ describe("work orders", () => {
     proposals = new Map();
     events = [];
     aiDraft = null;
+    google = new FakeGoogle([
+      "work_order_id",
+      "project",
+      "contractor_name",
+      "representative_name",
+      "period_start",
+      "period_end",
+      "budget_usd",
+      "payee_account",
+      "contractor_github",
+      "repos",
+      "effective_date",
+    ]);
     builders = new Map([
       [CAROL, { nearAccount: CAROL, name: "Carol", githubLogin: "carol-gh", userId: "carol" }],
       [
@@ -67,6 +84,7 @@ describe("work orders", () => {
         },
       },
       summarizer: { draftReport: async () => aiDraft },
+      google,
       userEmail: async (userId) => `${userId}@example.com`,
       appOrigin: "https://app.example",
       notifications: world.notifications,
@@ -776,6 +794,146 @@ describe("work orders", () => {
       await service.submitRequest(carol(), { requestId: draft.id });
       const waiting = events.find((e) => e.type === "request.awaiting_approval");
       expect(waiting?.request?.requested).toBe("500 USDC");
+    });
+  });
+  describe("Google Docs and Drive, without n8n", () => {
+    const REAL_USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
+
+    beforeEach(async () => {
+      await createWorkOrderIntegrations({ db }).saveGoogle("studio", "studio-admin", {
+        templateId: "tpl",
+        documentsFolderId: "docs",
+        signedFolderId: "signed",
+      });
+    });
+
+    const signedLines = (documentId: string, over: Record<string, string> = {}) => {
+      const v = { ...google.filled.get(documentId), ...over };
+      return [
+        `WORK ORDER ${v.work_order_id}`,
+        `Effective ${v.effective_date}`,
+        `Contractor: ${v.contractor_name}   Representative: ${v.representative_name}`,
+        `Project: ${v.project}`,
+        `Period: ${v.period_start} to ${v.period_end}`,
+        `Budget: up to $${v.budget_usd}`,
+        `Schedule A: payout account ${v.payee_account}, GitHub ${v.contractor_github}`,
+        `Repositories: ${v.repos}`,
+        "Signed by Carol and Rita Rep with Google eSignature",
+      ];
+    };
+
+    test("a new work order gets its filled Google Doc and the representative is told", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ tokenId: REAL_USDC, representativeName: "Rita Rep" }),
+      );
+      expect(google.copies).toEqual([
+        {
+          templateId: "tpl",
+          name: "Work Order WO-0001: Contributor role",
+          parentId: "docs",
+          id: "doc-1",
+        },
+      ]);
+      const values = google.filled.get("doc-1");
+      expect(values).toMatchObject({
+        work_order_id: "WO-0001",
+        project: "Project p1",
+        contractor_name: "Carol",
+        representative_name: "Rita Rep",
+        period_start: "September 1, 2026",
+        period_end: "September 30, 2026",
+        budget_usd: "1000",
+        payee_account: CAROL,
+        contractor_github: "carol-gh",
+        repos: REPO,
+      });
+      expect(created.signature.preparedDocumentUrl).toBe(
+        "https://docs.google.com/document/d/doc-1/edit",
+      );
+      expect(events.map((e) => e.type)).toEqual(["work_order.document_ready"]);
+    });
+
+    test("a signed PDF in the Signed folder signs the matching work order, once", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ tokenId: REAL_USDC, representativeName: "Rita Rep" }),
+      );
+      google.addPdf("signed", "pdf-1", signedLines("doc-1"));
+      google.addPdf("elsewhere", "pdf-x", signedLines("doc-1"));
+      const result = await service.checkDrive(await studio());
+      expect(result).toEqual({ checked: 1, attached: 1, mismatch: 0, unmatched: 0, error: 0 });
+      const signed = await service.get(await studio(), { id: created.id });
+      expect(signed.status).toBe("accepted");
+      expect(signed.signature.method).toBe("google_esign");
+      expect(signed.documentUrl).toBe("https://drive.google.com/file/d/pdf-1/view");
+      expect(signed.documentSha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(events.map((e) => e.type)).toEqual(
+        expect.arrayContaining(["work_order.signed", "work_order.confirm_payee"]),
+      );
+      expect((await service.checkDrive(await studio())).checked).toBe(0);
+    });
+
+    test("a signed PDF with different terms isn't attached and the differences are sent", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ tokenId: REAL_USDC, representativeName: "Rita Rep" }),
+      );
+      google.addPdf(
+        "signed",
+        "pdf-2",
+        signedLines("doc-1", { budget_usd: "10000", payee_account: "mallory.near" }),
+      );
+      expect((await service.checkDrive(await studio())).mismatch).toBe(1);
+      expect((await service.get(await studio(), { id: created.id })).status).toBe("draft");
+      expect(events.find((e) => e.type === "work_order.signature_mismatch")?.mismatches).toEqual([
+        'budget: "1000" isn\'t in the signed PDF',
+        'payout account: "carol.near" isn\'t in the signed PDF',
+      ]);
+      expect((await service.checkDrive(await studio())).checked).toBe(0);
+    });
+
+    test("PDFs that match nothing are noted; a failed download is tried again", async () => {
+      await service.create(
+        await studio(),
+        fields({ tokenId: REAL_USDC, representativeName: "Rita Rep" }),
+      );
+      google.addPdf("signed", "pdf-3", ["An unrelated contract"]);
+      google.addPdf("signed", "pdf-4", signedLines("doc-1"));
+      google.failDownloads.add("pdf-4");
+      expect(await service.checkDrive(await studio())).toEqual({
+        checked: 2,
+        attached: 0,
+        mismatch: 0,
+        unmatched: 1,
+        error: 1,
+      });
+      google.failDownloads.clear();
+      expect(await service.checkDrive(await studio())).toMatchObject({ checked: 1, attached: 1 });
+    });
+
+    test("changing a term fills a new document", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ tokenId: REAL_USDC, representativeName: "Rita Rep" }),
+      );
+      await service.update(await studio(), { id: created.id, budgetAmount: "2000000000" });
+      expect(google.copies.map((c) => c.id)).toEqual(["doc-1", "doc-2"]);
+      expect(google.filled.get("doc-2")?.budget_usd).toBe("2000");
+      google.addPdf("signed", "pdf-old", signedLines("doc-1"));
+      expect((await service.checkDrive(await studio())).mismatch).toBe(1);
+    });
+
+    test("matching is exact: a value must stand on its own in the PDF", () => {
+      expect(longDate("2026-09-01")).toBe("September 1, 2026");
+      const text = normalizeText(
+        "Budget: up to $10000. Paid to carol.near.\nRepos: studio/app, studio/api",
+      );
+      expect(contains(text, "1000")).toBe(false);
+      expect(contains(text, "10000")).toBe(true);
+      expect(contains(text, "carol.near")).toBe(true);
+      expect(contains(text, "arol.near")).toBe(false);
+      expect(contains(text, "studio/app")).toBe(true);
     });
   });
 });

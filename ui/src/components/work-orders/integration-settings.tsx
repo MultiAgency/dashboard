@@ -26,6 +26,7 @@ import { Field, Loading } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { workOrderIntegrationQueryOptions } from "@/lib/queries";
+import { GoogleDriveSettings } from "./google-settings";
 
 type Integration = Awaited<ReturnType<ApiClient["workOrders"]["integration"]>>;
 
@@ -115,9 +116,8 @@ export function WorkOrderIntegrationSettings() {
           <h2>Work orders: email and e-signature</h2>
         </CardTitle>
         <CardDescription>
-          Connect your n8n: it emails builders and your representative from your Gmail at each step
-          of a work order, fills your Google Docs template, and brings e-signed PDFs back from your
-          Drive.
+          MultiAgency emails builders and your representative at each step of a work order, fills
+          your Google Docs template and attaches the e-signed PDFs from your Drive.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
@@ -126,7 +126,7 @@ export function WorkOrderIntegrationSettings() {
             {data.connected
               ? "Email through n8n (Gmail)"
               : data.emailEnabled
-                ? "Email through MultiAgency until n8n is connected"
+                ? "Email on (Resend)"
                 : "Email off"}
           </Badge>
           <Badge variant={data.connected ? "outline" : "secondary"}>
@@ -138,21 +138,29 @@ export function WorkOrderIntegrationSettings() {
         </div>
         {!data.connected && !data.emailEnabled && (
           <Alert>
-            <AlertTitle>No work order emails yet</AlertTitle>
+            <AlertTitle>Emails are off on this server</AlertTitle>
             <AlertDescription>
-              Connect n8n below to send them from your Gmail. Until then people get in-app
-              notifications only.
+              Set RESEND_API_KEY and NOTIFY_FROM_EMAIL. Until then people get in-app notifications
+              only.
             </AlertDescription>
           </Alert>
         )}
 
+        {data.google && <GoogleDriveSettings data={data} onUpdate={done} />}
+
         <form
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-4 border-t pt-6"
           onSubmit={(e) => {
             e.preventDefault();
             save.mutate(editing.trim() || null);
           }}
         >
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-medium">n8n (optional)</h3>
+            <p className="text-sm text-muted-foreground">
+              Only if your emails should go out from your own Gmail through n8n instead.
+            </p>
+          </div>
           <FieldGroup>
             <Field
               label="n8n webhook URL"

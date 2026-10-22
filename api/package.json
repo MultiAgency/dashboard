@@ -16,6 +16,7 @@
     "typescript": "catalog:"
   },
   "dependencies": {
+    "@better-auth/core": "catalog:",
     "@electric-sql/pglite": "catalog:",
     "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
@@ -26,8 +27,8 @@
     "effect": "catalog:",
     "every-plugin": "catalog:",
     "pg": "catalog:",
-    "zod": "catalog:",
-    "@better-auth/core": "catalog:"
+    "unpdf": "^1.9.1",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@effect/language-service": "^0.85.1",

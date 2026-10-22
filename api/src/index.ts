@@ -59,6 +59,7 @@ import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
 import { testEvent } from "./services/work-orders/events";
 import { cachedOwnership, createGitHub } from "./services/work-orders/github";
+import { createGoogle, googleIdOf, parseServiceAccount } from "./services/work-orders/google";
 import { createWorkOrderIntegrations, createWorkOrderOutbox } from "./services/work-orders/outbox";
 import { createWorkOrdersService } from "./services/work-orders/service";
 import { createSummarizer } from "./services/work-orders/summarizer";
@@ -101,6 +102,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
     GITHUB_TOKEN: z.string().optional(),
     WORK_ORDERS_RUN_SECRET: z.string().optional(),
     ANTHROPIC_API_KEY: z.string().optional(),
+    GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
   }),
 
   context: ContextSchema,
@@ -224,6 +226,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
         immediate: true,
       });
       const workOrderAiDrafts = !!config.secrets.ANTHROPIC_API_KEY;
+      const serviceAccount = parseServiceAccount(config.secrets.GOOGLE_SERVICE_ACCOUNT_JSON);
+      const google = serviceAccount ? createGoogle(serviceAccount) : null;
       const userEmail = async (userId: string) => {
         if (!authPool) return null;
         const { rows } = await authPool.query<{ email: string | null }>(
@@ -262,6 +266,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         thresholds: config.variables.workOrderRenewal,
         outbox: workOrderOutbox,
         summarizer: createSummarizer(config.secrets.ANTHROPIC_API_KEY),
+        google,
         userEmail,
         appOrigin,
       });
@@ -305,6 +310,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         workOrderAiDrafts,
         workOrderEmails: sendEmail !== null,
         appOrigin,
+        google,
       };
     }),
 
@@ -350,7 +356,46 @@ export default createPlugin.withPlugins<PluginsClient>()({
       workOrderAiDrafts,
       workOrderEmails,
       appOrigin,
+      google,
     } = services;
+
+    const googleUrl = {
+      document: (id: string | null) =>
+        id ? `https://docs.google.com/document/d/${id}/edit` : null,
+      folder: (id: string | null) => (id ? `https://drive.google.com/drive/folders/${id}` : null),
+    };
+
+    const checkGoogleFile = async (
+      label: string,
+      value: string | null,
+      kind: "document" | "folder",
+    ): Promise<string | null> => {
+      if (!value) return null;
+      const id = googleIdOf(value);
+      if (!id) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: `${label}: paste the Google ${kind === "document" ? "Docs" : "Drive folder"} link`,
+          data: { reason: "INVALID_GOOGLE_LINK" },
+        });
+      }
+      if (!google) return id;
+      const mime =
+        kind === "document"
+          ? "application/vnd.google-apps.document"
+          : "application/vnd.google-apps.folder";
+      try {
+        const file = await google.file(id);
+        if (file.mimeType !== mime) {
+          throw new Error(`it's not a Google ${kind === "document" ? "Doc" : "Drive folder"}`);
+        }
+      } catch (error) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: `${label}: ${error instanceof Error ? error.message : String(error)}`,
+          data: { reason: "GOOGLE_ACCESS" },
+        });
+      }
+      return id;
+    };
 
     const integrationView = async (organizationId: string) => {
       const [settings, deliveries] = await Promise.all([
@@ -374,6 +419,24 @@ export default createPlugin.withPlugins<PluginsClient>()({
           lastError: d.lastError,
           createdAt: d.createdAt.toISOString(),
         })),
+        google: {
+          available: google !== null,
+          serviceAccountEmail: google?.email ?? null,
+          templateUrl: googleUrl.document(settings?.googleTemplateId ?? null),
+          documentsFolderUrl: googleUrl.folder(settings?.googleDocumentsFolderId ?? null),
+          signedFolderUrl: googleUrl.folder(settings?.googleSignedFolderId ?? null),
+          checkedAt: settings?.googleCheckedAt?.toISOString() ?? null,
+          lastError: settings?.googleLastError ?? null,
+          files: (await workOrderIntegrations.driveFiles(organizationId)).map((f) => ({
+            fileId: f.fileId,
+            name: f.name,
+            url: f.url,
+            workOrderId: f.workOrderId,
+            outcome: f.outcome,
+            note: f.note,
+            processedAt: f.processedAt.toISOString(),
+          })),
+        },
       };
     };
 
@@ -1023,6 +1086,39 @@ export default createPlugin.withPlugins<PluginsClient>()({
               context.scope.actorId,
             );
             return { ...(await integrationView(context.scope.organizationId)), inboundToken };
+          }),
+
+        saveGoogle: builder.workOrders.saveGoogle
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const templateId = await checkGoogleFile("Template", input.templateUrl, "document");
+            const documentsFolderId = await checkGoogleFile(
+              "Documents folder",
+              input.documentsFolderUrl,
+              "folder",
+            );
+            const signedFolderId = await checkGoogleFile(
+              "Signed folder",
+              input.signedFolderUrl,
+              "folder",
+            );
+            await workOrderIntegrations.saveGoogle(
+              context.scope.organizationId,
+              context.scope.actorId,
+              {
+                templateId,
+                documentsFolderId,
+                signedFolderId,
+              },
+            );
+            return integrationView(context.scope.organizationId);
+          }),
+
+        checkDrive: builder.workOrders.checkDrive
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const result = await workOrders.checkDrive(context.scope);
+            return { ...(await integrationView(context.scope.organizationId)), result };
           }),
 
         testIntegration: builder.workOrders.testIntegration

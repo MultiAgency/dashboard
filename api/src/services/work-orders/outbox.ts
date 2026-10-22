@@ -4,6 +4,7 @@ import type { Database } from "../../db";
 import {
   type WorkOrderIntegrationRow,
   type WorkOrderOutboxRow,
+  workOrderDriveFiles,
   workOrderIntegrations,
   workOrderOutbox,
 } from "../../db/schema";
@@ -104,6 +105,37 @@ export function createWorkOrderIntegrations(deps: { db: Database; now?: () => Da
         .limit(1);
       return row?.organizationId ?? null;
     },
+
+    saveGoogle: async (
+      organizationId: string,
+      actorId: string,
+      input: {
+        templateId: string | null;
+        documentsFolderId: string | null;
+        signedFolderId: string | null;
+      },
+    ) => {
+      if (!(await settings(organizationId))) await issue(organizationId, actorId, null);
+      await db
+        .update(workOrderIntegrations)
+        .set({
+          googleTemplateId: input.templateId,
+          googleDocumentsFolderId: input.documentsFolderId,
+          googleSignedFolderId: input.signedFolderId,
+          googleLastError: null,
+          updatedBy: actorId,
+          updatedAt: now(),
+        })
+        .where(eq(workOrderIntegrations.organizationId, organizationId));
+    },
+
+    driveFiles: async (organizationId: string, limit = 20) =>
+      db
+        .select()
+        .from(workOrderDriveFiles)
+        .where(eq(workOrderDriveFiles.organizationId, organizationId))
+        .orderBy(desc(workOrderDriveFiles.processedAt))
+        .limit(limit),
 
     recent: async (organizationId: string, limit = 20) =>
       db
