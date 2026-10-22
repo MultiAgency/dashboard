@@ -27,6 +27,7 @@
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "every-plugin": "catalog:",
+    "near-kit": "catalog:",
     "pdf-lib": "^1.17.1",
     "pg": "catalog:",
     "unpdf": "^1.9.1",

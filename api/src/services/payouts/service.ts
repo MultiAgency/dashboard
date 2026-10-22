@@ -30,9 +30,42 @@ import {
   NEAR_ASSET,
   nearToAtomic,
   payeesOf,
+  topUpFor,
 } from "./policy";
+import type { OwnerSigner } from "./signer";
 
 export type PayoutAction = (typeof PAYOUT_ACTIONS)[number];
+
+export type ServerPayoutAction = "sync_policy" | "issue_grant";
+
+export type ReadinessCode =
+  | "unavailable"
+  | "unreachable"
+  | "no_agent"
+  | "no_grant"
+  | "not_applied"
+  | "frozen"
+  | "owner_approval"
+  | "payee_not_allowed"
+  | "asset_not_allowed"
+  | "over_cap"
+  | "over_monthly_budget"
+  | "insufficient_balance";
+
+export type Readiness =
+  | { ready: true; code: null; reason: null }
+  | { ready: false; code: ReadinessCode; reason: string };
+
+export type FundingCheck = {
+  balanceNear: string | null;
+  neededNear: string;
+  shortfallNear: string | null;
+  monthlyBudgetUsd: string | null;
+  monthlyNeededUsd: string | null;
+  suggestedBudgetUsd: string | null;
+  budgetTooLow: boolean;
+  lowBalance: boolean;
+};
 
 export type AgentApiPort = {
   generateIntent(
@@ -63,6 +96,9 @@ export type AgentApiPort = {
 const AGENT_NAME = "MultiAgency payouts";
 const GRANT_LABEL = "MultiAgency work-order payouts";
 const GRANT_DAYS = 90;
+const GRANT_RENEW_DAYS = 14;
+const KEY_CHECK_MS = 10 * 60_000;
+const SERVER_ACTIONS: readonly PayoutAction[] = ["sync_policy", "issue_grant"];
 const PENDING_INTENT = new Set(["PENDING_SIGNATURE", "QUEUED", "PROCESSING", "PENDING_APPROVAL"]);
 const OPEN_PAYOUT: readonly AgentPayoutRow["status"][] = [
   "sending",
@@ -127,6 +163,7 @@ export function createPayoutAgents(deps: {
   secretKey: string | null;
   payees: (organizationId: string) => Promise<string[]>;
   fullAccessKeys?: (accountId: string) => Promise<string[]>;
+  ownerSigner?: OwnerSigner | null;
   now?: () => Date;
 }) {
   const { db } = deps;
@@ -180,17 +217,71 @@ export function createPayoutAgents(deps: {
     return api().getPolicy(row.agentId);
   }
 
-  async function balanceOf(agentId: string) {
+  async function holdings(agentId: string) {
     try {
       const view = await api().getBalances(agentId, { asset: NEAR_ASSET });
       const entry = view.balances.find((b) => b.asset_id === NEAR_ASSET);
-      const raw = BigInt(entry?.balance_raw ?? "0");
-      const near = atomicToNear(raw);
-      const usd = entry?.price != null ? (Number(near) * entry.price).toFixed(2) : null;
-      return { near, usd };
+      return { raw: BigInt(entry?.balance_raw ?? "0"), price: entry?.price ?? null };
     } catch {
       return null;
     }
+  }
+
+  async function balanceOf(agentId: string) {
+    const held = await holdings(agentId);
+    if (!held) return null;
+    const near = atomicToNear(held.raw);
+    const usd = held.price != null ? (Number(near) * held.price).toFixed(2) : null;
+    return { near, usd };
+  }
+
+  const keyChecks = new Map<string, { at: number; owns: boolean }>();
+
+  async function serverSigning(row: PayoutAgentRow | null) {
+    const signer = deps.ownerSigner;
+    if (!signer) return { configured: false, active: false, warning: null as string | null };
+    if (!row) return { configured: true, active: false, warning: null as string | null };
+    const owner = row.ownerAccountId;
+    const cached = keyChecks.get(owner);
+    let owns = cached && now().getTime() - cached.at < KEY_CHECK_MS ? cached.owns : null;
+    if (owns === null) {
+      if (!deps.fullAccessKeys) {
+        return {
+          configured: true,
+          active: false,
+          warning: `Couldn't check that the server's key belongs to ${owner}`,
+        };
+      }
+      try {
+        owns = (await deps.fullAccessKeys(owner)).includes(signer.publicKey);
+        keyChecks.set(owner, { at: now().getTime(), owns });
+      } catch (error) {
+        return {
+          configured: true,
+          active: false,
+          warning: `Couldn't read ${owner}'s keys from NEAR: ${errorText(error)}`,
+        };
+      }
+    }
+    return owns
+      ? { configured: true, active: true, warning: null as string | null }
+      : {
+          configured: true,
+          active: false,
+          warning: `PAYOUTS_OWNER_PRIVATE_KEY (${signer.publicKey}) isn't a full-access key of ${owner}, so the server can't sign for it. Sign with your wallet, or add that key to ${owner}.`,
+        };
+  }
+
+  function grantExpiringSoon(row: PayoutAgentRow | null) {
+    if (!grantOf(row) || !row?.grantExpiresAt) return false;
+    return row.grantExpiresAt.getTime() - now().getTime() < GRANT_RENEW_DAYS * 86_400_000;
+  }
+
+  function cooldownReason(availableAt: string | null) {
+    if (!availableAt) return null;
+    const at = new Date(availableAt);
+    if (Number.isNaN(at.getTime()) || at.getTime() <= now().getTime()) return null;
+    return `Rules can change again at ${at.toISOString().slice(0, 16).replace("T", " ")} UTC`;
   }
 
   async function view(organizationId: string) {
@@ -208,6 +299,10 @@ export function createPayoutAgents(deps: {
       agentId: row?.agentId ?? null,
       grantExpiresAt: row?.grantExpiresAt?.toISOString() ?? null,
       grantValid: grantOf(row) !== null,
+      grantExpiringSoon: grantExpiringSoon(row),
+      serverSigning: available
+        ? await serverSigning(row)
+        : { configured: false, active: false, warning: null as string | null },
     };
     if (!available || !row?.agentId) {
       return {
@@ -247,6 +342,8 @@ export function createPayoutAgents(deps: {
               monthlyLimitUsd: current?.usage.budget.monthly.limit_usd ?? null,
               monthlySpentUsd: current?.usage.budget.monthly.spent_usd ?? null,
               monthlyRemainingUsd: current?.usage.budget.monthly.remaining_usd ?? null,
+              monthlyResetsAt: current?.usage.budget.monthly.resets_at ?? null,
+              policyChangeAvailableAt: current?.cooldowns.policy_change_available_at ?? null,
             }
           : null,
         changes: signed ? diffPolicy(signed, wanted) : [],
@@ -275,6 +372,9 @@ export function createPayoutAgents(deps: {
   ) {
     if (action === "create_agent") {
       if (row.agentId) throw badRequest("AGENT_EXISTS", "The payout agent already exists");
+      if (!publicKey && deps.ownerSigner && (await serverSigning(row)).active) {
+        publicKey = deps.ownerSigner.publicKey;
+      }
       if (!publicKey && deps.fullAccessKeys) {
         const keys = await deps.fullAccessKeys(row.ownerAccountId).catch((error: unknown) => {
           throw badRequest(
@@ -424,6 +524,313 @@ export function createPayoutAgents(deps: {
     }
   }
 
+  async function prepareIntent(
+    organizationId: string,
+    input: { action: PayoutAction; publicKey?: string | null },
+  ) {
+    const row = await settings(organizationId);
+    if (!row) throw badRequest("NO_SETTINGS", "Save the payout settings first");
+    const built = await prepareRequest(row, input.action, input.publicKey);
+    let generated: GenerateIntentResponse;
+    try {
+      generated = await api().generateIntent(built.request);
+    } catch (error) {
+      throw badRequest("AGENT_API", `The Agent API refused it: ${errorText(error)}`);
+    }
+    if (generated.signer.type !== "near" || generated.signer.account_id !== row.ownerAccountId) {
+      throw badRequest(
+        "OWNER_MISMATCH",
+        `This would be signed by ${"account_id" in generated.signer ? generated.signer.account_id : "another wallet"}, not ${row.ownerAccountId}`,
+      );
+    }
+    await db.insert(payoutIntents).values({
+      correlationId: generated.correlation_id,
+      organizationId,
+      action: input.action,
+      intentType: generated.type,
+      intent: JSON.stringify(generated.intent),
+      agentId: generated.agent_id ?? row.agentId,
+      grantTokenEnc: built.grant ? seal(built.grant.token, deps.secretKey!) : null,
+      grantExpiresAt: built.grant?.expiresAt ?? null,
+      status: generated.status,
+      createdAt: now(),
+      updatedAt: now(),
+    });
+    return {
+      row,
+      signerPublicKey: "public_key" in generated.signer ? generated.signer.public_key : null,
+      prepared: {
+        correlationId: generated.correlation_id,
+        action: input.action,
+        intent: generated.intent as unknown as Record<string, unknown>,
+        signerAccountId: row.ownerAccountId,
+        summary: generated.preview?.summary ?? null,
+        expiresAt: generated.expires_at,
+      },
+    };
+  }
+
+  async function signOnServer(organizationId: string, action: ServerPayoutAction) {
+    if (!SERVER_ACTIONS.includes(action)) {
+      throw badRequest("WALLET_REQUIRED", "Only the owner's wallet can sign that");
+    }
+    const signer = deps.ownerSigner;
+    const signing = await serverSigning(await settings(organizationId));
+    if (!signer || !signing.active) {
+      throw badRequest(
+        "SERVER_SIGNER_UNAVAILABLE",
+        signing.warning ?? "PAYOUTS_OWNER_PRIVATE_KEY isn't set, so the server can't sign",
+      );
+    }
+    const { row, signerPublicKey, prepared } = await prepareIntent(organizationId, { action });
+    let signedData: Record<string, unknown>;
+    try {
+      signedData = await signer.sign(row.ownerAccountId, signerPublicKey, {
+        standard: String(prepared.intent.standard),
+        payload: prepared.intent.payload,
+      });
+    } catch (error) {
+      throw badRequest("SERVER_SIGN_FAILED", `The server couldn't sign: ${errorText(error)}`);
+    }
+    return submitIntent(organizationId, { correlationId: prepared.correlationId, signedData });
+  }
+
+  async function ensurePayees(
+    organizationId: string,
+  ): Promise<{ ok: boolean; reason: string | null; needsSignature: boolean }> {
+    const refuse = (reason: string, needsSignature = false) => ({
+      ok: false,
+      reason,
+      needsSignature,
+    });
+    if (!available) return refuse(unavailableReason);
+    const row = await settings(organizationId);
+    if (!row?.agentId) return refuse("Create the payout agent first");
+    let current: PolicyView;
+    try {
+      current = await api().getPolicy(row.agentId);
+    } catch (error) {
+      return refuse(`The Agent API couldn't be reached: ${errorText(error)}`);
+    }
+    const signed = current.policy;
+    if (!signed || current.revision === null) {
+      return refuse("The agent's first rules are still being applied");
+    }
+    const wanted = await wantedPolicy(row, signed.frozen);
+    if (diffPolicy(signed, wanted).length === 0) {
+      return current.status === "APPLIED"
+        ? { ok: true, reason: null, needsSignature: false }
+        : refuse("The agent's updated rules are still being applied");
+    }
+    const waiting = cooldownReason(current.cooldowns.policy_change_available_at);
+    if (waiting) return refuse(waiting);
+    if (!(await serverSigning(row)).active) {
+      const before = new Set(payeesOf(signed));
+      const added = payeesOf(wanted).filter((p) => !before.has(p));
+      return refuse(
+        added.length
+          ? `Sign the updated rules to allow paying ${added.join(", ")}`
+          : "Sign the updated rules",
+        true,
+      );
+    }
+    try {
+      const result = await signOnServer(organizationId, "sync_policy");
+      return result.status === "SUCCESS"
+        ? { ok: true, reason: null, needsSignature: false }
+        : refuse(
+            `The rules update is ${result.status.toLowerCase().replace(/_/g, " ")}${result.failureCode ? ` (${result.failureCode})` : ""}`,
+          );
+    } catch (error) {
+      return refuse(errorText(error));
+    }
+  }
+
+  async function renewGrant(
+    organizationId: string,
+  ): Promise<{ renewed: boolean; reason: string | null }> {
+    if (!available) return { renewed: false, reason: unavailableReason };
+    const row = await settings(organizationId);
+    if (!row?.agentId) return { renewed: false, reason: "No payout agent" };
+    if (grantOf(row) && !grantExpiringSoon(row)) return { renewed: false, reason: null };
+    const signing = await serverSigning(row);
+    if (!signing.active) {
+      return {
+        renewed: false,
+        reason:
+          signing.warning ??
+          (grantOf(row) && row.grantExpiresAt
+            ? `MultiAgency's payout permission expires ${row.grantExpiresAt.toISOString().slice(0, 10)}: renew it with your wallet`
+            : "MultiAgency's payout permission is missing or expired: issue it with your wallet"),
+      };
+    }
+    try {
+      const result = await signOnServer(organizationId, "issue_grant");
+      return result.status === "SUCCESS"
+        ? { renewed: true, reason: null }
+        : {
+            renewed: false,
+            reason: `The permission renewal is ${result.status.toLowerCase().replace(/_/g, " ")}`,
+          };
+    } catch (error) {
+      return { renewed: false, reason: errorText(error) };
+    }
+  }
+
+  async function readiness(
+    organizationId: string,
+    payee: string,
+    amountAtomic?: string | bigint | null,
+    priceUsd?: string | null,
+  ): Promise<Readiness> {
+    const refuse = (code: ReadinessCode, reason: string): Readiness => ({
+      ready: false,
+      code,
+      reason,
+    });
+    if (!available) return refuse("unavailable", unavailableReason);
+    const row = await settings(organizationId);
+    if (!row?.agentId) return refuse("no_agent", "No payout agent");
+    if (!grantOf(row))
+      return refuse("no_grant", "MultiAgency's payout permission is missing or expired");
+    try {
+      const current = await api().getPolicy(row.agentId);
+      const policy = current.policy;
+      if (!policy || current.status !== "APPLIED")
+        return refuse("not_applied", "The agent's rules aren't applied");
+      if (policy.frozen) return refuse("frozen", "Payouts are frozen");
+      if (policy.owner_approval)
+        return refuse("owner_approval", "The rules require a vote per payout");
+      if (!allowsPayee(policy, payee)) {
+        return refuse(
+          "payee_not_allowed",
+          `The signed rules don't allow paying ${payee} yet: sign the updated rules`,
+        );
+      }
+      if (!policy.assets.includes(NEAR_ASSET) && policy.assets !== "any") {
+        return refuse("asset_not_allowed", "The rules don't allow paying in NEAR");
+      }
+      if (amountAtomic == null) return { ready: true, code: null, reason: null };
+      const amount = BigInt(amountAtomic);
+      const cap = BigInt(
+        policy.limits.per_transaction?.[NEAR_ASSET] ?? nearToAtomic(row.maxPayoutNear),
+      );
+      if (amount > cap) {
+        return refuse(
+          "over_cap",
+          `${atomicToNear(amount)} NEAR is over the ${atomicToNear(cap)} NEAR cap per payout`,
+        );
+      }
+      const held = await api().getBalances(row.agentId, { asset: NEAR_ASSET });
+      const entry = held.balances.find((b) => b.asset_id === NEAR_ASSET);
+      const price = priceUsd != null ? Number(priceUsd) : (entry?.price ?? null);
+      const monthly = current.usage.budget.monthly;
+      if (monthly.remaining_usd != null && price != null && Number.isFinite(price)) {
+        const amountUsd = Number(atomicToNear(amount, 6)) * price;
+        if (amountUsd > Number(monthly.remaining_usd)) {
+          return refuse(
+            "over_monthly_budget",
+            `≈$${amountUsd.toFixed(2)} is more than the $${monthly.remaining_usd} left in this month's budget${monthly.resets_at ? ` (resets ${monthly.resets_at.slice(0, 10)})` : ""}`,
+          );
+        }
+      }
+      const balance = BigInt(entry?.balance_raw ?? "0");
+      if (balance < amount) {
+        return refuse(
+          "insufficient_balance",
+          `The agent holds ${atomicToNear(balance)} NEAR; this payout needs ${atomicToNear(amount)} NEAR`,
+        );
+      }
+      return { ready: true, code: null, reason: null };
+    } catch (error) {
+      return refuse("unreachable", `The Agent API couldn't be reached: ${errorText(error)}`);
+    }
+  }
+
+  async function fundingCheck(
+    organizationId: string,
+    needs: { near: bigint; priceUsd: string | null },
+  ): Promise<FundingCheck | null> {
+    if (!available) return null;
+    const row = await settings(organizationId);
+    if (!row?.agentId) return null;
+    const [held, current] = await Promise.all([
+      holdings(row.agentId),
+      api()
+        .getPolicy(row.agentId)
+        .catch(() => null),
+    ]);
+    const shortfall = held ? topUpFor(needs.near, held.raw) : null;
+    const price = needs.priceUsd != null ? Number(needs.priceUsd) : held?.price;
+    const neededUsd =
+      price != null && Number.isFinite(price) ? Number(atomicToNear(needs.near, 6)) * price : null;
+    const monthlyBudgetUsd =
+      current?.usage.budget.monthly.limit_usd ?? current?.policy?.budget.monthly_usd ?? null;
+    const budgetTooLow =
+      neededUsd !== null && monthlyBudgetUsd !== null && neededUsd > Number(monthlyBudgetUsd);
+    return {
+      balanceNear: held ? atomicToNear(held.raw) : null,
+      neededNear: atomicToNear(needs.near),
+      shortfallNear: shortfall === null ? null : atomicToNear(shortfall),
+      monthlyBudgetUsd,
+      monthlyNeededUsd: neededUsd === null ? null : neededUsd.toFixed(2),
+      suggestedBudgetUsd: budgetTooLow && neededUsd !== null ? String(Math.ceil(neededUsd)) : null,
+      budgetTooLow,
+      lowBalance: shortfall !== null && shortfall > 0n,
+    };
+  }
+
+  async function submitIntent(
+    organizationId: string,
+    input: { correlationId: string; signedData: unknown },
+  ) {
+    const [intent] = await db
+      .select()
+      .from(payoutIntents)
+      .where(
+        and(
+          eq(payoutIntents.correlationId, input.correlationId),
+          eq(payoutIntents.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+    if (!intent)
+      throw badRequest("UNKNOWN_INTENT", "MultiAgency didn't prepare that. Start again.");
+    const issued = JSON.parse(intent.intent) as { standard: string; payload: unknown };
+    const signed = input.signedData as { standard?: unknown; payload?: unknown } | null;
+    if (
+      !signed ||
+      signed.standard !== issued.standard ||
+      JSON.stringify(signed.payload) !== JSON.stringify(issued.payload)
+    ) {
+      throw badRequest(
+        "SIGNED_PAYLOAD_MISMATCH",
+        "The signature isn't over what MultiAgency prepared",
+      );
+    }
+    let status: StatusResponse;
+    try {
+      status = await api().submitIntent({
+        type: intent.intentType,
+        correlation_id: intent.correlationId,
+        signed_data: input.signedData,
+      });
+      if (PENDING_INTENT.has(status.status)) {
+        status = await api()
+          .getStatus(intent.correlationId, { waitMs: 25_000 })
+          .catch(() => status);
+      }
+    } catch (error) {
+      throw badRequest("AGENT_API", `The Agent API refused it: ${errorText(error)}`);
+    }
+    await settleIntent(organizationId, intent.correlationId, status);
+    return {
+      status: status.status,
+      failureCode: status.failure_code,
+      view: await view(organizationId),
+    };
+  }
+
   async function updatePayout(id: string, patch: Partial<AgentPayoutRow>) {
     const [row] = await db
       .update(agentPayouts)
@@ -477,95 +884,28 @@ export function createPayoutAgents(deps: {
     prepare: async (
       organizationId: string,
       input: { action: PayoutAction; publicKey?: string | null },
-    ) => {
-      const row = await settings(organizationId);
-      if (!row) throw badRequest("NO_SETTINGS", "Save the payout settings first");
-      const built = await prepareRequest(row, input.action, input.publicKey);
-      let generated: GenerateIntentResponse;
-      try {
-        generated = await api().generateIntent(built.request);
-      } catch (error) {
-        throw badRequest("AGENT_API", `The Agent API refused it: ${errorText(error)}`);
-      }
-      if (generated.signer.type !== "near" || generated.signer.account_id !== row.ownerAccountId) {
-        throw badRequest(
-          "OWNER_MISMATCH",
-          `This would be signed by ${"account_id" in generated.signer ? generated.signer.account_id : "another wallet"}, not ${row.ownerAccountId}`,
-        );
-      }
-      await db.insert(payoutIntents).values({
-        correlationId: generated.correlation_id,
-        organizationId,
-        action: input.action,
-        intentType: generated.type,
-        intent: JSON.stringify(generated.intent),
-        agentId: generated.agent_id ?? row.agentId,
-        grantTokenEnc: built.grant ? seal(built.grant.token, deps.secretKey!) : null,
-        grantExpiresAt: built.grant?.expiresAt ?? null,
-        status: generated.status,
-        createdAt: now(),
-        updatedAt: now(),
-      });
-      return {
-        correlationId: generated.correlation_id,
-        action: input.action,
-        intent: generated.intent as unknown as Record<string, unknown>,
-        signerAccountId: row.ownerAccountId,
-        summary: generated.preview?.summary ?? null,
-        expiresAt: generated.expires_at,
-      };
-    },
+    ) => (await prepareIntent(organizationId, input)).prepared,
 
-    submit: async (
-      organizationId: string,
-      input: { correlationId: string; signedData: unknown },
-    ) => {
-      const [intent] = await db
-        .select()
-        .from(payoutIntents)
-        .where(
-          and(
-            eq(payoutIntents.correlationId, input.correlationId),
-            eq(payoutIntents.organizationId, organizationId),
-          ),
-        )
-        .limit(1);
-      if (!intent)
-        throw badRequest("UNKNOWN_INTENT", "MultiAgency didn't prepare that. Start again.");
-      const issued = JSON.parse(intent.intent) as { standard: string; payload: unknown };
-      const signed = input.signedData as { standard?: unknown; payload?: unknown } | null;
-      if (
-        !signed ||
-        signed.standard !== issued.standard ||
-        JSON.stringify(signed.payload) !== JSON.stringify(issued.payload)
-      ) {
-        throw badRequest(
-          "SIGNED_PAYLOAD_MISMATCH",
-          "The signature isn't over what MultiAgency prepared",
-        );
-      }
-      let status: StatusResponse;
-      try {
-        status = await api().submitIntent({
-          type: intent.intentType,
-          correlation_id: intent.correlationId,
-          signed_data: input.signedData,
-        });
-        if (PENDING_INTENT.has(status.status)) {
-          status = await api()
-            .getStatus(intent.correlationId, { waitMs: 25_000 })
-            .catch(() => status);
-        }
-      } catch (error) {
-        throw badRequest("AGENT_API", `The Agent API refused it: ${errorText(error)}`);
-      }
-      await settleIntent(organizationId, intent.correlationId, status);
-      return {
-        status: status.status,
-        failureCode: status.failure_code,
-        view: await view(organizationId),
-      };
-    },
+    submit: submitIntent,
+
+    signOnServer,
+
+    ensurePayees,
+
+    renewGrant,
+
+    readiness,
+
+    fundingCheck,
+
+    agentOrganizations: async () =>
+      (
+        await db
+          .select({ organizationId: payoutAgents.organizationId, agentId: payoutAgents.agentId })
+          .from(payoutAgents)
+      )
+        .filter((r) => r.agentId !== null)
+        .map((r) => r.organizationId),
 
     depositAddress: async (organizationId: string) => {
       const row = await settings(organizationId);
@@ -588,35 +928,6 @@ export function createPayoutAgents(deps: {
         minAmount: textOf(result.details, "min_amount"),
         expiresAt: textOf(result.details, "expires_at"),
       };
-    },
-
-    readiness: async (organizationId: string, payee: string) => {
-      if (!available) return { ready: false, reason: unavailableReason };
-      const row = await settings(organizationId);
-      if (!row?.agentId) return { ready: false, reason: "No payout agent" };
-      if (!grantOf(row))
-        return { ready: false, reason: "MultiAgency's payout permission is missing or expired" };
-      try {
-        const current = await api().getPolicy(row.agentId);
-        const policy = current.policy;
-        if (!policy || current.status !== "APPLIED")
-          return { ready: false, reason: "The agent's rules aren't applied" };
-        if (policy.frozen) return { ready: false, reason: "Payouts are frozen" };
-        if (policy.owner_approval)
-          return { ready: false, reason: "The rules require a vote per payout" };
-        if (!allowsPayee(policy, payee)) {
-          return {
-            ready: false,
-            reason: `The signed rules don't allow paying ${payee} yet: sign the updated rules`,
-          };
-        }
-        if (!policy.assets.includes(NEAR_ASSET) && policy.assets !== "any") {
-          return { ready: false, reason: "The rules don't allow paying in NEAR" };
-        }
-        return { ready: true, reason: null };
-      } catch (error) {
-        return { ready: false, reason: `The Agent API couldn't be reached: ${errorText(error)}` };
-      }
     },
 
     send: async (

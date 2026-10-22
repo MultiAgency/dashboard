@@ -286,6 +286,12 @@ const payoutAgent = z.object({
   agentId: z.string().nullable(),
   grantExpiresAt: z.string().nullable(),
   grantValid: z.boolean(),
+  grantExpiringSoon: z.boolean(),
+  serverSigning: z.object({
+    configured: z.boolean(),
+    active: z.boolean(),
+    warning: z.string().nullable(),
+  }),
   policy: z
     .object({
       status: z.string(),
@@ -295,6 +301,8 @@ const payoutAgent = z.object({
       monthlyLimitUsd: z.string().nullable(),
       monthlySpentUsd: z.string().nullable(),
       monthlyRemainingUsd: z.string().nullable(),
+      monthlyResetsAt: z.string().nullable(),
+      policyChangeAvailableAt: z.string().nullable(),
     })
     .nullable(),
   changes: z.array(z.string()),
@@ -580,6 +588,25 @@ export const workOrdersContract = {
     .output(z.object({ status: z.string(), failureCode: z.string().nullable(), view: payoutAgent }))
     .errors(errors),
 
+  signPayoutActionOnServer: oc
+    .route({ method: "POST", path: "/admin/payout-agent/server-sign" })
+    .input(z.object({ action: z.enum(["sync_policy", "issue_grant"]) }))
+    .output(z.object({ status: z.string(), failureCode: z.string().nullable(), view: payoutAgent }))
+    .errors(errors),
+
+  allowPayees: oc
+    .route({ method: "POST", path: "/admin/payout-agent/allow-payees" })
+    .input(z.object({}))
+    .output(
+      z.object({
+        ok: z.boolean(),
+        reason: z.string().nullable(),
+        needsSignature: z.boolean(),
+        view: payoutAgent,
+      }),
+    )
+    .errors(errors),
+
   payoutFunding: oc
     .route({ method: "GET", path: "/admin/payout-agent/funding" })
     .input(z.object({}))
@@ -602,6 +629,11 @@ export const workOrdersContract = {
         neededNear: z.string(),
         balanceNear: z.string().nullable(),
         topUpNear: z.string(),
+        lowBalance: z.boolean(),
+        monthlyBudgetUsd: z.string().nullable(),
+        monthlyNeededUsd: z.string().nullable(),
+        suggestedBudgetUsd: z.string().nullable(),
+        budgetTooLow: z.boolean(),
       }),
     )
     .errors(errors),

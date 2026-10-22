@@ -17,6 +17,7 @@ import {
 } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { Field, Loading } from "@/components/admin-form";
+import { useSyncPayoutRules } from "@/components/work-orders/allow-payees-button";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { useAuthClient } from "@/lib/auth";
@@ -100,6 +101,38 @@ export function PayoutAgentSettings() {
     onError: (err: Error) => toast.error(err.message || "Couldn't complete it"),
   });
 
+  const sync = useSyncPayoutRules();
+
+  const syncRules = () =>
+    sync.mutate(undefined, {
+      onSuccess: (result) => {
+        if (result.ok) toast.success(DONE.sync_policy);
+        else toast.info("Sent; the updated rules are still being applied");
+      },
+      onError: (err: Error) => toast.error(err.message || "Couldn't update the rules"),
+    });
+
+  const raiseBudget = useMutation({
+    mutationFn: async (monthlyBudgetUsd: string) => {
+      const current = query.data?.settings;
+      if (!current) throw new Error("Save the payout settings first");
+      setData(
+        await apiClient.workOrders.savePayoutAgent({
+          ownerAccountId: current.ownerAccountId,
+          monthlyBudgetUsd,
+          maxPayoutNear: current.maxPayoutNear,
+        }),
+      );
+      return sync.mutateAsync();
+    },
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey });
+      if (result.ok) toast.success("Monthly budget raised");
+      else toast.info("Sent; the new budget is still being applied");
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't raise the monthly budget"),
+  });
+
   const fund = useMutation({
     mutationFn: async (amountNear: string) => {
       const tx = await apiClient.workOrders.payoutTopUp({ amountNear });
@@ -135,7 +168,14 @@ export function PayoutAgentSettings() {
     budget: data.settings?.monthlyBudgetUsd ?? "",
     cap: data.settings?.maxPayoutNear ?? "",
   };
-  const busy = act.isPending || save.isPending || fund.isPending;
+  const busy =
+    act.isPending || save.isPending || fund.isPending || sync.isPending || raiseBudget.isPending;
+  const serverSigns = data.serverSigning.active;
+  const cooldownUntil =
+    data.policy?.policyChangeAvailableAt &&
+    new Date(data.policy.policyChangeAvailableAt).getTime() > Date.now()
+      ? new Date(data.policy.policyChangeAvailableAt).toLocaleString()
+      : null;
 
   return (
     <Card>
@@ -163,6 +203,7 @@ export function PayoutAgentSettings() {
                 {data.ready ? "Paying automatically" : "Not paying automatically yet"}
               </Badge>
               {data.policy?.frozen && <Badge variant="destructive">Frozen</Badge>}
+              {serverSigns && <Badge variant="outline">Signs automatically</Badge>}
               {data.balance && (
                 <Badge variant="outline">
                   Agent holds {data.balance.near} NEAR
@@ -183,6 +224,8 @@ export function PayoutAgentSettings() {
               {data.policy?.monthlySpentUsd && (
                 <Badge variant="outline">
                   ${data.policy.monthlySpentUsd} of ${data.policy.monthlyLimitUsd ?? "?"} this month
+                  {data.policy.monthlyResetsAt &&
+                    ` · resets ${new Date(data.policy.monthlyResetsAt).toLocaleDateString()}`}
                 </Badge>
               )}
             </div>
@@ -194,6 +237,31 @@ export function PayoutAgentSettings() {
               </ul>
             )}
             {data.error && <p className="text-sm text-destructive">{data.error}</p>}
+            {data.serverSigning.warning && (
+              <Alert variant="destructive">
+                <AlertTitle>The server can't sign for the owner</AlertTitle>
+                <AlertDescription>{data.serverSigning.warning}</AlertDescription>
+              </Alert>
+            )}
+            {data.grantExpiringSoon && !serverSigns && data.grantExpiresAt && (
+              <Alert>
+                <AlertTitle>MultiAgency's payout permission expires soon</AlertTitle>
+                <AlertDescription className="flex flex-col gap-2">
+                  <span>
+                    It expires {new Date(data.grantExpiresAt).toLocaleDateString()}. Renew it with
+                    your wallet so payouts keep working.
+                  </span>
+                  <Button
+                    size="sm"
+                    className="self-start"
+                    disabled={busy}
+                    onClick={() => act.mutate("issue_grant")}
+                  >
+                    Renew the permission
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
 
             <form
               className="flex flex-col gap-4"
@@ -256,8 +324,12 @@ export function PayoutAgentSettings() {
                     </Button>
                   )}
                   {data.agentId && data.changes.length > 0 && (
-                    <Button size="sm" disabled={busy} onClick={() => act.mutate("sync_policy")}>
-                      Sign the updated rules
+                    <Button size="sm" disabled={busy || !!cooldownUntil} onClick={syncRules}>
+                      {sync.isPending
+                        ? "Updating the rules…"
+                        : serverSigns
+                          ? "Apply the updated rules"
+                          : "Sign the updated rules"}
                     </Button>
                   )}
                   {data.policy && !data.policy.frozen && (
@@ -284,6 +356,14 @@ export function PayoutAgentSettings() {
                 {data.changes.length > 0 && (
                   <p className="text-sm text-muted-foreground">
                     The signed rules differ: {data.changes.join("; ")}.
+                    {cooldownUntil && ` Rules can change again at ${cooldownUntil}.`}
+                  </p>
+                )}
+                {serverSigns && (
+                  <p className="text-sm text-muted-foreground">
+                    The server holds a key of {data.settings.ownerAccountId}: it allows new builders
+                    and renews MultiAgency's permission by itself. Freezing and creating the agent
+                    still need your wallet.
                   </p>
                 )}
                 {data.policy && (
@@ -337,6 +417,30 @@ export function PayoutAgentSettings() {
                         ` (incl. ${funding.data.bufferPercent}% for price moves, at $${Number(funding.data.priceUsd).toFixed(2)}/NEAR)`}
                       {" · "}agent holds {funding.data.balanceNear ?? "?"} NEAR
                     </p>
+                    {funding.data.budgetTooLow && funding.data.suggestedBudgetUsd && (
+                      <Alert>
+                        <AlertTitle>The monthly budget is too low</AlertTitle>
+                        <AlertDescription className="flex flex-col gap-2">
+                          <span>
+                            Active work orders need about ${funding.data.monthlyNeededUsd}, but the
+                            agent may only pay ${funding.data.monthlyBudgetUsd} a month.
+                          </span>
+                          <Button
+                            size="sm"
+                            className="self-start"
+                            disabled={busy || !!cooldownUntil}
+                            onClick={() =>
+                              funding.data.suggestedBudgetUsd &&
+                              raiseBudget.mutate(funding.data.suggestedBudgetUsd)
+                            }
+                          >
+                            {raiseBudget.isPending
+                              ? "Raising the budget…"
+                              : `Raise the monthly budget to $${funding.data.suggestedBudgetUsd}`}
+                          </Button>
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     {Number(funding.data.topUpNear) > 0 ? (
                       <Button
                         size="sm"

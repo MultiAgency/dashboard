@@ -48,6 +48,7 @@ import {
 } from "./services/organization-access";
 import { atomicToNear, nearToAtomic, topUpFor } from "./services/payouts/policy";
 import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
+import { ownerSignerFrom } from "./services/payouts/signer";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
@@ -118,6 +119,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
     DOCUMENSO_API_KEY: z.string().optional(),
     DOCUMENSO_API_URL: z.string().optional(),
     PAYOUTS_SECRET_KEY: z.string().optional(),
+    PAYOUTS_OWNER_PRIVATE_KEY: z.string().optional(),
   }),
 
   context: ContextSchema,
@@ -259,6 +261,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         secretKey: config.secrets.PAYOUTS_SECRET_KEY ?? null,
         payees: workOrderPayees(db),
         fullAccessKeys,
+        ownerSigner: ownerSignerFrom(config.secrets.PAYOUTS_OWNER_PRIVATE_KEY),
       });
       const userEmail = async (userId: string) => {
         if (!authPool) return null;
@@ -1148,6 +1151,19 @@ export default createPlugin.withPlugins<PluginsClient>()({
             payoutAgents.submit(context.scope.organizationId, input),
           ),
 
+        signPayoutActionOnServer: builder.workOrders.signPayoutActionOnServer
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            payoutAgents.signOnServer(context.scope.organizationId, input.action),
+          ),
+
+        allowPayees: builder.workOrders.allowPayees
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const result = await payoutAgents.ensurePayees(context.scope.organizationId);
+            return { ...result, view: await payoutAgents.view(context.scope.organizationId) };
+          }),
+
         payoutFunding: builder.workOrders.payoutFunding
           .use(treasuryManager)
           .handler(async ({ context }) => {
@@ -1158,6 +1174,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
             const bufferPercent = needs.priceUsd ? 2 : 0;
             const needed = needs.near + (needs.near * BigInt(bufferPercent)) / 100n;
             const balance = agent.balance ? BigInt(nearToAtomic(agent.balance.near)) : null;
+            const check = await payoutAgents.fundingCheck(context.scope.organizationId, {
+              near: needed,
+              priceUsd: needs.priceUsd,
+            });
             return {
               items: needs.items.map((item) => ({
                 ...item,
@@ -1168,6 +1188,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
               neededNear: atomicToNear(needed),
               balanceNear: agent.balance?.near ?? null,
               topUpNear: atomicToNear(topUpFor(needed, balance ?? 0n)),
+              lowBalance: check?.lowBalance ?? false,
+              monthlyBudgetUsd: check?.monthlyBudgetUsd ?? null,
+              monthlyNeededUsd: check?.monthlyNeededUsd ?? null,
+              suggestedBudgetUsd: check?.suggestedBudgetUsd ?? null,
+              budgetTooLow: check?.budgetTooLow ?? false,
             };
           }),
 

@@ -10,6 +10,11 @@ type Status = StatusResponse["status"];
 
 export class FakeAgentApi implements AgentApiPort {
   owner = "rita.near";
+  ownerKey = "ed25519:owner";
+  monthlySpentUsd = "0";
+  monthlyResetsAt: string | null = null;
+  policyChangeAvailableAt: string | null = null;
+  price = 2;
   agentId = "agent-1";
   policy: Policy | null = null;
   revision: number | null = null;
@@ -45,7 +50,7 @@ export class FakeAgentApi implements AgentApiPort {
       agent_id: (body.agent_id as string) ?? this.agentId,
       status: "PENDING_SIGNATURE",
       expires_at: "2026-09-21T00:00:00.000Z",
-      signer: { type: "near", account_id: this.owner, public_key: "ed25519:owner" },
+      signer: { type: "near", account_id: this.owner, public_key: this.ownerKey },
       intent: nep366
         ? {
             standard: "nep366",
@@ -92,7 +97,10 @@ export class FakeAgentApi implements AgentApiPort {
       applied_at: null,
       transaction_hash: null,
       provider_policy_synced: true,
-      cooldowns: { policy_change_available_at: null, unfreeze_available_at: null },
+      cooldowns: {
+        policy_change_available_at: this.policyChangeAvailableAt,
+        unfreeze_available_at: null,
+      },
       policy: this.policy,
       usage: {
         budget: {
@@ -100,9 +108,12 @@ export class FakeAgentApi implements AgentApiPort {
           weekly: { limit_usd: null, spent_usd: "0", remaining_usd: null, resets_at: null },
           monthly: {
             limit_usd: this.policy?.budget.monthly_usd ?? null,
-            spent_usd: "0",
-            remaining_usd: this.policy?.budget.monthly_usd ?? null,
-            resets_at: null,
+            spent_usd: this.monthlySpentUsd,
+            remaining_usd:
+              this.policy?.budget.monthly_usd != null
+                ? (Number(this.policy.budget.monthly_usd) - Number(this.monthlySpentUsd)).toFixed(2)
+                : null,
+            resets_at: this.monthlyResetsAt,
           },
         },
         timelock: { delay_ms: 0 },
@@ -122,7 +133,7 @@ export class FakeAgentApi implements AgentApiPort {
           symbol: "wNEAR",
           decimals: 24,
           blockchain: "near",
-          price: 2,
+          price: this.price,
           price_updated_at: null,
           price_expires_at: null,
           balance_raw: this.balanceRaw,
