@@ -6,11 +6,13 @@ import {
   billings,
   budgets,
   clientAgreements,
+  compensationRequests,
   engagementProjects,
   engagements,
   projectContributors,
   type ReportSnapshotRow,
   reportSnapshots,
+  workOrders,
 } from "../db/schema";
 import type { OrganizationDirectory } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
@@ -70,8 +72,16 @@ function periodOf(row: Pick<ReportSnapshotRow, "startDate" | "endDate">): string
   return "all time";
 }
 
-export function clientSafe<R extends { contributorStats: unknown[] }>(report: R): R {
-  return { ...report, contributorStats: [] };
+export function clientSafe<
+  R extends { contributorStats: unknown[]; deliveredWork?: { amount: unknown }[] },
+>(report: R): R {
+  return {
+    ...report,
+    contributorStats: [],
+    ...(report.deliveredWork
+      ? { deliveredWork: report.deliveredWork.map((item) => ({ ...item, amount: null })) }
+      : {}),
+  };
 }
 
 function agreementTitleOf(payload: string): string | null {
@@ -366,6 +376,56 @@ export function createReportsService(
 
       const scopedProject = input.projectId ? projectById.get(input.projectId) : undefined;
 
+      const deliveredWork =
+        projectIds.length > 0 && subcontractorDao === undefined && scope.organizationId
+          ? yield* Effect.promise(async () => {
+              const rows = await db
+                .select({ request: compensationRequests, workOrder: workOrders })
+                .from(compensationRequests)
+                .innerJoin(workOrders, eq(workOrders.id, compensationRequests.workOrderId))
+                .where(
+                  and(
+                    eq(workOrders.organizationId, scope.organizationId!),
+                    inArray(workOrders.projectId, projectIds),
+                    inArray(compensationRequests.status, ["approved", "proposed", "paid"]),
+                  ),
+                );
+              return rows
+                .filter(
+                  ({ request }) =>
+                    (!input.startDate || request.coversTo >= input.startDate) &&
+                    (!input.endDate || request.coversFrom <= input.endDate),
+                )
+                .map(({ request, workOrder }) => {
+                  const project = projectById.get(workOrder.projectId);
+                  return {
+                    workOrderCode: workOrder.code,
+                    workOrderTitle: workOrder.title,
+                    projectTitle: project?.title ?? workOrder.projectId,
+                    projectSlug: project?.slug ?? workOrder.projectId,
+                    builderName:
+                      workOrder.contractorName ??
+                      builderByNear.get(workOrder.builderNearAccount) ??
+                      workOrder.builderNearAccount,
+                    requestCode: `${workOrder.code}-R${request.seq}`,
+                    coversFrom: request.coversFrom,
+                    coversTo: request.coversTo,
+                    status: request.status as "approved" | "proposed" | "paid",
+                    contributionsMd: request.contributionsMd,
+                    amount: request.approvedAmount
+                      ? { tokenId: workOrder.tokenId, amount: request.approvedAmount }
+                      : null,
+                  };
+                })
+                .sort(
+                  (a, b) =>
+                    a.projectTitle.localeCompare(b.projectTitle) ||
+                    a.coversFrom.localeCompare(b.coversFrom) ||
+                    a.requestCode.localeCompare(b.requestCode),
+                );
+            })
+          : [];
+
       return {
         project: scopedProject ? { title: scopedProject.title, slug: scopedProject.slug } : null,
         overview: {
@@ -382,6 +442,7 @@ export function createReportsService(
         })),
         projectBreakdown,
         clientBreakdown,
+        deliveredWork,
         agreement: agreement
           ? {
               id: agreement.id,

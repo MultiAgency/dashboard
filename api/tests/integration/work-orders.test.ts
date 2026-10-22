@@ -481,6 +481,21 @@ describe("work orders", () => {
       expect(linked.status).toBe("proposed");
     });
 
+    test("a request covering dates already approved or paid shows the overlap", async () => {
+      const { wo, request } = await submitted();
+      expect(request.overlaps).toEqual([]);
+      await service.approveRequest(await studio(), { requestId: request.id, amount: "600000000" });
+      const second = await service.mineDraftRequest(carol(), {
+        id: wo.id,
+        coversFrom: "2026-09-15",
+        coversTo: "2026-09-30",
+      });
+      expect(second.overlaps).toEqual(["WO-0001-R1"]);
+      const detail = await service.get(await studio(), { id: wo.id });
+      expect(detail.requests.find((r) => r.id === second.id)?.overlaps).toEqual(["WO-0001-R1"]);
+      expect(detail.requests.find((r) => r.id === request.id)?.overlaps).toEqual([]);
+    });
+
     test("reject tells the builder why", async () => {
       const { request } = await submitted();
       const rejected = await service.rejectRequest(await studio(), {

@@ -12,6 +12,10 @@ import {
 import { ClientBreakdownSection } from "@/components/admin/client-breakdown-section";
 import { StatCard } from "@/components/budget";
 import { TokenAmountCell } from "@/components/token-amounts";
+import {
+  type DeliveredWork,
+  DeliveredWorkSection,
+} from "@/components/work-orders/delivered-work-section";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   collectReportTokenIds,
@@ -57,6 +61,7 @@ export type ReportViewData = {
     agreedAmount: string;
     allocated: string;
   } | null;
+  deliveredWork?: DeliveredWork[];
   notes?: string;
 };
 
@@ -305,6 +310,10 @@ export function ReportPreview({ report, showBuilders = true, actions }: ReportPr
 
       {report.clientBreakdown.length > 0 && (
         <ClientBreakdownSection breakdown={report.clientBreakdown} />
+      )}
+
+      {report.deliveredWork && report.deliveredWork.length > 0 && (
+        <DeliveredWorkSection items={report.deliveredWork} />
       )}
 
       {showBuilders && report.contributorStats.length > 0 && (

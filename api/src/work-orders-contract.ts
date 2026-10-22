@@ -164,6 +164,7 @@ export const compensationRequest = z.object({
   manualItems: z.array(manualItem),
   reportMd: z.string().nullable(),
   reportSha256: z.string().nullable(),
+  overlaps: z.array(z.string()),
   submittedAt: z.string().nullable(),
   proposalId: z.string().nullable(),
   payingDaoAccountId: z.string().nullable(),

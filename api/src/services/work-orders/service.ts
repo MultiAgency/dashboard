@@ -912,7 +912,21 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return { ...view, details: parseJson<EvidenceDetails>(row.details, {}) };
   }
 
-  async function requestView(request: CompensationRequestRow, row: WorkOrderRow) {
+  async function requestView(
+    request: CompensationRequestRow,
+    row: WorkOrderRow,
+    siblings?: CompensationRequestRow[],
+  ) {
+    const others = siblings ?? (await requestsOf(row.id));
+    const overlaps = others
+      .filter(
+        (other) =>
+          other.id !== request.id &&
+          COMMITTED.includes(other.status) &&
+          other.coversFrom <= request.coversTo &&
+          other.coversTo >= request.coversFrom,
+      )
+      .map((other) => `${row.code}-R${other.seq}`);
     const daoAccountId = request.billingId ? await deps.agencyDaoOf(row.organizationId) : null;
     const paymentMd =
       request.status === "paid" && request.proposalId && request.approvedAmount
@@ -945,6 +959,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         ? servedReport(request.reportMd, request.reportSha256, paymentMd)
         : null,
       reportSha256: request.reportSha256,
+      overlaps,
       submittedAt: request.submittedAt?.toISOString() ?? null,
       proposalId: request.proposalId,
       payingDaoAccountId: daoAccountId,
@@ -1060,7 +1075,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       ...base,
       evidence: evidence.map(evidenceView),
       activity: summarizeActivity(collected, scopeOf(row)),
-      requests: await Promise.all(requests.map((r) => requestView(r, row))),
+      requests: await Promise.all(requests.map((r) => requestView(r, row, requests))),
       repoOwners,
     };
   }

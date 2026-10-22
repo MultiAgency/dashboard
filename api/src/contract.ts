@@ -320,6 +320,23 @@ const reportOutput = z.object({
     })
     .nullable()
     .optional(),
+  deliveredWork: z
+    .array(
+      z.object({
+        workOrderCode: z.string(),
+        workOrderTitle: z.string(),
+        projectTitle: z.string(),
+        projectSlug: z.string(),
+        builderName: z.string(),
+        requestCode: z.string(),
+        coversFrom: z.string(),
+        coversTo: z.string(),
+        status: z.enum(["approved", "proposed", "paid"]),
+        contributionsMd: z.string(),
+        amount: tokenAmount.nullable(),
+      }),
+    )
+    .optional(),
   notes: z.string(),
   generatedAt: z.string(),
 });

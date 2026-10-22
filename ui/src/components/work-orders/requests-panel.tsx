@@ -152,6 +152,12 @@ function RequestItem({
         </span>
       </div>
       {request.note && <p className="text-sm text-muted-foreground">{request.note}</p>}
+      {request.overlaps.length > 0 && (
+        <p className="text-sm text-destructive">
+          Its dates overlap {request.overlaps.join(", ")}, already approved or paid: check the same
+          work isn't paid twice.
+        </p>
+      )}
       {request.proposalId && (
         <p className="text-sm text-muted-foreground">
           Paid through proposal #{request.proposalId}

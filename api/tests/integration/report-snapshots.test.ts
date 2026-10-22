@@ -1,6 +1,6 @@
 import type { Effect } from "every-plugin/effect";
 import { beforeEach, describe, expect, test } from "vitest";
-import { budgets, reportSnapshots } from "../../src/db/schema";
+import { budgets, compensationRequests, reportSnapshots, workOrders } from "../../src/db/schema";
 import { runEffect } from "../../src/lib/context";
 import { createAgencyService } from "../../src/services/agency";
 import { createBillingsService } from "../../src/services/billings";
@@ -313,6 +313,78 @@ describe("saved reports", () => {
     expect(generated.contributorStats).toEqual([]);
     const preview = await run(portal.previewReport(acme(), { engagementId: acmeEngagement }));
     expect(preview.contributorStats).toEqual([]);
+  });
+
+  test("delivered work shows the accepted requests of the period; the Client never sees their amounts", async () => {
+    await state.db.insert(workOrders).values({
+      id: "wo-1",
+      code: "SI-004",
+      organizationId: "studio",
+      projectId: "site",
+      builderNearAccount: "alice.near",
+      contractorName: "Alice",
+      title: "Contributor role",
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-30",
+      tokenId: "near",
+      budgetAmount: "1000",
+      status: "active",
+      createdBy: "studio-admin",
+    });
+    const request = (
+      id: string,
+      seq: number,
+      status: "paid" | "draft",
+      from: string,
+      to: string,
+    ) => ({
+      id,
+      workOrderId: "wo-1",
+      seq,
+      coversFrom: from,
+      coversTo: to,
+      status,
+      requestedAmount: "400",
+      approvedAmount: status === "paid" ? "400" : null,
+      contributionsMd: `## Contributions\nWork of ${id}`,
+      assessmentMd: "",
+    });
+    await state.db
+      .insert(compensationRequests)
+      .values([
+        request("r1", 1, "paid", "2026-09-01", "2026-09-30"),
+        request("r2", 2, "draft", "2026-09-01", "2026-09-30"),
+        request("r3", 3, "paid", "2025-01-01", "2025-01-31"),
+      ]);
+    const internal = await run(
+      reports.generateSaved(
+        await studio(),
+        { engagementId: acmeEngagement, startDate: "2026-09-01", endDate: "2026-09-30" },
+        { organizationId: "studio", userId: "studio-admin" },
+      ),
+    );
+    expect(internal.deliveredWork).toEqual([
+      expect.objectContaining({
+        requestCode: "SI-004-R1",
+        builderName: "Alice",
+        status: "paid",
+        contributionsMd: "## Contributions\nWork of r1",
+        amount: { tokenId: "near", amount: "400" },
+      }),
+    ]);
+    await reports.setShared(admin, internal.id, true);
+    const clientView = await portal.getReport(acme(), {
+      engagementId: acmeEngagement,
+      id: internal.id,
+    });
+    expect(clientView.report.deliveredWork).toEqual([
+      expect.objectContaining({ requestCode: "SI-004-R1", amount: null }),
+    ]);
+    const own = await clientReport("acme-owner", "acme", acmeEngagement);
+    expect(own.deliveredWork?.map((d) => [d.requestCode, d.amount])).toEqual([
+      ["SI-004-R3", null],
+      ["SI-004-R1", null],
+    ]);
   });
 
   test("a preview is not saved", async () => {
