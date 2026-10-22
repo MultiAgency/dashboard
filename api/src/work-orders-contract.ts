@@ -101,6 +101,7 @@ export const workOrder = z.object({
   periodEnd: z.string(),
   graceDays: z.number().int(),
   tokenId: z.string(),
+  payoutTokenId: z.string(),
   budgetAmount: z.string(),
   committedAmount: z.string(),
   paidAmount: z.string(),
@@ -165,6 +166,14 @@ export const compensationRequest = z.object({
   reportMd: z.string().nullable(),
   reportSha256: z.string().nullable(),
   overlaps: z.array(z.string()),
+  payout: z
+    .object({
+      tokenId: z.string(),
+      amount: z.string(),
+      priceUsd: z.string().nullable(),
+      pricedAt: z.string().nullable(),
+    })
+    .nullable(),
   submittedAt: z.string().nullable(),
   proposalId: z.string().nullable(),
   payingDaoAccountId: z.string().nullable(),
@@ -210,6 +219,7 @@ const fields = {
   graceDays: z.number().int().min(0).max(30).optional(),
   tokenId: z.string().min(1).max(80),
   budgetAmount: amount,
+  payoutTokenId: z.string().min(1).max(80).nullable().optional(),
   autoRenew: z.boolean().optional(),
   githubLogin: z.string().trim().max(40).nullable().optional(),
   contractorName: z.string().trim().max(200).nullable().optional(),
@@ -307,6 +317,7 @@ export const workOrdersContract = {
         graceDays: fields.graceDays,
         tokenId: fields.tokenId.optional(),
         budgetAmount: amount.optional(),
+        payoutTokenId: fields.payoutTokenId,
         autoRenew: fields.autoRenew,
         githubLogin: fields.githubLogin,
         contractorName: fields.contractorName,
@@ -396,6 +407,13 @@ export const workOrdersContract = {
     .input(byRequest)
     .output(
       z.object({
+        quote: z.object({
+          usd: z.string().nullable(),
+          tokenId: z.string(),
+          amount: z.string(),
+          priceUsd: z.string().nullable(),
+          pricedAt: z.string().nullable(),
+        }),
         daoAccountId: z.string(),
         method: z.literal("add_proposal"),
         args: z.object({

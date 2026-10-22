@@ -61,6 +61,7 @@ import { testEvent } from "./services/work-orders/events";
 import { cachedOwnership, createGitHub } from "./services/work-orders/github";
 import { createGoogle, googleIdOf, parseServiceAccount } from "./services/work-orders/google";
 import { createWorkOrderIntegrations, createWorkOrderOutbox } from "./services/work-orders/outbox";
+import { createPriceFeed } from "./services/work-orders/prices";
 import { createWorkOrdersService } from "./services/work-orders/service";
 import { createSummarizer } from "./services/work-orders/summarizer";
 import { DEFAULT_RENEWAL } from "./services/work-orders/types";
@@ -262,6 +263,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         ownership: cachedOwnership(github, 10 * 60_000),
         proposal: (daoAccountId, proposalId) => getProposal(db, daoAccountId, proposalId),
         proposalBond: getProposalBond,
+        prices: createPriceFeed(),
         notifications,
         thresholds: config.variables.workOrderRenewal,
         outbox: workOrderOutbox,

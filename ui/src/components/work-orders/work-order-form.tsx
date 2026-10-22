@@ -12,14 +12,14 @@ import {
   Input,
   Textarea,
 } from "@/components";
-import { deriveBaseAmount } from "@/components/admin/token-amount-fields";
+import { deriveBaseAmount, type KnownToken } from "@/components/admin/token-amount-fields";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Empty, Field, Loading } from "@/components/admin-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FieldLabel, Field as ShadcnField } from "@/components/ui/field";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
-import { baseToDecimal } from "@/lib/format-amount";
+import { baseToDecimal, tokenSymbol } from "@/lib/format-amount";
 import {
   adminContributorsListQueryOptions,
   adminProjectsListQueryOptions,
@@ -54,6 +54,9 @@ const IP_MODELS = [
   { value: "open_source", label: "Open source" },
 ];
 
+const USD = "usd";
+const NEAR = "near";
+const USD_DECIMALS = 6;
 const REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const GITHUB_LOGIN = /^[A-Za-z\d](?:[A-Za-z\d]|-(?=[A-Za-z\d])){0,38}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -165,9 +168,12 @@ function WorkOrderFields({
           periodEnd: editing.periodEnd,
           graceDays: String(editing.graceDays),
           tokenId: editing.tokenId,
-          amount: token
-            ? baseToDecimal(editing.budgetAmount, token.decimals)
-            : editing.budgetAmount,
+          amount:
+            editing.tokenId === USD
+              ? baseToDecimal(editing.budgetAmount, USD_DECIMALS)
+              : token
+                ? baseToDecimal(editing.budgetAmount, token.decimals)
+                : editing.budgetAmount,
           autoRenew: editing.autoRenew,
           githubLogin: editing.builder.githubLogin ?? "",
           contractorEmail: editing.contractorEmail ?? "",
@@ -185,7 +191,7 @@ function WorkOrderFields({
           periodStart: month.start,
           periodEnd: month.end,
           graceDays: "2",
-          tokenId: tokens.find((t) => t.symbol === "USDC")?.tokenId ?? tokens[0]?.tokenId ?? "",
+          tokenId: USD,
           amount: "",
           autoRenew: false,
           githubLogin: "",
@@ -197,7 +203,10 @@ function WorkOrderFields({
   });
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
-  const token = tokens.find((t) => t.tokenId === draft.tokenId);
+  const token =
+    draft.tokenId === USD
+      ? ({ tokenId: USD, symbol: "USD", decimals: USD_DECIMALS } as KnownToken)
+      : tokens.find((t) => t.tokenId === draft.tokenId);
   const { value: budgetAmount, error: amountError } = deriveBaseAmount(draft.amount, token);
   const repos = draft.repos
     .split(/[\s,]+/)
@@ -218,6 +227,7 @@ function WorkOrderFields({
         periodEnd: draft.periodEnd,
         graceDays: Number(draft.graceDays),
         tokenId,
+        payoutTokenId: tokenId === USD ? NEAR : null,
         budgetAmount,
         autoRenew: draft.autoRenew,
         githubLogin: draft.githubLogin.trim().replace(/^@/, "") || null,
@@ -386,23 +396,27 @@ function WorkOrderFields({
           </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
-          <Field label="Token" htmlFor="wo-token">
+          <Field label="Budget in" htmlFor="wo-token">
             <ChoiceSelect
               id="wo-token"
               value={tokenId}
               onValueChange={(value) =>
                 setDraft((current) => ({ ...current, tokenId: value, amount: "" }))
               }
-              options={(tokens.some((t) => t.tokenId === tokenId) || !tokenId
-                ? tokens
-                : [...tokens, { tokenId, symbol: tokenId }]
-              ).map((t) => ({
-                value: t.tokenId,
-                label: t.symbol,
-              }))}
+              options={[
+                { value: USD, label: "USD (paid in NEAR at the live price)" },
+                { value: NEAR, label: "NEAR" },
+                ...(tokenId !== USD && tokenId !== NEAR && tokenId
+                  ? [{ value: tokenId, label: tokenSymbol(tokenId) }]
+                  : []),
+              ]}
             />
           </Field>
-          <Field label="Budget cap" htmlFor="wo-amount" helper="A maximum, not a guarantee.">
+          <Field
+            label={tokenId === USD ? "Budget cap (USD)" : "Budget cap"}
+            htmlFor="wo-amount"
+            helper="A maximum, not a guarantee."
+          >
             <Input
               id="wo-amount"
               inputMode="decimal"

@@ -7,6 +7,7 @@ import type { DaoProposal } from "../../src/services/sputnik";
 import { contains, longDate, normalizeText } from "../../src/services/work-orders/documents";
 import type { WorkOrderEvent } from "../../src/services/work-orders/events";
 import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
+import { usdToTokens } from "../../src/services/work-orders/prices";
 import {
   type BuilderProfile,
   createWorkOrdersService,
@@ -35,6 +36,7 @@ describe("work orders", () => {
   let events: WorkOrderEvent[];
   let aiDraft: ReportDraft | null;
   let google: FakeGoogle;
+  let priceUsd: string;
   let builders: Map<string, BuilderProfile>;
   let service: ReturnType<typeof createWorkOrdersService>;
 
@@ -46,6 +48,7 @@ describe("work orders", () => {
     proposals = new Map();
     events = [];
     aiDraft = null;
+    priceUsd = "4.99";
     google = new FakeGoogle([
       "work_order_id",
       "project",
@@ -78,6 +81,7 @@ describe("work orders", () => {
       ownership: (repo) => github.getRepoOwnership(repo),
       proposal: async (dao, id) => proposals.get(`${dao}#${id}`) ?? null,
       proposalBond: async () => "100000000000000000000000",
+      prices: { price: async () => ({ priceUsd, at: "2026-09-20T12:00:00.000Z" }) },
       outbox: {
         enqueue: async (_organizationId, _workOrderId, event) => {
           events.push(event);
@@ -949,6 +953,76 @@ describe("work orders", () => {
       expect(contains(text, "carol.near")).toBe(true);
       expect(contains(text, "arol.near")).toBe(false);
       expect(contains(text, "studio/app")).toBe(true);
+    });
+  });
+  describe("USD budgets paid in a token at the live price", () => {
+    const usdFields = { tokenId: "usd", payoutTokenId: "near", budgetAmount: "1000000000" };
+
+    test("the conversion floors to the token's smallest unit", () => {
+      expect(usdToTokens(600_000_000n, "4.99", 24).toString()).toBe("120240480961923847695390781");
+      expect(usdToTokens(10_000n, "0.999675", 6).toString()).toBe("10003");
+    });
+
+    test("a USD budget is always paid in NEAR", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ tokenId: "usd", payoutTokenId: USDC, budgetAmount: "1000000000" }),
+      );
+      expect(created.tokenId).toBe("usd");
+      expect(created.payoutTokenId).toBe("near");
+      expect(created.budgetAmount).toBe("1000000000");
+    });
+
+    test("$600 approved is quoted in NEAR at payment time and the proposal must pay the quote", async () => {
+      strongEvidence();
+      const wo = await active(usdFields);
+      await service.collect(await studio(), { id: wo.id });
+      const draft = await service.mineDraftRequest(carol(), { id: wo.id });
+      await service.editRequest(carol(), { requestId: draft.id, requestedAmount: "600000000" });
+      await service.submitRequest(carol(), { requestId: draft.id });
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      expect(events.find((e) => e.type === "request.approved")?.request?.approved).toBe("$600");
+
+      const tx = await service.paymentProposal(requireTreasury(await studio()), {
+        requestId: draft.id,
+      });
+      expect(tx.quote).toMatchObject({
+        usd: "600000000",
+        tokenId: "near",
+        amount: "120240480961923847695390781",
+        priceUsd: "4.99",
+      });
+      expect(tx.args.proposal.kind.Transfer).toMatchObject({
+        token_id: "",
+        amount: "120240480961923847695390781",
+      });
+      expect(tx.args.proposal.description).toContain("$600 at 4.99 USD per NEAR");
+
+      priceUsd = "5";
+      const requote = await service.paymentProposal(requireTreasury(await studio()), {
+        requestId: draft.id,
+      });
+      expect(requote.quote.amount).toBe("120000000000000000000000000");
+      transfer(21, { tokenId: "", amount: "120240480961923847695390781" });
+      await refused(
+        service.linkProposal(requireTreasury(await studio()), {
+          requestId: draft.id,
+          proposalId: "21",
+        }),
+        "WRONG_AMOUNT",
+      );
+      transfer(22, { tokenId: "", amount: "120000000000000000000000000" });
+      const linked = await service.linkProposal(requireTreasury(await studio()), {
+        requestId: draft.id,
+        proposalId: "22",
+      });
+      expect(linked.status).toBe("proposed");
+      expect(linked.payout).toMatchObject({ tokenId: "near", priceUsd: "5" });
+      const [billing] = await db.select().from(billings).where(eq(billings.proposalId, "22"));
+      expect(billing).toMatchObject({ tokenId: "near", amount: "120000000000000000000000000" });
+      const detail = await service.get(await studio(), { id: wo.id });
+      expect(detail.committedAmount).toBe("600000000");
+      expect(detail.remainingAmount).toBe("400000000");
     });
   });
 });

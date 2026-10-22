@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -27,6 +27,7 @@ import {
   formatTokenAmount,
   parseDecimalToBase,
   tokenDecimals,
+  tokenSymbol,
 } from "@/lib/format-amount";
 import { adminWorkOrdersQueryKey } from "@/lib/queries";
 import { ReportMarkdown } from "./report-markdown";
@@ -163,6 +164,13 @@ function RequestItem({
           Paid through proposal #{request.proposalId}
           {request.payingDaoAccountId ? ` of ${request.payingDaoAccountId}` : ""}
           {request.paidAt ? `, approved ${request.paidAt.slice(0, 10)}` : ""}.
+        </p>
+      )}
+      {request.proposalId && request.payout?.priceUsd && (
+        <p className="text-sm text-muted-foreground">
+          {formatTokenAmount(request.payout.amount, request.payout.tokenId)} at $
+          {request.payout.priceUsd} per {tokenSymbol(request.payout.tokenId)}, priced{" "}
+          {request.payout.pricedAt?.slice(0, 16).replace("T", " ")} UTC.
         </p>
       )}
       <div className="flex flex-wrap gap-2">
@@ -410,9 +418,17 @@ function ProposalForm({
     onSuccess: linked,
     onError: (err: Error) => toast.error(err.message || "Couldn't link the proposal"),
   });
+  const quote = useQuery({
+    queryKey: ["admin", "work-orders", "quote", request.id],
+    queryFn: () => apiClient.workOrders.paymentProposal({ requestId: request.id }),
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
+    retry: false,
+  });
   const create = useMutation({
     mutationFn: async () => {
-      const tx = await apiClient.workOrders.paymentProposal({ requestId: request.id });
+      const tx =
+        quote.data ?? (await apiClient.workOrders.paymentProposal({ requestId: request.id }));
       await authClient.near.ensureConnected();
       const signer = authClient.near.getAccountId();
       if (!signer) throw new Error("Connect your NEAR wallet first");
@@ -434,7 +450,8 @@ function ProposalForm({
     onSuccess: linked,
     onError: (err: Error) => toast.error(err.message || "Couldn't create the proposal"),
   });
-  const busy = link.isPending || create.isPending;
+  const busy = link.isPending || create.isPending || quote.isFetching;
+  const q = quote.data?.quote;
   return (
     <form
       className="flex flex-col gap-4"
@@ -446,14 +463,43 @@ function ProposalForm({
       <DialogHeader>
         <DialogTitle>Pay through the Agency DAO</DialogTitle>
         <DialogDescription>
-          A transfer proposal paying{" "}
-          {formatTokenAmount(request.approvedAmount ?? "0", workOrder.tokenId)} to{" "}
-          {workOrder.builder.nearAccount}. It becomes a billing on the project, and the request is
-          paid when the DAO approves it.
+          A transfer proposal paying {workOrder.builder.nearAccount}. It becomes a billing on the
+          project, and the request is paid when the DAO approves it.
         </DialogDescription>
       </DialogHeader>
+      <div className="flex flex-col gap-1 border p-3">
+        {quote.isError ? (
+          <span className="text-sm text-destructive">{(quote.error as Error).message}</span>
+        ) : !q ? (
+          <span className="text-sm text-muted-foreground">Getting the amount…</span>
+        ) : (
+          <>
+            <span className="text-lg font-medium tabular-nums">
+              {formatTokenAmount(q.amount, q.tokenId)}
+            </span>
+            {q.priceUsd && q.usd && (
+              <span className="text-xs text-muted-foreground">
+                {formatTokenAmount(q.usd, "usd")} at ${q.priceUsd} per {tokenSymbol(q.tokenId)},
+                quoted {q.pricedAt?.slice(11, 16)} UTC. The proposal must pay exactly this amount.
+              </span>
+            )}
+          </>
+        )}
+        {workOrder.tokenId === "usd" && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="self-start"
+            disabled={quote.isFetching}
+            onClick={() => quote.refetch()}
+          >
+            {quote.isFetching ? "Pricing…" : "Refresh the quote"}
+          </Button>
+        )}
+      </div>
       <div className="flex flex-col gap-2">
-        <Button type="button" disabled={busy} onClick={() => create.mutate()}>
+        <Button type="button" disabled={busy || !q} onClick={() => create.mutate()}>
           {create.isPending ? "Waiting for the wallet…" : "Create the proposal with my wallet"}
         </Button>
         <p className="text-xs text-muted-foreground">

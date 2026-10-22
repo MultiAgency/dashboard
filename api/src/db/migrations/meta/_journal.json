@@ -141,6 +141,13 @@
       "when": 1792454400000,
       "tag": "0020_work_order_google",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792540800000,
+      "tag": "0021_work_order_usd",
+      "breakpoints": true
     }
   ]
 }

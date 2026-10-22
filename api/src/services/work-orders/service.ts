@@ -20,12 +20,13 @@ import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
 import type { Project, ProjectDirectory } from "../project-directory";
 import type { DaoProposal } from "../sputnik";
-import { baseUnitsToDisplay, NATIVE_TOKEN_ID } from "../tokens";
+import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
 import { codeIn, documentFields, missingFields, pdfText, requiredFields } from "./documents";
 import { eventId, type WorkOrderEvent, type WorkOrderEventType } from "./events";
 import { collectEvidence, summarizeActivity } from "./evidence";
 import type { GhRepoOwnership, GitHubPort } from "./github";
 import type { DriveFile, GooglePort } from "./google";
+import { type PriceFeed, type PriceQuote, USD, USD_DECIMALS, usdToTokens } from "./prices";
 import { assessRenewal, renewalCode } from "./renewal";
 import {
   buildContributions,
@@ -81,6 +82,7 @@ export type WorkOrderDeps = {
   ownership: (repo: string) => Promise<GhRepoOwnership>;
   proposal: (daoAccountId: string, proposalId: number) => Promise<DaoProposal | null>;
   proposalBond: (daoAccountId: string) => Promise<string>;
+  prices?: PriceFeed | null;
   notifications: WorkOrderNotifier;
   thresholds: RenewalThresholds;
   outbox?: {
@@ -138,6 +140,7 @@ export type WorkOrderFields = {
   graceDays?: number;
   tokenId: string;
   budgetAmount: string;
+  payoutTokenId?: string | null;
   autoRenew?: boolean;
   githubLogin?: string | null;
   contractorName?: string | null;
@@ -195,6 +198,7 @@ export function termsHash(
     | "graceDays"
     | "tokenId"
     | "budgetAmount"
+    | "payoutTokenId"
     | "autoRenew"
     | "githubLogin"
     | "contractorName"
@@ -210,6 +214,7 @@ export function termsHash(
     contractorName: row.contractorName ?? null,
     githubLogin: row.githubLogin?.toLowerCase() ?? null,
     ipModel: row.ipModel ?? null,
+    payoutTokenId: row.payoutTokenId ?? null,
     representativeName: row.representativeName ?? null,
     graceDays: row.graceDays,
     periodEnd: row.periodEnd,
@@ -359,8 +364,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   const { db, directory } = deps;
   const now = () => deps.now?.() ?? new Date();
   const today = () => dateOf(now());
-  const display = (amount: string | bigint, tokenId: string) =>
-    baseUnitsToDisplay(amount.toString(), tokenId);
+  const display = (amount: string | bigint, tokenId: string) => {
+    if (tokenId !== USD) return baseUnitsToDisplay(amount.toString(), tokenId);
+    const value = BigInt(amount);
+    const factor = 10n ** BigInt(USD_DECIMALS);
+    const cents = ((value % factor) / 10_000n).toString().padStart(2, "0");
+    const whole = (value / factor).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return `$${whole}${cents === "00" ? "" : `.${cents}`}`;
+  };
   const adminLink = (id: string) => `/admin/work-orders/${id}`;
   const builderLink = (id: string) => `/work-orders/${id}`;
   const absolute = (path: string) => {
@@ -372,9 +383,42 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     }
   };
   const decimalOf = (amount: string | bigint, tokenId: string) =>
-    display(amount, tokenId).split(" ")[0] ?? amount.toString();
+    tokenId === USD
+      ? display(amount, tokenId).replace(/[$,]/g, "")
+      : (display(amount, tokenId).split(" ")[0] ?? amount.toString());
   const symbolOf = (tokenId: string) =>
-    display("0", tokenId).split(" ").slice(1).join(" ") || tokenId;
+    tokenId === USD ? "USD" : display("0", tokenId).split(" ").slice(1).join(" ") || tokenId;
+  const payoutTokenOf = (row: Pick<WorkOrderRow, "tokenId" | "payoutTokenId">) =>
+    row.tokenId === USD ? NATIVE_TOKEN_ID : row.tokenId;
+
+  async function quotePayout(row: WorkOrderRow, request: CompensationRequestRow) {
+    const tokenId = payoutTokenOf(row);
+    if (row.tokenId !== USD) {
+      return { tokenId, amount: request.approvedAmount ?? "0", priceUsd: null, pricedAt: null };
+    }
+    if (!deps.prices) throw badRequest("NO_PRICES", "USD prices aren't available on this server");
+    const decimals = getTokenMetadata(tokenId)?.decimals;
+    if (decimals === undefined) throw badRequest("UNKNOWN_TOKEN", `${tokenId} isn't a known token`);
+    let quote: PriceQuote;
+    try {
+      quote = await deps.prices.price(tokenId);
+    } catch (error) {
+      throw badRequest(
+        "NO_PRICE",
+        `Couldn't get the ${symbolOf(tokenId)} price: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const amount = usdToTokens(BigInt(request.approvedAmount ?? "0"), quote.priceUsd, decimals);
+    if (amount <= 0n) throw badRequest("AMOUNT_NOT_POSITIVE", "The approved amount is too small");
+    const pricedAt = now();
+    await updateRequest(request.id, {
+      payoutTokenId: tokenId,
+      payoutAmount: amount.toString(),
+      priceUsd: quote.priceUsd,
+      pricedAt,
+    });
+    return { tokenId, amount: amount.toString(), priceUsd: quote.priceUsd, pricedAt };
+  }
 
   type Announcement = {
     request?: CompensationRequestRow | null;
@@ -960,6 +1004,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         : null,
       reportSha256: request.reportSha256,
       overlaps,
+      payout:
+        request.payoutAmount && request.payoutTokenId
+          ? {
+              tokenId: request.payoutTokenId,
+              amount: request.payoutAmount,
+              priceUsd: request.priceUsd,
+              pricedAt: request.pricedAt?.toISOString() ?? null,
+            }
+          : null,
       submittedAt: request.submittedAt?.toISOString() ?? null,
       proposalId: request.proposalId,
       payingDaoAccountId: daoAccountId,
@@ -1010,6 +1063,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       periodEnd: row.periodEnd,
       graceDays: row.graceDays,
       tokenId: row.tokenId,
+      payoutTokenId: payoutTokenOf(row),
       budgetAmount: row.budgetAmount,
       committedAmount: committed.toString(),
       paidAmount: paid.toString(),
@@ -1472,6 +1526,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           graceDays: parent.graceDays,
           tokenId: parent.tokenId,
           budgetAmount: parent.budgetAmount,
+          payoutTokenId: parent.payoutTokenId,
           autoRenew: true,
           contractorName: parent.contractorName,
           contractorEmail: parent.contractorEmail,
@@ -1703,6 +1758,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           graceDays: fields.graceDays ?? 2,
           tokenId: fields.tokenId,
           budgetAmount: fields.budgetAmount,
+          payoutTokenId: fields.tokenId === USD ? NATIVE_TOKEN_ID : null,
           autoRenew: fields.autoRenew ?? false,
           githubLogin: fields.githubLogin,
           contractorName:
@@ -1740,6 +1796,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         graceDays: input.graceDays ?? row.graceDays,
         tokenId: input.tokenId ?? row.tokenId,
         budgetAmount: input.budgetAmount ?? row.budgetAmount,
+        payoutTokenId: (input.tokenId ?? row.tokenId) === USD ? NATIVE_TOKEN_ID : null,
         autoRenew: input.autoRenew ?? row.autoRenew,
         githubLogin:
           input.githubLogin === undefined
@@ -2083,13 +2140,23 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           `Proposal ${id} pays ${kind.receiverId}, not ${row.builderNearAccount}`,
         );
       }
-      if (tokenId !== row.tokenId) {
-        throw badRequest("WRONG_TOKEN", `Proposal ${id} pays in ${tokenId}, not ${row.tokenId}`);
+      const payoutToken = payoutTokenOf(row);
+      if (tokenId !== payoutToken) {
+        throw badRequest("WRONG_TOKEN", `Proposal ${id} pays in ${tokenId}, not ${payoutToken}`);
       }
-      if (kind.amount !== request.approvedAmount) {
+      const expected = row.tokenId === USD ? request.payoutAmount : request.approvedAmount;
+      if (!expected) {
+        throw badRequest(
+          "NO_QUOTE",
+          "Get a quote first: open the payment and use the amount it shows",
+        );
+      }
+      if (kind.amount !== expected) {
         throw badRequest(
           "WRONG_AMOUNT",
-          `Proposal ${id} pays ${display(kind.amount, tokenId)}, not the approved ${display(request.approvedAmount, row.tokenId)}`,
+          row.tokenId === USD
+            ? `Proposal ${id} pays ${display(kind.amount, tokenId)}, not the quoted ${display(expected, tokenId)} (${display(request.approvedAmount, row.tokenId)} at ${request.priceUsd} USD). Refresh the quote or fix the proposal.`
+            : `Proposal ${id} pays ${display(kind.amount, tokenId)}, not the approved ${display(request.approvedAmount, row.tokenId)}`,
         );
       }
       const linked = await db.transaction(async (tx) => {
@@ -2141,15 +2208,26 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         );
       }
       const project = await projectOf(row);
+      const payout = await quotePayout(row, request);
       const description = [
         `${row.code}-R${request.seq}: ${row.title}`,
         `Project: ${project?.title ?? row.projectId}`,
         `Covers ${request.coversFrom} to ${request.coversTo}`,
+        payout.priceUsd
+          ? `${display(request.approvedAmount, row.tokenId)} at ${payout.priceUsd} USD per ${symbolOf(payout.tokenId)}`
+          : null,
         request.reportSha256 ? `Report SHA-256: ${request.reportSha256}` : null,
       ]
         .filter(Boolean)
         .join("\n");
       return {
+        quote: {
+          usd: row.tokenId === USD ? request.approvedAmount : null,
+          tokenId: payout.tokenId,
+          amount: payout.amount,
+          priceUsd: payout.priceUsd,
+          pricedAt: payout.pricedAt?.toISOString() ?? null,
+        },
         daoAccountId: scope.agencyDao,
         method: "add_proposal" as const,
         args: {
@@ -2157,9 +2235,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             description,
             kind: {
               Transfer: {
-                token_id: row.tokenId === NATIVE_TOKEN_ID ? "" : row.tokenId,
+                token_id: payout.tokenId === NATIVE_TOKEN_ID ? "" : payout.tokenId,
                 receiver_id: row.builderNearAccount,
-                amount: request.approvedAmount,
+                amount: payout.amount,
                 msg: null,
               },
             },

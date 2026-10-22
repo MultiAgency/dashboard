@@ -2,6 +2,7 @@
 // `api/src/services/tokens.ts` `KNOWN_TOKENS`. Source of both is Trezu's
 // `nt-be/data/tokens.json` (NEAR-native NEP-141s, originChainName == "near").
 const KNOWN_TOKENS: Record<string, { symbol: string; decimals: number }> = {
+  usd: { symbol: "USD", decimals: 6 },
   near: { symbol: "NEAR", decimals: 24 },
   "wrap.near": { symbol: "wNEAR", decimals: 24 },
   "usdt.tether-token.near": { symbol: "USDT", decimals: 6 },
@@ -30,7 +31,21 @@ const KNOWN_TOKENS: Record<string, { symbol: string; decimals: number }> = {
 const withThousandsSeparator = (digits: string): string =>
   digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
+export function formatUsd(amount: string): string {
+  try {
+    const value = BigInt(amount);
+    const negative = value < 0n;
+    const abs = negative ? -value : value;
+    const cents = ((abs % 1_000_000n) / 10_000n).toString().padStart(2, "0");
+    const whole = withThousandsSeparator((abs / 1_000_000n).toString());
+    return `${negative ? "-" : ""}$${whole}${cents === "00" ? "" : `.${cents}`}`;
+  } catch {
+    return `${amount} usd`;
+  }
+}
+
 export function formatTokenAmount(amount: string, tokenId: string): string {
+  if (tokenId === "usd") return formatUsd(amount);
   const known = KNOWN_TOKENS[tokenId];
   if (!known) return `${amount} ${tokenId}`;
 
