@@ -77,8 +77,18 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
         header,
         "",
         `Budget: up to ${wo.budget}, paid per approved compensation request to ${e.contractor.nearAccount}.`,
-        "Read the terms and accept or decline them, signed in with that NEAR account:",
+        "Read the work order and sign it in MultiAgency, signed in with that NEAR account. You can also decline it there:",
         e.links.contractor,
+      );
+      break;
+    case "work_order.builder_signed":
+      toRepresentative(
+        `${e.contractor.name} signed Work Order ${wo.id}: countersign it`,
+        header,
+        "",
+        `${e.contractor.name} signed the work order as "${e.note ?? e.contractor.name}".`,
+        "Countersign it on the work order page; the signed PDF is then saved and sent to both of you:",
+        e.links.review,
       );
       break;
     case "work_order.signed":

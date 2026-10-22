@@ -4,7 +4,12 @@ import type { Database } from "../../src/db";
 import { billings, notifications, workOrders } from "../../src/db/schema";
 import { requireTreasury } from "../../src/services/organization-access";
 import type { DaoProposal } from "../../src/services/sputnik";
-import { contains, longDate, normalizeText } from "../../src/services/work-orders/documents";
+import {
+  contains,
+  longDate,
+  normalizeText,
+  pdfText,
+} from "../../src/services/work-orders/documents";
 import type { WorkOrderEvent } from "../../src/services/work-orders/events";
 import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
 import { usdToTokens } from "../../src/services/work-orders/prices";
@@ -13,6 +18,7 @@ import {
   createWorkOrdersService,
   repoOf,
 } from "../../src/services/work-orders/service";
+import { fromBase64 } from "../../src/services/work-orders/signing";
 import type { ReportDraft } from "../../src/services/work-orders/summarizer";
 import { DEFAULT_RENEWAL } from "../../src/services/work-orders/types";
 import { type EngagementWorld, engagementWorld, refused } from "../fakes/engagements";
@@ -114,11 +120,23 @@ describe("work orders", () => {
     ...over,
   });
 
+  async function signAsBuilder(id: string, who = carol(), name = "Carol") {
+    const doc = await service.myDocument(who, { id });
+    return service.sign(
+      who,
+      { id, documentSha256: doc.sha256, name },
+      {
+        ip: "203.0.113.7",
+        userAgent: "Vitest",
+      },
+    );
+  }
+
   async function active(over: Record<string, unknown> = {}) {
     const created = await service.create(await studio(), fields(over));
     await service.offer(await studio(), { id: created.id });
-    const mine = await service.mineGet(carol(), { id: created.id });
-    await service.accept(carol(), { id: created.id, termsHash: mine.termsHash });
+    await signAsBuilder(created.id);
+    await service.countersign(await studio(), { id: created.id, name: "Rita Rep" });
     const prior = clock;
     clock = new Date("2026-08-31T12:00:00.000Z");
     const activated = await service.activate(await studio(), { id: created.id });
@@ -186,11 +204,20 @@ describe("work orders", () => {
       const mine = await service.mineGet(carol(), { id: created.id });
       expect(mine.agencyName).toBe("Studio");
       await refused(
-        service.accept(carol(), { id: created.id, termsHash: "0".repeat(64) }),
-        "TERMS_CHANGED",
+        service.sign(carol(), { id: created.id, documentSha256: "0".repeat(64), name: "Carol" }),
+        "DOCUMENT_CHANGED",
       );
-      const accepted = await service.accept(carol(), { id: created.id, termsHash: mine.termsHash });
+      const accepted = await signAsBuilder(created.id);
       expect(accepted.status).toBe("accepted");
+      expect(accepted.signing.builder?.name).toBe("Carol");
+      expect(accepted.activationBlockers).toContain("Countersign the work order");
+      await refused(service.activate(await studio(), { id: created.id }), "ACTIVATION_BLOCKED");
+      const countersigned = await service.countersign(await studio(), {
+        id: created.id,
+        name: "Rita Rep",
+      });
+      expect(countersigned.signing.needsCountersign).toBe(false);
+      expect(countersigned.activationBlockers).toEqual([]);
 
       const activated = await service.activate(await studio(), { id: created.id });
       expect(activated.status).toBe("active");
@@ -202,8 +229,9 @@ describe("work orders", () => {
       const created = await service.create(await studio(), fields());
       await service.offer(await studio(), { id: created.id });
       await refused(service.mineGet(stranger(), { id: created.id }), "NOT_FOUND");
+      await refused(service.myDocument(stranger(), { id: created.id }), "NOT_FOUND");
       await refused(
-        service.accept(stranger(), { id: created.id, termsHash: "0".repeat(64) }),
+        service.sign(stranger(), { id: created.id, documentSha256: "0".repeat(64), name: "M" }),
         "NOT_FOUND",
       );
     });
@@ -211,8 +239,7 @@ describe("work orders", () => {
     test("changing the terms after acceptance sends it back to draft", async () => {
       const created = await service.create(await studio(), fields());
       await service.offer(await studio(), { id: created.id });
-      const mine = await service.mineGet(carol(), { id: created.id });
-      await service.accept(carol(), { id: created.id, termsHash: mine.termsHash });
+      await signAsBuilder(created.id);
       const edited = await service.update(await studio(), {
         id: created.id,
         budgetAmount: "2000000000",
@@ -221,31 +248,25 @@ describe("work orders", () => {
       expect(edited.acceptedAt).toBeNull();
     });
 
-    test("a builder without a GitHub login can't be activated", async () => {
+    test("a builder without a GitHub login can't be offered the work order until it's added", async () => {
       const created = await service.create(
         await studio(),
         fields({ builderNearAccount: "nogit.near" }),
       );
-      await service.offer(await studio(), { id: created.id });
-      const mine = await service.mineGet(signedIn("nogit", null, "nogit.near"), { id: created.id });
-      await service.accept(signedIn("nogit", null, "nogit.near"), {
-        id: created.id,
-        termsHash: mine.termsHash,
-      });
-      await refused(service.activate(await studio(), { id: created.id }), "ACTIVATION_BLOCKED");
-      const blocked = await service.get(await studio(), { id: created.id });
-      expect(blocked.activationBlockers).toContain("Add the builder's GitHub login");
+      expect(created.activationBlockers).toContain("Add the builder's GitHub login");
+      await refused(service.offer(await studio(), { id: created.id }), "NO_GITHUB_LOGIN");
       const fixed = await service.setGithubLogin(await studio(), {
         id: created.id,
         githubLogin: "@NoGit-GH",
       });
       expect(fixed.builder.githubLogin).toBe("nogit-gh");
-      expect(fixed.status).toBe("accepted");
-      expect(fixed.termsChanged).toBe(false);
       await refused(
         service.setGithubLogin(await studio(), { id: created.id, githubLogin: "other" }),
         "GITHUB_LOGIN_SET",
       );
+      await service.offer(await studio(), { id: created.id });
+      await signAsBuilder(created.id, signedIn("nogit", null, "nogit.near"), "No Git");
+      await service.countersign(await studio(), { id: created.id, name: "Rita Rep" });
       clock = new Date("2026-08-31T12:00:00.000Z");
       expect((await service.activate(await studio(), { id: created.id })).status).toBe("active");
     });
@@ -870,7 +891,7 @@ describe("work orders", () => {
       expect(created.signature.preparedDocumentUrl).toBe(
         "https://docs.google.com/document/d/doc-1/edit",
       );
-      expect(events.map((e) => e.type)).toEqual(["work_order.document_ready"]);
+      expect(events.map((e) => e.type)).toEqual([]);
     });
 
     test("a signed PDF in the Signed folder signs the matching work order, once", async () => {
@@ -943,6 +964,88 @@ describe("work orders", () => {
       expect((await service.checkDrive(await studio())).mismatch).toBe(1);
     });
 
+    test("offer → the builder signs → the representative countersigns → signed PDF in Drive", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ tokenId: REAL_USDC, representativeName: "Rita Rep" }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      expect(google.exported.has("doc-1")).toBe(true);
+      expect(events.map((e) => e.type)).toContain("work_order.offered");
+      const offered = await service.myDocument(carol(), { id: created.id });
+      expect(offered.kind).toBe("offered");
+      expect(offered.current).toBe(true);
+
+      await refused(
+        service.countersign(await studio(), { id: created.id, name: "Rita Rep" }),
+        "NOT_SIGNED_BY_BUILDER",
+      );
+      await signAsBuilder(created.id, carol(), "Carol Builder");
+      const told = events.find((e) => e.type === "work_order.builder_signed");
+      expect(told?.note).toBe("Carol Builder");
+      expect(told?.links.review).toBe(`https://app.example/admin/work-orders/${created.id}`);
+
+      const done = await service.countersign(
+        await studio(),
+        { id: created.id, name: "Rita Rep" },
+        { ip: "198.51.100.2", userAgent: "Admin browser" },
+      );
+      expect(done.signature.method).toBe("in_app");
+      expect(done.documentUrl).toBe("https://drive.google.com/file/d/upload-1/view");
+      expect(google.uploads[0]).toMatchObject({
+        folderId: "signed",
+        name: "Work Order WO-0001 (signed).pdf",
+      });
+      await refused(
+        service.countersign(await studio(), { id: created.id, name: "Rita Rep" }),
+        "ALREADY_SIGNED",
+      );
+
+      const signed = await service.document(await studio(), { id: created.id });
+      expect(signed.kind).toBe("signed");
+      expect(signed.sha256).toBe(done.documentSha256);
+      const text = await pdfText(fromBase64(signed.pdfBase64));
+      for (const part of [
+        "Signature certificate",
+        offered.sha256,
+        "Carol Builder",
+        "carol.near",
+        "203.0.113.7",
+        "Rita Rep",
+        "198.51.100.2",
+        "WO-0001",
+      ]) {
+        expect(text).toContain(part);
+      }
+      expect(events.filter((e) => e.type === "work_order.signed").at(-1)?.links.document).toBe(
+        "https://drive.google.com/file/d/upload-1/view",
+      );
+      expect((await service.checkDrive(await studio())).checked).toBe(0);
+    });
+
+    test("changing a term after the builder signed voids the signature", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ tokenId: REAL_USDC, representativeName: "Rita Rep" }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      await signAsBuilder(created.id);
+      const edited = await service.update(await studio(), {
+        id: created.id,
+        budgetAmount: "5000000",
+      });
+      expect(edited.status).toBe("draft");
+      expect(edited.signing).toEqual({
+        documentSha256: null,
+        builder: null,
+        representative: null,
+        needsCountersign: false,
+      });
+      expect(await service.myDocument(carol(), { id: created.id }).catch(() => null)).toBeNull();
+      await service.offer(await studio(), { id: created.id });
+      expect((await service.myDocument(carol(), { id: created.id })).current).toBe(true);
+    });
+
     test("matching is exact: a value must stand on its own in the PDF", () => {
       expect(longDate("2026-09-01")).toBe("September 1, 2026");
       const text = normalizeText(
@@ -955,6 +1058,33 @@ describe("work orders", () => {
       expect(contains(text, "studio/app")).toBe(true);
     });
   });
+  describe("signing without Google", () => {
+    test("the work order PDF is generated from the terms", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ representativeName: "Rita Rep", contractorEmail: "carol@example.com" }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      const doc = await service.myDocument(carol(), { id: created.id });
+      expect(doc.fileName).toBe("Work Order WO-0001.pdf");
+      const text = await pdfText(fromBase64(doc.pdfBase64));
+      for (const part of [
+        "Work Order WO-0001",
+        "Project p1",
+        "carol.near",
+        "carol-gh",
+        REPO,
+        "Rita Rep",
+      ]) {
+        expect(text).toContain(part);
+      }
+      await signAsBuilder(created.id);
+      const done = await service.countersign(await studio(), { id: created.id, name: "Rita Rep" });
+      expect(done.documentUrl).toBeNull();
+      expect((await service.document(await studio(), { id: created.id })).kind).toBe("signed");
+    });
+  });
+
   describe("USD budgets paid in a token at the live price", () => {
     const usdFields = { tokenId: "usd", payoutTokenId: "near", budgetAmount: "1000000000" };
 

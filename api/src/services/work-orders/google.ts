@@ -29,6 +29,13 @@ export type GooglePort = {
   fill(documentId: string, values: Record<string, string>): Promise<Record<string, number>>;
   listPdfs(folderId: string): Promise<DriveFile[]>;
   download(id: string): Promise<Uint8Array>;
+  exportPdf(documentId: string): Promise<Uint8Array>;
+  upload(input: {
+    folderId: string;
+    name: string;
+    bytes: Uint8Array;
+    mimeType: string;
+  }): Promise<DriveFile>;
 };
 
 export class GoogleError extends Error {
@@ -249,6 +256,39 @@ export function createGoogle(account: ServiceAccount, fetcher: typeof fetch = fe
         pageToken = body.nextPageToken;
       } while (pageToken && out.length < 1000);
       return out;
+    },
+
+    exportPdf: async (documentId) =>
+      new Uint8Array(
+        await (
+          await call(
+            `${DRIVE}/files/${encodeURIComponent(documentId)}/export?mimeType=application/pdf&supportsAllDrives=true`,
+          )
+        ).arrayBuffer(),
+      ),
+
+    upload: async (input) => {
+      const boundary = `multiagency-${crypto.randomUUID()}`;
+      const metadata = JSON.stringify({ name: input.name, parents: [input.folderId] });
+      const body = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${input.mimeType}\r\n\r\n`,
+        ),
+        Buffer.from(input.bytes),
+        Buffer.from(`\r\n--${boundary}--`),
+      ]);
+      return fileOf(
+        await (
+          await call(
+            `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=${fields}`,
+            {
+              method: "POST",
+              body,
+              headers: { "content-type": `multipart/related; boundary=${boundary}` },
+            },
+          )
+        ).json(),
+      );
     },
 
     download: async (id) => {

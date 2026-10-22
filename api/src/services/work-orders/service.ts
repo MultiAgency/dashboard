@@ -7,12 +7,16 @@ import {
   type CompensationRequestRow,
   compensationRequests,
   type DRIVE_FILE_OUTCOMES,
+  type WorkOrderDocumentRow,
   type WorkOrderEvidenceRow,
   type WorkOrderRow,
+  type WorkOrderSignatureRow,
+  workOrderDocuments,
   workOrderDriveFiles,
   workOrderEvidence,
   workOrderIntegrations,
   workOrderJobLock,
+  workOrderSignatures,
   workOrders,
 } from "../../db/schema";
 import { nearAccountsOf, type PluginContext } from "../../lib/organizations";
@@ -21,7 +25,14 @@ import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organizat
 import type { Project, ProjectDirectory } from "../project-directory";
 import type { DaoProposal } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
-import { codeIn, documentFields, missingFields, pdfText, requiredFields } from "./documents";
+import {
+  codeIn,
+  documentFields,
+  longDate,
+  missingFields,
+  pdfText,
+  requiredFields,
+} from "./documents";
 import { eventId, type WorkOrderEvent, type WorkOrderEventType } from "./events";
 import { collectEvidence, summarizeActivity } from "./evidence";
 import type { GhRepoOwnership, GitHubPort } from "./github";
@@ -36,6 +47,7 @@ import {
   sha256Hex,
   templateAssessment,
 } from "./report";
+import { fromBase64, sha256Bytes, signedPdf, termsPdf, toBase64 } from "./signing";
 import type { Summarizer } from "./summarizer";
 import { addDays, dateOf, nextPeriod, startOfDay, windowOf } from "./time";
 import type {
@@ -612,7 +624,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       documentFields: JSON.stringify(requiredFields(values, occurrences)),
     });
     await recordGoogle(row.organizationId, null);
-    await announce(updated, "work_order.document_ready", { document: url });
     return updated;
   }
 
@@ -756,6 +767,185 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return counts;
   }
 
+  async function termsRows(row: WorkOrderRow): Promise<[string, string][]> {
+    const [project, agencyName, builder] = await Promise.all([
+      projectOf(row),
+      deps.organizationName(row.organizationId).catch(() => row.organizationId),
+      deps.builders.get(row.builderNearAccount).catch(() => null),
+    ]);
+    const contacts = await contactsOf(row, builder);
+    return [
+      ["Work order", `${row.code}: ${row.title}`],
+      ["Agency", agencyName],
+      ["Project", project?.title ?? row.projectId],
+      ["Builder (contractor)", row.contractorName ?? builder?.name ?? row.builderNearAccount],
+      ["Builder's email", contacts.contractorEmail ?? ""],
+      ["Agency representative", row.representativeName ?? agencyName],
+      ["Representative's email", contacts.representativeEmail ?? ""],
+      ["Work period", `${longDate(row.periodStart)} to ${longDate(row.periodEnd)}`],
+      [
+        "Budget cap",
+        `${display(row.budgetAmount, row.tokenId)}${row.tokenId === USD ? ", paid in NEAR at the price when each payment is made" : ""}`,
+      ],
+      ["Payout account (NEAR)", row.builderNearAccount],
+      ["GitHub account", row.githubLogin ?? ""],
+      ["Repositories in scope", parseList(row.repos).join(", ")],
+      ["Authorized work", row.scope ?? ""],
+      ["IP model", row.ipModel ?? ""],
+      [
+        "Monthly renewal",
+        row.autoRenew
+          ? "Renews monthly, with the same terms, while the base metrics are met; otherwise the representative decides."
+          : "No",
+      ],
+      [
+        "How work counts",
+        "Work counts once the repository owner approves or merges it on GitHub. The budget is a maximum, not a guarantee; each payment follows an approved compensation request.",
+      ],
+    ];
+  }
+
+  async function prepareOfferDocument(row: WorkOrderRow) {
+    let current = row;
+    let pdf: Uint8Array;
+    const google = deps.google;
+    const settings = google ? await integrationOf(row.organizationId) : null;
+    if (google && settings?.googleTemplateId && settings.googleDocumentsFolderId) {
+      try {
+        if (!current.documentId || !current.documentFields) {
+          current = (await fillGoogleDocument(current)) ?? current;
+        }
+        if (!current.documentId) throw new Error("The template wasn't filled");
+        pdf = await google.exportPdf(current.documentId);
+      } catch (error) {
+        const message = `Couldn't prepare the document of ${row.code}: ${errorText(error)}`;
+        await recordGoogle(row.organizationId, message);
+        throw badRequest("GOOGLE_FAILED", message);
+      }
+    } else {
+      pdf = await termsPdf({
+        title: `Work Order ${row.code}`,
+        rows: await termsRows(row),
+        footer:
+          "Signed electronically in MultiAgency: each party reviews this document and signs it with their typed name; the builder signs in with the NEAR account above.",
+      });
+    }
+    const sha256 = sha256Bytes(pdf);
+    await db.insert(workOrderDocuments).values({
+      id: crypto.randomUUID(),
+      workOrderId: row.id,
+      kind: "offered",
+      fileName: `Work Order ${row.code}.pdf`,
+      pdf: toBase64(pdf),
+      sha256,
+      termsHash: termsHash(current),
+      createdAt: now(),
+    });
+    return current;
+  }
+
+  async function finalizeSigned(row: WorkOrderRow, offered: WorkOrderDocumentRow) {
+    const signatures = await signaturesOf(row.id, offered.sha256);
+    const ordered = (["contractor", "representative"] as const)
+      .map((role) => signatures.find((s) => s.role === role))
+      .filter((s): s is WorkOrderSignatureRow => Boolean(s));
+    const completedAt = now();
+    const final = await signedPdf({
+      original: fromBase64(offered.pdf),
+      title: `Work Order ${row.code}: ${row.title}`,
+      documentSha256: offered.sha256,
+      completedAt,
+      signers: ordered.map((s) => ({
+        role: s.role,
+        name: s.name,
+        email: s.email,
+        nearAccount: s.nearAccount,
+        ip: s.ip,
+        userAgent: s.userAgent,
+        signedAt: s.signedAt,
+      })),
+    });
+    const sha256 = sha256Bytes(final);
+    const fileName = `Work Order ${row.code} (signed).pdf`;
+    let driveFileId: string | null = null;
+    let driveUrl: string | null = null;
+    const google = deps.google;
+    const settings = google ? await integrationOf(row.organizationId) : null;
+    if (google && settings?.googleSignedFolderId) {
+      try {
+        const uploaded = await google.upload({
+          folderId: settings.googleSignedFolderId,
+          name: fileName,
+          bytes: final,
+          mimeType: "application/pdf",
+        });
+        driveFileId = uploaded.id;
+        driveUrl = uploaded.webViewLink;
+        await recordDriveFile({
+          organizationId: row.organizationId,
+          fileId: uploaded.id,
+          name: fileName,
+          url: uploaded.webViewLink,
+          sha256,
+          workOrderId: row.id,
+          outcome: "attached",
+          note: "Signed in MultiAgency",
+        });
+      } catch (error) {
+        await recordGoogle(
+          row.organizationId,
+          `Couldn't save the signed PDF of ${row.code} to Drive: ${errorText(error)}`,
+        );
+      }
+    }
+    await db.insert(workOrderDocuments).values({
+      id: crypto.randomUUID(),
+      workOrderId: row.id,
+      kind: "signed",
+      fileName,
+      pdf: toBase64(final),
+      sha256,
+      termsHash: offered.termsHash,
+      driveFileId,
+      driveUrl,
+      createdAt: completedAt,
+    });
+    const signed = await update(row.id, {
+      signatureMethod: "in_app",
+      signedAt: completedAt,
+      signers: JSON.stringify(
+        ordered.map((s) => ({ name: s.name, role: s.role, signedAt: s.signedAt.toISOString() })),
+      ),
+      documentSha256: sha256,
+      documentUrl: driveUrl,
+    });
+    const payload = await payloadOf(signed);
+    await notifyManagers(signed, "work_order_signed", payload);
+    await notifyBuilder(signed, "work_order_signed", payload);
+    await announce(signed, "work_order.signed", {
+      document: driveUrl ?? absolute(builderLink(row.id)),
+    });
+    return signed;
+  }
+
+  function clientMeta(meta: { ip?: string | null; userAgent?: string | null } = {}) {
+    return { ip: meta.ip?.slice(0, 100) ?? null, userAgent: meta.userAgent?.slice(0, 500) ?? null };
+  }
+
+  async function documentOf(row: WorkOrderRow) {
+    const doc =
+      (await latestDocument(row.id, "signed")) ?? (await latestDocument(row.id, "offered"));
+    if (!doc) throw notFound("Document");
+    return {
+      kind: doc.kind,
+      fileName: doc.fileName,
+      sha256: doc.sha256,
+      pdfBase64: doc.pdf,
+      driveUrl: doc.driveUrl,
+      current: doc.termsHash === termsHash(row),
+    };
+  }
+
   async function paidBefore(row: WorkOrderRow): Promise<boolean> {
     const dao = await deps.agencyDaoOf(row.organizationId).catch(() => null);
     if (!dao) return false;
@@ -880,12 +1070,63 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return { committed, paid, remaining };
   }
 
-  async function projectOf(row: Pick<WorkOrderRow, "organizationId" | "projectId">) {
+  async function projectOf(
+    row: Pick<WorkOrderRow, "organizationId" | "projectId"> &
+      Partial<Pick<WorkOrderRow, "projectTitle" | "projectSlug">>,
+  ): Promise<{ title: string; slug: string } | null> {
+    if (row.projectTitle) {
+      return { title: row.projectTitle, slug: row.projectSlug ?? row.projectId };
+    }
     const scope = await deps.scopeOfOrganization(row.organizationId);
     return directory
       .forAgency(scope)
       .require(row.projectId)
+      .then((project) => ({ title: project.title, slug: project.slug }))
       .catch(() => null);
+  }
+
+  async function latestDocument(workOrderId: string, kind: "offered" | "signed") {
+    const [doc] = await db
+      .select()
+      .from(workOrderDocuments)
+      .where(
+        and(eq(workOrderDocuments.workOrderId, workOrderId), eq(workOrderDocuments.kind, kind)),
+      )
+      .orderBy(desc(workOrderDocuments.createdAt))
+      .limit(1);
+    return doc ?? null;
+  }
+
+  async function signaturesOf(workOrderId: string, documentSha256: string) {
+    return db
+      .select()
+      .from(workOrderSignatures)
+      .where(
+        and(
+          eq(workOrderSignatures.workOrderId, workOrderId),
+          eq(workOrderSignatures.documentSha256, documentSha256),
+        ),
+      );
+  }
+
+  async function signingOf(row: WorkOrderRow) {
+    const offered = await latestDocument(row.id, "offered");
+    if (!offered || offered.termsHash !== termsHash(row)) {
+      return { documentSha256: null, builder: null, representative: null, needsCountersign: false };
+    }
+    const signatures = await signaturesOf(row.id, offered.sha256);
+    const signer = (role: "contractor" | "representative") => {
+      const found = signatures.find((s) => s.role === role);
+      return found ? { name: found.name, signedAt: found.signedAt.toISOString() } : null;
+    };
+    const builder = signer("contractor");
+    const representative = signer("representative");
+    return {
+      documentSha256: offered.sha256,
+      builder,
+      representative,
+      needsCountersign: builder !== null && representative === null,
+    };
   }
 
   function scopeOf(row: WorkOrderRow): WorkOrderScope {
@@ -910,6 +1151,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     row: WorkOrderRow,
     builder: BuilderProfile | null,
     payeeNeedsConfirmation: boolean,
+    needsCountersign = false,
   ): string[] {
     if (row.status !== "draft" && row.status !== "offered" && row.status !== "accepted") return [];
     const out: string[] = [];
@@ -922,6 +1164,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (row.status === "accepted" && row.acceptedTermsHash !== termsHash(row)) {
       out.push("The terms changed after the builder accepted them");
     }
+    if (needsCountersign) out.push("Countersign the work order");
     if (!builder) out.push("The builder has no profile on MultiAgency");
     if (!row.githubLogin) out.push("Add the builder's GitHub login");
     if (payeeNeedsConfirmation) {
@@ -1029,6 +1272,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     ]);
     const project = cache?.projects?.get(row.projectId) ?? (await projectOf(row));
     const payee = await payeeOf(row);
+    const signing = await signingOf(row);
     const { committed, paid, remaining } = amountsOf(row, requests);
     const renewal = parseJson<RenewalAssessment | null>(row.renewalAssessment, null);
     return {
@@ -1076,7 +1320,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       documentSha256: row.documentSha256,
       documentUrl: row.documentUrl,
       activatedAt: row.activatedAt?.toISOString() ?? null,
-      activationBlockers: activationBlockers(row, builder, payee.needsConfirmation),
+      activationBlockers: activationBlockers(
+        row,
+        builder,
+        payee.needsConfirmation,
+        signing.needsCountersign,
+      ),
+      signing,
       lastCollectedAt: row.lastCollectedAt?.toISOString() ?? null,
       waiting: requests.filter((r) => r.status === "submitted" || r.status === "approved").length,
       renewedFrom: row.renewedFrom,
@@ -1162,7 +1412,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (email && !EMAIL.test(email))
         throw badRequest("INVALID_EMAIL", `${email} isn't an email address`);
     }
-    await directory.forAgency(scope).require(input.projectId);
+    const project = await directory.forAgency(scope).require(input.projectId);
     const [taken] = await db
       .select({ id: workOrders.id })
       .from(workOrders)
@@ -1173,6 +1423,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (taken && taken.id !== excludeId) {
       throw badRequest("CODE_TAKEN", `Work order ${input.code} already exists`);
     }
+    return project;
   }
 
   async function nextCode(organizationId: string): Promise<string> {
@@ -1741,7 +1992,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         contractorEmail: optionalText(input.contractorEmail)?.toLowerCase() ?? null,
         representativeEmail: optionalText(input.representativeEmail)?.toLowerCase() ?? null,
       };
-      await validateFields(scope, fields);
+      const project = await validateFields(scope, fields);
       const [row] = await db
         .insert(workOrders)
         .values({
@@ -1749,6 +2000,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           code,
           organizationId: scope.organizationId,
           projectId: fields.projectId,
+          projectTitle: project.title,
+          projectSlug: project.slug,
           builderNearAccount: fields.builderNearAccount,
           title: fields.title.trim(),
           scope: fields.scope?.trim() || null,
@@ -1820,7 +2073,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             : (optionalText(input.representativeEmail)?.toLowerCase() ?? null),
         ipModel: input.ipModel === undefined ? row.ipModel : optionalText(input.ipModel),
       };
-      await validateFields(scope, next, row.id);
+      const project = await validateFields(scope, next, row.id);
       if (
         next.builderNearAccount !== row.builderNearAccount &&
         !(await deps.builders.get(next.builderNearAccount))
@@ -1830,7 +2083,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           `${next.builderNearAccount} has no builder profile on MultiAgency`,
         );
       }
-      const patch = { ...next, repos: JSON.stringify(next.repos) };
+      const patch = {
+        ...next,
+        repos: JSON.stringify(next.repos),
+        projectTitle: project.title,
+        projectSlug: project.slug,
+      };
       const changed = termsHash({ ...row, ...patch }) !== termsHash(row);
       const payeeChanged = next.builderNearAccount !== row.builderNearAccount;
       const updated = await update(row.id, {
@@ -1924,10 +2182,63 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (parseList(row.repos).length === 0) {
         throw badRequest("NO_REPOS", "Add at least one GitHub repository before offering it");
       }
-      const offered = await update(row.id, { status: "offered", offeredAt: now() });
+      if (!row.githubLogin) {
+        throw badRequest("NO_GITHUB_LOGIN", "Add the builder's GitHub login before offering it");
+      }
+      const prepared = await prepareOfferDocument(row);
+      const offered = await update(prepared.id, { status: "offered", offeredAt: now() });
       await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
       await announce(offered, "work_order.offered");
       return view(offered);
+    },
+
+    document: async (scope: OrganizationScope, input: { id: string }) =>
+      documentOf(await ownRow(scope, input.id)),
+
+    countersign: async (
+      scope: OrganizationScope,
+      input: { id: string; name: string },
+      meta: { ip?: string | null; userAgent?: string | null } = {},
+    ) => {
+      const row = await ownRow(scope, input.id);
+      const name = input.name.trim();
+      if (name.length < 2) throw badRequest("NAME_REQUIRED", "Type your full name to sign");
+      if (row.status !== "accepted") {
+        throw badRequest(
+          "NOT_SIGNED_BY_BUILDER",
+          `Work order ${row.code} is ${row.status}: the builder signs first`,
+        );
+      }
+      const offered = await latestDocument(row.id, "offered");
+      if (!offered || offered.termsHash !== termsHash(row)) {
+        throw badRequest(
+          "NO_DOCUMENT",
+          "There's no signed-by-the-builder document for these terms",
+        );
+      }
+      const signatures = await signaturesOf(row.id, offered.sha256);
+      if (!signatures.some((s) => s.role === "contractor")) {
+        throw badRequest("NOT_SIGNED_BY_BUILDER", "The builder hasn't signed this document yet");
+      }
+      if (signatures.some((s) => s.role === "representative")) {
+        throw badRequest("ALREADY_SIGNED", "You've already countersigned it");
+      }
+      const contacts = await contactsOf(row, null);
+      await db.insert(workOrderSignatures).values({
+        id: crypto.randomUUID(),
+        workOrderId: row.id,
+        documentSha256: offered.sha256,
+        role: "representative",
+        name,
+        email:
+          contacts.representativeEmail ??
+          (deps.userEmail ? await deps.userEmail(scope.actorId).catch(() => null) : null),
+        userId: scope.actorId,
+        nearAccount: null,
+        ...clientMeta(meta),
+        signedAt: now(),
+      });
+      return view(await finalizeSigned(row, offered));
     },
 
     attachDocument: async (
@@ -1955,7 +2266,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         );
       }
       const payee = await payeeOf(row);
-      const blockers = activationBlockers(row, builder, payee.needsConfirmation);
+      const signing = await signingOf(row);
+      const blockers = activationBlockers(
+        row,
+        builder,
+        payee.needsConfirmation,
+        signing.needsCountersign,
+      );
       if (blockers.length)
         throw badRequest(
           "ACTIVATION_BLOCKED",
@@ -2392,29 +2709,61 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       };
     },
 
-    accept: async (context: PluginContext, input: { id: string; termsHash: string }) => {
+    myDocument: async (context: PluginContext, input: { id: string }) => {
+      const row = await mustRow(input.id);
+      requireBuilder(context, row);
+      return documentOf(row);
+    },
+
+    sign: async (
+      context: PluginContext,
+      input: { id: string; documentSha256: string; name: string },
+      meta: { ip?: string | null; userAgent?: string | null } = {},
+    ) => {
       const row = await mustRow(input.id);
       requireBuilder(context, row);
       if (row.status !== "offered")
-        throw badRequest("NOT_OFFERED", `Work order ${row.code} isn't waiting for you`);
-      if (input.termsHash !== termsHash(row)) {
+        throw badRequest("NOT_OFFERED", `Work order ${row.code} isn't waiting for your signature`);
+      const name = input.name.trim();
+      if (name.length < 2) throw badRequest("NAME_REQUIRED", "Type your full name to sign");
+      const offered = await latestDocument(row.id, "offered");
+      if (
+        !offered ||
+        offered.termsHash !== termsHash(row) ||
+        offered.sha256 !== input.documentSha256
+      ) {
         throw badRequest(
-          "TERMS_CHANGED",
-          "The terms changed since you opened them. Reload and review them again.",
+          "DOCUMENT_CHANGED",
+          "The document changed since you opened it. Reload and review it again.",
         );
       }
+      const contacts = await contactsOf(
+        row,
+        await deps.builders.get(row.builderNearAccount).catch(() => null),
+      );
+      await db.insert(workOrderSignatures).values({
+        id: crypto.randomUUID(),
+        workOrderId: row.id,
+        documentSha256: offered.sha256,
+        role: "contractor",
+        name,
+        email: contacts.contractorEmail,
+        userId: context.userId ?? null,
+        nearAccount: row.builderNearAccount,
+        ...clientMeta(meta),
+        signedAt: now(),
+      });
       const accepted = await update(row.id, {
         status: "accepted",
         acceptedAt: now(),
         acceptedByUserId: context.userId ?? null,
-        acceptedTermsHash: input.termsHash,
+        acceptedTermsHash: termsHash(row),
         signatureMethod: "in_app",
-        signedAt: now(),
-        payeeConfirmedAt: now(),
-        payeeConfirmedBy: context.userId ?? row.builderNearAccount,
+        payeeConfirmedAt: row.payeeConfirmedAt ?? now(),
+        payeeConfirmedBy: row.payeeConfirmedBy ?? context.userId ?? row.builderNearAccount,
       });
       await notifyManagers(accepted, "work_order_accepted", await payloadOf(accepted));
-      await announce(accepted, "work_order.signed");
+      await announce(accepted, "work_order.builder_signed", { note: name });
       return view(accepted);
     },
 

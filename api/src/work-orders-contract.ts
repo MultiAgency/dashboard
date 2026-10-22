@@ -82,6 +82,12 @@ export const workOrder = z.object({
     paidBefore: z.boolean().nullable(),
     needsConfirmation: z.boolean(),
   }),
+  signing: z.object({
+    documentSha256: z.string().nullable(),
+    builder: z.object({ name: z.string(), signedAt: z.string() }).nullable(),
+    representative: z.object({ name: z.string(), signedAt: z.string() }).nullable(),
+    needsCountersign: z.boolean(),
+  }),
   signature: z.object({
     method: z.enum(["in_app", "google_esign"]).nullable(),
     signedAt: z.string().nullable(),
@@ -121,6 +127,15 @@ export const workOrder = z.object({
   renewal: renewal.nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+const workOrderDocument = z.object({
+  kind: z.enum(["offered", "signed"]),
+  fileName: z.string(),
+  sha256: z.string(),
+  pdfBase64: z.string(),
+  driveUrl: z.string().nullable(),
+  current: z.boolean(),
 });
 
 const evidence = z.object({
@@ -342,6 +357,24 @@ export const workOrdersContract = {
     .output(workOrder)
     .errors(errors),
 
+  document: oc
+    .route({ method: "GET", path: "/admin/work-orders/{id}/document" })
+    .input(byId)
+    .output(workOrderDocument)
+    .errors(errors),
+
+  countersign: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/countersign" })
+    .input(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().trim().min(2).max(200),
+        agree: z.literal(true),
+      }),
+    )
+    .output(workOrder)
+    .errors(errors),
+
   activate: oc
     .route({ method: "POST", path: "/admin/work-orders/{id}/activate" })
     .input(byId)
@@ -545,9 +578,22 @@ export const myWorkOrdersContract = {
     .output(workOrderDetail.extend({ agencyName: z.string(), termsHash: z.string() }))
     .errors(errors),
 
-  accept: oc
-    .route({ method: "POST", path: "/me/work-orders/{id}/accept" })
-    .input(z.object({ id: z.string().min(1), termsHash: z.string().regex(/^[0-9a-f]{64}$/) }))
+  document: oc
+    .route({ method: "GET", path: "/me/work-orders/{id}/document" })
+    .input(byId)
+    .output(workOrderDocument)
+    .errors(errors),
+
+  sign: oc
+    .route({ method: "POST", path: "/me/work-orders/{id}/sign" })
+    .input(
+      z.object({
+        id: z.string().min(1),
+        documentSha256: z.string().regex(/^[0-9a-f]{64}$/),
+        name: z.string().trim().min(2).max(200),
+        agree: z.literal(true),
+      }),
+    )
     .output(workOrder)
     .errors(errors),
 

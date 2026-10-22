@@ -107,8 +107,8 @@ export const NOTIFICATION_KINDS = {
     body: `${p.agencyName} offered you Work Order ${p.code} on ${p.projectTitle}: up to ${p.budget} for ${p.period}. Review the terms and accept or decline it on MultiAgency.`,
   }),
   work_order_accepted: (p) => ({
-    title: `${p.builderName} accepted Work Order ${p.code}`,
-    body: `${p.builderName} accepted Work Order ${p.code} on ${p.projectTitle}. Activate it on MultiAgency to start the work period.`,
+    title: `${p.builderName} signed Work Order ${p.code}`,
+    body: `${p.builderName} signed Work Order ${p.code} on ${p.projectTitle}. Countersign it on MultiAgency, then activate it to start the work period.`,
   }),
   work_order_declined: (p) => ({
     title: `${p.builderName} declined Work Order ${p.code}`,

@@ -21,6 +21,7 @@ import {
 import { AdminError } from "@/components/admin-error";
 import { Empty, Field, Loading } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { BuilderSigning } from "@/components/work-orders/builder-signing";
 import { EvidenceList } from "@/components/work-orders/evidence-list";
 import { ReportMarkdown } from "@/components/work-orders/report-markdown";
 import {
@@ -53,14 +54,6 @@ function MyWorkOrderPage() {
   const [declining, setDeclining] = useState(false);
   const refresh = () => queryClient.invalidateQueries({ queryKey: myWorkOrdersQueryKey });
 
-  const accept = useMutation({
-    mutationFn: (termsHash: string) => apiClient.myWorkOrders.accept({ id, termsHash }),
-    onSuccess: async () => {
-      await refresh();
-      toast.success("Terms accepted. The Agency activates the work order next.");
-    },
-    onError: (err: Error) => toast.error(err.message || "Couldn't accept the terms"),
-  });
   const decline = useMutation({
     mutationFn: () => apiClient.myWorkOrders.decline({ id, note: null }),
     onSuccess: async () => {
@@ -111,38 +104,8 @@ function MyWorkOrderPage() {
         description={`${wo.title} · ${wo.projectTitle} · with ${wo.agencyName}`}
       />
 
-      {wo.status === "offered" && (
-        <Alert>
-          <AlertTitle>{wo.agencyName} offers you this work order</AlertTitle>
-          <AlertDescription className="flex flex-col gap-3">
-            <span>
-              Read the terms below. Accepting records that you, signed in with your NEAR account,
-              agreed to exactly these terms. Payments go to {wo.builder.nearAccount}.
-            </span>
-            {!wo.builder.githubLogin && (
-              <span className="text-destructive">
-                Add your GitHub login to your builder profile: your work is found by it.
-              </span>
-            )}
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                disabled={accept.isPending}
-                onClick={() => accept.mutate(wo.termsHash)}
-              >
-                Accept the terms
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={decline.isPending}
-                onClick={() => setDeclining(true)}
-              >
-                Decline
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
+      {(wo.status === "offered" || wo.signing.builder || wo.documentSha256) && (
+        <BuilderSigning workOrder={wo} onDecline={() => setDeclining(true)} />
       )}
 
       {wo.payee.needsConfirmation && wo.status !== "offered" && (

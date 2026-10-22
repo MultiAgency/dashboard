@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -12,11 +11,11 @@ import {
   CardTitle,
   Input,
 } from "@/components";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useApiClient } from "@/lib/api";
-import { adminWorkOrdersQueryKey, workOrderIntegrationQueryOptions } from "@/lib/queries";
+import { adminWorkOrdersQueryKey } from "@/lib/queries";
+import { PdfViewer } from "./pdf-viewer";
 import type { WorkOrderDetail } from "./work-order-status";
-
-const ROLE_LABEL = { contractor: "Builder", representative: "Representative" } as const;
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -38,10 +37,6 @@ export function SigningPanel({
 }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  const integration = useQuery({
-    ...workOrderIntegrationQueryOptions(apiClient),
-    enabled: canManage,
-  }).data;
   const [github, setGithub] = useState("");
   const refresh = () => queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
 
@@ -54,29 +49,6 @@ export function SigningPanel({
     },
     onError: (err: Error) => toast.error(err.message || "Couldn't save the GitHub login"),
   });
-  const prepare = useMutation({
-    mutationFn: () => apiClient.workOrders.prepareDocument({ id: wo.id }),
-    onSuccess: async () => {
-      await refresh();
-      toast.success("The document is being filled; the representative gets the link");
-    },
-    onError: (err: Error) => toast.error(err.message || "Couldn't send it to n8n"),
-  });
-  const checkDrive = useMutation({
-    mutationFn: () => apiClient.workOrders.checkDrive({}),
-    onSuccess: async ({ result }) => {
-      await refresh();
-      await queryClient.invalidateQueries({ queryKey: ["admin", "work-order-integration"] });
-      toast.success(
-        result.attached > 0
-          ? "Signed PDF attached"
-          : result.mismatch > 0
-            ? "A signed PDF's terms differ: the representative got the differences"
-            : "No new signed PDF for this work order",
-      );
-    },
-    onError: (err: Error) => toast.error(err.message || "Couldn't check the Signed folder"),
-  });
   const askPayee = useMutation({
     mutationFn: () => apiClient.workOrders.requestPayeeConfirmation({ id: wo.id }),
     onSuccess: async () => {
@@ -86,9 +58,6 @@ export function SigningPanel({
     onError: (err: Error) => toast.error(err.message || "Couldn't send the request"),
   });
 
-  const googleReady = !!integration?.google?.templateUrl && !!integration.google.documentsFolderUrl;
-  const signature = wo.signature;
-  const unsigned = wo.status === "draft" || wo.status === "offered";
   const date = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
 
   return (
@@ -105,111 +74,10 @@ export function SigningPanel({
       <CardContent>
         <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-[10rem_1fr]">
           <Row label="Signature">
-            {signature.method === "google_esign" ? (
-              <div className="flex flex-col gap-1">
-                <span>E-signed in Google Docs on {date(signature.signedAt)}</span>
-                {signature.signers.length > 0 && (
-                  <ul className="text-muted-foreground">
-                    {signature.signers.map((s) => (
-                      <li key={`${s.role}-${s.name}`}>
-                        {ROLE_LABEL[s.role]}: {s.name}
-                        {s.signedAt ? `, ${date(s.signedAt)}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : signature.method === "in_app" ? (
-              <span>Accepted by the builder in MultiAgency on {date(signature.signedAt)}</span>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <span className="text-muted-foreground">Not signed yet.</span>
-                {signature.preparedDocumentUrl ? (
-                  <Button size="sm" className="self-start" asChild>
-                    <a href={signature.preparedDocumentUrl} target="_blank" rel="noreferrer">
-                      Open the document to send for signature
-                    </a>
-                  </Button>
-                ) : canManage && integration && !integration.connected && !googleReady ? (
-                  <span className="text-muted-foreground">
-                    <Link
-                      to="/admin/settings"
-                      hash="work-orders"
-                      className="text-foreground underline underline-offset-4"
-                    >
-                      Set up Google Docs and Drive
-                    </Link>{" "}
-                    to fill your template, or offer it to the builder to accept in MultiAgency.
-                  </span>
-                ) : (
-                  canManage &&
-                  !googleReady && (
-                    <span className="text-muted-foreground">
-                      The filled document arrives from n8n.
-                    </span>
-                  )
-                )}
-                {canManage && (signature.preparedDocumentUrl || googleReady) && (
-                  <span className="text-muted-foreground">
-                    In Google Docs: Tools → eSignature → Request signature (the builder and you).
-                    Once both have signed, save the signed PDF in your Signed folder.
-                  </span>
-                )}
-                {canManage && (integration?.connected || googleReady) && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="self-start"
-                    disabled={prepare.isPending}
-                    onClick={() => prepare.mutate()}
-                  >
-                    {signature.preparedDocumentUrl
-                      ? "Fill the document again"
-                      : "Fill the document in Google Docs"}
-                  </Button>
-                )}
-                {canManage && integration?.google?.signedFolderUrl && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="self-start"
-                    disabled={checkDrive.isPending}
-                    onClick={() => checkDrive.mutate()}
-                  >
-                    {checkDrive.isPending ? "Checking…" : "Check the Signed folder now"}
-                  </Button>
-                )}
-              </div>
-            )}
+            <SignatureStatus workOrder={wo} canManage={canManage} />
           </Row>
-          <Row label="Signed document">
-            <span className="flex flex-wrap items-center gap-2">
-              {wo.documentSha256 ? (
-                <span className="font-mono text-xs break-all">
-                  {wo.documentUrl ? (
-                    <a
-                      href={wo.documentUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline underline-offset-4"
-                    >
-                      SHA-256 {wo.documentSha256.slice(0, 16)}…
-                    </a>
-                  ) : (
-                    `SHA-256 ${wo.documentSha256.slice(0, 16)}…`
-                  )}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">
-                  {unsigned ? "Attached automatically when the signed PDF lands in Drive" : "None"}
-                </span>
-              )}
-              {canManage && wo.status !== "terminated" && signature.method !== "google_esign" && (
-                <Button size="sm" variant="ghost" onClick={onAttach}>
-                  Attach by hand
-                </Button>
-              )}
-            </span>
+          <Row label="Document">
+            <DocumentRow workOrder={wo} canManage={canManage} onAttach={onAttach} />
           </Row>
           <Row label="Payout account">
             <div className="flex flex-col gap-2">
@@ -289,5 +157,177 @@ export function SigningPanel({
         </dl>
       </CardContent>
     </Card>
+  );
+}
+
+function SignatureStatus({
+  workOrder: wo,
+  canManage,
+}: {
+  workOrder: WorkOrderDetail;
+  canManage: boolean;
+}) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  const [name, setName] = useState(wo.representativeName ?? "");
+  const [agree, setAgree] = useState(false);
+  const countersign = useMutation({
+    mutationFn: () =>
+      apiClient.workOrders.countersign({ id: wo.id, name: name.trim(), agree: true }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      toast.success("Countersigned: the signed PDF is saved and sent to both of you");
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't countersign"),
+  });
+  const day = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : "");
+  const { builder, representative } = wo.signing;
+
+  if (wo.signature.method === "google_esign") {
+    return (
+      <div className="flex flex-col gap-1">
+        <span>E-signed in Google Docs on {day(wo.signature.signedAt)}</span>
+        {wo.signature.signers.map((s) => (
+          <span key={`${s.role}-${s.name}`} className="text-muted-foreground">
+            {s.role === "contractor" ? "Builder" : "Representative"}: {s.name}
+          </span>
+        ))}
+      </div>
+    );
+  }
+  if (builder && representative) {
+    return (
+      <span>
+        Signed by {builder.name} on {day(builder.signedAt)} and countersigned by{" "}
+        {representative.name} on {day(representative.signedAt)}.
+      </span>
+    );
+  }
+  if (builder) {
+    return (
+      <div className="flex flex-col gap-3">
+        <span>
+          Signed by {builder.name} on {day(builder.signedAt)}.{" "}
+          {canManage
+            ? "Countersign it to complete the work order."
+            : "Waiting for a countersignature."}
+        </span>
+        {canManage && (
+          <form
+            className="flex max-w-md flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (agree && name.trim().length >= 2) countersign.mutate();
+            }}
+          >
+            <Input
+              aria-label="Your full name"
+              placeholder="Your full name"
+              autoComplete="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <label htmlFor={`countersign-${wo.id}`} className="flex items-start gap-2 text-sm">
+              <Checkbox
+                id={`countersign-${wo.id}`}
+                checked={agree}
+                onCheckedChange={(checked) => setAgree(checked === true)}
+              />
+              <span>
+                I've read this work order and sign it electronically for the Agency. My typed name
+                is my signature.
+              </span>
+            </label>
+            <Button
+              type="submit"
+              size="sm"
+              className="self-start"
+              disabled={!agree || name.trim().length < 2 || countersign.isPending}
+            >
+              {countersign.isPending ? "Signing…" : "Countersign"}
+            </Button>
+          </form>
+        )}
+      </div>
+    );
+  }
+  if (wo.status === "offered") {
+    return (
+      <span className="text-muted-foreground">
+        Sent to the builder on {day(wo.offeredAt)}; waiting for their signature.
+      </span>
+    );
+  }
+  if (wo.signature.method === "in_app" && wo.acceptedAt) {
+    return <span>Accepted by the builder in MultiAgency on {day(wo.acceptedAt)}.</span>;
+  }
+  return (
+    <span className="text-muted-foreground">
+      Not sent yet. Offer to builder prepares the document and emails the builder to sign it.
+    </span>
+  );
+}
+
+function DocumentRow({
+  workOrder: wo,
+  canManage,
+  onAttach,
+}: {
+  workOrder: WorkOrderDetail;
+  canManage: boolean;
+  onAttach: () => void;
+}) {
+  const apiClient = useApiClient();
+  const [open, setOpen] = useState(false);
+  const sent = wo.status !== "draft" || wo.signing.documentSha256 !== null;
+  const document = useQuery({
+    queryKey: [
+      ...adminWorkOrdersQueryKey,
+      "document",
+      wo.id,
+      wo.signing.documentSha256,
+      wo.documentSha256,
+    ],
+    queryFn: () => apiClient.workOrders.document({ id: wo.id }),
+    enabled: open && sent,
+    retry: false,
+  });
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {sent && (
+          <Button size="sm" variant="outline" onClick={() => setOpen((v) => !v)}>
+            {open
+              ? "Hide the document"
+              : wo.documentSha256
+                ? "View the signed PDF"
+                : "View the document"}
+          </Button>
+        )}
+        {wo.signature.preparedDocumentUrl && (
+          <Button size="sm" variant="ghost" asChild>
+            <a href={wo.signature.preparedDocumentUrl} target="_blank" rel="noreferrer">
+              Open the Google Doc
+            </a>
+          </Button>
+        )}
+        {canManage && wo.status === "draft" && (
+          <Button size="sm" variant="ghost" onClick={onAttach}>
+            Attach a signed PDF by hand
+          </Button>
+        )}
+        {!sent && !wo.signature.preparedDocumentUrl && (
+          <span className="text-muted-foreground">Prepared when you offer it.</span>
+        )}
+      </div>
+      {open &&
+        (document.isError ? (
+          <span className="text-sm text-muted-foreground">The document isn't available.</span>
+        ) : document.data ? (
+          <PdfViewer document={document.data} />
+        ) : (
+          <span className="text-sm text-muted-foreground">Loading the document…</span>
+        ))}
+    </div>
   );
 }

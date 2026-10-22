@@ -6,6 +6,7 @@ export const WORK_ORDER_EVENT_TYPES = [
   "work_order.document_ready",
   "work_order.signature_mismatch",
   "work_order.offered",
+  "work_order.builder_signed",
   "work_order.signed",
   "work_order.confirm_payee",
   "work_order.payee_confirmed",

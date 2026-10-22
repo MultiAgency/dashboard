@@ -456,6 +456,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
       };
     };
 
+    const signerMeta = (headers: Headers | undefined) => ({
+      ip:
+        headers?.get("cf-connecting-ip") ??
+        headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+        headers?.get("x-real-ip") ??
+        null,
+      userAgent: headers?.get("user-agent") ?? null,
+    });
+
     const intakeOrganization = async (headers: Headers | undefined) => {
       const given = headers?.get("authorization") ?? "";
       const token = given.startsWith("Bearer ") ? given.slice(7).trim() : "";
@@ -1021,6 +1030,16 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.offer(context.scope, input)),
 
+        document: builder.workOrders.document
+          .use(agencyMember)
+          .handler(async ({ context, input }) => workOrders.document(context.scope, input)),
+
+        countersign: builder.workOrders.countersign
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            workOrders.countersign(context.scope, input, signerMeta(context.reqHeaders)),
+          ),
+
         activate: builder.workOrders.activate
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.activate(context.scope, input)),
@@ -1187,9 +1206,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(auth.requireAuth)
           .handler(async ({ context, input }) => workOrders.mineGet(context, input)),
 
-        accept: builder.myWorkOrders.accept
+        document: builder.myWorkOrders.document
           .use(auth.requireAuth)
-          .handler(async ({ context, input }) => workOrders.accept(context, input)),
+          .handler(async ({ context, input }) => workOrders.myDocument(context, input)),
+
+        sign: builder.myWorkOrders.sign
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) =>
+            workOrders.sign(context, input, signerMeta(context.reqHeaders)),
+          ),
 
         confirmPayee: builder.myWorkOrders.confirmPayee
           .use(auth.requireAuth)

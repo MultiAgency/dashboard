@@ -593,6 +593,8 @@ export const workOrders = pgTable(
     code: text("code").notNull(),
     organizationId: text("organization_id").notNull(),
     projectId: text("project_id").notNull(),
+    projectTitle: text("project_title"),
+    projectSlug: text("project_slug"),
     builderNearAccount: text("builder_near_account").notNull(),
     githubLogin: text("github_login"),
     title: text("title").notNull(),
@@ -818,3 +820,54 @@ export const workOrderDriveFiles = pgTable(
 );
 
 export type WorkOrderDriveFileRow = typeof workOrderDriveFiles.$inferSelect;
+
+export const WORK_ORDER_DOCUMENT_KINDS = ["offered", "signed"] as const;
+
+export const workOrderDocuments = pgTable(
+  "work_order_documents",
+  {
+    id: text("id").primaryKey(),
+    workOrderId: text("work_order_id")
+      .notNull()
+      .references(() => workOrders.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: WORK_ORDER_DOCUMENT_KINDS }).notNull(),
+    fileName: text("file_name").notNull(),
+    pdf: text("pdf").notNull(),
+    sha256: text("sha256").notNull(),
+    termsHash: text("terms_hash").notNull(),
+    driveFileId: text("drive_file_id"),
+    driveUrl: text("drive_url"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    workOrderIdx: index("work_order_documents_work_order").on(t.workOrderId, t.createdAt),
+  }),
+);
+
+export type WorkOrderDocumentRow = typeof workOrderDocuments.$inferSelect;
+
+export const SIGNER_ROLES = ["contractor", "representative"] as const;
+
+export const workOrderSignatures = pgTable(
+  "work_order_signatures",
+  {
+    id: text("id").primaryKey(),
+    workOrderId: text("work_order_id")
+      .notNull()
+      .references(() => workOrders.id, { onDelete: "cascade" }),
+    documentSha256: text("document_sha256").notNull(),
+    role: text("role", { enum: SIGNER_ROLES }).notNull(),
+    name: text("name").notNull(),
+    email: text("email"),
+    userId: text("user_id"),
+    nearAccount: text("near_account"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    signedAt: timestamp("signed_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    once: uniqueIndex("work_order_signatures_once").on(t.workOrderId, t.documentSha256, t.role),
+  }),
+);
+
+export type WorkOrderSignatureRow = typeof workOrderSignatures.$inferSelect;

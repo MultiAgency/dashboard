@@ -92,6 +92,44 @@ export class FakeGoogle implements GooglePort {
     return [...this.pdfs.values()].filter((p) => p.folderId === folderId).map((p) => p.file);
   }
 
+  exported = new Map<string, Uint8Array>();
+  uploads: { folderId: string; name: string; bytes: Uint8Array; id: string }[] = [];
+
+  async exportPdf(documentId: string) {
+    const values = this.filled.get(documentId) ?? {};
+    const pdf = minimalPdf([
+      `Work Order ${values.work_order_id ?? documentId}`,
+      ...Object.entries(values).map(([k, v]) => `${k}: ${v}`),
+    ]);
+    this.exported.set(documentId, pdf);
+    return pdf;
+  }
+
+  async upload(input: { folderId: string; name: string; bytes: Uint8Array; mimeType: string }) {
+    const id = `upload-${this.uploads.length + 1}`;
+    this.uploads.push({ ...input, id });
+    this.pdfs.set(id, {
+      folderId: input.folderId,
+      bytes: new Uint8Array(input.bytes),
+      file: {
+        id,
+        name: input.name,
+        mimeType: "application/pdf",
+        webViewLink: `https://drive.google.com/file/d/${id}/view`,
+        createdTime: null,
+        driveId: "shared",
+      },
+    });
+    return {
+      id,
+      name: input.name,
+      mimeType: input.mimeType,
+      webViewLink: `https://drive.google.com/file/d/${id}/view`,
+      createdTime: null,
+      driveId: "shared",
+    };
+  }
+
   async download(id: string) {
     if (this.failDownloads.has(id)) throw new Error("Drive download failed");
     const pdf = this.pdfs.get(id);
