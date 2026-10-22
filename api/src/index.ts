@@ -247,7 +247,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const workOrders = createWorkOrdersService({
         db,
         directory,
-        scopeOfOrganization: (organizationId) => access.readScopeOfAgency({}, organizationId),
+        scopeOfOrganization: (organizationId) =>
+          access.readScopeOfAgency({ userId: "system:work-orders" }, organizationId),
         agencyDaoOf: (organizationId) => agencyDaoOf(db, organizationId),
         organizationName: async (organizationId) =>
           (await organizationDirectory.get(organizationId))?.name ?? organizationId,
