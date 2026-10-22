@@ -87,3 +87,26 @@ describe("Google service account", () => {
     expect(calls.filter((c) => c.url === "https://oauth2.example/token")).toHaveLength(1);
   });
 });
+
+describe("Google errors", () => {
+  test("a My Drive folder explains the Shared Drive requirement instead of asking to share", async () => {
+    const fetcher = (async (url: string) => {
+      if (url.includes("oauth2")) {
+        return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }));
+      }
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: "The user's Drive storage quota has been exceeded.",
+            errors: [{ reason: "storageQuotaExceeded" }],
+          },
+        }),
+        { status: 403 },
+      );
+    }) as typeof fetch;
+    const google = createGoogle(parseServiceAccount(json)!, fetcher);
+    await expect(google.copy("tpl", { name: "x", parentId: "folder" })).rejects.toThrow(
+      /must be inside a Shared Drive/,
+    );
+  });
+});

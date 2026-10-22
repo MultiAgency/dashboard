@@ -19,6 +19,7 @@ export type DriveFile = {
   mimeType: string;
   webViewLink: string | null;
   createdTime: string | null;
+  driveId: string | null;
 };
 
 export type GooglePort = {
@@ -95,6 +96,7 @@ function fileOf(value: unknown): DriveFile {
     mimeType: String(raw.mimeType ?? ""),
     webViewLink: typeof raw.webViewLink === "string" ? raw.webViewLink : null,
     createdTime: typeof raw.createdTime === "string" ? raw.createdTime : null,
+    driveId: typeof raw.driveId === "string" ? raw.driveId : null,
   };
 }
 
@@ -156,18 +158,25 @@ export function createGoogle(account: ServiceAccount, fetcher: typeof fetch = fe
     });
     if (response.ok) return response;
     const detail = (await response.json().catch(() => null)) as {
-      error?: { message?: string };
+      error?: { message?: string; errors?: { reason?: string }[] };
     } | null;
-    const message = detail?.error?.message ?? `HTTP ${response.status}`;
+    const message = (detail?.error?.message ?? `HTTP ${response.status}`).replace(/\.+$/, "");
+    const reason = detail?.error?.errors?.[0]?.reason ?? "";
+    if (reason === "storageQuotaExceeded" || /storage quota/i.test(message)) {
+      throw new GoogleError(
+        "The folder for the filled documents must be inside a Shared Drive: a service account has no Drive storage of its own, so it can't create files in someone's My Drive",
+        response.status,
+      );
+    }
     throw new GoogleError(
       response.status === 404 || response.status === 403
-        ? `${message}. Share it with ${account.clientEmail}.`
+        ? `${message}. Share it with ${account.clientEmail}`
         : message,
       response.status,
     );
   }
 
-  const fields = "id,name,mimeType,webViewLink,createdTime";
+  const fields = "id,name,mimeType,webViewLink,createdTime,driveId";
 
   return {
     email: account.clientEmail,

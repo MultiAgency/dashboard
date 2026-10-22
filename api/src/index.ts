@@ -379,6 +379,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       label: string,
       value: string | null,
       kind: "document" | "folder",
+      sharedDriveOnly = false,
     ): Promise<string | null> => {
       if (!value) return null;
       const id = googleIdOf(value);
@@ -397,6 +398,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
         const file = await google.file(id);
         if (file.mimeType !== mime) {
           throw new Error(`it's not a Google ${kind === "document" ? "Doc" : "Drive folder"}`);
+        }
+        if (sharedDriveOnly && !file.driveId) {
+          throw new Error(
+            "it's in a My Drive. Use a folder inside a Shared Drive: a service account has no Drive storage of its own, so it can only create the filled documents there",
+          );
         }
       } catch (error) {
         throw new ORPCError("BAD_REQUEST", {
@@ -1106,6 +1112,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
               "Documents folder",
               input.documentsFolderUrl,
               "folder",
+              true,
             );
             const signedFolderId = await checkGoogleFile(
               "Signed folder",

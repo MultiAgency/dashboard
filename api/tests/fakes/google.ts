@@ -49,6 +49,7 @@ export class FakeGoogle implements GooglePort {
       mimeType: "application/vnd.google-apps.document",
       webViewLink: null,
       createdTime: null,
+      driveId: "shared",
     };
   }
 
@@ -61,6 +62,7 @@ export class FakeGoogle implements GooglePort {
       mimeType: "application/vnd.google-apps.document",
       webViewLink: `https://docs.google.com/document/d/${id}/edit`,
       createdTime: null,
+      driveId: "shared",
     };
   }
 
@@ -81,6 +83,7 @@ export class FakeGoogle implements GooglePort {
         mimeType: "application/pdf",
         webViewLink: `https://drive.google.com/file/d/${id}/view`,
         createdTime,
+        driveId: "shared",
       },
     });
   }
