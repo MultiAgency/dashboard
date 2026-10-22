@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -14,7 +14,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useApiClient } from "@/lib/api";
 import { adminWorkOrdersQueryKey } from "@/lib/queries";
-import { PdfViewer } from "./pdf-viewer";
+import { OpenDocumentButton } from "./open-document-button";
 import type { WorkOrderDetail } from "./work-order-status";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -324,56 +324,23 @@ function DocumentRow({
   onAttach: () => void;
 }) {
   const apiClient = useApiClient();
-  const [open, setOpen] = useState(false);
   const sent = wo.status !== "draft" || wo.signing.documentSha256 !== null;
-  const document = useQuery({
-    queryKey: [
-      ...adminWorkOrdersQueryKey,
-      "document",
-      wo.id,
-      wo.signing.documentSha256,
-      wo.documentSha256,
-    ],
-    queryFn: () => apiClient.workOrders.document({ id: wo.id }),
-    enabled: open && sent,
-    retry: false,
-  });
+  const link = wo.documentSha256 ? wo.documentUrl : (wo.signature.preparedDocumentUrl ?? null);
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        {sent && (
-          <Button size="sm" variant="outline" onClick={() => setOpen((v) => !v)}>
-            {open
-              ? "Hide the document"
-              : wo.documentSha256
-                ? "View the signed PDF"
-                : "View the document"}
-          </Button>
-        )}
-        {wo.signature.preparedDocumentUrl && (
-          <Button size="sm" variant="ghost" asChild>
-            <a href={wo.signature.preparedDocumentUrl} target="_blank" rel="noreferrer">
-              Open the Google Doc
-            </a>
-          </Button>
-        )}
-        {canManage && wo.status === "draft" && (
-          <Button size="sm" variant="ghost" onClick={onAttach}>
-            Attach a signed PDF by hand
-          </Button>
-        )}
-        {!sent && !wo.signature.preparedDocumentUrl && (
-          <span className="text-muted-foreground">Prepared when you offer it.</span>
-        )}
-      </div>
-      {open &&
-        (document.isError ? (
-          <span className="text-sm text-muted-foreground">The document isn't available.</span>
-        ) : document.data ? (
-          <PdfViewer document={document.data} />
-        ) : (
-          <span className="text-sm text-muted-foreground">Loading the document…</span>
-        ))}
+    <div className="flex flex-wrap items-center gap-2">
+      {(sent || link) && (
+        <OpenDocumentButton
+          href={link}
+          load={() => apiClient.workOrders.document({ id: wo.id })}
+          label={wo.documentSha256 ? "Open the signed document" : "Open document"}
+        />
+      )}
+      {canManage && wo.status === "draft" && (
+        <Button size="sm" variant="ghost" onClick={onAttach}>
+          Attach a signed PDF by hand
+        </Button>
+      )}
+      {!sent && !link && <span className="text-muted-foreground">Prepared when you offer it.</span>}
     </div>
   );
 }

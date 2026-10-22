@@ -14,7 +14,7 @@ import { Field } from "@/components/admin-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { myWorkOrdersQueryKey } from "@/lib/queries";
-import { PdfViewer } from "./pdf-viewer";
+import { OpenDocumentButton } from "./open-document-button";
 
 type MyWorkOrder = Awaited<ReturnType<ApiClient["myWorkOrders"]["get"]>>;
 
@@ -81,10 +81,11 @@ export function BuilderSigning({
       <CardContent className="flex flex-col gap-4">
         {document.isError ? (
           <p className="text-sm text-muted-foreground">The document isn't available yet.</p>
-        ) : document.data ? (
-          <PdfViewer document={document.data} />
         ) : (
-          <p className="text-sm text-muted-foreground">Loading the document…</p>
+          <OpenDocumentButton
+            pdf={document.data}
+            label={document.data?.kind === "signed" ? "Open the signed document" : "Open document"}
+          />
         )}
         {waiting && esign && (
           <div className="flex flex-wrap gap-2 border-t pt-4">
