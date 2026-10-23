@@ -148,7 +148,19 @@ export const NOTIFICATION_KINDS = {
   }),
   compensation_request_submitted: (p) => ({
     title: `${p.builderName} submitted ${p.requestCode}`,
-    body: `${p.builderName} asked for ${p.requested} under Work Order ${p.code} on ${p.projectTitle}. Review the report and approve an amount on MultiAgency.`,
+    body: `${p.builderName} asked for ${p.requested} under Work Order ${p.code} on ${p.projectTitle}. Review the report and approve an amount on MultiAgency.${p.trustNote ? ` ${p.trustNote}` : ""}`,
+  }),
+  compensation_request_auto_scheduled: (p) => ({
+    title: `${p.requestCode} approves automatically at ${p.autoApproveAt}`,
+    body: `${p.builderName} (${p.tier}) asked for ${p.requested} under Work Order ${p.code} on ${p.projectTitle}. It's approved automatically at ${p.autoApproveAt} unless you stop it on MultiAgency.`,
+  }),
+  compensation_request_auto_approved: (p) => ({
+    title: `${p.requestCode} was approved automatically`,
+    body: `${p.builderName} (${p.tier}) was approved ${p.approved} for ${p.requestCode} under Work Order ${p.code} on ${p.projectTitle}.`,
+  }),
+  compensation_request_needs_approval: (p) => ({
+    title: `${p.requestCode} needs your approval`,
+    body: `${p.requestCode} from ${p.builderName} wasn't approved automatically${p.reason ? `: ${p.reason}` : "."} Review it on MultiAgency.`,
   }),
   compensation_request_approved: (p) => ({
     title: `${p.requestCode} approved for ${p.approved}`,

@@ -288,6 +288,16 @@ export function workOrderIntegrationQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const workOrderTrustQueryKey = ["admin", "work-order-trust"] as const;
+
+export function workOrderTrustQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderTrustQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.trustSettings({}),
+    retry: false,
+  });
+}
+
 export const payoutAgentQueryKey = ["admin", "payout-agent"] as const;
 
 export function payoutAgentQueryOptions(apiClient: ApiClient) {

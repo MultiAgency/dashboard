@@ -172,6 +172,29 @@ const manualItem = z.object({
   note: z.string().trim().max(500).nullable(),
 });
 
+const trustDecision = z.enum(["manual", "veto_window", "auto_pay"]);
+
+export const trustMode = z.enum(["off", "suggest", "auto"]);
+
+const requestTrust = z.object({
+  tier: z.enum(["new", "established", "trusted"]),
+  score: z.number(),
+  reasons: z.array(z.string()),
+  blockers: z.array(z.string()),
+  decision: trustDecision,
+  suggested: trustDecision,
+  aiVerdict: z.enum(["consistent", "concerns", "inconsistent"]).nullable(),
+  aiConcerns: z.array(z.string()),
+  autoApproveAt: z.string().nullable(),
+  stopped: z.boolean(),
+  approvedAutomatically: z.boolean(),
+});
+
+export const trustSettings = z.object({
+  mode: trustMode,
+  vetoHours: z.number().int().min(1).max(168),
+});
+
 export const compensationRequest = z.object({
   id: z.string(),
   workOrderId: z.string(),
@@ -222,6 +245,7 @@ export const compensationRequest = z.object({
     })
     .nullable(),
   submittedAt: z.string().nullable(),
+  trust: requestTrust.nullable(),
   proposalId: z.string().nullable(),
   payingDaoAccountId: z.string().nullable(),
   paidAt: z.string().nullable(),
@@ -540,6 +564,27 @@ export const workOrdersContract = {
     .route({ method: "POST", path: "/admin/work-order-requests/{requestId}/pay" })
     .input(byRequest)
     .output(compensationRequest)
+    .errors(errors),
+
+  stopAutoApproval: oc
+    .route({
+      method: "POST",
+      path: "/admin/work-order-requests/{requestId}/stop-auto-approval",
+    })
+    .input(byRequest)
+    .output(compensationRequest)
+    .errors(errors),
+
+  trustSettings: oc
+    .route({ method: "GET", path: "/admin/work-order-trust" })
+    .input(z.object({}))
+    .output(trustSettings)
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+  saveTrustSettings: oc
+    .route({ method: "POST", path: "/admin/work-order-trust" })
+    .input(trustSettings)
+    .output(trustSettings)
     .errors(errors),
 
   payoutAgent: oc

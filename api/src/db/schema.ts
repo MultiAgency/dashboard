@@ -708,6 +708,10 @@ export const COMPENSATION_REQUEST_STATUSES = [
   "failed",
 ] as const;
 
+export const AUTO_DECISIONS = ["manual", "veto_window", "auto_pay"] as const;
+
+export const TRUST_MODES = ["off", "suggest", "auto"] as const;
+
 export const compensationRequests = pgTable(
   "compensation_requests",
   {
@@ -743,12 +747,18 @@ export const compensationRequests = pgTable(
     autoPayTriedAt: timestamp("auto_pay_tried_at", { withTimezone: false }),
     submittedAt: timestamp("submitted_at", { withTimezone: false }),
     paidAt: timestamp("paid_at", { withTimezone: false }),
+    trust: text("trust"),
+    autoApproveAt: timestamp("auto_approve_at", { withTimezone: false }),
+    autoDecision: text("auto_decision", { enum: AUTO_DECISIONS }),
+    autoStoppedBy: text("auto_stopped_by"),
+    autoStoppedAt: timestamp("auto_stopped_at", { withTimezone: false }),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     sequence: uniqueIndex("compensation_requests_sequence").on(t.workOrderId, t.seq),
     statusIdx: index("compensation_requests_status").on(t.status),
+    autoApproveIdx: index("compensation_requests_auto_approve_at").on(t.autoApproveAt),
   }),
 );
 
@@ -770,6 +780,8 @@ export const workOrderIntegrations = pgTable("work_order_integrations", {
   googleSignedFolderId: text("google_signed_folder_id"),
   googleCheckedAt: timestamp("google_checked_at", { withTimezone: false }),
   googleLastError: text("google_last_error"),
+  trustMode: text("trust_mode", { enum: TRUST_MODES }).notNull().default("suggest"),
+  trustVetoHours: integer("trust_veto_hours").notNull().default(24),
   updatedBy: text("updated_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),

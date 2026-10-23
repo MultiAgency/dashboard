@@ -176,6 +176,13 @@
       "when": 1792886400000,
       "tag": "0025_work_order_auto_pay",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793059200000,
+      "tag": "0027_work_order_trust",
+      "breakpoints": true
     }
   ]
 }

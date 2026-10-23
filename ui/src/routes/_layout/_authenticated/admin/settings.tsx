@@ -28,6 +28,7 @@ import { Loading } from "@/components/admin-form";
 import { PageHeader } from "@/components/page-header";
 import { WorkOrderIntegrationSettings } from "@/components/work-orders/integration-settings";
 import { PayoutAgentSettings } from "@/components/work-orders/payout-agent-settings";
+import { WorkOrderTrustSettings } from "@/components/work-orders/trust-settings";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import {
@@ -66,6 +67,9 @@ function AdminSettingsPage() {
       </section>
       <section id="work-orders" className="scroll-mt-24">
         <WorkOrderIntegrationSettings />
+      </section>
+      <section id="work-order-approval" className="scroll-mt-24">
+        <WorkOrderTrustSettings />
       </section>
       <section id="payouts" className="scroll-mt-24">
         <PayoutAgentSettings />

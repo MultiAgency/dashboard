@@ -25,6 +25,8 @@ import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organizat
 import type { Project, ProjectDirectory } from "../project-directory";
 import type { DaoProposal } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
+import { createAutoApproval, trustViewOf } from "./auto-approval";
+import type { ConsistencyChecker } from "./consistency";
 import type { EsignPort } from "./documenso";
 import {
   codeIn,
@@ -128,6 +130,7 @@ export type WorkOrderDeps = {
     deliver?(): Promise<unknown>;
   } | null;
   summarizer?: Summarizer;
+  consistency?: ConsistencyChecker | null;
   google?: GooglePort | null;
   userEmail?: (userId: string) => Promise<string | null>;
   appOrigin?: string;
@@ -1529,6 +1532,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             }
           : null,
       submittedAt: request.submittedAt?.toISOString() ?? null,
+      trust: trustViewOf(request),
       proposalId: request.proposalId,
       payingDaoAccountId: daoAccountId,
       paidAt: request.paidAt?.toISOString() ?? null,
@@ -1857,9 +1861,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const existing = await evidenceOf(row.id);
     const confirmed = new Set(existing.filter((e) => e.confirmed).map((e) => e.url));
     const keep = new Set(keepRepos.map((r) => r.toLowerCase()));
+    const fresh = collected.filter((c) => !(c.repo && keep.has(c.repo.toLowerCase())));
+    const keyOf = (e: { kind: string; url: string }) => `${e.kind} ${e.url}`;
+    const freshKeys = new Set(fresh.map(keyOf));
+    const byKey = new Map(existing.filter((e) => e.kind !== "manual").map((e) => [keyOf(e), e]));
     await db.transaction(async (tx) => {
       const stale = existing.filter(
-        (e) => e.kind !== "manual" && !(e.repo && keep.has(e.repo.toLowerCase())),
+        (e) =>
+          e.kind !== "manual" &&
+          !(e.repo && keep.has(e.repo.toLowerCase())) &&
+          !freshKeys.has(keyOf(e)),
       );
       if (stale.length) {
         await tx.delete(workOrderEvidence).where(
@@ -1869,30 +1880,36 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           ),
         );
       }
-      const fresh = collected.filter((c) => !(c.repo && keep.has(c.repo.toLowerCase())));
       for (const item of fresh) {
         const isConfirmed = confirmed.has(item.url);
+        const values = {
+          kind: item.kind,
+          repo: item.repo,
+          number: item.number,
+          url: item.url,
+          title: item.title,
+          state: item.state,
+          occurredAt: item.occurredAt ? new Date(item.occurredAt) : null,
+          assignedAt: item.assignedAt ? new Date(item.assignedAt) : null,
+          assignedBy: item.assignedBy,
+          authorized: item.authorized || isConfirmed,
+          confirmed: isConfirmed,
+          flags: JSON.stringify(item.flags),
+          links: JSON.stringify(item.links),
+          details: JSON.stringify(item.details),
+          collectedAt: now(),
+        };
+        const current = byKey.get(keyOf(item));
+        if (current) {
+          await tx
+            .update(workOrderEvidence)
+            .set(values)
+            .where(eq(workOrderEvidence.id, current.id));
+          continue;
+        }
         await tx
           .insert(workOrderEvidence)
-          .values({
-            id: crypto.randomUUID(),
-            workOrderId: row.id,
-            kind: item.kind,
-            repo: item.repo,
-            number: item.number,
-            url: item.url,
-            title: item.title,
-            state: item.state,
-            occurredAt: item.occurredAt ? new Date(item.occurredAt) : null,
-            assignedAt: item.assignedAt ? new Date(item.assignedAt) : null,
-            assignedBy: item.assignedBy,
-            authorized: item.authorized || isConfirmed,
-            confirmed: isConfirmed,
-            flags: JSON.stringify(item.flags),
-            links: JSON.stringify(item.links),
-            details: JSON.stringify(item.details),
-            collectedAt: now(),
-          })
+          .values({ id: crypto.randomUUID(), workOrderId: row.id, ...values })
           .onConflictDoNothing();
       }
       await tx.update(workOrders).set({ lastCollectedAt: now() }).where(eq(workOrders.id, row.id));
@@ -2618,6 +2635,95 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     await assessIfDue(await mustRow(current.id));
   }
 
+  async function approveAs(
+    row: WorkOrderRow,
+    request: CompensationRequestRow,
+    amount: string,
+    actorId: string,
+    confirmEvidenceIds?: string[],
+  ): Promise<CompensationRequestRow> {
+    if (!PAYABLE.includes(row.status)) {
+      throw badRequest(
+        "NOT_PAYABLE",
+        `Work order ${row.code} is ${row.status}: nothing can be approved`,
+      );
+    }
+    if (BigInt(amount) <= 0n) throw badRequest("AMOUNT_NOT_POSITIVE", "Approve more than zero");
+    const approved = await db.transaction(async (tx) => {
+      const [fresh] = await tx
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, request.id))
+        .limit(1);
+      if (fresh?.status !== "submitted") {
+        throw badRequest(
+          "NOT_SUBMITTED",
+          `Request ${row.code}-R${request.seq} isn't waiting for approval`,
+        );
+      }
+      const others = await tx
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.workOrderId, row.id));
+      const { remaining } = amountsOf(row, others);
+      if (BigInt(amount) > remaining) {
+        throw badRequest(
+          "OVER_BUDGET",
+          `Only ${display(remaining, row.tokenId)} of the budget remains`,
+        );
+      }
+      if (confirmEvidenceIds?.length) {
+        await tx
+          .update(workOrderEvidence)
+          .set({ authorized: true, confirmed: true })
+          .where(
+            and(
+              eq(workOrderEvidence.workOrderId, row.id),
+              inArray(workOrderEvidence.id, confirmEvidenceIds),
+            ),
+          );
+      }
+      const [done] = await tx
+        .update(compensationRequests)
+        .set({
+          status: "approved",
+          approvedAmount: amount,
+          approvedBy: actorId,
+          decidedAt: now(),
+          note: null,
+          autoPayBlockedReason: null,
+          autoPayBlockedAt: null,
+          autoPayTriedAt: null,
+          updatedAt: now(),
+        })
+        .where(eq(compensationRequests.id, request.id))
+        .returning();
+      return done!;
+    });
+    await notifyBuilder(
+      row,
+      "compensation_request_approved",
+      await payloadOf(row, {
+        requestCode: `${row.code}-R${request.seq}`,
+        approved: display(amount, row.tokenId),
+      }),
+    );
+    await announce(row, "request.approved", { request: approved });
+    const paid = await tryAutoPay(approved, row);
+    return paid.request;
+  }
+
+  const autoApproval = createAutoApproval({
+    db,
+    now,
+    consistency: deps.consistency,
+    collected: collectedOf,
+    approve: (row, request, amount, actorId) => approveAs(row, request, amount, actorId),
+    notify: (row, kind, payload) => notifyManagers(row, kind, payload),
+    payload: payloadOf,
+    display,
+  });
+
   async function claimLock(holder: string, id = LOCK_ID, ms = LOCK_MS): Promise<boolean> {
     const until = new Date(now().getTime() + ms);
     const inserted = await db
@@ -3057,68 +3163,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           `${row.code}-R${request.seq} has no work the repository owner approved: confirm you want to approve it anyway`,
         );
       }
-      const approved = await db.transaction(async (tx) => {
-        const [fresh] = await tx
-          .select()
-          .from(compensationRequests)
-          .where(eq(compensationRequests.id, request.id))
-          .limit(1);
-        if (fresh?.status !== "submitted") {
-          throw badRequest(
-            "NOT_SUBMITTED",
-            `Request ${row.code}-R${request.seq} isn't waiting for approval`,
-          );
-        }
-        const others = await tx
-          .select()
-          .from(compensationRequests)
-          .where(eq(compensationRequests.workOrderId, row.id));
-        const { remaining } = amountsOf(row, others);
-        if (BigInt(input.amount) > remaining) {
-          throw badRequest(
-            "OVER_BUDGET",
-            `Only ${display(remaining, row.tokenId)} of the budget remains`,
-          );
-        }
-        if (input.confirmEvidenceIds?.length) {
-          await tx
-            .update(workOrderEvidence)
-            .set({ authorized: true, confirmed: true })
-            .where(
-              and(
-                eq(workOrderEvidence.workOrderId, row.id),
-                inArray(workOrderEvidence.id, input.confirmEvidenceIds),
-              ),
-            );
-        }
-        const [done] = await tx
-          .update(compensationRequests)
-          .set({
-            status: "approved",
-            approvedAmount: input.amount,
-            approvedBy: scope.actorId,
-            decidedAt: now(),
-            note: null,
-            autoPayBlockedReason: null,
-            autoPayBlockedAt: null,
-            autoPayTriedAt: null,
-            updatedAt: now(),
-          })
-          .where(eq(compensationRequests.id, request.id))
-          .returning();
-        return done!;
-      });
-      await notifyBuilder(
+      const approved = await approveAs(
         row,
-        "compensation_request_approved",
-        await payloadOf(row, {
-          requestCode: `${row.code}-R${request.seq}`,
-          approved: display(input.amount, row.tokenId),
-        }),
+        request,
+        input.amount,
+        scope.actorId,
+        input.confirmEvidenceIds,
       );
-      await announce(row, "request.approved", { request: approved });
-      const paid = await tryAutoPay(approved, row);
-      return requestView(paid.request, row);
+      return requestView(approved, row);
     },
 
     fundingNeeds: async (scope: OrganizationScope) => {
@@ -3507,8 +3559,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     mineGet: async (context: PluginContext, input: { id: string }) => {
       const row = await syncSignatures(await mustRow(input.id));
       requireBuilder(context, row);
+      const mine = builderView(await detail(row));
       return {
-        ...builderView(await detail(row)),
+        ...mine,
+        requests: mine.requests.map((r) => ({ ...r, trust: null })),
         agencyName: await deps.organizationName(row.organizationId).catch(() => row.organizationId),
         termsHash: termsHash(row),
       };
@@ -3614,7 +3668,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     ) => {
       const row = await mustRow(input.id);
       requireBuilder(context, row);
-      return requestView(await draftRequest(row, input), row);
+      return { ...(await requestView(await draftRequest(row, input), row)), trust: null };
     },
 
     editRequest: async (
@@ -3661,7 +3715,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           : {}),
         ...(input.requestedAmount !== undefined ? { requestedAmount: input.requestedAmount } : {}),
       });
-      return requestView(edited, row);
+      return { ...(await requestView(edited, row)), trust: null };
     },
 
     submitRequest: async (context: PluginContext, input: { requestId: string }) => {
@@ -3715,16 +3769,19 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         reportSha256: sha256Hex(frozen),
         submittedAt: now(),
       });
-      await notifyManagers(
-        row,
-        "compensation_request_submitted",
-        await payloadOf(row, {
-          requestCode: `${row.code}-R${request.seq}`,
-          requested: display(request.requestedAmount, row.tokenId),
-        }),
-      );
+      const submittedPayload = await payloadOf(row, {
+        requestCode: `${row.code}-R${request.seq}`,
+        requested: display(request.requestedAmount, row.tokenId),
+      });
       await announce(row, "request.awaiting_approval", { request: submitted, reportMd: frozen });
-      return requestView(submitted, row);
+      const decided = await autoApproval
+        .onSubmitted(row, submitted, submittedPayload)
+        .catch((error: unknown) => {
+          console.warn(`[API] trust check of request ${submitted.id} failed`, error);
+          return false;
+        });
+      if (!decided) await notifyManagers(row, "compensation_request_submitted", submittedPayload);
+      return { ...(await requestView(await mustRequest(submitted.id), row)), trust: null };
     },
 
     syncPendingSignatures,
@@ -3737,6 +3794,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       try {
         counts.signaturesChecked = await syncPendingSignatures();
         await activateReady(counts);
+        const auto = await autoApproval.due(now());
+        counts.autoApproved = auto.approved;
+        counts.autoManual = auto.manual;
         await followUpPayouts(counts);
         await retryBlockedPayouts(counts);
         await deliverOutbox();
@@ -3746,12 +3806,25 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       return { ran: true, counts };
     },
 
+    stopAutoApproval: async (scope: OrganizationScope, input: { requestId: string }) => {
+      const request = await mustRequest(input.requestId);
+      const row = await ownRow(scope, request.workOrderId);
+      return requestView(await autoApproval.stop(request, scope.actorId), row);
+    },
+
+    trustSettings: async (scope: OrganizationScope) => autoApproval.settings(scope.organizationId),
+
+    autoApproveDue: () => autoApproval.due(now()),
+
     run: async (holder: string = crypto.randomUUID()) => {
       if (!(await claimLock(holder))) return { ran: false, counts: {} as Record<string, number> };
       const counts: Record<string, number> = {};
       try {
         counts.signaturesChecked = await syncPendingSignatures();
         await activateReady(counts);
+        const auto = await autoApproval.due(now());
+        counts.autoApproved = auto.approved;
+        counts.autoManual = auto.manual;
         const rows = await db
           .select()
           .from(workOrders)

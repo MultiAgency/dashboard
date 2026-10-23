@@ -31,6 +31,7 @@ import {
 } from "@/lib/format-amount";
 import { adminWorkOrdersQueryKey, payoutAgentQueryOptions } from "@/lib/queries";
 import { ReportMarkdown } from "./report-markdown";
+import { RequestTrust } from "./request-trust";
 import {
   type CompensationRequest,
   RequestStatusBadge,
@@ -177,6 +178,7 @@ function RequestItem({
           .
         </p>
       )}
+      <RequestTrust request={request} canManage={canManage} />
       {request.overlaps.length > 0 && (
         <p className="text-sm text-destructive">
           Its dates overlap {request.overlaps.join(", ")}, already approved or paid: check the same

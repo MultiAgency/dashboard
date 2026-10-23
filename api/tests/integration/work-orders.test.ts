@@ -316,6 +316,17 @@ describe("work orders", () => {
   });
 
   describe("evidence: the repository owner accepts", () => {
+    test("collecting again keeps the ids of evidence a submitted request froze", async () => {
+      strongEvidence();
+      const wo = await active();
+      const first = await service.collect(await studio(), { id: wo.id });
+      const again = await service.collect(await studio(), { id: wo.id });
+      expect(again.evidence.map((e) => e.id).sort()).toEqual(
+        first.evidence.map((e) => e.id).sort(),
+      );
+      expect(first.evidence.length).toBeGreaterThan(0);
+    });
+
     test("a PR merged by a repo admin counts; one merged by a writer doesn't", async () => {
       github.issue(REPO, 1).assign("carol-gh", "2026-09-02T10:00:00Z");
       github.issue(REPO, 2).assign("carol-gh", "2026-09-02T10:00:00Z");

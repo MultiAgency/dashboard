@@ -89,6 +89,23 @@ export function createWorkOrderIntegrations(deps: { db: Database; now?: () => Da
       return row?.organizationId ?? null;
     },
 
+    saveTrust: async (
+      organizationId: string,
+      actorId: string,
+      input: { mode: "off" | "suggest" | "auto"; vetoHours: number },
+    ) => {
+      if (!(await settings(organizationId))) await issue(organizationId, actorId, null);
+      await db
+        .update(workOrderIntegrations)
+        .set({
+          trustMode: input.mode,
+          trustVetoHours: input.vetoHours,
+          updatedBy: actorId,
+          updatedAt: now(),
+        })
+        .where(eq(workOrderIntegrations.organizationId, organizationId));
+    },
+
     saveGoogle: async (
       organizationId: string,
       actorId: string,

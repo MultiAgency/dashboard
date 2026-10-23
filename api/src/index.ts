@@ -61,6 +61,7 @@ import {
 import { fullAccessKeys, getProposal, getProposalBond, getRoles } from "./services/sputnik";
 import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
+import { createConsistencyChecker } from "./services/work-orders/consistency";
 import { createDocumenso } from "./services/work-orders/documenso";
 import { testEvent } from "./services/work-orders/events";
 import { cachedOwnership, createGitHub } from "./services/work-orders/github";
@@ -322,6 +323,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
         thresholds: config.variables.workOrderRenewal,
         outbox: workOrderOutbox,
         summarizer: createSummarizer(config.secrets.ANTHROPIC_API_KEY),
+        consistency: config.secrets.ANTHROPIC_API_KEY
+          ? createConsistencyChecker({ apiKey: config.secrets.ANTHROPIC_API_KEY })
+          : null,
         payouts: payoutAgents.available ? payoutAgents : null,
         google,
         userEmail,
@@ -1132,6 +1136,25 @@ export default createPlugin.withPlugins<PluginsClient>()({
         payNow: builder.workOrders.payNow
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.payNow(context.scope, input)),
+
+        stopAutoApproval: builder.workOrders.stopAutoApproval
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.stopAutoApproval(context.scope, input)),
+
+        trustSettings: builder.workOrders.trustSettings
+          .use(agencyManager)
+          .handler(async ({ context }) => workOrders.trustSettings(context.scope)),
+
+        saveTrustSettings: builder.workOrders.saveTrustSettings
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            await workOrderIntegrations.saveTrust(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+            return workOrders.trustSettings(context.scope);
+          }),
 
         payoutAgent: builder.workOrders.payoutAgent
           .use(agencyManager)
