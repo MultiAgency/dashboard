@@ -38,7 +38,9 @@ export function PayeePayoutsPrompt({ workOrder }: { workOrder: WorkOrderDetail }
             <AllowPayeesButton payee={name} />
           ) : (
             <Button size="sm" variant="outline" asChild>
-              <Link to="/admin/settings">Open the payout settings</Link>
+              <Link to="/admin/settings" hash="payouts">
+                Open the payout settings
+              </Link>
             </Button>
           )}
         </span>

@@ -26,6 +26,7 @@ import { TreasurySettings } from "@/components/admin/treasury-settings";
 import { AdminError } from "@/components/admin-error";
 import { Loading } from "@/components/admin-form";
 import { PageHeader } from "@/components/page-header";
+import { SettingsSection } from "@/components/settings-section";
 import { WorkOrderIntegrationSettings } from "@/components/work-orders/integration-settings";
 import { PayoutAgentSettings } from "@/components/work-orders/payout-agent-settings";
 import { WorkOrderTrustSettings } from "@/components/work-orders/trust-settings";
@@ -61,20 +62,44 @@ function AdminSettingsPage() {
         title="Settings"
         description="Your Organization's identity, treasury and public Agency details."
       />
-      <OrganizationIdentity />
-      <section id="treasury" className="scroll-mt-24">
+      <SettingsSection
+        id="organization"
+        title="Organization"
+        description="The name and slug an Agency uses to propose an Engagement to you."
+      >
+        <OrganizationIdentity />
+      </SettingsSection>
+      <SettingsSection
+        id="treasury"
+        title="Treasury"
+        description="The Agency DAO that funds your Projects' budgets and billings."
+      >
         <TreasurySettings />
-      </section>
-      <section id="work-orders" className="scroll-mt-24">
+      </SettingsSection>
+      <SettingsSection
+        id="work-orders"
+        title="Work orders: documents and email"
+        description="Google Docs template, Drive folders, e-signature and emails."
+      >
         <WorkOrderIntegrationSettings />
-      </section>
-      <section id="work-order-approval" className="scroll-mt-24">
+      </SettingsSection>
+      <SettingsSection
+        id="work-order-approval"
+        title="Automatic approval"
+        description="How much builders' trust lets compensation requests skip your approval."
+      >
         <WorkOrderTrustSettings />
-      </section>
-      <section id="payouts" className="scroll-mt-24">
+      </SettingsSection>
+      <SettingsSection
+        id="payouts"
+        title="Automatic payouts (NEAR Intents)"
+        description="The payout agent: rules, monthly budget, balance and top-ups."
+      >
         <PayoutAgentSettings />
-      </section>
-      <AdminSettings />
+      </SettingsSection>
+      <SettingsSection id="agency" title="Agency details" description="Your public Agency profile.">
+        <AdminSettings />
+      </SettingsSection>
     </div>
   );
 }
