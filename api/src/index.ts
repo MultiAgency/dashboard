@@ -77,6 +77,7 @@ import { createWorkOrderIntegrations, createWorkOrderOutbox } from "./services/w
 import { createPriceFeed } from "./services/work-orders/prices";
 import { scheduleWorkOrders, stopWorkOrders } from "./services/work-orders/scheduler";
 import { createWorkOrdersService } from "./services/work-orders/service";
+import { createSetupStatus } from "./services/work-orders/setup-status";
 import { createSummarizer } from "./services/work-orders/summarizer";
 import {
   askFields,
@@ -380,6 +381,20 @@ export default createPlugin.withPlugins<PluginsClient>()({
         appOrigin,
         timeZone: config.variables.workOrderTimezone,
       });
+      const workOrderSetup = createSetupStatus({
+        organizationName: async (organizationId) =>
+          (await organizationDirectory.get(organizationId))?.name ?? null,
+        representative: workOrderIntegrations.representative,
+        emailEnabled: sendEmail !== null,
+        esignEnabled: !!config.secrets.DOCUMENSO_API_KEY,
+        google: {
+          serviceAccount: google !== null,
+          connection: googleConnections.status,
+          settings: workOrderIntegrations.settings,
+        },
+        payouts: payoutAgents,
+        fundingNeeds: workOrders.fundingNeeds,
+      });
       const workOrderTimers = scheduleWorkOrders(workOrders, config.variables.workOrderSchedule);
       const workOrdersRunSecret = config.secrets.WORK_ORDERS_RUN_SECRET ?? null;
 
@@ -419,6 +434,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
         workOrderIntegrations,
         workOrderAiDrafts,
         workOrderEmails: sendEmail !== null,
+        workOrderSetup,
+        appOrigin,
         google,
         googleConnections,
         googleFor,
@@ -470,6 +487,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
       workOrderIntegrations,
       workOrderAiDrafts,
       workOrderEmails,
+      workOrderSetup,
+      appOrigin,
       google,
       googleConnections,
       googleFor,
@@ -1233,6 +1252,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
             );
             return workOrderIntegrations.representative(context.scope.organizationId);
           }),
+
+        setupStatus: builder.workOrders.setupStatus
+          .use(agencyManager)
+          .handler(async ({ context }) => workOrderSetup.checks(context.scope)),
 
         payoutAgent: builder.workOrders.payoutAgent
           .use(agencyManager)

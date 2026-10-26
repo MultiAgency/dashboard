@@ -252,6 +252,15 @@ export const representativeDefaults = z.object({
     .nullable(),
 });
 
+export const setupCheck = z.object({
+  key: z.string(),
+  label: z.string(),
+  state: z.enum(["ok", "missing", "warning", "optional"]),
+  detail: z.string().nullable(),
+  fixHref: z.string().nullable(),
+  required: z.boolean(),
+});
+
 export const compensationRequest = z.object({
   id: z.string(),
   workOrderId: z.string(),
@@ -746,6 +755,12 @@ export const workOrdersContract = {
     .input(representativeDefaults)
     .output(representativeDefaults)
     .errors(errors),
+
+  setupStatus: oc
+    .route({ method: "GET", path: "/admin/work-order-setup" })
+    .input(z.object({}))
+    .output(z.array(setupCheck))
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
 
   payoutAgent: oc
     .route({ method: "GET", path: "/admin/payout-agent" })
