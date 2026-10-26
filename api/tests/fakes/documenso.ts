@@ -20,6 +20,8 @@ type Sent = {
 export class FakeDocumenso implements EsignPort {
   sent: Sent[] = [];
   failSend: string | null = null;
+  cancelled: { envelopeId: string; reason: string }[] = [];
+  onStatus: (() => Promise<void>) | null = null;
 
   last(): Sent {
     const doc = this.sent.at(-1);
@@ -63,6 +65,9 @@ export class FakeDocumenso implements EsignPort {
   }
 
   async status(envelopeId: string): Promise<EsignStatus> {
+    const hook = this.onStatus;
+    this.onStatus = null;
+    await hook?.();
     const doc = this.sent.find((d) => d.envelopeId === envelopeId);
     if (!doc) throw new Error(`fake documenso: no ${envelopeId}`);
     return {
@@ -83,5 +88,13 @@ export class FakeDocumenso implements EsignPort {
     const doc = this.sent.find((d) => d.envelopeId === envelopeId);
     if (!doc || doc.status !== "completed") throw new Error("not completed");
     return new TextEncoder().encode(`%PDF-1.7 signed ${envelopeId} %%EOF`);
+  }
+
+  async cancel(envelopeId: string, reason: string) {
+    const doc = this.sent.find((d) => d.envelopeId === envelopeId);
+    if (!doc || doc.status !== "pending")
+      throw new Error(`fake documenso: ${envelopeId} isn't pending`);
+    doc.status = "rejected";
+    this.cancelled.push({ envelopeId, reason });
   }
 }

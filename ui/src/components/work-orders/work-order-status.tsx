@@ -53,7 +53,3 @@ export function RenewalBadge({ status }: { status: Renewal["status"] }) {
   const { label, variant } = RENEWAL_STATUS[status];
   return <Badge variant={variant}>{label}</Badge>;
 }
-
-export function formatPeriodShort(start: string, end: string): string {
-  return `${start} → ${end}`;
-}

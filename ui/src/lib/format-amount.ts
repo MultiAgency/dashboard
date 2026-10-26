@@ -36,9 +36,12 @@ export function formatUsd(amount: string): string {
     const value = BigInt(amount);
     const negative = value < 0n;
     const abs = negative ? -value : value;
-    const cents = ((abs % 1_000_000n) / 10_000n).toString().padStart(2, "0");
-    const whole = withThousandsSeparator((abs / 1_000_000n).toString());
-    return `${negative ? "-" : ""}$${whole}${cents === "00" ? "" : `.${cents}`}`;
+    const sign = negative ? "-" : "";
+    const totalCents = (abs + 5_000n) / 10_000n;
+    if (abs > 0n && totalCents === 0n) return `${sign}<$0.01`;
+    const cents = (totalCents % 100n).toString().padStart(2, "0");
+    const whole = withThousandsSeparator((totalCents / 100n).toString());
+    return `${sign}$${whole}${cents === "00" ? "" : `.${cents}`}`;
   } catch {
     return `${amount} usd`;
   }

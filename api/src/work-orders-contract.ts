@@ -14,7 +14,7 @@ const code = z
 const repo = z
   .string()
   .trim()
-  .regex(/^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/, "owner/name");
+  .regex(/^[A-Za-z0-9-]{1,39}\/(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$/, "owner/name");
 const nearAccount = z.string().trim().min(2).max(64);
 const status = z.enum([
   "draft",
@@ -304,7 +304,6 @@ const byId = z.object({ id: z.string().min(1) });
 const byRequest = z.object({ requestId: z.string().min(1) });
 const range = { coversFrom: day.optional(), coversTo: day.optional() };
 const errors = { UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST };
-const CONFLICT = { status: 409, message: "Conflict" } as const;
 
 const payoutAgent = z.object({
   available: z.boolean(),
@@ -316,11 +315,6 @@ const payoutAgent = z.object({
   grantExpiresAt: z.string().nullable(),
   grantValid: z.boolean(),
   grantExpiringSoon: z.boolean(),
-  serverSigning: z.object({
-    configured: z.boolean(),
-    active: z.boolean(),
-    warning: z.string().nullable(),
-  }),
   policy: z
     .object({
       status: z.string(),
@@ -343,7 +337,6 @@ const payoutAgent = z.object({
 
 const delivery = z.object({
   id: z.string(),
-  channel: z.enum(["email", "n8n"]),
   eventType: z.string(),
   attempts: z.number().int(),
   deliveredAt: z.string().nullable(),
@@ -352,13 +345,8 @@ const delivery = z.object({
 });
 
 const integration = z.object({
-  connected: z.boolean(),
-  webhookUrl: z.string().nullable(),
-  webhookSecret: z.string().nullable(),
-  hasInboundToken: z.boolean(),
   emailEnabled: z.boolean(),
   aiDraftsEnabled: z.boolean(),
-  callbackBaseUrl: z.string(),
   deliveries: z.array(delivery),
   google: z.object({
     available: z.boolean(),
@@ -639,12 +627,6 @@ export const workOrdersContract = {
     .output(z.object({ status: z.string(), failureCode: z.string().nullable(), view: payoutAgent }))
     .errors(errors),
 
-  signPayoutActionOnServer: oc
-    .route({ method: "POST", path: "/admin/payout-agent/server-sign" })
-    .input(z.object({ action: z.enum(["sync_policy", "issue_grant"]) }))
-    .output(z.object({ status: z.string(), failureCode: z.string().nullable(), view: payoutAgent }))
-    .errors(errors),
-
   allowPayees: oc
     .route({ method: "POST", path: "/admin/payout-agent/allow-payees" })
     .input(z.object({}))
@@ -743,18 +725,6 @@ export const workOrdersContract = {
     .output(integration)
     .errors({ UNAUTHORIZED, FORBIDDEN }),
 
-  saveIntegration: oc
-    .route({ method: "PUT", path: "/admin/work-order-integration" })
-    .input(z.object({ webhookUrl: z.url().max(2000).nullable() }))
-    .output(integration.extend({ inboundToken: z.string().nullable() }))
-    .errors(errors),
-
-  rotateIntegration: oc
-    .route({ method: "POST", path: "/admin/work-order-integration/rotate" })
-    .input(z.object({}))
-    .output(integration.extend({ inboundToken: z.string().nullable() }))
-    .errors(errors),
-
   saveGoogle: oc
     .route({ method: "PUT", path: "/admin/work-order-integration/google" })
     .input(
@@ -781,12 +751,6 @@ export const workOrdersContract = {
         }),
       }),
     )
-    .errors(errors),
-
-  testIntegration: oc
-    .route({ method: "POST", path: "/admin/work-order-integration/test" })
-    .input(z.object({}))
-    .output(integration)
     .errors(errors),
 
   decideRenewal: oc
@@ -878,45 +842,4 @@ export const myWorkOrdersContract = {
     .input(byRequest)
     .output(compensationRequest)
     .errors(errors),
-};
-
-const signer = z.object({
-  name: z.string().trim().min(1).max(200),
-  role: z.enum(["contractor", "representative"]),
-  signedAt: z.string().max(64).nullable(),
-});
-
-export const workOrderIntakeContract = {
-  preparedDocument: oc
-    .route({ method: "PATCH", path: "/work-orders/{code}" })
-    .input(z.object({ code, preparedDocumentUrl: z.url().max(2000) }))
-    .output(z.object({ id: z.string(), status, preparedDocumentUrl: z.string() }))
-    .errors(errors),
-
-  signedDocument: oc
-    .route({ method: "POST", path: "/work-orders/{code}/signed-document" })
-    .input(
-      z.object({
-        code,
-        method: z.literal("google_esign"),
-        documentSha256: z.string().regex(/^[0-9a-fA-F]{64}$/),
-        documentUrl: z.url().max(2000).nullable().optional(),
-        signedAt: z.string().max(64).nullable().optional(),
-        signers: z.array(signer).max(10).optional(),
-        extracted: z.object({
-          workOrderId: z.string().max(80),
-          project: z.string().max(300),
-          contractorName: z.string().max(200),
-          representativeName: z.string().max(200),
-          periodStart: z.string().max(40),
-          periodEnd: z.string().max(40),
-          budgetUsd: z.string().max(80),
-          payee: z.string().max(80).nullable(),
-          contractorGithub: z.string().max(80).nullable(),
-          repos: z.array(z.string().max(200)).max(20).nullable(),
-        }),
-      }),
-    )
-    .output(z.object({ id: z.string(), status, mismatches: z.array(z.string()) }))
-    .errors({ ...errors, CONFLICT }),
 };

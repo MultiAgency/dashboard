@@ -48,7 +48,6 @@ import {
 } from "./services/organization-access";
 import { atomicToNear, nearToAtomic, topUpFor } from "./services/payouts/policy";
 import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
-import { ownerSignerFrom } from "./services/payouts/signer";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
@@ -63,7 +62,6 @@ import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
 import { createConsistencyChecker } from "./services/work-orders/consistency";
 import { createDocumenso } from "./services/work-orders/documenso";
-import { testEvent } from "./services/work-orders/events";
 import { cachedOwnership, createGitHub } from "./services/work-orders/github";
 import {
   createGoogle,
@@ -133,7 +131,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
     DOCUMENSO_API_KEY: z.string().optional(),
     DOCUMENSO_API_URL: z.string().optional(),
     PAYOUTS_SECRET_KEY: z.string().optional(),
-    PAYOUTS_OWNER_PRIVATE_KEY: z.string().optional(),
   }),
 
   context: ContextSchema,
@@ -275,7 +272,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
         secretKey: config.secrets.PAYOUTS_SECRET_KEY ?? null,
         payees: workOrderPayees(db),
         fullAccessKeys,
-        ownerSigner: ownerSignerFrom(config.secrets.PAYOUTS_OWNER_PRIVATE_KEY),
       });
       const userEmail = async (userId: string) => {
         if (!authPool) return null;
@@ -369,10 +365,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
         workOrders,
         workOrdersRunSecret,
         workOrderIntegrations,
-        workOrderOutbox,
         workOrderAiDrafts,
         workOrderEmails: sendEmail !== null,
-        appOrigin,
         google,
         payoutAgents,
         workOrderTimers,
@@ -418,10 +412,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
       workOrders,
       workOrdersRunSecret,
       workOrderIntegrations,
-      workOrderOutbox,
       workOrderAiDrafts,
       workOrderEmails,
-      appOrigin,
       google,
       payoutAgents,
     } = services;
@@ -476,16 +468,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
         workOrderIntegrations.recent(organizationId),
       ]);
       return {
-        connected: !!settings?.n8nWebhookUrl,
-        webhookUrl: settings?.n8nWebhookUrl ?? null,
-        webhookSecret: settings?.webhookSecret ?? null,
-        hasInboundToken: !!settings,
         emailEnabled: workOrderEmails,
         aiDraftsEnabled: workOrderAiDrafts,
-        callbackBaseUrl: appOrigin,
         deliveries: deliveries.map((d) => ({
           id: d.id,
-          channel: d.channel,
           eventType: d.eventType,
           attempts: d.attempts,
           deliveredAt: d.deliveredAt?.toISOString() ?? null,
@@ -522,17 +508,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
       userAgent: headers?.get("user-agent") ?? null,
     });
 
-    const intakeOrganization = async (headers: Headers | undefined) => {
-      const given = headers?.get("authorization") ?? "";
-      const token = given.startsWith("Bearer ") ? given.slice(7).trim() : "";
-      const organizationId = token ? await workOrderIntegrations.organizationOfToken(token) : null;
-      if (!organizationId) {
-        throw new ORPCError("UNAUTHORIZED", {
-          message: "A valid Agency integration token is required",
-        });
-      }
-      return organizationId;
-    };
     const auth = createAuthMiddleware(builder);
     const {
       member,
@@ -1178,12 +1153,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
             payoutAgents.submit(context.scope.organizationId, input),
           ),
 
-        signPayoutActionOnServer: builder.workOrders.signPayoutActionOnServer
-          .use(agencyManager)
-          .handler(async ({ context, input }) =>
-            payoutAgents.signOnServer(context.scope.organizationId, input.action),
-          ),
-
         allowPayees: builder.workOrders.allowPayees
           .use(agencyManager)
           .handler(async ({ context }) => {
@@ -1277,27 +1246,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(agencyManager)
           .handler(async ({ context }) => integrationView(context.scope.organizationId)),
 
-        saveIntegration: builder.workOrders.saveIntegration
-          .use(agencyManager)
-          .handler(async ({ context, input }) => {
-            const { inboundToken } = await workOrderIntegrations.save(
-              context.scope.organizationId,
-              context.scope.actorId,
-              input.webhookUrl,
-            );
-            return { ...(await integrationView(context.scope.organizationId)), inboundToken };
-          }),
-
-        rotateIntegration: builder.workOrders.rotateIntegration
-          .use(agencyManager)
-          .handler(async ({ context }) => {
-            const { inboundToken } = await workOrderIntegrations.rotate(
-              context.scope.organizationId,
-              context.scope.actorId,
-            );
-            return { ...(await integrationView(context.scope.organizationId)), inboundToken };
-          }),
-
         saveGoogle: builder.workOrders.saveGoogle
           .use(agencyManager)
           .handler(async ({ context, input }) => {
@@ -1332,26 +1280,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
             return { ...(await integrationView(context.scope.organizationId)), result };
           }),
 
-        testIntegration: builder.workOrders.testIntegration
-          .use(agencyManager)
-          .handler(async ({ context }) => {
-            const organizationId = context.scope.organizationId;
-            const settings = await workOrderIntegrations.settings(organizationId);
-            if (!settings?.n8nWebhookUrl) {
-              throw new ORPCError("BAD_REQUEST", {
-                message: "Save your n8n webhook URL first",
-                data: { reason: "NOT_CONNECTED" },
-              });
-            }
-            const ids = await workOrderOutbox.enqueue(
-              organizationId,
-              null,
-              testEvent(organizationId),
-            );
-            await workOrderOutbox.deliver({ ids });
-            return integrationView(organizationId);
-          }),
-
         run: builder.workOrders.run.handler(async ({ context }) => {
           const given = context.reqHeaders?.get("authorization") ?? "";
           if (!workOrdersRunSecret || !sameSecret(given, `Bearer ${workOrdersRunSecret}`)) {
@@ -1359,17 +1287,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
           }
           return workOrders.run();
         }),
-      },
-
-      workOrderIntake: {
-        preparedDocument: builder.workOrderIntake.preparedDocument.handler(
-          async ({ context, input }) =>
-            workOrders.preparedDocument(await intakeOrganization(context.reqHeaders), input),
-        ),
-
-        signedDocument: builder.workOrderIntake.signedDocument.handler(async ({ context, input }) =>
-          workOrders.attachSignedDocument(await intakeOrganization(context.reqHeaders), input),
-        ),
       },
 
       myWorkOrders: {

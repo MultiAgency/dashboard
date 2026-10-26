@@ -46,6 +46,7 @@ import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
 import { LoadError } from "@/components/load-error";
 import { PageHeader } from "@/components/page-header";
 import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
+import { WorkOrdersCard } from "@/components/work-orders/work-orders-card";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { nearnListingHref } from "@/lib/nearn";
@@ -63,8 +64,6 @@ import { safeHttpHref } from "@/lib/url";
 
 const PROJECT_TABS = ["overview", "budget", "listings", "billings", "settings"] as const;
 type ProjectTab = (typeof PROJECT_TABS)[number];
-
-import { WorkOrdersCard } from "@/components/work-orders/work-orders-card";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/projects/$slug")({
   head: ({ params }) => ({

@@ -166,6 +166,10 @@ export const NOTIFICATION_KINDS = {
     title: `${p.requestCode} approved for ${p.approved}`,
     body: `${p.agencyName} approved ${p.approved} for ${p.requestCode}. It is paid through the Agency's payout agent, or from the Agency DAO once its transfer proposal is approved.`,
   }),
+  payout_grant_expiring: (p) => ({
+    title: `MultiAgency's payout permission expires ${p.expiresOn}`,
+    body: `Automatic payouts stop on ${p.expiresOn} unless the payout agent's owner renews the permission with their wallet in Settings.`,
+  }),
   compensation_request_payout_blocked: (p) => ({
     title: `${p.requestCode} is approved but not paid yet`,
     body: `The automatic payout of ${p.approved} for ${p.requestCode} didn't go out: ${p.reason}. It is tried again automatically once that's fixed, or pay it through a DAO proposal.`,

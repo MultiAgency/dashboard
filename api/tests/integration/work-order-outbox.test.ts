@@ -3,17 +3,22 @@ import type { Database } from "../../src/db";
 import { workOrderOutbox } from "../../src/db/schema";
 import type { EmailMessage } from "../../src/services/notify";
 import { composeEmails } from "../../src/services/work-orders/emails";
-import { testEvent, type WorkOrderEvent } from "../../src/services/work-orders/events";
-import {
-  createWorkOrderIntegrations,
-  createWorkOrderOutbox,
-} from "../../src/services/work-orders/outbox";
+import type { WorkOrderEvent } from "../../src/services/work-orders/events";
+import { createWorkOrderOutbox } from "../../src/services/work-orders/outbox";
 import { migratedDatabase } from "./_pg";
 
 function event(type: WorkOrderEvent["type"], over: Partial<WorkOrderEvent> = {}): WorkOrderEvent {
   return {
-    ...testEvent("studio"),
+    id: "evt_test",
     type,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    request: null,
+    payout: null,
+    reportMd: null,
+    terms: null,
+    mismatches: null,
+    note: null,
+    renewal: null,
     agency: { id: "studio", name: "Studio" },
     workOrder: {
       id: "SI-004",
@@ -46,14 +51,12 @@ describe("work order emails", () => {
   let db: Database;
   let clock: Date;
   let sent: EmailMessage[];
-  let integrations: ReturnType<typeof createWorkOrderIntegrations>;
   let outbox: ReturnType<typeof createWorkOrderOutbox>;
 
   beforeEach(() => {
     db = database.db;
     clock = new Date("2026-09-20T12:00:00.000Z");
     sent = [];
-    integrations = createWorkOrderIntegrations({ db, now: () => clock });
     outbox = createWorkOrderOutbox({
       db,
       sendEmail: async (message) => {
@@ -126,13 +129,11 @@ describe("work order emails", () => {
     expect(await outbox.deliver()).toEqual({ delivered: 0, failed: 0 });
   });
 
-  test("an n8n webhook saved earlier is ignored: emails still go through Resend", async () => {
-    await integrations.save("studio", "rita", "https://n8n.example/webhook/wo");
-    await outbox.enqueue("studio", "wo1", event("work_order.signed"));
-    const rows = await db.select().from(workOrderOutbox);
-    expect(rows.map((r) => r.channel)).toEqual(["email"]);
-    await outbox.deliver();
-    expect(sent.map((m) => m.to)).toEqual(["rita@example.com"]);
+  test("overlapping deliveries send each email once", async () => {
+    const ids = await outbox.enqueue("studio", "wo1", event("work_order.signed"));
+    const [first, second] = await Promise.all([outbox.deliver({ ids }), outbox.deliver()]);
+    expect(first.delivered + second.delivered).toBe(1);
+    expect(sent).toHaveLength(1);
   });
 
   test("a failed email is retried with backoff", async () => {
@@ -154,20 +155,6 @@ describe("work order emails", () => {
     expect((await outbox.deliver()).delivered).toBe(0);
     clock = new Date(clock.getTime() + 61_000);
     expect((await outbox.deliver()).delivered).toBe(2);
-  });
-
-  test("an Agency's inbound token is its own, and rotating it replaces it", async () => {
-    const first = await integrations.save("studio", "rita", null);
-    await integrations.save("rival", "ruth", null);
-    expect(await integrations.organizationOfToken(first.inboundToken ?? "")).toBe("studio");
-    expect(await integrations.organizationOfToken("wo_not-a-real-token-at-all-000000")).toBeNull();
-    expect(
-      (await integrations.save("studio", "rita", "https://n8n.example/hook")).inboundToken,
-    ).toBeNull();
-    const rotated = await integrations.rotate("studio", "rita");
-    expect(await integrations.organizationOfToken(first.inboundToken ?? "")).toBeNull();
-    expect(await integrations.organizationOfToken(rotated.inboundToken ?? "")).toBe("studio");
-    expect((await integrations.settings("studio"))?.n8nWebhookUrl).toBe("https://n8n.example/hook");
   });
 
   test("deliveries older than a day are given up", async () => {

@@ -4,13 +4,15 @@ import {
   type Policy,
   type StatusResponse,
 } from "@near-intents-agent-api/sdk";
+import { generateKey, generateNonce, Near } from "near-kit";
 import type { AgentApiPort } from "../../src/services/payouts/service";
 
 type Status = StatusResponse["status"];
 
 export class FakeAgentApi implements AgentApiPort {
   owner = "rita.near";
-  ownerKey = "ed25519:owner";
+  ownerKeyPair = generateKey();
+  ownerKey = this.ownerKeyPair.publicKey.toString();
   monthlySpentUsd = "0";
   monthlyResetsAt: string | null = null;
   policyChangeAvailableAt: string | null = null;
@@ -26,6 +28,8 @@ export class FakeAgentApi implements AgentApiPort {
     status: "SUCCESS",
     details: { tx_hash: "TXHASH1" },
   };
+  nextSubmit: Status | null = null;
+  onWithdraw: (() => Promise<void>) | null = null;
   private counter = 0;
   private pending = new Map<string, Record<string, unknown>>();
 
@@ -56,20 +60,70 @@ export class FakeAgentApi implements AgentApiPort {
             standard: "nep366",
             payload: {
               receiverId: "intents.near",
-              actions: [{ params: { methodName: "x", args: {}, gas: "1", deposit: "0" } }],
+              actions: [
+                {
+                  type: "FunctionCall",
+                  params: {
+                    methodName: "add_public_key",
+                    args: { agent: this.agentId },
+                    gas: "30000000000000",
+                    deposit: "1",
+                  },
+                },
+              ],
             },
           }
         : {
             standard: "nep413",
-            payload: { message: `sign ${correlationId}`, recipient: "intents.near", nonce: "AAAA" },
+            payload: {
+              message: `sign ${correlationId}`,
+              recipient: "intents.near",
+              nonce: Buffer.from(generateNonce()).toString("base64"),
+            },
           },
       preview: { summary: `Do ${String(body.type)}` },
     } as unknown as GenerateIntentResponse;
   }
 
+  async sign(intent: Record<string, unknown>, keyPair = this.ownerKeyPair) {
+    const payload = intent.payload as Record<string, unknown>;
+    if (intent.standard === "nep413") {
+      const signed = keyPair.signNep413Message?.(this.owner, {
+        message: String(payload.message),
+        recipient: String(payload.recipient),
+        nonce: new Uint8Array(Buffer.from(String(payload.nonce), "base64")),
+      });
+      return { ...intent, public_key: signed?.publicKey, signature: signed?.signature };
+    }
+    const near = new Near({
+      network: "mainnet",
+      privateKey: keyPair.secretKey,
+      defaultSignerId: this.owner,
+    } as ConstructorParameters<typeof Near>[0]);
+    const actions = payload.actions as {
+      params: { methodName: string; args: Record<string, unknown>; gas: string; deposit: string };
+    }[];
+    const builder = actions.reduce(
+      (tx, { params }) =>
+        tx.functionCall(String(payload.receiverId), params.methodName, params.args, {
+          gas: params.gas as `${number}`,
+          attachedDeposit: BigInt(params.deposit),
+        }),
+      near.transaction(this.owner),
+    );
+    const { payload: signedDelegate } = await builder.delegate({ maxBlockHeight: 100n, nonce: 1n });
+    return { ...intent, signed_delegate: signedDelegate };
+  }
+
   async submitIntent(request: { type: string; correlation_id: string; signed_data: unknown }) {
     this.submitted.push(request);
     const body = this.pending.get(request.correlation_id) ?? {};
+    if (this.nextSubmit) {
+      const status = this.nextSubmit;
+      this.nextSubmit = null;
+      this.statuses.set(request.correlation_id, { status, details: {} });
+      return this.status(request.correlation_id, status, {});
+    }
     if (body.type === "agent_create" || body.type === "policy_update") {
       this.policy = body.policy as Policy;
       this.revision = (this.revision ?? 0) + 1;
@@ -149,6 +203,7 @@ export class FakeAgentApi implements AgentApiPort {
 
   async withdraw(_agentId: string, request: unknown, options: { idempotencyKey: string }) {
     this.withdrawals.push({ grant: this.grant, body: request, key: options.idempotencyKey });
+    await this.onWithdraw?.();
     const next = this.nextWithdraw;
     if ("refuse" in next) {
       throw new AgentApiError(422, {

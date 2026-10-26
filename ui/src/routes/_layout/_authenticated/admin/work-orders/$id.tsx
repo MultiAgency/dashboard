@@ -69,6 +69,13 @@ function WorkOrderPage() {
       return apiClient.workOrders.delete({ id });
     },
     onSuccess: async (_, action) => {
+      if (action === "delete") {
+        await navigate({ to: "/admin/work-orders" });
+        queryClient.removeQueries({
+          queryKey: adminWorkOrderQueryOptions(apiClient, id).queryKey,
+          exact: true,
+        });
+      }
       await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
       const done: Record<Action, string> = {
         offer: "Offered to the builder; they accept it from My work",
@@ -78,7 +85,6 @@ function WorkOrderPage() {
         collect: "Evidence collected from GitHub",
       };
       toast.success(done[action]);
-      if (action === "delete") void navigate({ to: "/admin/work-orders" });
     },
     onError: (err: Error) => toast.error(err.message || "Something went wrong"),
   });

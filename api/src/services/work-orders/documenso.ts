@@ -36,6 +36,7 @@ export type EsignPort = {
   }): Promise<{ envelopeId: string; signingUrls: Partial<Record<EsignRole, string>> }>;
   status(envelopeId: string): Promise<EsignStatus>;
   downloadSigned(envelopeId: string): Promise<Uint8Array>;
+  cancel(envelopeId: string, reason: string): Promise<void>;
 };
 
 type Envelope = {
@@ -198,6 +199,10 @@ export function createDocumenso(
           rejectionReason: r.rejectionReason ?? null,
         })),
       };
+    },
+
+    async cancel(envelopeId, reason) {
+      await call("POST", "/envelope/cancel", { envelopeId, reason });
     },
 
     async downloadSigned(envelopeId) {

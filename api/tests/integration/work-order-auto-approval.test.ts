@@ -151,12 +151,12 @@ describe("work order trust tiers and automatic approval", () => {
     });
     await payouts.submit("studio", {
       correlationId: create.correlationId,
-      signedData: { ...create.intent, signed_delegate: "signed" },
+      signedData: await agent.sign(create.intent),
     });
     const grant = await payouts.prepare("studio", { action: "issue_grant" });
     await payouts.submit("studio", {
       correlationId: grant.correlationId,
-      signedData: { ...grant.intent, public_key: "ed25519:owner", signature: "sig" },
+      signedData: await agent.sign(grant.intent),
     });
   }
 

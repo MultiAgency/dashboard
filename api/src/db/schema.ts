@@ -772,9 +772,6 @@ export const workOrderJobLock = pgTable("work_order_job_lock", {
 
 export const workOrderIntegrations = pgTable("work_order_integrations", {
   organizationId: text("organization_id").primaryKey(),
-  n8nWebhookUrl: text("n8n_webhook_url"),
-  webhookSecret: text("webhook_secret").notNull(),
-  inboundTokenHash: text("inbound_token_hash").notNull(),
   googleTemplateId: text("google_template_id"),
   googleDocumentsFolderId: text("google_documents_folder_id"),
   googleSignedFolderId: text("google_signed_folder_id"),
@@ -789,15 +786,12 @@ export const workOrderIntegrations = pgTable("work_order_integrations", {
 
 export type WorkOrderIntegrationRow = typeof workOrderIntegrations.$inferSelect;
 
-export const OUTBOX_CHANNELS = ["email", "n8n"] as const;
-
 export const workOrderOutbox = pgTable(
   "work_order_outbox",
   {
     id: text("id").primaryKey(),
     organizationId: text("organization_id").notNull(),
     workOrderId: text("work_order_id"),
-    channel: text("channel", { enum: OUTBOX_CHANNELS }).notNull(),
     eventType: text("event_type").notNull(),
     payload: text("payload").notNull(),
     attempts: integer("attempts").notNull().default(0),
@@ -898,6 +892,7 @@ export const payoutAgents = pgTable("payout_agents", {
   agentId: text("agent_id"),
   grantTokenEnc: text("grant_token_enc"),
   grantExpiresAt: timestamp("grant_expires_at", { withTimezone: false }),
+  grantRemindedFor: timestamp("grant_reminded_for", { withTimezone: false }),
   monthlyBudgetUsd: text("monthly_budget_usd").notNull(),
   maxPayoutNear: text("max_payout_near").notNull(),
   updatedBy: text("updated_by").notNull(),
@@ -921,6 +916,8 @@ export const payoutIntents = pgTable("payout_intents", {
   action: text("action", { enum: PAYOUT_ACTIONS }).notNull(),
   intentType: text("intent_type").notNull(),
   intent: text("intent").notNull(),
+  signerAccountId: text("signer_account_id").notNull(),
+  signerPublicKey: text("signer_public_key").notNull(),
   agentId: text("agent_id"),
   grantTokenEnc: text("grant_token_enc"),
   grantExpiresAt: timestamp("grant_expires_at", { withTimezone: false }),

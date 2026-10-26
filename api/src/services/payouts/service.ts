@@ -5,11 +5,12 @@ import {
   type BalancesView,
   createGrantCredential,
   type GenerateIntentResponse,
+  type Intent,
   type Policy,
   type PolicyView,
   type StatusResponse,
 } from "@near-intents-agent-api/sdk";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../../db";
 import {
@@ -22,6 +23,7 @@ import {
   workOrders,
 } from "../../db/schema";
 import { open, seal } from "./crypto";
+import { ownerSignatureProblem } from "./owner-signature";
 import {
   allowsPayee,
   atomicToNear,
@@ -32,11 +34,8 @@ import {
   payeesOf,
   topUpFor,
 } from "./policy";
-import type { OwnerSigner } from "./signer";
 
 export type PayoutAction = (typeof PAYOUT_ACTIONS)[number];
-
-export type ServerPayoutAction = "sync_policy" | "issue_grant";
 
 export type ReadinessCode =
   | "unavailable"
@@ -97,9 +96,9 @@ const AGENT_NAME = "MultiAgency payouts";
 const GRANT_LABEL = "MultiAgency work-order payouts";
 const GRANT_DAYS = 90;
 const GRANT_RENEW_DAYS = 14;
-const KEY_CHECK_MS = 10 * 60_000;
-const SERVER_ACTIONS: readonly PayoutAction[] = ["sync_policy", "issue_grant"];
 const PENDING_INTENT = new Set(["PENDING_SIGNATURE", "QUEUED", "PROCESSING", "PENDING_APPROVAL"]);
+const SUBMITTED_INTENT = ["QUEUED", "PROCESSING", "PENDING_APPROVAL"];
+const INTENT_FOLLOW_UP_MS = 7 * 24 * 3_600_000;
 const OPEN_PAYOUT: readonly AgentPayoutRow["status"][] = [
   "sending",
   "queued",
@@ -163,7 +162,6 @@ export function createPayoutAgents(deps: {
   secretKey: string | null;
   payees: (organizationId: string) => Promise<string[]>;
   fullAccessKeys?: (accountId: string) => Promise<string[]>;
-  ownerSigner?: OwnerSigner | null;
   now?: () => Date;
 }) {
   const { db } = deps;
@@ -235,43 +233,6 @@ export function createPayoutAgents(deps: {
     return { near, usd };
   }
 
-  const keyChecks = new Map<string, { at: number; owns: boolean }>();
-
-  async function serverSigning(row: PayoutAgentRow | null) {
-    const signer = deps.ownerSigner;
-    if (!signer) return { configured: false, active: false, warning: null as string | null };
-    if (!row) return { configured: true, active: false, warning: null as string | null };
-    const owner = row.ownerAccountId;
-    const cached = keyChecks.get(owner);
-    let owns = cached && now().getTime() - cached.at < KEY_CHECK_MS ? cached.owns : null;
-    if (owns === null) {
-      if (!deps.fullAccessKeys) {
-        return {
-          configured: true,
-          active: false,
-          warning: `Couldn't check that the server's key belongs to ${owner}`,
-        };
-      }
-      try {
-        owns = (await deps.fullAccessKeys(owner)).includes(signer.publicKey);
-        keyChecks.set(owner, { at: now().getTime(), owns });
-      } catch (error) {
-        return {
-          configured: true,
-          active: false,
-          warning: `Couldn't read ${owner}'s keys from NEAR: ${errorText(error)}`,
-        };
-      }
-    }
-    return owns
-      ? { configured: true, active: true, warning: null as string | null }
-      : {
-          configured: true,
-          active: false,
-          warning: `PAYOUTS_OWNER_PRIVATE_KEY (${signer.publicKey}) isn't a full-access key of ${owner}, so the server can't sign for it. Sign with your wallet, or add that key to ${owner}.`,
-        };
-  }
-
   function grantExpiringSoon(row: PayoutAgentRow | null) {
     if (!grantOf(row) || !row?.grantExpiresAt) return false;
     return row.grantExpiresAt.getTime() - now().getTime() < GRANT_RENEW_DAYS * 86_400_000;
@@ -300,9 +261,6 @@ export function createPayoutAgents(deps: {
       grantExpiresAt: row?.grantExpiresAt?.toISOString() ?? null,
       grantValid: grantOf(row) !== null,
       grantExpiringSoon: grantExpiringSoon(row),
-      serverSigning: available
-        ? await serverSigning(row)
-        : { configured: false, active: false, warning: null as string | null },
     };
     if (!available || !row?.agentId) {
       return {
@@ -372,8 +330,11 @@ export function createPayoutAgents(deps: {
   ) {
     if (action === "create_agent") {
       if (row.agentId) throw badRequest("AGENT_EXISTS", "The payout agent already exists");
-      if (!publicKey && deps.ownerSigner && (await serverSigning(row)).active) {
-        publicKey = deps.ownerSigner.publicKey;
+      if ((await submittedIntents(row.organizationId, "create_agent")).length > 0) {
+        throw badRequest(
+          "AGENT_PENDING",
+          "The payout agent is still being created; check again in a few minutes",
+        );
       }
       if (!publicKey && deps.fullAccessKeys) {
         const keys = await deps.fullAccessKeys(row.ownerAccountId).catch((error: unknown) => {
@@ -445,6 +406,60 @@ export function createPayoutAgents(deps: {
     }
   }
 
+  async function submittedIntents(organizationId?: string, action?: PayoutAction) {
+    return db
+      .select()
+      .from(payoutIntents)
+      .where(
+        and(
+          inArray(payoutIntents.status, SUBMITTED_INTENT),
+          gt(payoutIntents.createdAt, new Date(now().getTime() - INTENT_FOLLOW_UP_MS)),
+          organizationId ? eq(payoutIntents.organizationId, organizationId) : undefined,
+          action ? eq(payoutIntents.action, action) : undefined,
+        ),
+      );
+  }
+
+  async function maintain() {
+    const result = {
+      intentsSettled: 0,
+      grantReminders: [] as { organizationId: string; expiresAt: Date }[],
+    };
+    if (!available) return result;
+    for (const intent of await submittedIntents()) {
+      try {
+        const status = await api().getStatus(intent.correlationId);
+        await settleIntent(intent.organizationId, intent.correlationId, status);
+        if (!SUBMITTED_INTENT.includes(status.status)) result.intentsSettled += 1;
+      } catch (error) {
+        console.warn(`[API] payout intent ${intent.correlationId} follow-up failed`, error);
+      }
+    }
+    const due = new Date(now().getTime() + GRANT_RENEW_DAYS * 86_400_000);
+    const reminded = await db
+      .update(payoutAgents)
+      .set({ grantRemindedFor: sql`${payoutAgents.grantExpiresAt}` })
+      .where(
+        and(
+          isNotNull(payoutAgents.agentId),
+          gt(payoutAgents.grantExpiresAt, now()),
+          lt(payoutAgents.grantExpiresAt, due),
+          or(
+            isNull(payoutAgents.grantRemindedFor),
+            ne(payoutAgents.grantRemindedFor, payoutAgents.grantExpiresAt),
+          ),
+        ),
+      )
+      .returning({
+        organizationId: payoutAgents.organizationId,
+        expiresAt: payoutAgents.grantExpiresAt,
+      });
+    result.grantReminders = reminded.flatMap((r) =>
+      r.expiresAt ? [{ organizationId: r.organizationId, expiresAt: r.expiresAt }] : [],
+    );
+    return result;
+  }
+
   async function settleIntent(
     organizationId: string,
     correlationId: string,
@@ -461,11 +476,17 @@ export function createPayoutAgents(deps: {
       .set({ status: status.status, failureCode: status.failure_code, updatedAt: now() })
       .where(eq(payoutIntents.correlationId, correlationId));
     if (status.status !== "SUCCESS") return;
-    if (intent.action === "create_agent") {
+    const current = await settings(organizationId);
+    if (intent.action === "create_agent" && !current?.agentId) {
       const agentId = textOf(status.details, "agent_id") ?? status.agent_id ?? intent.agentId;
       if (agentId) await update(organizationId, { agentId });
     }
-    if (intent.action === "issue_grant" && intent.grantTokenEnc) {
+    if (
+      intent.action === "issue_grant" &&
+      intent.grantTokenEnc &&
+      intent.grantExpiresAt &&
+      (!current?.grantExpiresAt || intent.grantExpiresAt > current.grantExpiresAt)
+    ) {
       await update(organizationId, {
         grantTokenEnc: intent.grantTokenEnc,
         grantExpiresAt: intent.grantExpiresAt,
@@ -549,6 +570,8 @@ export function createPayoutAgents(deps: {
       action: input.action,
       intentType: generated.type,
       intent: JSON.stringify(generated.intent),
+      signerAccountId: generated.signer.account_id,
+      signerPublicKey: generated.signer.public_key,
       agentId: generated.agent_id ?? row.agentId,
       grantTokenEnc: built.grant ? seal(built.grant.token, deps.secretKey!) : null,
       grantExpiresAt: built.grant?.expiresAt ?? null,
@@ -557,42 +580,13 @@ export function createPayoutAgents(deps: {
       updatedAt: now(),
     });
     return {
-      row,
-      signerPublicKey: "public_key" in generated.signer ? generated.signer.public_key : null,
-      prepared: {
-        correlationId: generated.correlation_id,
-        action: input.action,
-        intent: generated.intent as unknown as Record<string, unknown>,
-        signerAccountId: row.ownerAccountId,
-        summary: generated.preview?.summary ?? null,
-        expiresAt: generated.expires_at,
-      },
+      correlationId: generated.correlation_id,
+      action: input.action,
+      intent: generated.intent as unknown as Record<string, unknown>,
+      signerAccountId: row.ownerAccountId,
+      summary: generated.preview?.summary ?? null,
+      expiresAt: generated.expires_at,
     };
-  }
-
-  async function signOnServer(organizationId: string, action: ServerPayoutAction) {
-    if (!SERVER_ACTIONS.includes(action)) {
-      throw badRequest("WALLET_REQUIRED", "Only the owner's wallet can sign that");
-    }
-    const signer = deps.ownerSigner;
-    const signing = await serverSigning(await settings(organizationId));
-    if (!signer || !signing.active) {
-      throw badRequest(
-        "SERVER_SIGNER_UNAVAILABLE",
-        signing.warning ?? "PAYOUTS_OWNER_PRIVATE_KEY isn't set, so the server can't sign",
-      );
-    }
-    const { row, signerPublicKey, prepared } = await prepareIntent(organizationId, { action });
-    let signedData: Record<string, unknown>;
-    try {
-      signedData = await signer.sign(row.ownerAccountId, signerPublicKey, {
-        standard: String(prepared.intent.standard),
-        payload: prepared.intent.payload,
-      });
-    } catch (error) {
-      throw badRequest("SERVER_SIGN_FAILED", `The server couldn't sign: ${errorText(error)}`);
-    }
-    return submitIntent(organizationId, { correlationId: prepared.correlationId, signedData });
   }
 
   async function ensurePayees(
@@ -625,57 +619,14 @@ export function createPayoutAgents(deps: {
     }
     const waiting = cooldownReason(current.cooldowns.policy_change_available_at);
     if (waiting) return refuse(waiting);
-    if (!(await serverSigning(row)).active) {
-      const before = new Set(payeesOf(signed));
-      const added = payeesOf(wanted).filter((p) => !before.has(p));
-      return refuse(
-        added.length
-          ? `Sign the updated rules to allow paying ${added.join(", ")}`
-          : "Sign the updated rules",
-        true,
-      );
-    }
-    try {
-      const result = await signOnServer(organizationId, "sync_policy");
-      return result.status === "SUCCESS"
-        ? { ok: true, reason: null, needsSignature: false }
-        : refuse(
-            `The rules update is ${result.status.toLowerCase().replace(/_/g, " ")}${result.failureCode ? ` (${result.failureCode})` : ""}`,
-          );
-    } catch (error) {
-      return refuse(errorText(error));
-    }
-  }
-
-  async function renewGrant(
-    organizationId: string,
-  ): Promise<{ renewed: boolean; reason: string | null }> {
-    if (!available) return { renewed: false, reason: unavailableReason };
-    const row = await settings(organizationId);
-    if (!row?.agentId) return { renewed: false, reason: "No payout agent" };
-    if (grantOf(row) && !grantExpiringSoon(row)) return { renewed: false, reason: null };
-    const signing = await serverSigning(row);
-    if (!signing.active) {
-      return {
-        renewed: false,
-        reason:
-          signing.warning ??
-          (grantOf(row) && row.grantExpiresAt
-            ? `MultiAgency's payout permission expires ${row.grantExpiresAt.toISOString().slice(0, 10)}: renew it with your wallet`
-            : "MultiAgency's payout permission is missing or expired: issue it with your wallet"),
-      };
-    }
-    try {
-      const result = await signOnServer(organizationId, "issue_grant");
-      return result.status === "SUCCESS"
-        ? { renewed: true, reason: null }
-        : {
-            renewed: false,
-            reason: `The permission renewal is ${result.status.toLowerCase().replace(/_/g, " ")}`,
-          };
-    } catch (error) {
-      return { renewed: false, reason: errorText(error) };
-    }
+    const before = new Set(payeesOf(signed));
+    const added = payeesOf(wanted).filter((p) => !before.has(p));
+    return refuse(
+      added.length
+        ? `Sign the updated rules to allow paying ${added.join(", ")}`
+        : "Sign the updated rules",
+      true,
+    );
   }
 
   async function readiness(
@@ -797,16 +748,15 @@ export function createPayoutAgents(deps: {
       .limit(1);
     if (!intent)
       throw badRequest("UNKNOWN_INTENT", "MultiAgency didn't prepare that. Start again.");
-    const issued = JSON.parse(intent.intent) as { standard: string; payload: unknown };
-    const signed = input.signedData as { standard?: unknown; payload?: unknown } | null;
-    if (
-      !signed ||
-      signed.standard !== issued.standard ||
-      JSON.stringify(signed.payload) !== JSON.stringify(issued.payload)
-    ) {
+    const problem = ownerSignatureProblem(
+      JSON.parse(intent.intent) as Intent,
+      { accountId: intent.signerAccountId, publicKey: intent.signerPublicKey },
+      input.signedData as Record<string, unknown> | null,
+    );
+    if (problem) {
       throw badRequest(
         "SIGNED_PAYLOAD_MISMATCH",
-        "The signature isn't over what MultiAgency prepared",
+        `The signature isn't the owner's over what MultiAgency prepared: ${problem}`,
       );
     }
     let status: StatusResponse;
@@ -885,28 +835,17 @@ export function createPayoutAgents(deps: {
     prepare: async (
       organizationId: string,
       input: { action: PayoutAction; publicKey?: string | null },
-    ) => (await prepareIntent(organizationId, input)).prepared,
+    ) => prepareIntent(organizationId, input),
 
     submit: submitIntent,
 
-    signOnServer,
-
     ensurePayees,
-
-    renewGrant,
 
     readiness,
 
     fundingCheck,
 
-    agentOrganizations: async () =>
-      (
-        await db
-          .select({ organizationId: payoutAgents.organizationId, agentId: payoutAgents.agentId })
-          .from(payoutAgents)
-      )
-        .filter((r) => r.agentId !== null)
-        .map((r) => r.organizationId),
+    maintain,
 
     depositAddress: async (organizationId: string) => {
       const row = await settings(organizationId);

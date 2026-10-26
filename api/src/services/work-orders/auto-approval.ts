@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../../db";
 import {
@@ -78,6 +78,7 @@ export type AutoApprovalDeps = {
 };
 
 const HOUR_MS = 3_600_000;
+const RETRY_MS = 15 * 60_000;
 const COMMITTED = ["approved", "paying", "proposed", "paid"];
 const TIER_LABELS: Record<TrustTier, string> = {
   new: "New builder",
@@ -338,6 +339,7 @@ export function createAutoApproval(deps: AutoApprovalDeps) {
         ),
       );
     for (const request of pending) {
+      let claimedId: string | null = null;
       try {
         const [claimed] = await db
           .update(compensationRequests)
@@ -352,6 +354,7 @@ export function createAutoApproval(deps: AutoApprovalDeps) {
           )
           .returning();
         if (!claimed) continue;
+        claimedId = claimed.id;
         const [row] = await db
           .select()
           .from(workOrders)
@@ -383,24 +386,52 @@ export function createAutoApproval(deps: AutoApprovalDeps) {
         counts.manual += 1;
       } catch (error) {
         console.warn(`[API] automatic approval of request ${request.id} failed`, error);
+        if (claimedId) {
+          await db
+            .update(compensationRequests)
+            .set({ autoApproveAt: new Date(now().getTime() + RETRY_MS), updatedAt: now() })
+            .where(
+              and(
+                eq(compensationRequests.id, claimedId),
+                eq(compensationRequests.status, "submitted"),
+                isNull(compensationRequests.autoApproveAt),
+                isNull(compensationRequests.autoStoppedAt),
+              ),
+            )
+            .catch((retryError: unknown) =>
+              console.warn(`[API] request ${claimedId} couldn't be rescheduled`, retryError),
+            );
+        }
       }
     }
     return counts;
   }
 
   async function stop(request: CompensationRequestRow, actorId: string) {
-    if (request.status !== "submitted" || !request.autoApproveAt) {
+    const [stopped] = await db
+      .update(compensationRequests)
+      .set({
+        autoApproveAt: null,
+        autoDecision: "manual",
+        autoStoppedBy: actorId,
+        autoStoppedAt: now(),
+        updatedAt: now(),
+      })
+      .where(
+        and(
+          eq(compensationRequests.id, request.id),
+          eq(compensationRequests.status, "submitted"),
+          isNotNull(compensationRequests.autoApproveAt),
+        ),
+      )
+      .returning();
+    if (!stopped) {
       throw new ORPCError("BAD_REQUEST", {
         message: "This request isn't waiting to be approved automatically",
         data: { reason: "NOT_SCHEDULED" },
       });
     }
-    return save(request.id, {
-      autoApproveAt: null,
-      autoDecision: "manual",
-      autoStoppedBy: actorId,
-      autoStoppedAt: now(),
-    });
+    return stopped;
   }
 
   return { settings, assess, onSubmitted, due, stop };

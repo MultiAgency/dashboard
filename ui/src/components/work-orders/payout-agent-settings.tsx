@@ -22,6 +22,7 @@ import { useMeRoles } from "@/hooks/use-me-roles";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { useAuthClient } from "@/lib/auth";
 import { signAgentIntent } from "@/lib/payout-agent-signing";
+import { proposalIdOf } from "@/lib/proposal-id";
 import {
   payoutAgentQueryKey,
   payoutAgentQueryOptions,
@@ -38,17 +39,6 @@ const DONE: Record<Action, string> = {
   freeze: "Payouts frozen",
   unfreeze: "Payouts resumed",
 };
-
-function proposalIdOf(outcome: unknown): string | null {
-  const status = (outcome as { status?: { SuccessValue?: unknown } } | null)?.status;
-  if (typeof status?.SuccessValue !== "string" || !status.SuccessValue) return null;
-  try {
-    const value = JSON.parse(atob(status.SuccessValue));
-    return Number.isInteger(value) ? String(value) : null;
-  } catch {
-    return null;
-  }
-}
 
 export function PayoutAgentSettings() {
   const apiClient = useApiClient();
@@ -123,11 +113,18 @@ export function PayoutAgentSettings() {
           maxPayoutNear: current.maxPayoutNear,
         }),
       );
-      return sync.mutateAsync();
+      return sync.mutateAsync().then(
+        (result) => ({ result, syncError: null }),
+        (syncError: Error) => ({ result: null, syncError }),
+      );
     },
-    onSuccess: async (result) => {
+    onSuccess: async ({ result, syncError }) => {
       await queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey });
-      if (result.ok) toast.success("Monthly budget raised");
+      if (!result) {
+        toast.error("Monthly budget saved, but the rules weren't updated", {
+          description: `${syncError.message || "The update didn't go through"}. Update the rules again to apply the new budget.`,
+        });
+      } else if (result.ok) toast.success("Monthly budget raised");
       else toast.info("Sent; the new budget is still being applied");
     },
     onError: (err: Error) => toast.error(err.message || "Couldn't raise the monthly budget"),
@@ -170,7 +167,6 @@ export function PayoutAgentSettings() {
   };
   const busy =
     act.isPending || save.isPending || fund.isPending || sync.isPending || raiseBudget.isPending;
-  const serverSigns = data.serverSigning.active;
   const cooldownUntil =
     data.policy?.policyChangeAvailableAt &&
     new Date(data.policy.policyChangeAvailableAt).getTime() > Date.now()
@@ -203,7 +199,6 @@ export function PayoutAgentSettings() {
                 {data.ready ? "Paying automatically" : "Not paying automatically yet"}
               </Badge>
               {data.policy?.frozen && <Badge variant="destructive">Frozen</Badge>}
-              {serverSigns && <Badge variant="outline">Signs automatically</Badge>}
               {data.balance && (
                 <Badge variant="outline">
                   Agent holds {data.balance.near} NEAR
@@ -237,13 +232,7 @@ export function PayoutAgentSettings() {
               </ul>
             )}
             {data.error && <p className="text-sm text-destructive">{data.error}</p>}
-            {data.serverSigning.warning && (
-              <Alert variant="destructive">
-                <AlertTitle>The server can't sign for the owner</AlertTitle>
-                <AlertDescription>{data.serverSigning.warning}</AlertDescription>
-              </Alert>
-            )}
-            {data.grantExpiringSoon && !serverSigns && data.grantExpiresAt && (
+            {data.grantExpiringSoon && data.grantExpiresAt && (
               <Alert>
                 <AlertTitle>MultiAgency's payout permission expires soon</AlertTitle>
                 <AlertDescription className="flex flex-col gap-2">
@@ -325,11 +314,7 @@ export function PayoutAgentSettings() {
                   )}
                   {data.agentId && data.changes.length > 0 && (
                     <Button size="sm" disabled={busy || !!cooldownUntil} onClick={syncRules}>
-                      {sync.isPending
-                        ? "Updating the rules…"
-                        : serverSigns
-                          ? "Apply the updated rules"
-                          : "Sign the updated rules"}
+                      {sync.isPending ? "Updating the rules…" : "Sign the updated rules"}
                     </Button>
                   )}
                   {data.policy && !data.policy.frozen && (
@@ -357,13 +342,6 @@ export function PayoutAgentSettings() {
                   <p className="text-sm text-muted-foreground">
                     The signed rules differ: {data.changes.join("; ")}.
                     {cooldownUntil && ` Rules can change again at ${cooldownUntil}.`}
-                  </p>
-                )}
-                {serverSigns && (
-                  <p className="text-sm text-muted-foreground">
-                    The server holds a key of {data.settings.ownerAccountId}: it allows new builders
-                    and renews MultiAgency's permission by itself. Freezing and creating the agent
-                    still need your wallet.
                   </p>
                 )}
                 {data.policy && (

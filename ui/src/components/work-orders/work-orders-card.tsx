@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components";
+import { AdminError } from "@/components/admin-error";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { adminWorkOrdersQueryKey, workspaceKey } from "@/lib/queries";
@@ -19,8 +20,9 @@ export function WorkOrdersCard({
     queryFn: () => apiClient.workOrders.list(filter),
     retry: false,
   });
+  if (query.isError) return <AdminError error={query.error} />;
   const workOrders = query.data?.data ?? [];
-  if (query.isError || (query.isSuccess && workOrders.length === 0)) return null;
+  if (workOrders.length === 0) return null;
   const showBuilder = "projectId" in filter;
   return (
     <Card>

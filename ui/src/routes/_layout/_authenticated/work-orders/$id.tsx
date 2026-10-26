@@ -365,14 +365,15 @@ function DraftEditor({
     JSON.stringify(items) !== JSON.stringify(request.manualItems) ||
     base !== request.requestedAmount;
 
+  const saveDraft = () =>
+    apiClient.myWorkOrders.editRequest({
+      requestId: request.id,
+      assessmentMd: assessment,
+      manualItems: items,
+      requestedAmount: base,
+    });
   const save = useMutation({
-    mutationFn: () =>
-      apiClient.myWorkOrders.editRequest({
-        requestId: request.id,
-        assessmentMd: assessment,
-        manualItems: items,
-        requestedAmount: base,
-      }),
+    mutationFn: saveDraft,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: myWorkOrdersQueryKey });
       toast.success("Draft saved");
@@ -381,7 +382,7 @@ function DraftEditor({
   });
   const submit = useMutation({
     mutationFn: async () => {
-      if (dirty) await save.mutateAsync();
+      if (dirty) await saveDraft();
       return apiClient.myWorkOrders.submitRequest({ requestId: request.id });
     },
     onSuccess: async (submitted) => {

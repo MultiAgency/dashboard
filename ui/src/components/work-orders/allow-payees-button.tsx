@@ -8,7 +8,7 @@ import { payoutAgentQueryKey, payoutAgentQueryOptions } from "@/lib/queries";
 
 type PayoutAgent = Awaited<ReturnType<ApiClient["workOrders"]["payoutAgent"]>>;
 
-export type SyncPayoutRulesResult = { ok: boolean; viaWallet: boolean };
+export type SyncPayoutRulesResult = { ok: boolean };
 
 export function useSyncPayoutRules() {
   const apiClient = useApiClient();
@@ -22,7 +22,7 @@ export function useSyncPayoutRules() {
     mutationFn: async (): Promise<SyncPayoutRulesResult> => {
       const attempt = await apiClient.workOrders.allowPayees({});
       setData(attempt.view);
-      if (attempt.ok) return { ok: true, viaWallet: false };
+      if (attempt.ok) return { ok: true };
       if (!attempt.needsSignature) throw new Error(attempt.reason ?? "Couldn't update the rules");
       const owner = attempt.view.settings?.ownerAccountId;
       if (!owner) throw new Error("Save the payout settings first");
@@ -33,7 +33,7 @@ export function useSyncPayoutRules() {
         signedData,
       });
       setData(result.view);
-      return { ok: result.status === "SUCCESS", viaWallet: true };
+      return { ok: result.status === "SUCCESS" };
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey }),
   });

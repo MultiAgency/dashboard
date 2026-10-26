@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, gt, inArray, isNull, lte } from "drizzle-orm";
 import type { Database } from "../../db";
 import {
@@ -16,18 +15,7 @@ const FIRST_RETRY_MS = 60_000;
 const MAX_RETRY_MS = 3_600_000;
 const GIVE_UP_MS = 24 * 3_600_000;
 const BATCH = 50;
-
-export function hashToken(token: string): string {
-  return createHash("sha256").update(token, "utf8").digest("hex");
-}
-
-function newSecret(): string {
-  return randomBytes(32).toString("hex");
-}
-
-function newToken(): string {
-  return `wo_${randomBytes(32).toString("base64url")}`;
-}
+const CLAIM_MS = 5 * 60_000;
 
 export function createWorkOrderIntegrations(deps: { db: Database; now?: () => Date }) {
   const { db } = deps;
@@ -42,59 +30,22 @@ export function createWorkOrderIntegrations(deps: { db: Database; now?: () => Da
     return row ?? null;
   }
 
-  async function issue(organizationId: string, actorId: string, webhookUrl: string | null) {
-    const token = newToken();
-    const values = {
-      organizationId,
-      n8nWebhookUrl: webhookUrl,
-      webhookSecret: newSecret(),
-      inboundTokenHash: hashToken(token),
-      updatedBy: actorId,
-      updatedAt: now(),
-    };
+  async function ensure(organizationId: string, actorId: string) {
     await db
       .insert(workOrderIntegrations)
-      .values(values)
-      .onConflictDoUpdate({ target: workOrderIntegrations.organizationId, set: values });
-    return token;
+      .values({ organizationId, updatedBy: actorId, updatedAt: now() })
+      .onConflictDoNothing({ target: workOrderIntegrations.organizationId });
   }
 
   return {
     settings,
-
-    save: async (organizationId: string, actorId: string, webhookUrl: string | null) => {
-      const existing = await settings(organizationId);
-      if (!existing) return { inboundToken: await issue(organizationId, actorId, webhookUrl) };
-      await db
-        .update(workOrderIntegrations)
-        .set({ n8nWebhookUrl: webhookUrl, updatedBy: actorId, updatedAt: now() })
-        .where(eq(workOrderIntegrations.organizationId, organizationId));
-      return { inboundToken: null };
-    },
-
-    rotate: async (organizationId: string, actorId: string) => {
-      const existing = await settings(organizationId);
-      return {
-        inboundToken: await issue(organizationId, actorId, existing?.n8nWebhookUrl ?? null),
-      };
-    },
-
-    organizationOfToken: async (token: string): Promise<string | null> => {
-      if (!/^wo_[A-Za-z0-9_-]{20,}$/.test(token)) return null;
-      const [row] = await db
-        .select({ organizationId: workOrderIntegrations.organizationId })
-        .from(workOrderIntegrations)
-        .where(eq(workOrderIntegrations.inboundTokenHash, hashToken(token)))
-        .limit(1);
-      return row?.organizationId ?? null;
-    },
 
     saveTrust: async (
       organizationId: string,
       actorId: string,
       input: { mode: "off" | "suggest" | "auto"; vetoHours: number },
     ) => {
-      if (!(await settings(organizationId))) await issue(organizationId, actorId, null);
+      await ensure(organizationId, actorId);
       await db
         .update(workOrderIntegrations)
         .set({
@@ -115,7 +66,7 @@ export function createWorkOrderIntegrations(deps: { db: Database; now?: () => Da
         signedFolderId: string | null;
       },
     ) => {
-      if (!(await settings(organizationId))) await issue(organizationId, actorId, null);
+      await ensure(organizationId, actorId);
       await db
         .update(workOrderIntegrations)
         .set({
@@ -141,12 +92,7 @@ export function createWorkOrderIntegrations(deps: { db: Database; now?: () => Da
       db
         .select()
         .from(workOrderOutbox)
-        .where(
-          and(
-            eq(workOrderOutbox.organizationId, organizationId),
-            eq(workOrderOutbox.channel, "email"),
-          ),
-        )
+        .where(eq(workOrderOutbox.organizationId, organizationId))
         .orderBy(desc(workOrderOutbox.createdAt))
         .limit(limit),
   };
@@ -163,6 +109,21 @@ export function createWorkOrderOutbox(deps: {
   const { db, sendEmail } = deps;
   const now = () => deps.now?.() ?? new Date();
 
+  async function claim(row: WorkOrderOutboxRow): Promise<boolean> {
+    const claimed = await db
+      .update(workOrderOutbox)
+      .set({ nextAttemptAt: new Date(now().getTime() + CLAIM_MS) })
+      .where(
+        and(
+          eq(workOrderOutbox.id, row.id),
+          isNull(workOrderOutbox.deliveredAt),
+          lte(workOrderOutbox.nextAttemptAt, now()),
+        ),
+      )
+      .returning({ id: workOrderOutbox.id });
+    return claimed.length > 0;
+  }
+
   async function attempt(row: WorkOrderOutboxRow): Promise<boolean> {
     const attempts = row.attempts + 1;
     const retry = async (error: string) => {
@@ -171,7 +132,7 @@ export function createWorkOrderOutbox(deps: {
         .update(workOrderOutbox)
         .set({ attempts, lastError: error, nextAttemptAt: new Date(now().getTime() + delay) })
         .where(eq(workOrderOutbox.id, row.id));
-      console.warn(`[API] work order ${row.channel} ${row.eventType} not delivered: ${error}`);
+      console.warn(`[API] work order email ${row.eventType} not delivered: ${error}`);
       return false;
     };
     try {
@@ -196,7 +157,6 @@ export function createWorkOrderOutbox(deps: {
 
   async function deliver(filter: { ids?: string[] } = {}) {
     const conditions = [
-      eq(workOrderOutbox.channel, "email"),
       isNull(workOrderOutbox.deliveredAt),
       lte(workOrderOutbox.nextAttemptAt, now()),
       gt(workOrderOutbox.createdAt, new Date(now().getTime() - GIVE_UP_MS)),
@@ -212,29 +172,26 @@ export function createWorkOrderOutbox(deps: {
       .orderBy(workOrderOutbox.createdAt)
       .limit(BATCH);
     let delivered = 0;
+    let failed = 0;
     for (const row of rows) {
+      if (!(await claim(row))) continue;
       if (await attempt(row)) delivered += 1;
+      else failed += 1;
     }
-    return { delivered, failed: rows.length - delivered };
+    return { delivered, failed };
   }
 
   return {
     enqueue: async (organizationId: string, workOrderId: string | null, event: WorkOrderEvent) => {
-      const rows = [
-        ...(sendEmail
-          ? composeEmails(event).map((email) => ({
-              channel: "email" as const,
-              payload: JSON.stringify(email),
-            }))
-          : []),
-      ].map((row) => ({
+      if (!sendEmail) return [];
+      const rows = composeEmails(event).map((email) => ({
         id: crypto.randomUUID(),
         organizationId,
         workOrderId,
         eventType: event.type,
+        payload: JSON.stringify(email),
         nextAttemptAt: now(),
         createdAt: now(),
-        ...row,
       }));
       if (rows.length === 0) return [];
       await db.insert(workOrderOutbox).values(rows);

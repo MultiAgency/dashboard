@@ -249,6 +249,7 @@ export function adminApplicationsListQueryKey(kind?: string | null, status?: str
 export const adminWorkOrdersQueryKey = ["admin", "work-orders"] as const;
 
 const SIGNATURE_POLL_MS = 10_000;
+const AUTO_APPROVAL_POLL_MS = 30_000;
 
 function awaitingSignature(wo: {
   status: string;
@@ -258,6 +259,12 @@ function awaitingSignature(wo: {
     !!wo.signing.esign?.sent &&
     (wo.status === "offered" || (wo.status === "accepted" && !wo.signing.representative))
   );
+}
+
+function awaitingAutoApproval(wo: {
+  requests: { status: string; trust: { autoApproveAt: string | null } | null }[];
+}) {
+  return wo.requests.some((r) => r.status === "submitted" && !!r.trust?.autoApproveAt);
 }
 
 export function adminWorkOrdersQueryOptions(apiClient: ApiClient) {
@@ -273,8 +280,12 @@ export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
     queryKey: [...adminWorkOrdersQueryKey, "detail", ...workspaceKey(), id] as const,
     queryFn: () => apiClient.workOrders.get({ id }),
     retry: false,
-    refetchInterval: (query) =>
-      query.state.data && awaitingSignature(query.state.data) ? SIGNATURE_POLL_MS : false,
+    refetchInterval: (query) => {
+      const wo = query.state.data;
+      if (!wo) return false;
+      if (awaitingSignature(wo)) return SIGNATURE_POLL_MS;
+      return awaitingAutoApproval(wo) ? AUTO_APPROVAL_POLL_MS : false;
+    },
   });
 }
 

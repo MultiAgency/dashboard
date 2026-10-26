@@ -20,6 +20,7 @@ import {
   Textarea,
 } from "@/components";
 import { Empty, Field } from "@/components/admin-form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useApiClient } from "@/lib/api";
 import { useAuthClient } from "@/lib/auth";
 import {
@@ -29,7 +30,12 @@ import {
   tokenDecimals,
   tokenSymbol,
 } from "@/lib/format-amount";
-import { adminWorkOrdersQueryKey, payoutAgentQueryOptions } from "@/lib/queries";
+import { proposalIdOf } from "@/lib/proposal-id";
+import {
+  adminWorkOrdersQueryKey,
+  payoutAgentQueryKey,
+  payoutAgentQueryOptions,
+} from "@/lib/queries";
 import { ReportMarkdown } from "./report-markdown";
 import { RequestTrust } from "./request-trust";
 import {
@@ -133,7 +139,10 @@ function RequestItem({
   const payNow = useMutation({
     mutationFn: () => apiClient.workOrders.payNow({ requestId: request.id }),
     onSuccess: async (updated) => {
-      await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey }),
+        queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey }),
+      ]);
       toast.success(
         updated.status === "paid" ? `${updated.code} is paid` : "Payout sent; it settles shortly",
       );
@@ -326,7 +335,10 @@ function ApproveForm({
         allowWithoutEvidence: needsEvidenceConfirm && withoutEvidence,
       }),
     onSuccess: async (updated) => {
-      await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey }),
+        queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey }),
+      ]);
       toast.success(
         updated.status === "paid"
           ? `${updated.code} approved and paid through the payout agent`
@@ -375,14 +387,17 @@ function ApproveForm({
           <fieldset className="flex flex-col gap-2">
             <legend className="text-sm font-medium">Confirm other merged work</legend>
             {pending.map((item) => (
-              <label key={item.id} className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-1"
+              <label
+                key={item.id}
+                htmlFor={`confirm-${item.id}`}
+                className="flex items-start gap-2 text-sm"
+              >
+                <Checkbox
+                  id={`confirm-${item.id}`}
                   checked={confirmed.includes(item.id)}
-                  onChange={(e) =>
+                  onCheckedChange={(checked) =>
                     setConfirmed((current) =>
-                      e.target.checked
+                      checked === true
                         ? [...current, item.id]
                         : current.filter((id) => id !== item.id),
                     )
@@ -396,12 +411,11 @@ function ApproveForm({
           </fieldset>
         )}
         {needsEvidenceConfirm && (
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
+          <label htmlFor="approve-without-evidence" className="flex items-start gap-2 text-sm">
+            <Checkbox
+              id="approve-without-evidence"
               checked={withoutEvidence}
-              onChange={(e) => setWithoutEvidence(e.target.checked)}
+              onCheckedChange={(checked) => setWithoutEvidence(checked === true)}
             />
             <span>
               No work in this request was approved by the repository owner. Approve it anyway, based
@@ -464,17 +478,6 @@ function RejectForm({ request, onDone }: { request: CompensationRequest; onDone:
   );
 }
 
-function proposalIdOf(outcome: unknown): string | null {
-  const status = (outcome as { status?: { SuccessValue?: unknown } } | null)?.status;
-  if (typeof status?.SuccessValue !== "string" || !status.SuccessValue) return null;
-  try {
-    const value = JSON.parse(atob(status.SuccessValue));
-    return Number.isInteger(value) && value >= 0 ? String(value) : null;
-  } catch {
-    return null;
-  }
-}
-
 function ProposalForm({
   request,
   workOrder,
@@ -505,7 +508,7 @@ function ProposalForm({
     onError: (err: Error) => toast.error(err.message || "Couldn't link the proposal"),
   });
   const quote = useQuery({
-    queryKey: ["admin", "work-orders", "quote", request.id],
+    queryKey: ["admin", "work-order-quote", request.id],
     queryFn: () => apiClient.workOrders.paymentProposal({ requestId: request.id }),
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 0,

@@ -44,8 +44,7 @@
         "NEAR_INTENTS_AGENT_API_URL",
         "DOCUMENSO_API_KEY",
         "DOCUMENSO_API_URL",
-        "PAYOUTS_SECRET_KEY",
-        "PAYOUTS_OWNER_PRIVATE_KEY"
+        "PAYOUTS_SECRET_KEY"
       ],
       "production": "https://multiagentic-319-api-dashboard-multiagency-d83707fcb-ze.zephyrcloud.app",
       "integrity": "sha384-kkE+VfwmdrPJPCJvXIrgisKChnD4UAu9h7GA2+ROPrEC9bS6161AygyyT6mK2OoA"
