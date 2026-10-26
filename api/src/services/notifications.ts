@@ -226,6 +226,7 @@ export type NotifyInput = {
   link: string;
   excludeUserId?: string | null;
   alsoNotifyUserIds?: string[];
+  email?: boolean;
 };
 
 export function createNotifications(deps: {
@@ -285,6 +286,7 @@ export function createNotifications(deps: {
           link: input.link,
         })),
       );
+      if (input.email === false) return { recipients: recipients.length, emailed: 0 };
       const emails = [
         ...new Set(recipients.flatMap((r) => (r.email ? [r.email.toLowerCase()] : []))),
       ];

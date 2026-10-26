@@ -83,6 +83,7 @@ export type WorkOrderNotifier = {
     payload: Record<string, string>;
     link: string;
     excludeUserId?: string | null;
+    email?: boolean;
   }): Promise<unknown>;
   notifyUser(input: {
     userId: string;
@@ -499,10 +500,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   async function contactsOf(row: WorkOrderRow, builder: BuilderProfile | null) {
     const lookup = async (userId: string | null | undefined) =>
       userId && deps.userEmail ? await deps.userEmail(userId).catch(() => null) : null;
-    const creator = row.createdBy !== "renewal" ? row.createdBy : null;
     return {
       contractorEmail: row.contractorEmail ?? (await lookup(builder?.userId)),
-      representativeEmail: row.representativeEmail ?? (await lookup(creator)),
+      representativeEmail: row.representativeEmail,
     };
   }
 
@@ -1747,6 +1747,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         payload,
         link: adminLink(row.id),
         excludeUserId,
+        email: false,
       })
       .catch((error: unknown) => console.warn("[API] work order notification failed:", error));
   }

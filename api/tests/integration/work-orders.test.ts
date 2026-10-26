@@ -678,6 +678,7 @@ describe("work orders", () => {
         fields({
           tokenId: REAL_USDC,
           representativeName: "Rita Rep",
+          representativeEmail: "rita@studio.example",
           contractorEmail: "Carol@Example.com",
           ipModel: "assignment",
         }),
@@ -694,7 +695,7 @@ describe("work orders", () => {
       });
       expect(event?.representative).toEqual({
         name: "Rita Rep",
-        email: "studio-admin@example.com",
+        email: "rita@studio.example",
       });
       expect(event?.terms).toMatchObject({
         budgetUsd: "1000",
@@ -705,6 +706,12 @@ describe("work orders", () => {
         autoRenew: false,
       });
       expect(event?.links.review).toBe(`https://app.example/admin/work-orders/${created.id}`);
+    });
+
+    test("agency emails go only to the representative's email on the work order", async () => {
+      await service.create(await studio(), fields({ tokenId: REAL_USDC }));
+      const event = events.find((e) => e.type === "work_order.created");
+      expect(event?.representative.email).toBeNull();
     });
 
     test("n8n records the filled document and the representative is told", async () => {
