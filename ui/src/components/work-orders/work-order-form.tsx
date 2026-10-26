@@ -25,6 +25,7 @@ import {
   adminProjectsListQueryOptions,
   adminWorkOrdersQueryKey,
   tokensListQueryOptions,
+  workOrderIntegrationQueryOptions,
   workOrderRepresentativeQueryOptions,
 } from "@/lib/queries";
 import { defaultRepresentative } from "@/lib/representative";
@@ -80,6 +81,7 @@ type Lists = {
   builders: Awaited<ReturnType<ApiClient["contributors"]["list"]>>["data"];
   tokens: Awaited<ReturnType<ApiClient["tokens"]["list"]>>["tokens"];
   representative: Awaited<ReturnType<ApiClient["workOrders"]["representativeDefaults"]>> | null;
+  askFields: { tag: string; label: string }[];
 };
 
 export function WorkOrderForm({
@@ -94,6 +96,7 @@ export function WorkOrderForm({
   const buildersQuery = useQuery(adminContributorsListQueryOptions(apiClient));
   const tokensQuery = useQuery(tokensListQueryOptions(apiClient));
   const representativeQuery = useQuery(workOrderRepresentativeQueryOptions(apiClient));
+  const integrationQuery = useQuery(workOrderIntegrationQueryOptions(apiClient));
   const failed = projectsQuery.error ?? buildersQuery.error ?? tokensQuery.error;
   const title = (
     <DialogHeader>
@@ -112,7 +115,8 @@ export function WorkOrderForm({
     !projectsQuery.data ||
     !buildersQuery.data ||
     !tokensQuery.data ||
-    representativeQuery.isLoading
+    representativeQuery.isLoading ||
+    integrationQuery.isLoading
   ) {
     return (
       <>
@@ -126,6 +130,7 @@ export function WorkOrderForm({
     builders: buildersQuery.data.data,
     tokens: tokensQuery.data.tokens.filter((t) => t.tokenId),
     representative: representativeQuery.data ?? null,
+    askFields: integrationQuery.data?.google.askFields ?? [],
   };
   if (lists.tokens.length === 0 && !editing) {
     return (
@@ -156,6 +161,7 @@ function WorkOrderFields({
   builders,
   tokens,
   representative,
+  askFields,
 }: Lists & {
   editing?: WorkOrder;
   onDone: (workOrder: WorkOrder) => void;
@@ -213,6 +219,7 @@ function WorkOrderFields({
           ipModel: "",
         };
   });
+  const [custom, setCustom] = useState<Record<string, string>>(() => editing?.customFields ?? {});
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const token =
@@ -247,6 +254,15 @@ function WorkOrderFields({
         representativeName: draft.representativeName.trim() || null,
         representativeEmail: draft.representativeEmail.trim() || null,
         ipModel: draft.ipModel || null,
+        ...(askFields.length > 0 || editing
+          ? {
+              customFields: Object.fromEntries(
+                Object.entries(custom)
+                  .map(([tag, value]) => [tag, value.trim()])
+                  .filter(([, value]) => value !== ""),
+              ),
+            }
+          : {}),
         ...(draft.code.trim() ? { code: draft.code.trim() } : {}),
       };
       return editing
@@ -501,6 +517,22 @@ function WorkOrderFields({
             options={IP_MODELS}
           />
         </Field>
+        {askFields.map((field) => (
+          <Field
+            key={field.tag}
+            label={field.label}
+            htmlFor={`wo-custom-${field.tag}`}
+            helper="Asked by your document template."
+          >
+            <Input
+              id={`wo-custom-${field.tag}`}
+              value={custom[field.tag] ?? ""}
+              onChange={(e) =>
+                setCustom((current) => ({ ...current, [field.tag]: e.target.value }))
+              }
+            />
+          </Field>
+        ))}
         <ShadcnField orientation="horizontal">
           <Checkbox
             id="wo-renew"

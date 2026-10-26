@@ -335,23 +335,64 @@ function DocumentRow({
   onAttach: () => void;
 }) {
   const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  const retryDrive = useMutation({
+    mutationFn: () => apiClient.workOrders.saveSignedToDrive({ id: wo.id }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      toast.success("Saved to Google Drive");
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't save it to Google Drive"),
+  });
   const sent = wo.status !== "draft" || wo.signing.documentSha256 !== null;
   const link = wo.documentSha256 ? wo.documentUrl : (wo.signature.preparedDocumentUrl ?? null);
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {(sent || link) && (
-        <OpenDocumentButton
-          href={link}
-          load={() => apiClient.workOrders.document({ id: wo.id })}
-          label={wo.documentSha256 ? "Open the signed document" : "Open document"}
-        />
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {(sent || link) && (
+          <OpenDocumentButton
+            href={link}
+            load={() => apiClient.workOrders.document({ id: wo.id })}
+            label={wo.documentSha256 ? "Open the signed document" : "Open document"}
+          />
+        )}
+        {wo.signature.driveUrl && (
+          <a
+            href={wo.signature.driveUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm underline-offset-4 hover:underline"
+          >
+            Saved to Google Drive
+          </a>
+        )}
+        {canManage && wo.status === "draft" && (
+          <Button size="sm" variant="ghost" onClick={onAttach}>
+            Attach a signed PDF by hand
+          </Button>
+        )}
+        {!sent && !link && (
+          <span className="text-muted-foreground">Prepared when you offer it.</span>
+        )}
+      </div>
+      {wo.signature.driveError && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-destructive">{wo.signature.driveError}</span>
+          {canManage && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={retryDrive.isPending}
+              onClick={() => retryDrive.mutate()}
+            >
+              Retry upload
+            </Button>
+          )}
+        </div>
       )}
-      {canManage && wo.status === "draft" && (
-        <Button size="sm" variant="ghost" onClick={onAttach}>
-          Attach a signed PDF by hand
-        </Button>
+      {wo.signature.documentWarning && (
+        <span className="text-muted-foreground">{wo.signature.documentWarning}</span>
       )}
-      {!sent && !link && <span className="text-muted-foreground">Prepared when you offer it.</span>}
     </div>
   );
 }
