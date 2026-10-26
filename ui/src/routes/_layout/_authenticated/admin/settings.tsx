@@ -29,6 +29,7 @@ import { PageHeader } from "@/components/page-header";
 import { SettingsSection } from "@/components/settings-section";
 import { WorkOrderIntegrationSettings } from "@/components/work-orders/integration-settings";
 import { PayoutAgentSettings } from "@/components/work-orders/payout-agent-settings";
+import { WorkOrderRepresentativeSettings } from "@/components/work-orders/representative-settings";
 import { WorkOrderTrustSettings } from "@/components/work-orders/trust-settings";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
@@ -79,9 +80,12 @@ function AdminSettingsPage() {
       <SettingsSection
         id="work-orders"
         title="Work orders: documents and email"
-        description="Google Docs template, Drive folders, e-signature and emails."
+        description="Default representative, Google Docs template, Drive folders, e-signature and emails."
       >
-        <WorkOrderIntegrationSettings />
+        <div className="flex flex-col gap-4">
+          <WorkOrderRepresentativeSettings />
+          <WorkOrderIntegrationSettings />
+        </div>
       </SettingsSection>
       <SettingsSection
         id="work-order-approval"

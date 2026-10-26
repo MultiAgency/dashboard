@@ -157,6 +157,21 @@ describe("work order emails", () => {
     expect((await outbox.deliver()).delivered).toBe(2);
   });
 
+  test("an Agency's default representative is saved and read back", async () => {
+    expect(await integrations.representative("studio")).toEqual({ name: null, email: null });
+    await integrations.saveRepresentative("studio", "rita", {
+      name: "  Rita Rep ",
+      email: " Rita@Studio.Example ",
+    });
+    expect(await integrations.representative("studio")).toEqual({
+      name: "Rita Rep",
+      email: "rita@studio.example",
+    });
+    expect(await integrations.representative("rival")).toEqual({ name: null, email: null });
+    await integrations.saveRepresentative("studio", "rita", { name: "", email: null });
+    expect(await integrations.representative("studio")).toEqual({ name: null, email: null });
+  });
+
   test("deliveries older than a day are given up", async () => {
     outbox = createWorkOrderOutbox({
       db,

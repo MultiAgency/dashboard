@@ -196,6 +196,16 @@ export const trustSettings = z.object({
   vetoHours: z.number().int().min(1).max(168),
 });
 
+export const representativeDefaults = z.object({
+  name: z.string().trim().max(200).nullable(),
+  email: z
+    .string()
+    .trim()
+    .max(320)
+    .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+    .nullable(),
+});
+
 export const compensationRequest = z.object({
   id: z.string(),
   workOrderId: z.string(),
@@ -574,6 +584,18 @@ export const workOrdersContract = {
     .route({ method: "POST", path: "/admin/work-order-trust" })
     .input(trustSettings)
     .output(trustSettings)
+    .errors(errors),
+
+  representativeDefaults: oc
+    .route({ method: "GET", path: "/admin/work-order-representative" })
+    .input(z.object({}))
+    .output(representativeDefaults)
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+  saveRepresentativeDefaults: oc
+    .route({ method: "POST", path: "/admin/work-order-representative" })
+    .input(representativeDefaults)
+    .output(representativeDefaults)
     .errors(errors),
 
   payoutAgent: oc

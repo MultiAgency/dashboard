@@ -57,6 +57,31 @@ export function createWorkOrderIntegrations(deps: { db: Database; now?: () => Da
         .where(eq(workOrderIntegrations.organizationId, organizationId));
     },
 
+    representative: async (organizationId: string) => {
+      const row = await settings(organizationId);
+      return {
+        name: row?.defaultRepresentativeName ?? null,
+        email: row?.defaultRepresentativeEmail ?? null,
+      };
+    },
+
+    saveRepresentative: async (
+      organizationId: string,
+      actorId: string,
+      input: { name: string | null; email: string | null },
+    ) => {
+      if (!(await settings(organizationId))) await issue(organizationId, actorId, null);
+      await db
+        .update(workOrderIntegrations)
+        .set({
+          defaultRepresentativeName: input.name?.trim() || null,
+          defaultRepresentativeEmail: input.email?.trim().toLowerCase() || null,
+          updatedBy: actorId,
+          updatedAt: now(),
+        })
+        .where(eq(workOrderIntegrations.organizationId, organizationId));
+    },
+
     saveGoogle: async (
       organizationId: string,
       actorId: string,

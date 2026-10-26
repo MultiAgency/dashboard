@@ -25,7 +25,9 @@ import {
   adminProjectsListQueryOptions,
   adminWorkOrdersQueryKey,
   tokensListQueryOptions,
+  workOrderRepresentativeQueryOptions,
 } from "@/lib/queries";
+import { defaultRepresentative } from "@/lib/representative";
 import type { WorkOrder } from "./work-order-status";
 
 type Draft = {
@@ -77,6 +79,7 @@ type Lists = {
   projects: Awaited<ReturnType<ApiClient["agency"]["projects"]["listOwned"]>>["data"];
   builders: Awaited<ReturnType<ApiClient["contributors"]["list"]>>["data"];
   tokens: Awaited<ReturnType<ApiClient["tokens"]["list"]>>["tokens"];
+  representative: Awaited<ReturnType<ApiClient["workOrders"]["representativeDefaults"]>> | null;
 };
 
 export function WorkOrderForm({
@@ -90,6 +93,7 @@ export function WorkOrderForm({
   const projectsQuery = useQuery(adminProjectsListQueryOptions(apiClient));
   const buildersQuery = useQuery(adminContributorsListQueryOptions(apiClient));
   const tokensQuery = useQuery(tokensListQueryOptions(apiClient));
+  const representativeQuery = useQuery(workOrderRepresentativeQueryOptions(apiClient));
   const failed = projectsQuery.error ?? buildersQuery.error ?? tokensQuery.error;
   const title = (
     <DialogHeader>
@@ -104,7 +108,12 @@ export function WorkOrderForm({
       </>
     );
   }
-  if (!projectsQuery.data || !buildersQuery.data || !tokensQuery.data) {
+  if (
+    !projectsQuery.data ||
+    !buildersQuery.data ||
+    !tokensQuery.data ||
+    representativeQuery.isLoading
+  ) {
     return (
       <>
         {title}
@@ -116,6 +125,7 @@ export function WorkOrderForm({
     projects: projectsQuery.data.data,
     builders: buildersQuery.data.data,
     tokens: tokensQuery.data.tokens.filter((t) => t.tokenId),
+    representative: representativeQuery.data ?? null,
   };
   if (lists.tokens.length === 0 && !editing) {
     return (
@@ -145,6 +155,7 @@ function WorkOrderFields({
   projects,
   builders,
   tokens,
+  representative,
 }: Lists & {
   editing?: WorkOrder;
   onDone: (workOrder: WorkOrder) => void;
@@ -156,6 +167,7 @@ function WorkOrderFields({
   const month = monthOf(new Date());
   const [draft, setDraft] = useState<Draft>(() => {
     const token = editing ? tokens.find((t) => t.tokenId === editing.tokenId) : undefined;
+    const defaults = defaultRepresentative(representative, me);
     return editing
       ? {
           code: editing.code,
@@ -196,8 +208,8 @@ function WorkOrderFields({
           autoRenew: false,
           githubLogin: "",
           contractorEmail: "",
-          representativeName: me?.name ?? "",
-          representativeEmail: me?.email ?? "",
+          representativeName: defaults.name,
+          representativeEmail: defaults.email,
           ipModel: "",
         };
   });
@@ -467,7 +479,11 @@ function WorkOrderFields({
               onChange={(e) => set("representativeName", e.target.value)}
             />
           </Field>
-          <Field label="Representative's email" htmlFor="wo-rep-email">
+          <Field
+            label="Representative's email"
+            htmlFor="wo-rep-email"
+            helper="Agency emails (payout requested, signed, renewed) go only to this address."
+          >
             <Input
               id="wo-rep-email"
               type="email"

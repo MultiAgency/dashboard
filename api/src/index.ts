@@ -1141,6 +1141,23 @@ export default createPlugin.withPlugins<PluginsClient>()({
             return workOrders.trustSettings(context.scope);
           }),
 
+        representativeDefaults: builder.workOrders.representativeDefaults
+          .use(agencyManager)
+          .handler(async ({ context }) =>
+            workOrderIntegrations.representative(context.scope.organizationId),
+          ),
+
+        saveRepresentativeDefaults: builder.workOrders.saveRepresentativeDefaults
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            await workOrderIntegrations.saveRepresentative(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+            return workOrderIntegrations.representative(context.scope.organizationId);
+          }),
+
         payoutAgent: builder.workOrders.payoutAgent
           .use(agencyManager)
           .handler(async ({ context }) => payoutAgents.view(context.scope.organizationId)),

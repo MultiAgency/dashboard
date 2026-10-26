@@ -792,6 +792,8 @@ export const workOrderIntegrations = pgTable("work_order_integrations", {
   googleLastError: text("google_last_error"),
   trustMode: text("trust_mode", { enum: TRUST_MODES }).notNull().default("suggest"),
   trustVetoHours: integer("trust_veto_hours").notNull().default(24),
+  defaultRepresentativeName: text("default_representative_name"),
+  defaultRepresentativeEmail: text("default_representative_email"),
   updatedBy: text("updated_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),

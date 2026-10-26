@@ -299,6 +299,16 @@ export function workOrderIntegrationQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const workOrderRepresentativeQueryKey = ["admin", "work-order-representative"] as const;
+
+export function workOrderRepresentativeQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderRepresentativeQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.representativeDefaults({}),
+    retry: false,
+  });
+}
+
 export const workOrderTrustQueryKey = ["admin", "work-order-trust"] as const;
 
 export function workOrderTrustQueryOptions(apiClient: ApiClient) {
