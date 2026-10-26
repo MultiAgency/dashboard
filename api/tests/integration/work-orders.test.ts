@@ -250,6 +250,19 @@ describe("work orders", () => {
       expect((await notificationsOf("carol")).map((n) => n.kind)).toContain("work_order_activated");
     });
 
+    test("counts the work orders that need the agency, from the list's progress", async () => {
+      expect(await service.needsYouCount(await member())).toEqual({ count: 0 });
+      const first = await service.create(await studio(), fields());
+      await service.create(await studio(), fields({ title: "Second role" }));
+      expect(await service.needsYouCount(await member())).toEqual({ count: 2 });
+      await service.offer(await studio(), { id: first.id });
+      const { data } = await service.list(await member());
+      expect(data.filter((w) => w.progress.needsYou)).toHaveLength(1);
+      expect(await service.needsYouCount(await member())).toEqual({ count: 1 });
+      await signAsBuilder(first.id);
+      expect(await service.needsYouCount(await member())).toEqual({ count: 2 });
+    });
+
     test("another account can't see or accept the work order", async () => {
       const created = await service.create(await studio(), fields());
       await service.offer(await studio(), { id: created.id });

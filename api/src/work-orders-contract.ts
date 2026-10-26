@@ -515,6 +515,12 @@ export const workOrdersContract = {
     .output(z.object({ data: z.array(workOrder) }))
     .errors({ UNAUTHORIZED, FORBIDDEN }),
 
+  needsYouCount: oc
+    .route({ method: "GET", path: "/admin/work-orders/needs-you" })
+    .input(z.object({}))
+    .output(z.object({ count: z.number().int() }))
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
   get: oc
     .route({ method: "GET", path: "/admin/work-orders/{id}" })
     .input(byId)

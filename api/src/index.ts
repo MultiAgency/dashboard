@@ -1139,6 +1139,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(agencyMember)
           .handler(async ({ context, input }) => workOrders.list(context.scope, input)),
 
+        needsYouCount: builder.workOrders.needsYouCount
+          .use(agencyMember)
+          .handler(async ({ context }) => workOrders.needsYouCount(context.scope)),
+
         get: builder.workOrders.get
           .use(agencyMember)
           .handler(async ({ context, input }) => workOrders.get(context.scope, input)),

@@ -3023,32 +3023,39 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       .catch((error: unknown) => console.warn("[API] work order deliveries failed", error));
   }
 
+  async function list(
+    scope: OrganizationScope,
+    input: { status?: WorkOrderStatus; projectId?: string; builderNearAccount?: string } = {},
+  ) {
+    const conditions = [eq(workOrders.organizationId, scope.organizationId)];
+    if (input.status) conditions.push(eq(workOrders.status, input.status));
+    if (input.projectId) conditions.push(eq(workOrders.projectId, input.projectId));
+    if (input.builderNearAccount)
+      conditions.push(eq(workOrders.builderNearAccount, input.builderNearAccount));
+    const rows = await db
+      .select()
+      .from(workOrders)
+      .where(and(...conditions))
+      .orderBy(desc(workOrders.periodStart), desc(workOrders.createdAt));
+    const projects = new Map(
+      (
+        await directory
+          .forAgency(scope)
+          .list()
+          .catch(() => [])
+      ).map((p) => [p.id, p]),
+    );
+    return {
+      data: await Promise.all(rows.map(async (row) => adminView(await view(row, { projects })))),
+    };
+  }
+
   return {
-    list: async (
-      scope: OrganizationScope,
-      input: { status?: WorkOrderStatus; projectId?: string; builderNearAccount?: string } = {},
-    ) => {
-      const conditions = [eq(workOrders.organizationId, scope.organizationId)];
-      if (input.status) conditions.push(eq(workOrders.status, input.status));
-      if (input.projectId) conditions.push(eq(workOrders.projectId, input.projectId));
-      if (input.builderNearAccount)
-        conditions.push(eq(workOrders.builderNearAccount, input.builderNearAccount));
-      const rows = await db
-        .select()
-        .from(workOrders)
-        .where(and(...conditions))
-        .orderBy(desc(workOrders.periodStart), desc(workOrders.createdAt));
-      const projects = new Map(
-        (
-          await directory
-            .forAgency(scope)
-            .list()
-            .catch(() => [])
-        ).map((p) => [p.id, p]),
-      );
-      return {
-        data: await Promise.all(rows.map(async (row) => adminView(await view(row, { projects })))),
-      };
+    list,
+
+    needsYouCount: async (scope: OrganizationScope) => {
+      const { data } = await list(scope);
+      return { count: data.filter((workOrder) => workOrder.progress.needsYou).length };
     },
 
     get: async (scope: OrganizationScope, input: { id: string }) =>
