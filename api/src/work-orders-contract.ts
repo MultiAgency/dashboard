@@ -585,6 +585,12 @@ export const workOrdersContract = {
     .output(z.object({ deleted: z.literal(true) }))
     .errors(errors),
 
+  nextCode: oc
+    .route({ method: "GET", path: "/admin/work-orders/next-code" })
+    .input(z.object({}))
+    .output(z.object({ code: z.string() }))
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
   offer: oc
     .route({ method: "POST", path: "/admin/work-orders/{id}/offer" })
     .input(byId)

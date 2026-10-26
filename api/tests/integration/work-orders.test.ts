@@ -217,6 +217,15 @@ describe("work orders", () => {
   }
 
   describe("lifecycle", () => {
+    test("the next code previews the auto-numbered code without taking it", async () => {
+      expect(await service.nextCode(await studio())).toEqual({ code: "WO-0001" });
+      expect(await service.nextCode(await studio())).toEqual({ code: "WO-0001" });
+      await service.create(await studio(), fields());
+      await service.create(await studio(), fields({ code: "SI-004" }));
+      expect(await service.nextCode(await studio())).toEqual({ code: "WO-0002" });
+      expect((await service.create(await studio(), fields())).code).toBe("WO-0002");
+    });
+
     test("draft → offered → accepted by the builder's own account → active", async () => {
       const created = await service.create(await studio(), fields());
       expect(created.code).toBe("WO-0001");

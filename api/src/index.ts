@@ -1163,6 +1163,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.remove(context.scope, input)),
 
+        nextCode: builder.workOrders.nextCode
+          .use(agencyManager)
+          .handler(async ({ context }) => workOrders.nextCode(context.scope)),
+
         offer: builder.workOrders.offer
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.offer(context.scope, input)),

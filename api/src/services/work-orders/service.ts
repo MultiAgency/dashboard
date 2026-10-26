@@ -3105,6 +3105,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       };
     },
 
+    nextCode: async (scope: OrganizationScope) => ({ code: await nextCode(scope.organizationId) }),
+
     create: async (scope: OrganizationScope, input: WorkOrderFields) => {
       const code = input.code?.trim() || (await nextCode(scope.organizationId));
       const builder = await deps.builders.get(input.builderNearAccount);
