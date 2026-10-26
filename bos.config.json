@@ -13,9 +13,9 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-331-ui-dashboard-multiagency-06fa18309-ze.zephyrcloud.app",
+      "production": "https://multiagentic-336-ui-dashboard-multiagency-498b27296-ze.zephyrcloud.app",
       "integrity": "sha384-nyU+atnTiDZer7WitEHaSFKO79SYaS52TBjH+7L5i1LTBOD75F75YJtBA4YzzySs",
-      "ssr": "https://multiagentic-335-ui-dashboard-multiagency-9a41722df-ze.zephyrcloud.app",
+      "ssr": "https://multiagentic-340-ui-dashboard-multiagency-a21d7e75d-ze.zephyrcloud.app",
       "ssrIntegrity": "sha384-oWffdDrHrjq/yZJMGM4Fqdt70oZjzwDXiyhU15OowjEb+RMyhtKdtzleZanyZ+/F"
     },
     "api": {
@@ -46,7 +46,8 @@
         "DOCUMENSO_API_URL",
         "PAYOUTS_SECRET_KEY"
       ],
-      "production": "https://multiagentic-334-api-dashboard-multiagency-8f997f889-ze.zephyrcloud.app"
+      "production": "https://multiagentic-339-api-dashboard-multiagency-4a0045387-ze.zephyrcloud.app",
+      "integrity": "sha384-nkFjGlLr+f/VazvwY+2VsbzVlfGsr1/ETSIUH28Y4qG4VBOSZIGD8PQqIhZQjMfh"
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
@@ -73,7 +74,8 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-333-everything-dev-projects-plugin-d-dae59db7c-ze.zephyrcloud.app"
+      "production": "https://multiagentic-337-everything-dev-projects-plugin-d-3210c8b0d-ze.zephyrcloud.app",
+      "integrity": "sha384-qPOhAJTs/T7AsUmqhbdUnrcWJc4R5zW8DtsCJLScSOOyQS46quiS1qmJ/PfVmlH8"
     },
     "builders": {
       "development": "local:plugins/builders",
@@ -82,7 +84,7 @@
         "REGISTRY_TOKEN_TESTNET",
         "REGISTRY_TOKEN_MAINNET"
       ],
-      "production": "https://multiagentic-332-everything-dev-builders-plugin-d-a431cf312-ze.zephyrcloud.app",
+      "production": "https://multiagentic-338-everything-dev-builders-plugin-d-583c5b63e-ze.zephyrcloud.app",
       "integrity": "sha384-HVd3JBtogajDWoxVKGoFBiF93pb1sojI3kwzQgyhXrqVfldRO/Ynj6u87XeCpPpA"
     }
   }
