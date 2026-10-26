@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ActivityTimeline } from "@/components/work-orders/activity-timeline";
+import { DuplicateWorkOrderButton } from "@/components/work-orders/duplicate-work-order-button";
 import { EvidenceList } from "@/components/work-orders/evidence-list";
 import { type InPageAction, NextStepCard } from "@/components/work-orders/next-step-card";
 import { PayeePayoutsPrompt } from "@/components/work-orders/payee-payouts-prompt";
@@ -231,6 +232,7 @@ function WorkOrderPage() {
                   Activate now
                 </Button>
               )}
+              <DuplicateWorkOrderButton workOrder={wo} />
               {editable && (
                 <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
                   Edit
