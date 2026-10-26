@@ -1,5 +1,6 @@
 import { CaretRightIcon } from "@phosphor-icons/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { useRouterState } from "@tanstack/react-router";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 export function SettingsSection({
@@ -14,6 +15,18 @@ export function SettingsSection({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
+  const hash = useRouterState({ select: (state) => state.location.hash });
+  const visit = useRouterState({ select: (state) => state.location.state.__TSR_key ?? null });
+
+  useEffect(() => {
+    if (hash !== id) return;
+    setOpen(true);
+    const frame = requestAnimationFrame(() =>
+      sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [hash, visit, id]);
 
   useEffect(() => {
     const sync = () => {
@@ -26,7 +39,7 @@ export function SettingsSection({
 
   return (
     <Collapsible asChild open={open} onOpenChange={setOpen}>
-      <section id={id} className="scroll-mt-24 border bg-card">
+      <section ref={sectionRef} id={id} className="scroll-mt-24 border bg-card">
         <CollapsibleTrigger asChild>
           <button
             type="button"
