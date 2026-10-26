@@ -177,7 +177,13 @@ export function createWorkOrderOutbox(deps: {
     try {
       if (!sendEmail) return retry("email is not configured (RESEND_API_KEY, NOTIFY_FROM_EMAIL)");
       const email = JSON.parse(row.payload) as WorkOrderEmail;
-      await sendEmail({ to: email.to, subject: email.subject, html: emailHtml(email.text) });
+      await sendEmail({
+        to: email.to,
+        subject: email.subject,
+        html: email.html ?? emailHtml(email.text),
+        text: email.text,
+        fromName: email.fromName,
+      });
       await db
         .update(workOrderOutbox)
         .set({ attempts, deliveredAt: now(), lastError: null })

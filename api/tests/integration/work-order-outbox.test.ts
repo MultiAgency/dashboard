@@ -63,43 +63,72 @@ describe("work order emails", () => {
     });
   });
 
-  test("each event emails the right people with the accepted-paid wording", () => {
-    expect(composeEmails(event("work_order.active")).map((m) => m.to)).toEqual([
-      "carol@example.com",
-      "rita@example.com",
-    ]);
-    const confirm = composeEmails(event("work_order.confirm_payee"));
-    expect(confirm).toHaveLength(1);
-    expect(confirm[0]?.to).toBe("carol@example.com");
-    expect(confirm[0]?.text).toContain("carol.near");
-    expect(confirm[0]?.text).toContain("https://app.example/work-orders/1");
-    const mismatch = composeEmails(
-      event("work_order.signature_mismatch", {
-        mismatches: ["budget: draft 1000, signed PDF 1500"],
+  test("only the chosen events email, each to the right person", () => {
+    const to = (type: WorkOrderEvent["type"], over: Partial<WorkOrderEvent> = {}) =>
+      composeEmails(event(type, over)).map((m) => m.to);
+    expect(to("work_order.offered")).toEqual(["carol@example.com"]);
+    expect(to("work_order.active")).toEqual(["carol@example.com"]);
+    expect(to("request.payout_released")).toEqual(["carol@example.com"]);
+    expect(to("work_order.signed")).toEqual(["rita@example.com"]);
+    expect(to("work_order.renewed")).toEqual(["rita@example.com"]);
+    expect(to("request.awaiting_approval")).toEqual(["carol@example.com", "rita@example.com"]);
+    for (const quiet of [
+      "work_order.created",
+      "work_order.builder_signed",
+      "work_order.confirm_payee",
+      "work_order.declined",
+      "request.report_ready",
+      "request.approved",
+    ] as const) {
+      expect(to(quiet)).toEqual([]);
+    }
+    const request = {
+      id: "SI-004-R1",
+      status: "rejected",
+      requestedUsd: "500",
+      approvedUsd: null,
+      tokenAmount: null,
+      symbol: "USD",
+      requested: "$500",
+      approved: null,
+      note: "Missing pull requests",
+    };
+    const declined = composeEmails(event("request.needs_review", { request }));
+    expect(declined.map((m) => m.to)).toEqual(["carol@example.com"]);
+    expect(declined[0]?.subject).toBe("Payout declined: request SI-004-R1");
+    expect(declined[0]?.text).toContain("Missing pull requests");
+    expect(to("request.needs_review", { request: { ...request, status: "failed" } })).toEqual([]);
+  });
+
+  test("the offer email links straight to the signing page", () => {
+    const base = event("work_order.offered");
+    const [offer] = composeEmails(
+      event("work_order.offered", {
+        links: { ...base.links, sign: "https://sign.example/abc" },
       }),
     );
-    expect(mismatch[0]?.subject).toBe("Work Order SI-004: the signed PDF doesn't match the draft");
-    expect(mismatch[0]?.text).toContain("- budget: draft 1000, signed PDF 1500");
-    const noEmail = event("work_order.active");
-    noEmail.contractor.email = null;
-    expect(composeEmails(noEmail).map((m) => m.to)).toEqual(["rita@example.com"]);
+    expect(offer?.subject).toBe("Studio sent you Work Order SI-004 to sign");
+    expect(offer?.html).toContain('href="https://sign.example/abc"');
+    expect(offer?.fromName).toBe("Studio via MultiAgency");
+    expect(offer?.text).toContain("carol.near");
   });
 
   test("emails go out once through Resend", async () => {
     const signed = event("work_order.signed");
     signed.links.document = "https://drive.example/signed?id=1&v=2";
     const ids = await outbox.enqueue("studio", "wo1", signed);
-    expect(ids).toHaveLength(2);
-    expect(await outbox.deliver()).toEqual({ delivered: 2, failed: 0 });
-    expect(sent.map((m) => m.to)).toEqual(["carol@example.com", "rita@example.com"]);
-    expect(sent[0]?.html).toContain('<a href="https://drive.example/signed?id=1&amp;v=2">');
+    expect(ids).toHaveLength(1);
+    expect(await outbox.deliver()).toEqual({ delivered: 1, failed: 0 });
+    expect(sent.map((m) => m.to)).toEqual(["rita@example.com"]);
+    expect(sent[0]?.text).toContain("Download the signed PDF");
+    expect(sent[0]?.html).toContain('href="https://drive.example/signed?id=1&amp;v=2"');
     expect(sent[0]?.subject).toBe("Work Order SI-004 is signed");
     expect(await outbox.deliver()).toEqual({ delivered: 0, failed: 0 });
   });
 
   test("an n8n webhook saved earlier is ignored: emails still go through Resend", async () => {
     await integrations.save("studio", "rita", "https://n8n.example/webhook/wo");
-    await outbox.enqueue("studio", "wo1", event("work_order.created"));
+    await outbox.enqueue("studio", "wo1", event("work_order.signed"));
     const rows = await db.select().from(workOrderOutbox);
     expect(rows.map((r) => r.channel)).toEqual(["email"]);
     await outbox.deliver();
@@ -116,7 +145,7 @@ describe("work order emails", () => {
       },
       now: () => clock,
     });
-    await outbox.enqueue("studio", "wo1", event("work_order.active"));
+    await outbox.enqueue("studio", "wo1", event("request.awaiting_approval"));
     expect((await outbox.deliver()).failed).toBe(2);
     const [row] = await db.select().from(workOrderOutbox);
     expect(row?.lastError).toBe("Resend answered 502");
@@ -149,7 +178,7 @@ describe("work order emails", () => {
       },
       now: () => clock,
     });
-    await outbox.enqueue("studio", "wo1", event("work_order.created"));
+    await outbox.enqueue("studio", "wo1", event("work_order.signed"));
     clock = new Date(clock.getTime() + 25 * 3_600_000);
     expect(await outbox.deliver()).toEqual({ delivered: 0, failed: 0 });
   });

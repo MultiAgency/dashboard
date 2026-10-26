@@ -1149,7 +1149,8 @@ describe("work orders", () => {
       expect(doc.signers[1]?.signature.y).toBeGreaterThan(doc.signers[0]?.signature.y ?? 100);
       const offeredDoc = await service.document(await studio(), { id: created.id });
       expect(offeredDoc.sha256).toBe(createHash("sha256").update(doc.pdf).digest("hex"));
-      expect(events.map((e) => e.type)).not.toContain("work_order.offered");
+      const offer = events.find((e) => e.type === "work_order.offered");
+      expect(offer?.links.sign).toBe("https://sign.example/envelope_1/contractor");
 
       const admin = await service.get(await studio(), { id: created.id });
       expect(admin.status).toBe("offered");
@@ -1172,6 +1173,8 @@ describe("work orders", () => {
       expect(accepted.status).toBe("accepted");
       expect(accepted.signing.builder?.name).toBe("Carol");
       expect(accepted.signing.needsCountersign).toBe(true);
+      const turn = events.find((e) => e.type === "work_order.builder_signed");
+      expect(turn?.links.countersign).toBe("https://sign.example/envelope_1/representative");
 
       documenso.sign("representative", "2026-09-20T14:00:00.000Z");
       await service.run();

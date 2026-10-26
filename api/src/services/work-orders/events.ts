@@ -74,6 +74,8 @@ export type WorkOrderEvent = {
     report: string | null;
     confirm: string | null;
     document: string | null;
+    sign?: string | null;
+    countersign?: string | null;
   };
   reportMd: string | null;
   terms: WorkOrderEventTerms | null;

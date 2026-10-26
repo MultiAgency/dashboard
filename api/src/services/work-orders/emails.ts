@@ -1,263 +1,199 @@
+import { type EmailContent, escapeHtml, renderEmail } from "./email-layout";
 import type { WorkOrderEvent } from "./events";
 
-export type WorkOrderEmail = { to: string; subject: string; text: string };
+export type WorkOrderEmail = {
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  fromName?: string;
+};
 
-const lines = (...parts: (string | null | undefined | false)[]) =>
-  parts.filter((part): part is string => typeof part === "string").join("\n");
+type Role = "contractor" | "representative";
+
+type Draft = Omit<EmailContent, "greeting">;
+
+const COUNTING_RULES = [
+  "Work on GitHub issues assigned to the builder in the work order's repositories counts.",
+  'Pull requests should close their issue ("Closes #12") and be approved or merged by the repository owner.',
+  "At the end of the period, the report and compensation request are drafted automatically.",
+];
 
 export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
   const out: WorkOrderEmail[] = [];
   const wo = e.workOrder;
   const r = e.request;
-  const agency = e.agency.name;
-  const header = `Work Order ${wo.id}: ${wo.title} (${wo.project}), ${wo.periodStart} → ${wo.periodEnd}`;
-  const toContractor = (subject: string, ...body: (string | null | undefined | false)[]) => {
-    if (e.contractor.email) {
-      out.push({
-        to: e.contractor.email,
-        subject,
-        text: lines(`Hi ${e.contractor.name},`, "", ...body, "", `${agency} via MultiAgency`),
-      });
-    }
+  const agency = e.agency.name || "Your agency";
+  const builder = e.contractor.name;
+  const period = wo.periodStart && wo.periodEnd ? `${wo.periodStart} → ${wo.periodEnd}` : "";
+  const fromName = `${agency} via MultiAgency`;
+
+  const summary = (...extra: [string, string][]): [string, string][] => {
+    const rows: [string, string][] = [
+      ["Work order", `${wo.id} · ${wo.title}`],
+      ["Project", wo.project],
+      ["Period", period],
+      ...extra,
+    ];
+    return rows.filter(([, value]) => value);
   };
-  const toRepresentative = (subject: string, ...body: (string | null | undefined | false)[]) => {
-    if (e.representative.email) {
-      out.push({
-        to: e.representative.email,
-        subject,
-        text: lines(`Hi ${e.representative.name},`, "", ...body, "", "MultiAgency"),
-      });
-    }
+
+  const pageOf = (role: Role) => (role === "contractor" ? e.links.contractor : e.links.review);
+  const view = (role: Role, label = "Open the work order") => {
+    const url = pageOf(role);
+    return url ? { label, url } : null;
   };
-  const toBoth = (subject: string, ...body: (string | null | undefined | false)[]) => {
-    toContractor(subject, ...body);
-    toRepresentative(subject, ...body);
+
+  const send = (role: Role, subject: string, draft: Draft) => {
+    const person = role === "contractor" ? e.contractor : e.representative;
+    if (!person.email) return;
+    const first = person.name.split(" ")[0] || person.name;
+    const { html, text } = renderEmail({ ...draft, greeting: `Hi ${first},` }, agency);
+    out.push({ to: person.email, subject, text, html, fromName });
   };
 
   switch (e.type) {
-    case "work_order.created":
-      toRepresentative(
-        `Work Order ${wo.id} is drafted`,
-        header,
-        "",
-        e.links.document
-          ? `The document is ready: ${e.links.document}`
-          : "If your Google Docs template is connected, the filled document arrives in a few minutes.",
-        "Review it, then send it for signature in Google Docs: Tools → eSignature → Request signature (the builder and you).",
-        "Once both have signed, save the signed PDF in your Signed folder on Drive. It is attached here automatically when its terms match.",
-        e.links.review,
-      );
-      break;
-    case "work_order.document_ready":
-      toRepresentative(
-        `Work Order ${wo.id} is ready to send for signature`,
-        header,
-        "",
-        `The filled document: ${e.links.document}`,
-        "Open it in Google Docs → Tools → eSignature → Request signature (the builder and you).",
-        "When both have signed, save the signed PDF in your Signed folder on Drive. It is attached here automatically when its terms match.",
-        e.links.review,
-      );
-      break;
-    case "work_order.signature_mismatch":
-      toRepresentative(
-        `Work Order ${wo.id}: the signed PDF doesn't match the draft`,
-        header,
-        "",
-        "A signed PDF arrived for this work order, but its terms differ from the draft, so it was NOT attached:",
-        ...(e.mismatches ?? []).map((m) => `- ${m}`),
-        "",
-        "Fix the draft or the document and sign again.",
-        e.links.review,
-      );
-      break;
     case "work_order.offered":
-      toContractor(
-        `${agency} offers you Work Order ${wo.id}`,
-        header,
-        "",
-        `Budget: up to ${wo.budget}, paid per approved compensation request to ${e.contractor.nearAccount}.`,
-        "Read the work order and sign it in MultiAgency, signed in with that NEAR account. You can also decline it there:",
-        e.links.contractor,
-      );
-      break;
-    case "work_order.builder_signed":
-      toRepresentative(
-        `${e.contractor.name} signed Work Order ${wo.id}: countersign it`,
-        header,
-        "",
-        `${e.contractor.name} signed the work order as "${e.note ?? e.contractor.name}".`,
-        "Countersign it on the work order page; the signed PDF is then saved and sent to both of you:",
-        e.links.review,
-      );
+      send("contractor", `${agency} sent you Work Order ${wo.id} to sign`, {
+        preheader: `${wo.title}: review the terms and sign to accept.`,
+        eyebrow: "Work order sent",
+        heading: `${agency} sent you a work order`,
+        paragraphs: [
+          `You're offered "${wo.title}" on ${wo.project}. Review the terms and sign to accept. It only takes a minute.`,
+          `Each approved payout request is paid to ${e.contractor.nearAccount}.`,
+        ],
+        details: summary(["Budget", `up to ${wo.budget}`], ["Paid to", e.contractor.nearAccount]),
+        action: e.links.sign
+          ? { label: "Review and sign", url: e.links.sign }
+          : view("contractor", "Review and sign"),
+        secondary:
+          e.links.sign && e.links.contractor
+            ? [{ label: "View it on MultiAgency", url: e.links.contractor }]
+            : [],
+        footnote: "Not for you? You can decline it from the signing page.",
+      });
       break;
     case "work_order.signed":
-      toBoth(
-        `Work Order ${wo.id} is signed`,
-        header,
-        "",
-        "The work order has been signed by both parties.",
-        e.links.document ? `Signed document: ${e.links.document}` : null,
-        "Next: the work order is activated by the Agency.",
-      );
-      break;
-    case "work_order.confirm_payee":
-      toContractor(
-        `Confirm your payout account for Work Order ${wo.id}`,
-        header,
-        "",
-        `Please confirm the account you will be paid to, ${e.contractor.nearAccount}, by signing in with that NEAR wallet and pressing Confirm.`,
-        "It's free, takes a few seconds, and doesn't move any money:",
-        e.links.confirm,
-      );
-      break;
-    case "work_order.payee_confirmed":
-      toRepresentative(
-        `Work Order ${wo.id}: payout account confirmed`,
-        header,
-        "",
-        `${e.contractor.name} proved they control ${e.contractor.nearAccount}. You can activate the work order.`,
-        e.links.review,
-      );
+      send("representative", `Work Order ${wo.id} is signed`, {
+        preheader: `${builder} and ${agency} have both signed.`,
+        eyebrow: "Work order signed",
+        heading: `Work Order ${wo.id} is signed`,
+        paragraphs: [
+          `${builder} and ${agency} have both signed. The signed PDF is attached to the work order.`,
+          "It becomes active automatically when its period starts.",
+        ],
+        details: summary(["Builder", builder], ["Budget", wo.budget]),
+        action: view("representative"),
+        secondary: e.links.document
+          ? [{ label: "Download the signed PDF", url: e.links.document }]
+          : [],
+      });
       break;
     case "work_order.active":
-      toBoth(
-        `Work Order ${wo.id} is active`,
-        header,
-        "",
-        "The work order is now active.",
-        'Work counts when it is on GitHub issues assigned to the builder in the work order repositories, and pull requests say "Closes #N" and are approved or merged by the repository owner.',
-        "At the end of the period a compensation request with the report is drafted automatically.",
-      );
-      break;
-    case "work_order.declined":
-      toRepresentative(
-        `Work Order ${wo.id} was declined`,
-        header,
-        "",
-        "The builder declined the work order. Nothing can be paid under it until it is offered and accepted again.",
-        e.note ? `Their note: ${e.note}` : null,
-        e.links.review,
-      );
-      break;
-    case "work_order.ending_soon":
-      toContractor(
-        `Work Order ${wo.id} ends on ${wo.periodEnd}`,
-        header,
-        "",
-        `Your work period ends on ${wo.periodEnd}. Your compensation request and report will be drafted automatically right after.`,
-        'Make sure your pull requests close their assigned issues ("Closes #12") so they are counted.',
-      );
+      send("contractor", `Work Order ${wo.id} is active`, {
+        preheader: `Your work period has started: ${period}.`,
+        eyebrow: "Work order active",
+        heading: `Work Order ${wo.id} is active`,
+        paragraphs: ["Your work period has started. Here's how your work is counted:"],
+        list: { title: null, items: COUNTING_RULES },
+        details: summary(["Budget", wo.budget], ["Paid to", e.contractor.nearAccount]),
+        action: view("contractor"),
+      });
       break;
     case "work_order.renewed": {
       const next = e.renewal?.renewedTo;
-      toBoth(
-        `Work Order ${wo.id} is renewed`,
-        header,
-        "",
-        next
-          ? `The work order is renewed for next month as ${next.id}, ${next.periodStart} → ${next.periodEnd}, with the same terms.`
-          : "The work order is renewed for next month.",
-        "Work in the new period counts the same way. Its compensation request is drafted at the end of the period.",
-      );
+      send("representative", `Work Order ${wo.id} is renewed`, {
+        preheader: next
+          ? `${builder}'s work order continues as ${next.id}.`
+          : "It continues next month.",
+        eyebrow: "Work order renewed",
+        heading: `Work Order ${wo.id} is renewed`,
+        paragraphs: [
+          next
+            ? `${builder}'s work order continues next month as ${next.id}, ${next.periodStart} → ${next.periodEnd}, with the same terms.`
+            : `${builder}'s work order continues next month with the same terms.`,
+        ],
+        details: summary(["Builder", builder], ["Budget", wo.budget]),
+        action: view("representative"),
+      });
       break;
     }
-    case "work_order.renewal_needs_approval":
-      toRepresentative(
-        `Manual Approval Needed: renewal of Work Order ${wo.id}`,
-        header,
-        "",
-        "The period is over and it missed at least one base metric for renewal, so it was NOT renewed automatically:",
-        ...(e.renewal?.assessment.metrics ?? []).map(
-          (m) => `- ${m.met ? "met" : "MISSED"}: ${m.label}: ${m.value} (needed ${m.target})`,
-        ),
-        "",
-        "Renew it anyway or let it end:",
-        e.links.review,
-      );
-      break;
-    case "work_order.not_renewed":
-      toBoth(
-        `Work Order ${wo.id} is not renewed`,
-        header,
-        "",
-        "The work order was not renewed for next month. It ends with this period.",
-        "Compensation requests for work done in this period still go through as usual.",
-      );
-      break;
-    case "request.report_ready":
-      toContractor(
-        `Your report for Work Order ${wo.id} is ready to review`,
-        header,
-        "",
-        `Compensation request ${r?.id ?? ""} has been drafted from your GitHub activity.`,
-        "Please review it, edit the Assessment (it is a draft), add any work outside GitHub, and submit:",
-        e.links.contractor,
-        "",
-        "--- Draft report ---",
-        e.reportMd,
-      );
-      break;
     case "request.awaiting_approval":
-      toRepresentative(
-        `Approve: compensation request ${r?.id ?? ""} (${r?.requested ?? ""})`,
-        header,
-        "",
-        `${e.contractor.name} (@${e.contractor.github}) submitted compensation request ${r?.id ?? ""} for ${r?.requested ?? ""}.`,
-        "Review the report and approve an amount; it is paid through a transfer proposal of your Agency DAO:",
-        e.links.review,
-        "",
-        "--- Report ---",
-        e.reportMd,
-      );
+      send("contractor", `Your payout request for ${wo.id} was sent`, {
+        preheader: `${r?.requested ?? "Your request"} is waiting for ${agency}'s approval.`,
+        eyebrow: "Work order summary",
+        heading: "Your payout request was sent",
+        paragraphs: [
+          `${agency} has your payout request ${r?.id ?? ""} for ${r?.requested ?? ""}. You'll get an email when it's paid.`,
+        ],
+        details: summary(
+          ["Request", r?.id ?? ""],
+          ["Requested", r?.requested ?? ""],
+          ["Budget", wo.budget],
+          ["Paid to", e.contractor.nearAccount],
+        ),
+        action: view("contractor"),
+        block: e.reportMd ? { title: "Your report", body: e.reportMd } : null,
+      });
+      send("representative", `Payout requested: ${r?.requested ?? ""} for ${builder}`, {
+        preheader: `${builder} requested ${r?.requested ?? "a payout"} for ${wo.id}.`,
+        eyebrow: "Payout requested",
+        heading: `${builder} requested ${r?.requested ?? "a payout"}`,
+        paragraphs: [
+          `${builder}${e.contractor.github ? ` (@${e.contractor.github})` : ""} sent payout request ${r?.id ?? ""}.`,
+          `Review the report and approve an amount. It's then paid to ${e.contractor.nearAccount}.`,
+        ],
+        details: summary(["Request", r?.id ?? ""], ["Requested", r?.requested ?? ""]),
+        action: view("representative", "Review and approve"),
+        block: e.reportMd ? { title: "Report", body: e.reportMd } : null,
+      });
       break;
-    case "request.approved":
-      toContractor(
-        `Compensation request ${r?.id ?? ""} is approved`,
-        header,
-        "",
-        `${agency} approved ${r?.approved ?? ""}. It is paid to ${e.contractor.nearAccount} once the Agency DAO approves the transfer proposal.`,
-        e.links.contractor,
-      );
+    case "request.payout_released": {
+      const amount = r?.approved ?? r?.requested ?? "";
+      send("contractor", `Payout sent: ${amount} for ${wo.id}`, {
+        preheader: `Your payout for ${r?.id ?? wo.id} was sent to ${e.contractor.nearAccount}.`,
+        eyebrow: "Payout sent",
+        heading: `You've been paid${amount ? ` ${amount}` : ""}`,
+        paragraphs: [
+          `Your payout for request ${r?.id ?? ""} was sent to ${e.payout?.near ?? e.contractor.nearAccount}.`,
+        ],
+        details: summary(
+          ["Request", r?.id ?? ""],
+          ["Amount", amount],
+          ["Paid to", e.payout?.near ?? e.contractor.nearAccount],
+        ),
+        action: e.payout?.txUrl
+          ? { label: "View the transaction", url: e.payout.txUrl }
+          : view("contractor"),
+        secondary:
+          e.payout?.txUrl && e.links.contractor
+            ? [{ label: "Open the work order", url: e.links.contractor }]
+            : [],
+      });
       break;
-    case "request.payout_released":
-      toContractor(
-        `Payout released for Work Order ${wo.id}`,
-        `Your payout for ${header} has been released.`,
-        "",
-        `Amount: ${r?.approved ?? r?.requested ?? "-"} → ${e.payout?.near ?? "-"}`,
-        `Proposal: ${e.payout?.txUrl ?? "-"}`,
-        `Request: ${r?.id ?? "-"}`,
-        "",
-        "--- Report ---",
-        e.reportMd,
-      );
-      break;
+    }
     case "request.needs_review":
-      toBoth(
-        `Work Order ${wo.id}: request ${r?.id ?? ""} needs review`,
-        header,
-        "",
-        `Compensation request ${r?.id ?? "-"} needs attention: ${r?.note ?? "see the work order"}.`,
-        e.links.review,
-      );
+      if (r?.status !== "rejected") break;
+      send("contractor", `Payout declined: request ${r.id}`, {
+        preheader: `${agency} declined payout request ${r.id}.`,
+        eyebrow: "Payout declined",
+        heading: `Payout request ${r.id} was declined`,
+        paragraphs: [
+          `${agency} declined your payout request for ${r.requested}.`,
+          ...(r.note ? [`Their note: "${r.note}"`] : []),
+          "You can update your report and send a new request from the work order page.",
+        ],
+        details: summary(["Request", r.id], ["Requested", r.requested]),
+        action: view("contractor"),
+      });
       break;
-    case "integration.test":
+    default:
       break;
   }
   return out;
 }
 
 const URL_PATTERN = /(https?:\/\/[^\s<>"]+)/g;
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 export function emailHtml(text: string): string {
   const body = escapeHtml(text).replace(URL_PATTERN, (url) => `<a href="${url}">${url}</a>`);

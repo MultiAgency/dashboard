@@ -146,7 +146,7 @@ export function createDocumenso(
             subject: input.subject,
             message: input.message,
             signingOrder: "SEQUENTIAL",
-            distributionMethod: "EMAIL",
+            distributionMethod: "NONE",
             ...(input.redirectUrl ? { redirectUrl: input.redirectUrl } : {}),
           },
         }),
@@ -162,7 +162,7 @@ export function createDocumenso(
       const distributed = (await (
         await call("POST", "/envelope/distribute", {
           envelopeId: created.id,
-          meta: { subject: input.subject, message: input.message },
+          meta: { subject: input.subject, message: input.message, distributionMethod: "NONE" },
         })
       ).json()) as {
         recipients?: { email: string; signingOrder: number | null; signingUrl?: string }[];

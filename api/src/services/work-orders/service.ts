@@ -564,6 +564,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           report: null,
           confirm: absolute(builderLink(row.id)),
           document: extra.document ?? row.documentUrl ?? row.preparedDocumentUrl ?? null,
+          sign: row.esignBuilderUrl ?? null,
+          countersign: row.esignRepresentativeUrl ?? null,
         },
         reportMd: extra.reportMd ?? null,
         terms:
@@ -1355,6 +1357,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         payeeConfirmedBy: row.payeeConfirmedBy ?? row.builderNearAccount,
       });
       await notifyManagers(current, "work_order_accepted", await payloadOf(current));
+      if (state.status !== "completed") {
+        await announce(current, "work_order.builder_signed", { note: contractor.name });
+      }
     }
     if (state.status !== "completed") return current;
     let final: Uint8Array;
@@ -3017,7 +3022,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       const prepared = await sendForSignature(await prepareOfferDocument(row));
       const offered = await update(prepared.id, { status: "offered", offeredAt: now() });
       await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
-      if (!offered.esignEnvelopeId) await announce(offered, "work_order.offered");
+      await announce(offered, "work_order.offered");
       return adminView(await view(offered));
     },
 
