@@ -68,8 +68,23 @@ function writeDismissed(organizationId: string | null) {
   } catch {}
 }
 
-function FixLink({ href, className }: { href: string; className?: string }) {
+function FixLink({
+  href,
+  className,
+  newTab = false,
+}: {
+  href: string;
+  className?: string;
+  newTab?: boolean;
+}) {
   const { path, hash } = fixTarget(href);
+  if (newTab) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className={className}>
+        Fix
+      </a>
+    );
+  }
   if (path === "/admin/settings") {
     return (
       <Link to="/admin/settings" hash={hash ?? undefined} className={className}>
@@ -217,6 +232,7 @@ export function SetupPreflight() {
                   {" "}
                   <FixLink
                     href={check.fixHref}
+                    newTab
                     className="font-medium underline underline-offset-4"
                   />
                 </>
@@ -225,7 +241,8 @@ export function SetupPreflight() {
           ))}
         </ul>
         <span>
-          You can still save this draft. Save it first, then fix these before you send it.
+          Fix links open in a new tab, so this draft stays open. You can still save it and fix these
+          before you send it.
         </span>
       </AlertDescription>
     </Alert>

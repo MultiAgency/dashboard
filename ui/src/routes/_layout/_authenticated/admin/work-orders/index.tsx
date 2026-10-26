@@ -3,7 +3,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { Button, Dialog, DialogContent, PageHeader } from "@/components";
-import { AgencyNamePrompt } from "@/components/agency-name-prompt";
 import { SetupChecklist } from "@/components/work-orders/setup-checklist";
 import { WorkOrderForm } from "@/components/work-orders/work-order-form";
 import { WorkOrdersInbox } from "@/components/work-orders/work-orders-inbox";
@@ -53,8 +52,6 @@ function WorkOrdersPage() {
         actions={newWorkOrder}
       />
       {canManage && <SetupChecklist />}
-
-      {canManage && <AgencyNamePrompt />}
 
       <WorkOrdersInbox
         workOrders={query.data?.data ?? []}
