@@ -275,6 +275,17 @@ export function adminWorkOrdersQueryOptions(apiClient: ApiClient) {
   });
 }
 
+const NEEDS_YOU_POLL_MS = 60_000;
+
+export function adminWorkOrdersNeedsYouQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "needs-you", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.needsYouCount({}),
+    retry: false,
+    refetchInterval: NEEDS_YOU_POLL_MS,
+  });
+}
+
 export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
   return queryOptions({
     queryKey: [...adminWorkOrdersQueryKey, "detail", ...workspaceKey(), id] as const,
