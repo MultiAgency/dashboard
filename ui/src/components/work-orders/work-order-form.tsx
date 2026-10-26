@@ -29,6 +29,7 @@ import {
   workOrderRepresentativeQueryOptions,
 } from "@/lib/queries";
 import { defaultRepresentative } from "@/lib/representative";
+import { SetupPreflight } from "./setup-checklist";
 import type { WorkOrder } from "./work-order-status";
 
 type Draft = {
@@ -323,6 +324,7 @@ function WorkOrderFields({
             : ""}
         </DialogDescription>
       </DialogHeader>
+      {!editing && <SetupPreflight />}
       <FieldGroup>
         <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
           <Field label="Project" htmlFor="wo-project">

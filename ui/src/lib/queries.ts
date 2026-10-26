@@ -319,6 +319,17 @@ export function workOrderTrustQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const workOrderSetupQueryKey = ["admin", "work-order-setup"] as const;
+
+export function workOrderSetupQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderSetupQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.setupStatus({}),
+    retry: false,
+    staleTime: 30_000,
+  });
+}
+
 export const payoutAgentQueryKey = ["admin", "payout-agent"] as const;
 
 export function payoutAgentQueryOptions(apiClient: ApiClient) {

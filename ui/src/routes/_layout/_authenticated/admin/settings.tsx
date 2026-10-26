@@ -31,6 +31,7 @@ import { SettingsSection } from "@/components/settings-section";
 import { WorkOrderIntegrationSettings } from "@/components/work-orders/integration-settings";
 import { PayoutAgentSettings } from "@/components/work-orders/payout-agent-settings";
 import { WorkOrderRepresentativeSettings } from "@/components/work-orders/representative-settings";
+import { SetupChecklist } from "@/components/work-orders/setup-checklist";
 import { WorkOrderTrustSettings } from "@/components/work-orders/trust-settings";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { refreshAccountQueries } from "@/lib/account";
@@ -61,6 +62,7 @@ function AdminSettingsPage() {
         title="Settings"
         description="Your Organization's identity, treasury and public Agency details."
       />
+      <SetupChecklist compact />
       <SettingsSection
         id="organization"
         title="Organization"

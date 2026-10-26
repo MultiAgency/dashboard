@@ -14,6 +14,7 @@ import {
   PageHeader,
 } from "@/components";
 import { AgencyNamePrompt } from "@/components/agency-name-prompt";
+import { SetupChecklist } from "@/components/work-orders/setup-checklist";
 import { WorkOrderForm } from "@/components/work-orders/work-order-form";
 import {
   RenewalBadge,
@@ -133,6 +134,7 @@ function WorkOrdersPage() {
           )
         }
       />
+      {canManage && <SetupChecklist />}
 
       {canManage && <AgencyNamePrompt />}
 
