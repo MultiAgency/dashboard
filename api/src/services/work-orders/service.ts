@@ -3318,7 +3318,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
     saveSignedToDrive: async (scope: OrganizationScope, input: { id: string }) => {
       const row = await ownRow(scope, input.id);
-      if (!row.signedAt || row.signedDriveFileId) return view(row);
+      if (!row.signedAt || row.signedDriveFileId) return adminView(await view(row));
       if (!(await googleOf(row.organizationId))) {
         throw badRequest("GOOGLE_FAILED", "Connect Google Drive first");
       }
@@ -3326,7 +3326,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (!saved.signedDriveFileId && saved.signedDriveError) {
         throw badRequest("GOOGLE_FAILED", saved.signedDriveError);
       }
-      return view(saved);
+      return adminView(await view(saved));
     },
 
     requestPayeeConfirmation: async (scope: OrganizationScope, input: { id: string }) => {
