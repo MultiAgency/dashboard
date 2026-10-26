@@ -4,7 +4,10 @@ import { workOrderOutbox } from "../../src/db/schema";
 import type { EmailMessage } from "../../src/services/notify";
 import { composeEmails } from "../../src/services/work-orders/emails";
 import type { WorkOrderEvent } from "../../src/services/work-orders/events";
-import { createWorkOrderOutbox } from "../../src/services/work-orders/outbox";
+import {
+  createWorkOrderIntegrations,
+  createWorkOrderOutbox,
+} from "../../src/services/work-orders/outbox";
 import { migratedDatabase } from "./_pg";
 
 function event(type: WorkOrderEvent["type"], over: Partial<WorkOrderEvent> = {}): WorkOrderEvent {
@@ -193,6 +196,7 @@ describe("work order emails", () => {
   });
 
   test("an Agency's default representative is saved and read back", async () => {
+    const integrations = createWorkOrderIntegrations({ db });
     expect(await integrations.representative("studio")).toEqual({ name: null, email: null });
     await integrations.saveRepresentative("studio", "rita", {
       name: "  Rita Rep ",

@@ -3085,7 +3085,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           and(
             eq(workOrderOutbox.organizationId, row.organizationId),
             eq(workOrderOutbox.workOrderId, row.id),
-            eq(workOrderOutbox.channel, "email"),
           ),
         )
         .orderBy(asc(workOrderOutbox.createdAt));

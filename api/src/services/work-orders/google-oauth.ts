@@ -258,8 +258,6 @@ export function createGoogleConnections(deps: {
       if (updated.length === 0) {
         await db.insert(workOrderIntegrations).values({
           organizationId: pending.organizationId,
-          webhookSecret: randomBytes(32).toString("hex"),
-          inboundTokenHash: hashState(`wo_${randomBytes(32).toString("base64url")}`),
           ...values,
         });
       }

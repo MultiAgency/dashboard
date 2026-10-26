@@ -70,7 +70,7 @@ export function createWorkOrderIntegrations(deps: { db: Database; now?: () => Da
       actorId: string,
       input: { name: string | null; email: string | null },
     ) => {
-      if (!(await settings(organizationId))) await issue(organizationId, actorId, null);
+      await ensure(organizationId, actorId);
       await db
         .update(workOrderIntegrations)
         .set({

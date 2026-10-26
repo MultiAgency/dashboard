@@ -37,7 +37,6 @@ describe("work order setup status", () => {
       secretKey: "test-secret",
       payees: async () => ["carol.near"],
       fullAccessKeys: async () => ["ed25519:owner"],
-      ownerSigner: null,
       now: () => new Date("2026-09-20T12:00:00.000Z"),
     });
     name = "test";
@@ -93,12 +92,12 @@ describe("work order setup status", () => {
     });
     await payouts.submit(ORG, {
       correlationId: create.correlationId,
-      signedData: { ...create.intent, signed_delegate: "signed" },
+      signedData: await agent.sign(create.intent),
     });
     const grant = await payouts.prepare(ORG, { action: "issue_grant" });
     await payouts.submit(ORG, {
       correlationId: grant.correlationId,
-      signedData: { ...grant.intent, public_key: "ed25519:owner", signature: "sig" },
+      signedData: await agent.sign(grant.intent),
     });
   }
 
