@@ -9,6 +9,7 @@ import {
   notifications,
   workOrderDriveFiles,
   workOrderIntegrations,
+  workOrderOutbox,
   workOrders,
 } from "../../src/db/schema";
 import { rememberedLogin } from "../../src/services/builder-logins";
@@ -352,6 +353,96 @@ describe("work orders", () => {
       expect((await service.list(await member())).data.map((w) => w.id)).toEqual([created.id]);
       const rival = await world.manager("rival-admin", "rival");
       await refused(service.get(rival, { id: created.id }), "NOT_FOUND");
+    });
+
+    test("activity lists the emails sent for the work order, without their bodies", async () => {
+      const created = await service.create(await studio(), fields());
+      const other = await service.create(await studio(), fields({ code: "WO-0050" }));
+      const email = (to: string, subject: string) =>
+        JSON.stringify({ to, subject, text: "secret body", html: "<p>secret body</p>" });
+      await db.insert(workOrderOutbox).values([
+        {
+          id: "e1",
+          organizationId: "studio",
+          workOrderId: created.id,
+          channel: "email",
+          eventType: "work_order.offered",
+          payload: email("carol@example.com", "Sign WO-0001"),
+          deliveredAt: new Date("2026-09-20T12:01:00.000Z"),
+          createdAt: new Date("2026-09-20T12:00:00.000Z"),
+        },
+        {
+          id: "e2",
+          organizationId: "studio",
+          workOrderId: created.id,
+          channel: "email",
+          eventType: "work_order.signed",
+          payload: email("rita@example.com", "Carol signed WO-0001"),
+          lastError: "Resend is down",
+          createdAt: new Date("2026-09-21T12:00:00.000Z"),
+        },
+        {
+          id: "e3",
+          organizationId: "studio",
+          workOrderId: created.id,
+          channel: "n8n",
+          eventType: "work_order.offered",
+          payload: "{}",
+          createdAt: new Date("2026-09-20T12:00:00.000Z"),
+        },
+        {
+          id: "e4",
+          organizationId: "studio",
+          workOrderId: other.id,
+          channel: "email",
+          eventType: "work_order.offered",
+          payload: email("carol@example.com", "Sign WO-0050"),
+          createdAt: new Date("2026-09-20T12:00:00.000Z"),
+        },
+        {
+          id: "e5",
+          organizationId: "studio",
+          workOrderId: created.id,
+          channel: "email",
+          eventType: "work_order.active",
+          payload: "not json",
+          createdAt: new Date("2026-09-22T12:00:00.000Z"),
+        },
+      ]);
+
+      const { emails } = await service.activity(await member(), { id: created.id });
+      expect(emails).toEqual([
+        {
+          id: "e1",
+          eventType: "work_order.offered",
+          to: "carol@example.com",
+          subject: "Sign WO-0001",
+          createdAt: "2026-09-20T12:00:00.000Z",
+          deliveredAt: "2026-09-20T12:01:00.000Z",
+          lastError: null,
+        },
+        {
+          id: "e2",
+          eventType: "work_order.signed",
+          to: "rita@example.com",
+          subject: "Carol signed WO-0001",
+          createdAt: "2026-09-21T12:00:00.000Z",
+          deliveredAt: null,
+          lastError: "Resend is down",
+        },
+        {
+          id: "e5",
+          eventType: "work_order.active",
+          to: null,
+          subject: null,
+          createdAt: "2026-09-22T12:00:00.000Z",
+          deliveredAt: null,
+          lastError: null,
+        },
+      ]);
+      expect(JSON.stringify(emails)).not.toContain("secret body");
+      const rival = await world.manager("rival-admin", "rival");
+      await refused(service.activity(rival, { id: created.id }), "NOT_FOUND");
     });
 
     test("codes are unique per agency; unknown builders and bad repos are refused", async () => {

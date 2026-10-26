@@ -415,6 +415,16 @@ const delivery = z.object({
   createdAt: z.string(),
 });
 
+const workOrderEmail = z.object({
+  id: z.string(),
+  eventType: z.string(),
+  to: z.string().nullable(),
+  subject: z.string().nullable(),
+  createdAt: z.string(),
+  deliveredAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+});
+
 const fieldMapping = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("field"), field: z.string().min(1).max(80) }),
   z.object({ kind: z.literal("text"), value: z.string().max(2000) }),
@@ -525,6 +535,12 @@ export const workOrdersContract = {
     .route({ method: "GET", path: "/admin/work-orders/{id}" })
     .input(byId)
     .output(workOrderDetail)
+    .errors(errors),
+
+  activity: oc
+    .route({ method: "GET", path: "/admin/work-orders/{id}/activity" })
+    .input(byId)
+    .output(z.object({ emails: z.array(workOrderEmail) }))
     .errors(errors),
 
   create: oc

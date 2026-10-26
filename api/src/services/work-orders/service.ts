@@ -16,6 +16,7 @@ import {
   workOrderEvidence,
   workOrderIntegrations,
   workOrderJobLock,
+  workOrderOutbox,
   workOrderSignatures,
   workOrders,
 } from "../../db/schema";
@@ -247,6 +248,20 @@ function fundingCodeOf(text: string): FundingCode | null {
     return "over_monthly_budget";
   if (/over_cap|cap per payout/i.test(text)) return "over_cap";
   return null;
+}
+
+function emailHeaders(payload: string): { to: string | null; subject: string | null } {
+  try {
+    const parsed: unknown = JSON.parse(payload);
+    if (typeof parsed !== "object" || parsed === null) return { to: null, subject: null };
+    const { to, subject } = parsed as Record<string, unknown>;
+    return {
+      to: typeof to === "string" ? to : null,
+      subject: typeof subject === "string" ? subject : null,
+    };
+  } catch {
+    return { to: null, subject: null };
+  }
 }
 
 const REPO = /^[A-Za-z0-9-]{1,39}\/(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$/;
@@ -3060,6 +3075,35 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
     get: async (scope: OrganizationScope, input: { id: string }) =>
       adminView(await detail(await syncSignatures(await ownRow(scope, input.id)))),
+
+    activity: async (scope: OrganizationScope, input: { id: string }) => {
+      const row = await ownRow(scope, input.id);
+      const rows = await db
+        .select()
+        .from(workOrderOutbox)
+        .where(
+          and(
+            eq(workOrderOutbox.organizationId, row.organizationId),
+            eq(workOrderOutbox.workOrderId, row.id),
+            eq(workOrderOutbox.channel, "email"),
+          ),
+        )
+        .orderBy(asc(workOrderOutbox.createdAt));
+      return {
+        emails: rows.map((r) => {
+          const email = emailHeaders(r.payload);
+          return {
+            id: r.id,
+            eventType: r.eventType,
+            to: email.to,
+            subject: email.subject,
+            createdAt: r.createdAt.toISOString(),
+            deliveredAt: r.deliveredAt?.toISOString() ?? null,
+            lastError: r.lastError,
+          };
+        }),
+      };
+    },
 
     create: async (scope: OrganizationScope, input: WorkOrderFields) => {
       const code = input.code?.trim() || (await nextCode(scope.organizationId));

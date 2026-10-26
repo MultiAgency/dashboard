@@ -1147,6 +1147,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(agencyMember)
           .handler(async ({ context, input }) => workOrders.get(context.scope, input)),
 
+        activity: builder.workOrders.activity
+          .use(agencyMember)
+          .handler(async ({ context, input }) => workOrders.activity(context.scope, input)),
+
         create: builder.workOrders.create
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.create(context.scope, input)),
