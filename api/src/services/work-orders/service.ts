@@ -44,6 +44,7 @@ import { collectEvidence, summarizeActivity } from "./evidence";
 import type { GhRepoOwnership, GitHubPort } from "./github";
 import type { DriveFile, GooglePort } from "./google";
 import { type PriceFeed, type PriceQuote, USD, USD_DECIMALS, usdToTokens } from "./prices";
+import { progressOf } from "./progress";
 import { assessRenewal, renewalCode } from "./renewal";
 import {
   buildContributions,
@@ -1678,6 +1679,52 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const signing = await signingOf(row);
     const { committed, paid, remaining } = amountsOf(row, requests);
     const renewal = parseJson<RenewalAssessment | null>(row.renewalAssessment, null);
+    const blockers = activationBlockers(
+      row,
+      builder,
+      payee.needsConfirmation,
+      signing.needsCountersign,
+      signing.awaitingRepresentative,
+    );
+    const progress = progressOf({
+      status: row.status,
+      builderName: row.contractorName ?? builder?.name ?? row.builderNearAccount,
+      representativeName: row.representativeName,
+      createdAt: row.createdAt.toISOString(),
+      offeredAt: row.offeredAt?.toISOString() ?? null,
+      acceptedAt: row.acceptedAt?.toISOString() ?? null,
+      activatedAt: row.activatedAt?.toISOString() ?? null,
+      updatedAt: row.updatedAt.toISOString(),
+      periodStart: row.periodStart,
+      periodEnd: row.periodEnd,
+      today: today(),
+      signFirst: row.esignEnvelopeId !== null || (row.status === "draft" && !!deps.esign),
+      builderSignedAt: signing.builder?.signedAt ?? null,
+      representativeSignedAt: signing.representative?.signedAt ?? null,
+      awaitingRepresentative: signing.awaitingRepresentative,
+      needsCountersign: signing.needsCountersign,
+      representativeUrl: signing.esign?.representativeUrl ?? null,
+      esignError: signing.esign?.error ?? null,
+      blockers,
+      payeeNeedsConfirmation: payee.needsConfirmation,
+      documentWarning: row.documentWarning,
+      driveError: row.signedDriveFileId ? null : row.signedDriveError,
+      renewalStatus: row.renewalStatus,
+      requests: requests.map((r) => ({
+        id: r.id,
+        code: `${row.code}-R${r.seq}`,
+        status: r.status,
+        requested: display(r.requestedAmount, row.tokenId),
+        approved: r.approvedAmount ? display(r.approvedAmount, row.tokenId) : null,
+        note: r.note,
+        submittedAt: r.submittedAt?.toISOString() ?? null,
+        decidedAt: r.decidedAt?.toISOString() ?? null,
+        paidAt: r.paidAt?.toISOString() ?? null,
+        blockedReason: r.autoPayBlockedReason,
+        blockedCode: r.autoPayBlockedCode,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    });
     return {
       id: row.id,
       code: row.code,
@@ -1728,13 +1775,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       documentSha256: row.documentSha256,
       documentUrl: row.documentUrl,
       activatedAt: row.activatedAt?.toISOString() ?? null,
-      activationBlockers: activationBlockers(
-        row,
-        builder,
-        payee.needsConfirmation,
-        signing.needsCountersign,
-        signing.awaitingRepresentative,
-      ),
+      activationBlockers: blockers,
+      progress,
       signing,
       lastCollectedAt: row.lastCollectedAt?.toISOString() ?? null,
       waiting: requests.filter((r) => r.status === "submitted" || r.status === "approved").length,

@@ -1192,11 +1192,22 @@ describe("work orders", () => {
 
     test("the representative's signature sends the builder the offer once, and the builder's signature completes it", async () => {
       const created = await offered();
+      const toSign = await service.get(await studio(), { id: created.id });
+      expect(toSign.progress).toMatchObject({
+        stage: "agency_signs",
+        waitingOn: "you",
+        next: {
+          kind: "link",
+          label: "Sign as Rita Rep",
+          href: "https://sign.example/envelope_1/representative",
+        },
+      });
       documenso.sign("representative", "2026-09-20T13:00:00.000Z");
       const sent = await service.get(await studio(), { id: created.id });
       expect(sent.status).toBe("offered");
       expect(sent.signing.representative?.name).toBe("Rita Rep");
       expect(sent.signing.awaitingRepresentative).toBe(false);
+      expect(sent.progress).toMatchObject({ stage: "builder_signs", waitingOn: "builder" });
       expect(sent.activationBlockers).toContain(
         "Waiting for the builder to accept the terms or sign the document",
       );
@@ -1219,6 +1230,11 @@ describe("work orders", () => {
       await service.run();
       const signed = await service.get(await studio(), { id: created.id });
       expect(signed.status).toBe("active");
+      expect(signed.progress.steps.slice(0, 3).map((step) => step.state)).toEqual([
+        "done",
+        "done",
+        "done",
+      ]);
       expect(signed.acceptedAt).toBe("2026-09-20T14:00:00.000Z");
       expect(signed.signature.method).toBe("documenso");
       expect(signed.signing.builder?.name).toBe("Carol");

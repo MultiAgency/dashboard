@@ -59,6 +59,47 @@ const renewal = z.object({
   renewedTo: z.string().nullable(),
 });
 
+const progressAction = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("offer"), label: z.string() }),
+  z.object({ kind: z.literal("activate"), label: z.string() }),
+  z.object({ kind: z.literal("link"), label: z.string(), href: z.string(), external: z.boolean() }),
+  z.object({ kind: z.literal("approve"), label: z.string(), requestId: z.string() }),
+  z.object({ kind: z.literal("renewal"), label: z.string() }),
+  z.object({ kind: z.literal("edit"), label: z.string() }),
+]);
+
+const progressStepKey = z.enum([
+  "draft",
+  "agency_signs",
+  "builder_signs",
+  "active",
+  "request",
+  "approved",
+  "paid",
+  "wrap_up",
+]);
+
+export const workOrderProgress = z.object({
+  stage: progressStepKey,
+  waitingOn: z.enum(["you", "builder", "system", "dao"]).nullable(),
+  needsYou: z.boolean(),
+  headline: z.string(),
+  since: z.string().nullable(),
+  next: progressAction.nullable(),
+  steps: z.array(
+    z.object({
+      key: progressStepKey,
+      label: z.string(),
+      state: z.enum(["done", "current", "blocked", "upcoming"]),
+      at: z.string().nullable(),
+      detail: z.string().nullable(),
+    }),
+  ),
+  attention: z.array(
+    z.object({ key: z.string(), message: z.string(), action: progressAction.nullable() }),
+  ),
+});
+
 export const workOrder = z.object({
   id: z.string(),
   code: z.string(),
@@ -137,6 +178,7 @@ export const workOrder = z.object({
   documentUrl: z.string().nullable(),
   activatedAt: z.string().nullable(),
   activationBlockers: z.array(z.string()),
+  progress: workOrderProgress,
   lastCollectedAt: z.string().nullable(),
   waiting: z.number().int(),
   renewedFrom: z.string().nullable(),
