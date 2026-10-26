@@ -27,7 +27,7 @@ import type { DaoProposal } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
 import { createAutoApproval, trustViewOf } from "./auto-approval";
 import type { ConsistencyChecker } from "./consistency";
-import type { EsignPort } from "./documenso";
+import type { EsignPort, EsignRole } from "./documenso";
 import {
   codeIn,
   documentFields,
@@ -1103,6 +1103,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         builder: null,
         representative: null,
         needsCountersign: false,
+        awaitingRepresentative: false,
         esign,
       };
     }
@@ -1118,6 +1119,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       builder,
       representative,
       needsCountersign: builder !== null && representative === null,
+      awaitingRepresentative: !!esign?.sent && row.status === "offered" && representative === null,
       esign,
     };
   }
@@ -1156,14 +1158,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       .catch(() => row.organizationId);
     const signers = [
       {
-        role: "contractor" as const,
-        name: row.contractorName ?? builder?.name ?? row.builderNearAccount,
-        email: contacts.contractorEmail ?? "",
-      },
-      {
         role: "representative" as const,
         name: row.representativeName ?? agencyName,
         email: contacts.representativeEmail ?? "",
+      },
+      {
+        role: "contractor" as const,
+        name: row.contractorName ?? builder?.name ?? row.builderNearAccount,
+        email: contacts.contractorEmail ?? "",
       },
     ];
     const title = `Work Order ${row.code}: ${row.title}`;
@@ -1180,7 +1182,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         fileName: offered.fileName,
         pdf,
         subject: `Please sign Work Order ${row.code}`,
-        message: `${agencyName} sent you Work Order ${row.code} (${row.title}) to review and sign.`,
+        message: `${agencyName} signed Work Order ${row.code} (${row.title}) and sent it to you to review and sign.`,
         redirectUrl: absolute(builderLink(row.id)),
         signers: signers.map((signer) => ({ ...signer, ...boxes[signer.role] })),
       });
@@ -1272,23 +1274,38 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       return declined;
     }
     const existing = await signaturesOf(row.id, offered.sha256);
+    const recorded: EsignRole[] = [];
     for (const signer of state.signers) {
       if (!signer.signedAt || existing.some((s) => s.role === signer.role)) continue;
-      await db.insert(workOrderSignatures).values({
-        id: crypto.randomUUID(),
-        workOrderId: row.id,
-        documentSha256: offered.sha256,
-        role: signer.role,
-        name: signer.name,
-        email: signer.email,
-        userId: null,
-        nearAccount: signer.role === "contractor" ? row.builderNearAccount : null,
-        ip: null,
-        userAgent: null,
-        signedAt: new Date(signer.signedAt),
-      });
+      const inserted = await db
+        .insert(workOrderSignatures)
+        .values({
+          id: crypto.randomUUID(),
+          workOrderId: row.id,
+          documentSha256: offered.sha256,
+          role: signer.role,
+          name: signer.name,
+          email: signer.email,
+          userId: null,
+          nearAccount: signer.role === "contractor" ? row.builderNearAccount : null,
+          ip: null,
+          userAgent: null,
+          signedAt: new Date(signer.signedAt),
+        })
+        .onConflictDoNothing()
+        .returning({ id: workOrderSignatures.id });
+      if (inserted.length > 0) recorded.push(signer.role);
     }
     const contractor = state.signers.find((s) => s.role === "contractor");
+    if (
+      recorded.includes("representative") &&
+      current.status === "offered" &&
+      !contractor?.signedAt &&
+      state.status !== "completed"
+    ) {
+      await notifyBuilder(current, "work_order_offered", await payloadOf(current));
+      await announce(current, "work_order.offered");
+    }
     if (current.status === "offered" && contractor?.signedAt) {
       current = await update(row.id, {
         status: "accepted",
@@ -1343,13 +1360,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     builder: BuilderProfile | null,
     payeeNeedsConfirmation: boolean,
     needsCountersign = false,
+    awaitingRepresentative = false,
   ): string[] {
     if (row.status !== "draft" && row.status !== "offered" && row.status !== "accepted") return [];
     const out: string[] = [];
     if (row.status === "draft") {
       out.push("Offer it to the builder, or have the work order document e-signed");
     }
-    if (row.status === "offered") {
+    if (row.status === "offered" && awaitingRepresentative) {
+      out.push("Sign it in Documenso to send it to the builder");
+    } else if (row.status === "offered") {
       out.push("Waiting for the builder to accept the terms or sign the document");
     }
     if (row.status === "accepted" && row.acceptedTermsHash !== termsHash(row)) {
@@ -1495,10 +1515,18 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       : value;
   }
 
-  function builderView<T extends { signing: { esign: ReturnType<typeof esignOf> } }>(value: T): T {
+  function builderView<
+    T extends {
+      signing: { esign: ReturnType<typeof esignOf>; awaitingRepresentative: boolean };
+    },
+  >(value: T): T {
     const esign = value.signing.esign;
+    const builderUrl = value.signing.awaitingRepresentative ? null : (esign?.builderUrl ?? null);
     return esign
-      ? { ...value, signing: { ...value.signing, esign: { ...esign, representativeUrl: null } } }
+      ? {
+          ...value,
+          signing: { ...value.signing, esign: { ...esign, builderUrl, representativeUrl: null } },
+        }
       : value;
   }
 
@@ -1563,6 +1591,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         builder,
         payee.needsConfirmation,
         signing.needsCountersign,
+        signing.awaitingRepresentative,
       ),
       signing,
       lastCollectedAt: row.lastCollectedAt?.toISOString() ?? null,
@@ -1763,7 +1792,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const builder = await deps.builders.get(row.builderNearAccount).catch(() => null);
     const payee = await payeeOf(row);
     const signing = await signingOf(row);
-    return activationBlockers(row, builder, payee.needsConfirmation, signing.needsCountersign);
+    return activationBlockers(
+      row,
+      builder,
+      payee.needsConfirmation,
+      signing.needsCountersign,
+      signing.awaitingRepresentative,
+    );
   }
 
   async function autoActivate(row: WorkOrderRow, tellBlockers = false): Promise<WorkOrderRow> {
@@ -3019,8 +3054,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         }
         const prepared = await sendForSignature(await prepareOfferDocument(row));
         const offered = await update(prepared.id, { status: "offered", offeredAt: now() });
-        await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
-        await announce(offered, "work_order.offered");
+        if (!offered.esignEnvelopeId) {
+          await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
+          await announce(offered, "work_order.offered");
+        }
         return adminView(await view(offered));
       });
     },
@@ -3504,16 +3541,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .where(inArray(workOrders.builderNearAccount, accounts))
         .orderBy(desc(workOrders.periodStart));
       const visible = rows.filter((r) => r.status !== "draft");
-      return {
-        data: await Promise.all(
-          visible.map(async (row) => ({
-            ...builderView(await view(row)),
-            agencyName: await deps
-              .organizationName(row.organizationId)
-              .catch(() => row.organizationId),
-          })),
-        ),
-      };
+      const data = await Promise.all(
+        visible.map(async (row) => ({
+          ...builderView(await view(row)),
+          agencyName: await deps
+            .organizationName(row.organizationId)
+            .catch(() => row.organizationId),
+        })),
+      );
+      return { data: data.filter((wo) => !wo.signing.awaitingRepresentative) };
     },
 
     mineGet: async (context: PluginContext, input: { id: string }) => {

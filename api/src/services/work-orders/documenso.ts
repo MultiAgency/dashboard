@@ -66,10 +66,10 @@ export class DocumensoError extends Error {
   }
 }
 
-const ORDER: Record<EsignRole, number> = { contractor: 1, representative: 2 };
+const ORDER: Record<EsignRole, number> = { representative: 1, contractor: 2 };
 
 function roleOf(signingOrder: number | null, index: number): EsignRole {
-  return (signingOrder ?? index + 1) <= 1 ? "contractor" : "representative";
+  return (signingOrder ?? index + 1) <= ORDER.representative ? "representative" : "contractor";
 }
 
 export function createDocumenso(

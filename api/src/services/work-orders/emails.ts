@@ -55,11 +55,15 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
   switch (e.type) {
     case "work_order.offered":
       send("contractor", `${agency} sent you Work Order ${wo.id} to sign`, {
-        preheader: `${wo.title}: review the terms and sign to accept.`,
+        preheader: e.links.sign
+          ? `${agency} has signed ${wo.title}. Sign it to accept; it starts right away.`
+          : `${wo.title}: review the terms and sign to accept.`,
         eyebrow: "Work order sent",
         heading: `${agency} sent you a work order`,
         paragraphs: [
-          `You're offered "${wo.title}" on ${wo.project}. Review the terms and sign to accept. It only takes a minute.`,
+          e.links.sign
+            ? `You're offered "${wo.title}" on ${wo.project}, and ${agency} has already signed it. Review the terms and sign to accept. As soon as you sign, it's complete and starts right away.`
+            : `You're offered "${wo.title}" on ${wo.project}. Review the terms and sign to accept. It only takes a minute.`,
           `Each approved payout request is paid to ${e.contractor.nearAccount}.`,
         ],
         details: summary(["Budget", `up to ${wo.budget}`], ["Paid to", e.contractor.nearAccount]),

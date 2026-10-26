@@ -88,6 +88,7 @@ export const workOrder = z.object({
     builder: z.object({ name: z.string(), signedAt: z.string() }).nullable(),
     representative: z.object({ name: z.string(), signedAt: z.string() }).nullable(),
     needsCountersign: z.boolean(),
+    awaitingRepresentative: z.boolean(),
     esign: z
       .object({
         provider: z.literal("documenso"),

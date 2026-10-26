@@ -984,6 +984,7 @@ describe("work orders", () => {
         builder: null,
         representative: null,
         needsCountersign: false,
+        awaitingRepresentative: false,
         esign: null,
       });
       expect(await service.myDocument(carol(), { id: created.id }).catch(() => null)).toBeNull();
@@ -1047,39 +1048,86 @@ describe("work orders", () => {
       return created;
     }
 
-    test("offering sends the document to the builder, then the representative, with a signatures page", async () => {
+    test("offering sends the document to the representative first, then the builder, with a signatures page", async () => {
       const created = await offered();
       const doc = documenso.last();
       expect(doc.externalId).toBe(created.id);
       expect(doc.subject).toBe(`Please sign Work Order ${created.code}`);
       expect(doc.signers.map((s) => [s.role, s.email])).toEqual([
-        ["contractor", "carol@example.com"],
         ["representative", "rita@example.com"],
+        ["contractor", "carol@example.com"],
       ]);
       const pages = (await PDFDocument.load(doc.pdf)).getPageCount();
       expect(doc.signers[0]?.signature.page).toBe(pages);
       expect(doc.signers[1]?.signature.y).toBeGreaterThan(doc.signers[0]?.signature.y ?? 100);
       const offeredDoc = await service.document(await studio(), { id: created.id });
       expect(offeredDoc.sha256).toBe(createHash("sha256").update(doc.pdf).digest("hex"));
-      const offer = events.find((e) => e.type === "work_order.offered");
-      expect(offer?.links.sign).toBe("https://sign.example/envelope_1/contractor");
+      expect(events.map((e) => e.type)).not.toContain("work_order.offered");
+      expect((await notificationsOf("carol")).map((n) => n.kind)).not.toContain(
+        "work_order_offered",
+      );
 
       const admin = await service.get(await studio(), { id: created.id });
       expect(admin.status).toBe("offered");
+      expect(admin.signing.awaitingRepresentative).toBe(true);
+      expect(admin.activationBlockers).toContain("Sign it in Documenso to send it to the builder");
       expect(admin.signing.esign).toMatchObject({
         sent: true,
         builderUrl: null,
         representativeUrl: "https://sign.example/envelope_1/representative",
       });
+      expect((await service.mine(carol())).data).toEqual([]);
+      const mine = await service.mineGet(carol(), { id: created.id });
+      expect(mine.signing.esign).toMatchObject({ builderUrl: null, representativeUrl: null });
+    });
+
+    test("the representative's signature sends the builder the offer once, and the builder's signature completes it", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      const sent = await service.get(await studio(), { id: created.id });
+      expect(sent.status).toBe("offered");
+      expect(sent.signing.representative?.name).toBe("Rita Rep");
+      expect(sent.signing.awaitingRepresentative).toBe(false);
+      expect(sent.activationBlockers).toContain(
+        "Waiting for the builder to accept the terms or sign the document",
+      );
+      await service.get(await studio(), { id: created.id });
+      await service.syncPendingSignatures();
+      const offers = events.filter((e) => e.type === "work_order.offered");
+      expect(offers).toHaveLength(1);
+      expect(offers[0]?.links.sign).toBe("https://sign.example/envelope_1/contractor");
+      expect(
+        (await notificationsOf("carol")).filter((n) => n.kind === "work_order_offered"),
+      ).toHaveLength(1);
+      expect((await service.mine(carol())).data.map((w) => w.id)).toEqual([created.id]);
       const mine = await service.mineGet(carol(), { id: created.id });
       expect(mine.signing.esign).toMatchObject({
         builderUrl: "https://sign.example/envelope_1/contractor",
         representativeUrl: null,
       });
+
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
+      await service.run();
+      const signed = await service.get(await studio(), { id: created.id });
+      expect(signed.status).toBe("active");
+      expect(signed.acceptedAt).toBe("2026-09-20T14:00:00.000Z");
+      expect(signed.signature.method).toBe("documenso");
+      expect(signed.signing.builder?.name).toBe("Carol");
+      expect(signed.signing.representative?.name).toBe("Rita Rep");
+      expect(signed.payee.confirmedAt).not.toBeNull();
+      expect(signed.documentSha256).toBe(
+        createHash("sha256").update("%PDF-1.7 signed envelope_1 %%EOF").digest("hex"),
+      );
+      expect(events.map((e) => e.type)).not.toContain("work_order.builder_signed");
+      expect(events.filter((e) => e.type === "work_order.signed")).toHaveLength(1);
+      expect(events.filter((e) => e.type === "work_order.offered")).toHaveLength(1);
+      expect((await notificationsOf("carol")).map((n) => n.kind)).toContain("work_order_activated");
     });
 
     test("builder actions never return the representative's signing link", async () => {
       const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.get(await studio(), { id: created.id });
       const confirmed = await service.confirmPayee(carol(), { id: created.id });
       expect(confirmed.signing.esign).toMatchObject({
         builderUrl: "https://sign.example/envelope_1/contractor",
@@ -1123,47 +1171,36 @@ describe("work orders", () => {
       expect(documenso.cancelled.at(-1)?.envelopeId).toBe("envelope_3");
     });
 
-    test("the builder's signature in Documenso accepts it, and both signatures store the signed PDF", async () => {
-      const created = await offered();
-      documenso.sign("contractor", "2026-09-20T13:00:00.000Z");
-      const accepted = await service.get(await studio(), { id: created.id });
-      expect(accepted.status).toBe("accepted");
-      expect(accepted.signing.builder?.name).toBe("Carol");
-      expect(accepted.signing.needsCountersign).toBe(true);
-      const turn = events.find((e) => e.type === "work_order.builder_signed");
-      expect(turn?.links.countersign).toBe("https://sign.example/envelope_1/representative");
-
-      documenso.sign("representative", "2026-09-20T14:00:00.000Z");
-      await service.run();
-      const signed = await service.get(await studio(), { id: created.id });
-      expect(signed.signature.method).toBe("documenso");
-      expect(signed.signing.representative?.name).toBe("Rita Rep");
-      expect(signed.documentSha256).toBe(
-        createHash("sha256").update("%PDF-1.7 signed envelope_1 %%EOF").digest("hex"),
-      );
-      expect(signed.status).toBe("active");
-      expect((await notificationsOf("carol")).map((n) => n.kind)).toContain("work_order_activated");
-    });
-
-    test("the background check picks up the builder's signature without anyone opening the page", async () => {
+    test("the background check picks up both signatures without anyone opening the page", async () => {
       const created = await offered();
       expect(await service.syncPendingSignatures()).toBe(1);
-      documenso.sign("contractor", "2026-09-20T13:00:00.000Z");
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.syncPendingSignatures();
+      expect(events.filter((e) => e.type === "work_order.offered")).toHaveLength(1);
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
       await service.syncPendingSignatures();
       const [row] = await db.select().from(workOrders).where(eq(workOrders.id, created.id));
-      expect(row?.status).toBe("accepted");
+      expect(row?.status).toBe("active");
       expect(row?.signatureMethod).toBe("documenso");
-      documenso.sign("representative", "2026-09-20T14:00:00.000Z");
-      await service.syncPendingSignatures();
+      expect(row?.acceptedTermsHash).not.toBeNull();
       expect(await service.syncPendingSignatures()).toBe(0);
     });
 
     test("declining in Documenso puts the work order back to draft with the reason", async () => {
       const created = await offered();
-      documenso.reject("contractor");
+      documenso.reject("representative");
       const back = await service.get(await studio(), { id: created.id });
       expect(back.status).toBe("draft");
       expect(back.signing.esign?.error).toBe("Declined in Documenso: Wrong budget");
+      expect(events.map((e) => e.type)).not.toContain("work_order.offered");
+
+      await service.offer(await studio(), { id: created.id });
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.syncPendingSignatures();
+      documenso.reject("contractor");
+      const declined = await service.get(await studio(), { id: created.id });
+      expect(declined.status).toBe("draft");
+      expect(declined.signing.esign?.error).toBe("Declined in Documenso: Wrong budget");
     });
 
     test("it isn't offered without both emails, or when Documenso refuses", async () => {
@@ -1760,8 +1797,8 @@ describe("work orders", () => {
         fields({ representativeName: "Rita Rep", representativeEmail: "rita@example.com" }),
       );
       await service.offer(await studio(), { id: created.id });
-      documenso.sign("contractor", "2026-09-20T13:00:00.000Z");
-      documenso.sign("representative", "2026-09-20T14:00:00.000Z");
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
       const result = await service.tick();
       expect(result.counts.signaturesChecked).toBe(1);
       const [row] = await db.select().from(workOrders).where(eq(workOrders.id, created.id));
