@@ -4,6 +4,7 @@ import { PDFDocument } from "pdf-lib/dist/pdf-lib.esm.js";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Database } from "../../src/db";
 import { billings, compensationRequests, notifications, workOrders } from "../../src/db/schema";
+import { rememberedLogin } from "../../src/services/builder-logins";
 import { requireTreasury } from "../../src/services/organization-access";
 import { topUpFor } from "../../src/services/payouts/policy";
 import {
@@ -286,6 +287,43 @@ describe("work orders", () => {
       expect(
         (await service.countersign(await studio(), { id: created.id, name: "Rita Rep" })).status,
       ).toBe("active");
+    });
+
+    test("a GitHub login typed for a builder without one is remembered for the next work order", async () => {
+      const first = await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near", githubLogin: "@NoGit-GH" }),
+      );
+      expect(first.builder.githubLogin).toBe("nogit-gh");
+      expect(await rememberedLogin(db, "studio", "nogit.near")).toBe("nogit-gh");
+      expect(await rememberedLogin(db, "rival", "nogit.near")).toBeNull();
+      expect(builders.get("nogit.near")?.githubLogin).toBeNull();
+      const second = await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near", code: "WO-0099" }),
+      );
+      expect(second.builder.githubLogin).toBe("nogit-gh");
+    });
+
+    test("a GitHub login set later is remembered too", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near" }),
+      );
+      expect(await rememberedLogin(db, "studio", "nogit.near")).toBeNull();
+      await service.setGithubLogin(await studio(), { id: created.id, githubLogin: "nogit-gh" });
+      expect(await rememberedLogin(db, "studio", "nogit.near")).toBe("nogit-gh");
+      await service.update(await studio(), { id: created.id, githubLogin: "nogit-2" });
+      expect(await rememberedLogin(db, "studio", "nogit.near")).toBe("nogit-2");
+    });
+
+    test("a builder whose profile has a GitHub login keeps it; a different one isn't remembered", async () => {
+      const created = await service.create(await studio(), fields({ githubLogin: "carol-alt" }));
+      expect(created.builder.githubLogin).toBe("carol-alt");
+      expect(await rememberedLogin(db, "studio", CAROL)).toBeNull();
+      expect(builders.get(CAROL)?.githubLogin).toBe("carol-gh");
+      const next = await service.create(await studio(), fields({ code: "WO-0099" }));
+      expect(next.builder.githubLogin).toBe("carol-gh");
     });
 
     test("only managers write; members read; other agencies see nothing", async () => {

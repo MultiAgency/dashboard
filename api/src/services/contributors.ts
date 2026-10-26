@@ -5,6 +5,7 @@ import type { Database } from "../db";
 import { organizationBuilders, projectContributors } from "../db/schema";
 import { nearAccountsOf, type PluginContext } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
+import { rememberedLogins } from "./builder-logins";
 
 export type BuilderProfile = {
   nearAccount: string;
@@ -173,6 +174,15 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
               return [...new Set([...added, ...assigned].map((r) => r.nearAccount))];
             })
           : [];
+
+        if (manager) {
+          const logins = yield* Effect.promise(() => rememberedLogins(db, manager.organizationId));
+          for (const [nearAccount, githubLogin] of logins) {
+            const profile = byNear.get(nearAccount);
+            if (profile && !profile.githubLogin)
+              byNear.set(nearAccount, { ...profile, githubLogin });
+          }
+        }
 
         return { data: [...byNear.values()], manageable };
       }),

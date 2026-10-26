@@ -20,6 +20,7 @@ import {
   workOrders,
 } from "../../db/schema";
 import { nearAccountsOf, type PluginContext } from "../../lib/organizations";
+import { rememberedLogin, rememberLogin } from "../builder-logins";
 import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
 import type { Project, ProjectDirectory } from "../project-directory";
@@ -959,6 +960,19 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const row = await mustRow(id);
     if (row.organizationId !== scope.organizationId) throw notFound();
     return row;
+  }
+
+  async function rememberBuilderLogin(
+    organizationId: string,
+    nearAccount: string,
+    login: string | null,
+    profile?: BuilderProfile | null,
+  ) {
+    if (!login) return;
+    const builder =
+      profile === undefined ? await deps.builders.get(nearAccount).catch(() => null) : profile;
+    if (!builder || builder.githubLogin) return;
+    await rememberLogin(db, organizationId, nearAccount, login, now());
   }
 
   async function mustRequest(id: string): Promise<CompensationRequestRow> {
@@ -2829,7 +2843,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         githubLogin:
           optionalText(input.githubLogin)?.replace(/^@/, "").toLowerCase() ??
           builder.githubLogin?.toLowerCase() ??
-          null,
+          (await rememberedLogin(db, scope.organizationId, input.builderNearAccount)),
         contractorEmail: optionalText(input.contractorEmail)?.toLowerCase() ?? null,
         representativeEmail: optionalText(input.representativeEmail)?.toLowerCase() ?? null,
       };
@@ -2865,6 +2879,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           createdBy: scope.actorId,
         })
         .returning();
+      await rememberBuilderLogin(
+        scope.organizationId,
+        fields.builderNearAccount,
+        fields.githubLogin,
+        builder,
+      );
       return adminView(await view(await draftDocument(row!)));
     },
 
@@ -2960,6 +2980,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             : {}),
           ...(payeeChanged ? { payeeConfirmedAt: null, payeeConfirmedBy: null } : {}),
         });
+        if (next.githubLogin && next.githubLogin !== row.githubLogin) {
+          await rememberBuilderLogin(
+            scope.organizationId,
+            next.builderNearAccount,
+            next.githubLogin,
+          );
+        }
         return adminView(await view(changed ? await draftDocument(updated) : updated));
       });
     },
@@ -2983,16 +3010,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       }
       const keepsAcceptance = row.status === "accepted" && row.acceptedTermsHash === termsHash(row);
       const next = { ...row, githubLogin: login };
-      return adminView(
-        await view(
-          await autoActivate(
-            await update(row.id, {
-              githubLogin: login,
-              ...(keepsAcceptance ? { acceptedTermsHash: termsHash(next) } : {}),
-            }),
-          ),
-        ),
-      );
+      const updated = await update(row.id, {
+        githubLogin: login,
+        ...(keepsAcceptance ? { acceptedTermsHash: termsHash(next) } : {}),
+      });
+      await rememberBuilderLogin(scope.organizationId, row.builderNearAccount, login);
+      return adminView(await view(await autoActivate(updated)));
     },
 
     prepareDocument: async (scope: OrganizationScope, input: { id: string }) => {

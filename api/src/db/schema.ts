@@ -523,6 +523,19 @@ export const organizationBuilders = pgTable(
   }),
 );
 
+export const organizationBuilderLogins = pgTable(
+  "organization_builder_logins",
+  {
+    organizationId: text("organization_id").notNull(),
+    nearAccount: text("near_account").notNull(),
+    githubLogin: text("github_login").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.organizationId, t.nearAccount] }),
+  }),
+);
+
 export const projectPublicSettings = pgTable("project_public_settings", {
   projectId: text("project_id").primaryKey(),
   showTeam: boolean("show_team").notNull().default(false),
