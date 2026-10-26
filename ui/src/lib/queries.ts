@@ -300,6 +300,14 @@ export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
   });
 }
 
+export function adminWorkOrderActivityQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "activity", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.workOrders.activity({ id }),
+    retry: false,
+  });
+}
+
 export const workOrderIntegrationQueryKey = ["admin", "work-order-integration"] as const;
 
 export function workOrderIntegrationQueryOptions(apiClient: ApiClient) {

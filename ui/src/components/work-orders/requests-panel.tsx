@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Alert,
@@ -55,10 +55,14 @@ export function RequestsPanel({
   workOrder,
   canManage,
   hasTreasury,
+  approveRequestId = null,
+  onApproveOpened,
 }: {
   workOrder: WorkOrderDetail;
   canManage: boolean;
   hasTreasury: boolean;
+  approveRequestId?: string | null;
+  onApproveOpened?: () => void;
 }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
@@ -118,6 +122,8 @@ export function RequestsPanel({
                 workOrder={workOrder}
                 canManage={canManage}
                 hasTreasury={hasTreasury}
+                approve={approveRequestId === request.id}
+                onApproveOpened={onApproveOpened}
               />
             ))
         )}
@@ -131,15 +137,26 @@ function RequestItem({
   workOrder,
   canManage,
   hasTreasury,
+  approve = false,
+  onApproveOpened,
 }: {
   request: CompensationRequest;
   workOrder: WorkOrderDetail;
   canManage: boolean;
   hasTreasury: boolean;
+  approve?: boolean;
+  onApproveOpened?: () => void;
 }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState<null | "approve" | "reject" | "proposal">(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!approve) return;
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (canManage && request.status === "submitted") setOpen("approve");
+    onApproveOpened?.();
+  }, [approve, canManage, request.status, onApproveOpened]);
   const payoutAgent = useQuery({ ...payoutAgentQueryOptions(apiClient), enabled: canManage }).data;
   const autoPays =
     !!payoutAgent?.ready && (workOrder.tokenId === "usd" || workOrder.tokenId === "near");
@@ -171,7 +188,11 @@ function RequestItem({
   });
 
   return (
-    <section className="flex flex-col gap-3 border p-4" aria-label={request.code}>
+    <section
+      ref={sectionRef}
+      className="flex scroll-mt-4 flex-col gap-3 border p-4"
+      aria-label={request.code}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium tabular-nums">{request.code}</span>
         <RequestStatusBadge status={request.status} />
