@@ -22,11 +22,24 @@ export type DriveFile = {
   driveId: string | null;
 };
 
+export type DocRun = { segmentId: string | null; start: number; text: string };
+
+export type GoogleDoc = { id: string; title: string; runs: DocRun[] };
+
+export type GoogleAuth = {
+  kind: "service_account" | "oauth";
+  email: string;
+  token(): Promise<string>;
+};
+
 export type GooglePort = {
+  kind: "service_account" | "oauth";
   email: string;
   file(id: string): Promise<DriveFile>;
   copy(templateId: string, input: { name: string; parentId: string }): Promise<DriveFile>;
   fill(documentId: string, values: Record<string, string>): Promise<Record<string, number>>;
+  read(documentId: string): Promise<GoogleDoc>;
+  edit(documentId: string, requests: unknown[]): Promise<void>;
   listPdfs(folderId: string): Promise<DriveFile[]>;
   download(id: string): Promise<Uint8Array>;
   exportPdf(documentId: string): Promise<Uint8Array>;
@@ -35,7 +48,9 @@ export type GooglePort = {
     name: string;
     bytes: Uint8Array;
     mimeType: string;
+    convertTo?: string;
   }): Promise<DriveFile>;
+  uploadPdf(folderId: string, name: string, bytes: Uint8Array): Promise<DriveFile>;
 };
 
 export class GoogleError extends Error {
@@ -107,7 +122,50 @@ function fileOf(value: unknown): DriveFile {
   };
 }
 
-export function createGoogle(account: ServiceAccount, fetcher: typeof fetch = fetch): GooglePort {
+type DocElement = {
+  startIndex?: number;
+  paragraph?: { elements?: { startIndex?: number; textRun?: { content?: string } }[] };
+  table?: { tableRows?: { tableCells?: { content?: DocElement[] }[] }[] };
+  tableOfContents?: { content?: DocElement[] };
+};
+
+function runsOf(content: DocElement[] | undefined, segmentId: string | null, out: DocRun[]) {
+  for (const element of content ?? []) {
+    for (const part of element.paragraph?.elements ?? []) {
+      const text = part.textRun?.content;
+      if (text && typeof part.startIndex === "number") {
+        out.push({ segmentId, start: part.startIndex, text });
+      }
+    }
+    for (const row of element.table?.tableRows ?? []) {
+      for (const cell of row.tableCells ?? []) runsOf(cell.content, segmentId, out);
+    }
+    runsOf(element.tableOfContents?.content, segmentId, out);
+  }
+}
+
+export function docOf(id: string, value: unknown): GoogleDoc {
+  const raw = (value ?? {}) as {
+    title?: string;
+    body?: { content?: DocElement[] };
+    headers?: Record<string, { content?: DocElement[] }>;
+    footers?: Record<string, { content?: DocElement[] }>;
+    footnotes?: Record<string, { content?: DocElement[] }>;
+  };
+  const runs: DocRun[] = [];
+  runsOf(raw.body?.content, null, runs);
+  for (const group of [raw.headers, raw.footers, raw.footnotes]) {
+    for (const [segmentId, segment] of Object.entries(group ?? {})) {
+      runsOf(segment.content, segmentId, runs);
+    }
+  }
+  return { id, title: raw.title ?? "", runs };
+}
+
+export function serviceAccountAuth(
+  account: ServiceAccount,
+  fetcher: typeof fetch = fetch,
+): GoogleAuth {
   let cached: { token: string; expiresAt: number } | null = null;
 
   async function token(): Promise<string> {
@@ -153,11 +211,21 @@ export function createGoogle(account: ServiceAccount, fetcher: typeof fetch = fe
     return cached.token;
   }
 
+  return { kind: "service_account", email: account.clientEmail, token };
+}
+
+export function createGoogle(
+  credentials: ServiceAccount | GoogleAuth,
+  fetcher: typeof fetch = fetch,
+): GooglePort {
+  const auth = "privateKey" in credentials ? serviceAccountAuth(credentials, fetcher) : credentials;
+  const serviceAccount = auth.kind === "service_account";
+
   async function call(url: string, init: RequestInit = {}): Promise<Response> {
     const response = await fetcher(url, {
       ...init,
       headers: {
-        authorization: `Bearer ${await token()}`,
+        authorization: `Bearer ${await auth.token()}`,
         ...(init.body ? { "content-type": "application/json" } : {}),
         ...init.headers,
       },
@@ -169,7 +237,7 @@ export function createGoogle(account: ServiceAccount, fetcher: typeof fetch = fe
     } | null;
     const message = (detail?.error?.message ?? `HTTP ${response.status}`).replace(/\.+$/, "");
     const reason = detail?.error?.errors?.[0]?.reason ?? "";
-    if (reason === "storageQuotaExceeded" || /storage quota/i.test(message)) {
+    if (serviceAccount && (reason === "storageQuotaExceeded" || /storage quota/i.test(message))) {
       throw new GoogleError(
         "The folder for the filled documents must be inside a Shared Drive: a service account has no Drive storage of its own, so it can't create files in someone's My Drive",
         response.status,
@@ -177,7 +245,9 @@ export function createGoogle(account: ServiceAccount, fetcher: typeof fetch = fe
     }
     throw new GoogleError(
       response.status === 404 || response.status === 403
-        ? `${message}. Share it with ${account.clientEmail}`
+        ? serviceAccount
+          ? `${message}. Share it with ${auth.email}`
+          : `${message}. Choose it again with the Google Drive picker so MultiAgency can open it`
         : message,
       response.status,
     );
@@ -185,8 +255,37 @@ export function createGoogle(account: ServiceAccount, fetcher: typeof fetch = fe
 
   const fields = "id,name,mimeType,webViewLink,createdTime,driveId";
 
+  async function upload(input: Parameters<GooglePort["upload"]>[0]): Promise<DriveFile> {
+    const boundary = `multiagency-${crypto.randomUUID()}`;
+    const metadata = JSON.stringify({
+      name: input.name,
+      parents: [input.folderId],
+      ...(input.convertTo ? { mimeType: input.convertTo } : {}),
+    });
+    const body = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${input.mimeType}\r\n\r\n`,
+      ),
+      Buffer.from(input.bytes),
+      Buffer.from(`\r\n--${boundary}--`),
+    ]);
+    return fileOf(
+      await (
+        await call(
+          `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=${fields}`,
+          {
+            method: "POST",
+            body,
+            headers: { "content-type": `multipart/related; boundary=${boundary}` },
+          },
+        )
+      ).json(),
+    );
+  }
+
   return {
-    email: account.clientEmail,
+    kind: auth.kind,
+    email: auth.email,
 
     file: async (id) =>
       fileOf(
@@ -234,6 +333,24 @@ export function createGoogle(account: ServiceAccount, fetcher: typeof fetch = fe
       );
     },
 
+    read: async (documentId) =>
+      docOf(
+        documentId,
+        await (
+          await call(
+            `${DOCS}/documents/${encodeURIComponent(documentId)}?fields=title,body,headers,footers,footnotes`,
+          )
+        ).json(),
+      ),
+
+    edit: async (documentId, requests) => {
+      if (requests.length === 0) return;
+      await call(`${DOCS}/documents/${encodeURIComponent(documentId)}:batchUpdate`, {
+        method: "POST",
+        body: JSON.stringify({ requests }),
+      });
+    },
+
     listPdfs: async (folderId) => {
       const q = `'${folderId.replace(/'/g, "")}' in parents and mimeType='application/pdf' and trashed=false`;
       const out: DriveFile[] = [];
@@ -267,29 +384,10 @@ export function createGoogle(account: ServiceAccount, fetcher: typeof fetch = fe
         ).arrayBuffer(),
       ),
 
-    upload: async (input) => {
-      const boundary = `multiagency-${crypto.randomUUID()}`;
-      const metadata = JSON.stringify({ name: input.name, parents: [input.folderId] });
-      const body = Buffer.concat([
-        Buffer.from(
-          `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${input.mimeType}\r\n\r\n`,
-        ),
-        Buffer.from(input.bytes),
-        Buffer.from(`\r\n--${boundary}--`),
-      ]);
-      return fileOf(
-        await (
-          await call(
-            `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=${fields}`,
-            {
-              method: "POST",
-              body,
-              headers: { "content-type": `multipart/related; boundary=${boundary}` },
-            },
-          )
-        ).json(),
-      );
-    },
+    upload,
+
+    uploadPdf: (folderId, name, bytes) =>
+      upload({ folderId, name, bytes, mimeType: "application/pdf" }),
 
     download: async (id) => {
       const response = await call(

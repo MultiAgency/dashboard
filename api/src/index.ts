@@ -65,15 +65,25 @@ import { createDocumenso } from "./services/work-orders/documenso";
 import { cachedOwnership, createGitHub } from "./services/work-orders/github";
 import {
   createGoogle,
+  GoogleError,
+  type GooglePort,
   googleIdOf,
   parseServiceAccount,
   readServiceAccount,
 } from "./services/work-orders/google";
+import { createGoogleConnections, GoogleConnectError } from "./services/work-orders/google-oauth";
+import { createGoogleSetup, GoogleSetupError } from "./services/work-orders/google-setup";
 import { createWorkOrderIntegrations, createWorkOrderOutbox } from "./services/work-orders/outbox";
 import { createPriceFeed } from "./services/work-orders/prices";
 import { scheduleWorkOrders, stopWorkOrders } from "./services/work-orders/scheduler";
 import { createWorkOrdersService } from "./services/work-orders/service";
 import { createSummarizer } from "./services/work-orders/summarizer";
+import {
+  askFields,
+  createFieldsFinder,
+  KNOWN_FIELDS,
+  parseFieldMap,
+} from "./services/work-orders/template-fields";
 import { isTimeZone, UTC } from "./services/work-orders/time";
 import { DEFAULT_RENEWAL } from "./services/work-orders/types";
 
@@ -126,6 +136,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
     WORK_ORDERS_RUN_SECRET: z.string().optional(),
     ANTHROPIC_API_KEY: z.string().optional(),
     GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+    GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+    GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+    GOOGLE_PICKER_API_KEY: z.string().optional(),
+    GOOGLE_CLOUD_PROJECT_NUMBER: z.string().optional(),
+    GOOGLE_STARTER_TEMPLATE_ID: z.string().optional(),
+    GOOGLE_TOKENS_SECRET_KEY: z.string().optional(),
     NEAR_INTENTS_AGENT_API_KEY: z.string().optional(),
     NEAR_INTENTS_AGENT_API_URL: z.string().optional(),
     DOCUMENSO_API_KEY: z.string().optional(),
@@ -257,6 +273,33 @@ export default createPlugin.withPlugins<PluginsClient>()({
         readServiceAccount(config.secrets.GOOGLE_SERVICE_ACCOUNT_JSON),
       );
       const google = serviceAccount ? createGoogle(serviceAccount) : null;
+      const googleClientId = config.secrets.GOOGLE_OAUTH_CLIENT_ID?.trim();
+      const googleClientSecret = config.secrets.GOOGLE_OAUTH_CLIENT_SECRET?.trim();
+      const googleConnections = createGoogleConnections({
+        db,
+        config:
+          googleClientId && googleClientSecret
+            ? {
+                clientId: googleClientId,
+                clientSecret: googleClientSecret,
+                redirectUri: `${appOrigin.replace(/\/+$/, "")}/api/work-orders/google/callback`,
+                secretKey:
+                  config.secrets.GOOGLE_TOKENS_SECRET_KEY ??
+                  config.secrets.PAYOUTS_SECRET_KEY ??
+                  null,
+                pickerApiKey: config.secrets.GOOGLE_PICKER_API_KEY?.trim() || null,
+                projectNumber: config.secrets.GOOGLE_CLOUD_PROJECT_NUMBER?.trim() || null,
+              }
+            : null,
+      });
+      const googleFor = async (organizationId: string): Promise<GooglePort | null> =>
+        (await googleConnections.port(organizationId)) ?? google;
+      const googleSetup = createGoogleSetup({
+        db,
+        googleFor,
+        finder: createFieldsFinder({ apiKey: config.secrets.ANTHROPIC_API_KEY }),
+        starterTemplateId: googleIdOf(config.secrets.GOOGLE_STARTER_TEMPLATE_ID),
+      });
       const agentApiKey = config.secrets.NEAR_INTENTS_AGENT_API_KEY;
       const payoutAgents = createPayoutAgents({
         db,
@@ -332,6 +375,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           : null,
         payouts: payoutAgents.available ? payoutAgents : null,
         google,
+        googleFor: googleConnections.port,
         userEmail,
         appOrigin,
         timeZone: config.variables.workOrderTimezone,
@@ -376,6 +420,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
         workOrderAiDrafts,
         workOrderEmails: sendEmail !== null,
         google,
+        googleConnections,
+        googleFor,
+        googleSetup,
         payoutAgents,
         signedInNearKeys,
         workOrderTimers,
@@ -424,6 +471,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
       workOrderAiDrafts,
       workOrderEmails,
       google,
+      googleConnections,
+      googleFor,
+      googleSetup,
       payoutAgents,
       signedInNearKeys,
     } = services;
@@ -435,6 +485,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
     };
 
     const checkGoogleFile = async (
+      organizationId: string,
       label: string,
       value: string | null,
       kind: "document" | "folder",
@@ -448,17 +499,18 @@ export default createPlugin.withPlugins<PluginsClient>()({
           data: { reason: "INVALID_GOOGLE_LINK" },
         });
       }
-      if (!google) return id;
+      const port = await googleFor(organizationId);
+      if (!port) return id;
       const mime =
         kind === "document"
           ? "application/vnd.google-apps.document"
           : "application/vnd.google-apps.folder";
       try {
-        const file = await google.file(id);
+        const file = await port.file(id);
         if (file.mimeType !== mime) {
           throw new Error(`it's not a Google ${kind === "document" ? "Doc" : "Drive folder"}`);
         }
-        if (sharedDriveOnly && !file.driveId) {
+        if (sharedDriveOnly && port.kind === "service_account" && !file.driveId) {
           throw new Error(
             "it's in a My Drive. Use a folder inside a Shared Drive: a service account has no Drive storage of its own, so it can only create the filled documents there",
           );
@@ -473,10 +525,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
     };
 
     const integrationView = async (organizationId: string) => {
-      const [settings, deliveries] = await Promise.all([
+      const [settings, deliveries, oauth] = await Promise.all([
         workOrderIntegrations.settings(organizationId),
         workOrderIntegrations.recent(organizationId),
+        googleConnections.status(organizationId),
       ]);
+      const fieldMap = parseFieldMap(settings?.googleFieldMap);
       return {
         emailEnabled: workOrderEmails,
         aiDraftsEnabled: workOrderAiDrafts,
@@ -489,8 +543,22 @@ export default createPlugin.withPlugins<PluginsClient>()({
           createdAt: d.createdAt.toISOString(),
         })),
         google: {
-          available: google !== null,
+          available: google !== null || googleConnections.available,
           serviceAccountEmail: google?.email ?? null,
+          oauth: {
+            available: googleConnections.available,
+            canConnect: googleConnections.canConnect,
+            connected: oauth.connected,
+            email: oauth.email,
+            error: oauth.error,
+            redirectUri: googleConnections.redirectUri,
+            picker: googleConnections.picker !== null,
+          },
+          starterAvailable: googleSetup.starterAvailable,
+          aiFieldsAvailable: workOrderAiDrafts,
+          knownFields: Object.entries(KNOWN_FIELDS).map(([key, label]) => ({ key, label })),
+          fieldMap,
+          askFields: askFields(fieldMap),
           templateUrl: googleUrl.document(settings?.googleTemplateId ?? null),
           documentsFolderUrl: googleUrl.folder(settings?.googleDocumentsFolderId ?? null),
           signedFolderUrl: googleUrl.folder(settings?.googleSignedFolderId ?? null),
@@ -1290,14 +1358,22 @@ export default createPlugin.withPlugins<PluginsClient>()({
         saveGoogle: builder.workOrders.saveGoogle
           .use(agencyManager)
           .handler(async ({ context, input }) => {
-            const templateId = await checkGoogleFile("Template", input.templateUrl, "document");
+            const organizationId = context.scope.organizationId;
+            const templateId = await checkGoogleFile(
+              organizationId,
+              "Template",
+              input.templateUrl,
+              "document",
+            );
             const documentsFolderId = await checkGoogleFile(
+              organizationId,
               "Documents folder",
               input.documentsFolderUrl,
               "folder",
               true,
             );
             const signedFolderId = await checkGoogleFile(
+              organizationId,
               "Signed folder",
               input.signedFolderUrl,
               "folder",
@@ -1313,6 +1389,114 @@ export default createPlugin.withPlugins<PluginsClient>()({
             );
             return integrationView(context.scope.organizationId);
           }),
+
+        saveSignedToDrive: builder.workOrders.saveSignedToDrive
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            workOrders.saveSignedToDrive(context.scope, input),
+          ),
+
+        connectGoogle: builder.workOrders.connectGoogle
+          .use(agencyManager)
+          .handler(async ({ context }) =>
+            googleCall(async () => ({
+              url: await googleConnections.start(
+                context.scope.organizationId,
+                context.scope.actorId,
+              ),
+            })),
+          ),
+
+        disconnectGoogle: builder.workOrders.disconnectGoogle
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            await googleConnections.disconnect(context.scope.organizationId);
+            return integrationView(context.scope.organizationId);
+          }),
+
+        googlePickerToken: builder.workOrders.googlePickerToken
+          .use(agencyManager)
+          .handler(async ({ context }) =>
+            googleCall(async () => {
+              const picker = googleConnections.picker;
+              if (!picker) throw new GoogleSetupError("The Google Drive picker isn't set up");
+              const { token, expiresAt } = await googleConnections.accessToken(
+                context.scope.organizationId,
+              );
+              return {
+                accessToken: token,
+                expiresAt: new Date(expiresAt).toISOString(),
+                apiKey: picker.apiKey,
+                clientId: picker.clientId,
+                appId: picker.appId,
+              };
+            }),
+          ),
+
+        scanTemplate: builder.workOrders.scanTemplate
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            googleCall(() => googleSetup.scan(context.scope.organizationId, input)),
+          ),
+
+        saveTemplateFields: builder.workOrders.saveTemplateFields
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            await googleCall(() =>
+              googleSetup.saveFieldMap(
+                context.scope.organizationId,
+                context.scope.actorId,
+                input.map,
+              ),
+            );
+            return integrationView(context.scope.organizationId);
+          }),
+
+        previewTemplate: builder.workOrders.previewTemplate
+          .use(agencyManager)
+          .handler(async ({ context }) =>
+            googleCall(() => googleSetup.preview(context.scope.organizationId)),
+          ),
+
+        applyTemplateFields: builder.workOrders.applyTemplateFields
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { url } = await googleCall(() =>
+              googleSetup.applyFields(
+                context.scope.organizationId,
+                context.scope.actorId,
+                input.spots,
+              ),
+            );
+            return { ...(await integrationView(context.scope.organizationId)), url };
+          }),
+
+        copyStarterTemplate: builder.workOrders.copyStarterTemplate
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { url } = await googleCall(() =>
+              googleSetup.copyStarter(context.scope.organizationId, context.scope.actorId),
+            );
+            return { ...(await integrationView(context.scope.organizationId)), url };
+          }),
+
+        googleCallback: builder.workOrders.googleCallback.handler(async ({ input }) => {
+          const back = (params: Record<string, string>) =>
+            `${appOrigin.replace(/\/+$/, "")}/admin/settings?${new URLSearchParams(params)}#work-orders`;
+          try {
+            await googleConnections.finish(input);
+            return { headers: { location: back({ google: "connected" }) } };
+          } catch (error) {
+            const message =
+              error instanceof GoogleConnectError || error instanceof GoogleError
+                ? error.message
+                : "Google Drive couldn't be connected. Try again";
+            if (!(error instanceof GoogleConnectError)) {
+              console.warn(`[API] Google connect failed: ${errorMessage(error)}`);
+            }
+            return { headers: { location: back({ google: "error", message }) } };
+          }
+        }),
 
         checkDrive: builder.workOrders.checkDrive
           .use(agencyManager)
@@ -1632,6 +1816,28 @@ export default createPlugin.withPlugins<PluginsClient>()({
     };
   },
 });
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function googleCall<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (
+      error instanceof GoogleSetupError ||
+      error instanceof GoogleConnectError ||
+      error instanceof GoogleError
+    ) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: error.message,
+        data: { reason: "GOOGLE_FAILED" },
+      });
+    }
+    throw error;
+  }
+}
 
 function sameSecret(given: string, expected: string): boolean {
   const left = Buffer.from(given);

@@ -110,7 +110,11 @@ export const workOrder = z.object({
       }),
     ),
     preparedDocumentUrl: z.string().nullable(),
+    documentWarning: z.string().nullable(),
+    driveUrl: z.string().nullable(),
+    driveError: z.string().nullable(),
   }),
+  customFields: z.record(z.string(), z.string()),
   title: z.string(),
   scope: z.string().nullable(),
   repos: z.array(z.string()),
@@ -309,6 +313,11 @@ const fields = {
   representativeName: z.string().trim().max(200).nullable().optional(),
   representativeEmail: z.string().trim().max(320).nullable().optional(),
   ipModel: z.string().trim().max(200).nullable().optional(),
+  customFields: z
+    .record(z.string().regex(/^[A-Za-z0-9_.-]{1,80}$/), z.string().max(2000))
+    .refine((value) => Object.keys(value).length <= 50, "At most 50 custom fields")
+    .nullable()
+    .optional(),
 };
 
 const byId = z.object({ id: z.string().min(1) });
@@ -355,6 +364,53 @@ const delivery = z.object({
   createdAt: z.string(),
 });
 
+const fieldMapping = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("field"), field: z.string().min(1).max(80) }),
+  z.object({ kind: z.literal("text"), value: z.string().max(2000) }),
+  z.object({ kind: z.literal("ask"), label: z.string().trim().min(1).max(120) }),
+]);
+
+const tagName = z.string().regex(/^[A-Za-z0-9_.-]{1,80}$/);
+
+const suggestion = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("field"), field: z.string() }),
+  z.object({ kind: z.literal("ask") }),
+  z.object({ kind: z.literal("text") }),
+]);
+
+const templateScan = z.object({
+  templateName: z.string(),
+  tags: z.array(
+    z.object({
+      tag: z.string(),
+      count: z.number().int(),
+      known: z.boolean(),
+      mapping: fieldMapping.nullable(),
+    }),
+  ),
+  missing: z.array(z.string()),
+  spots: z.array(
+    z.object({
+      text: z.string(),
+      target: z.string(),
+      label: z.string(),
+      suggestion,
+      source: z.enum(["pattern", "ai"]),
+      count: z.number().int(),
+      contexts: z.array(z.string()),
+    }),
+  ),
+  aiUsed: z.boolean(),
+  text: z.string(),
+});
+
+const appliedSpot = z.object({
+  text: z.string().min(1).max(300),
+  target: z.string().min(1).max(300),
+  occurrence: z.number().int().min(0).max(500).nullable(),
+  mapping: z.union([fieldMapping, z.object({ kind: z.literal("ignore") })]),
+});
+
 const integration = z.object({
   emailEnabled: z.boolean(),
   aiDraftsEnabled: z.boolean(),
@@ -362,6 +418,20 @@ const integration = z.object({
   google: z.object({
     available: z.boolean(),
     serviceAccountEmail: z.string().nullable(),
+    oauth: z.object({
+      available: z.boolean(),
+      canConnect: z.boolean(),
+      connected: z.boolean(),
+      email: z.string().nullable(),
+      error: z.string().nullable(),
+      redirectUri: z.string().nullable(),
+      picker: z.boolean(),
+    }),
+    starterAvailable: z.boolean(),
+    aiFieldsAvailable: z.boolean(),
+    knownFields: z.array(z.object({ key: z.string(), label: z.string() })),
+    fieldMap: z.record(z.string(), fieldMapping),
+    askFields: z.array(z.object({ tag: z.string(), label: z.string() })),
     templateUrl: z.string().nullable(),
     documentsFolderUrl: z.string().nullable(),
     signedFolderUrl: z.string().nullable(),
@@ -430,6 +500,7 @@ export const workOrdersContract = {
         representativeName: fields.representativeName,
         representativeEmail: fields.representativeEmail,
         ipModel: fields.ipModel,
+        customFields: fields.customFields,
       }),
     )
     .output(workOrder)
@@ -795,6 +866,90 @@ export const workOrdersContract = {
     )
     .output(integration)
     .errors(errors),
+
+  saveSignedToDrive: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/signed-drive" })
+    .input(byId)
+    .output(workOrder)
+    .errors(errors),
+
+  connectGoogle: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/connect" })
+    .input(z.object({}))
+    .output(z.object({ url: z.string() }))
+    .errors(errors),
+
+  disconnectGoogle: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/disconnect" })
+    .input(z.object({}))
+    .output(integration)
+    .errors(errors),
+
+  googlePickerToken: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/picker-token" })
+    .input(z.object({}))
+    .output(
+      z.object({
+        accessToken: z.string(),
+        expiresAt: z.string(),
+        apiKey: z.string(),
+        clientId: z.string(),
+        appId: z.string().nullable(),
+      }),
+    )
+    .errors(errors),
+
+  scanTemplate: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/scan" })
+    .input(z.object({ detect: z.boolean().default(false) }))
+    .output(templateScan)
+    .errors(errors),
+
+  saveTemplateFields: oc
+    .route({ method: "PUT", path: "/admin/work-order-integration/google/fields" })
+    .input(
+      z.object({
+        map: z
+          .record(tagName, fieldMapping)
+          .refine((value) => Object.keys(value).length <= 100, "At most 100 tags"),
+      }),
+    )
+    .output(integration)
+    .errors(errors),
+
+  previewTemplate: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/preview" })
+    .input(z.object({}))
+    .output(z.object({ url: z.string() }))
+    .errors(errors),
+
+  applyTemplateFields: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/apply-fields" })
+    .input(z.object({ spots: z.array(appliedSpot).min(1).max(100) }))
+    .output(integration.extend({ url: z.string() }))
+    .errors(errors),
+
+  copyStarterTemplate: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/starter" })
+    .input(z.object({}))
+    .output(integration.extend({ url: z.string() }))
+    .errors(errors),
+
+  googleCallback: oc
+    .route({
+      method: "GET",
+      path: "/work-orders/google/callback",
+      successStatus: 302,
+      outputStructure: "detailed",
+    })
+    .input(
+      z.object({
+        code: z.string().max(2000).optional(),
+        state: z.string().max(200).optional(),
+        error: z.string().max(200).optional(),
+      }),
+    )
+    .output(z.object({ headers: z.object({ location: z.string() }) })),
 
   checkDrive: oc
     .route({ method: "POST", path: "/admin/work-order-integration/google/check" })

@@ -62,6 +62,7 @@ import {
   withSignaturePage,
 } from "./signing";
 import type { Summarizer } from "./summarizer";
+import { mappedValues, parseFieldMap, templateTags } from "./template-fields";
 import { addDays, dateOf, daysBetween, nextPeriod, startOfDay, UTC, windowOf } from "./time";
 import type {
   CollectedEvidence,
@@ -146,6 +147,7 @@ export type WorkOrderDeps = {
   summarizer?: Summarizer;
   consistency?: ConsistencyChecker | null;
   google?: GooglePort | null;
+  googleFor?: (organizationId: string) => Promise<GooglePort | null>;
   userEmail?: (userId: string) => Promise<string | null>;
   appOrigin?: string;
   timeZone?: string;
@@ -199,6 +201,7 @@ export type WorkOrderFields = {
   representativeName?: string | null;
   representativeEmail?: string | null;
   ipModel?: string | null;
+  customFields?: Record<string, string> | null;
 };
 
 type WorkOrderStatus = WorkOrderRow["status"];
@@ -286,8 +289,9 @@ export function termsHash(
     | "contractorName"
     | "representativeName"
     | "ipModel"
-  >,
+  > & { customFields?: string | null },
 ): string {
+  const custom = customFieldsOf(row.customFields ?? null);
   const terms = {
     autoRenew: row.autoRenew,
     budgetAmount: row.budgetAmount,
@@ -306,6 +310,7 @@ export function termsHash(
     scope: row.scope ?? null,
     title: row.title,
     tokenId: row.tokenId,
+    ...(Object.keys(custom).length > 0 ? { customFields: custom } : {}),
   };
   return createHash("sha256").update(JSON.stringify(terms), "utf8").digest("hex");
 }
@@ -323,6 +328,27 @@ function parseList(raw: string): string[] {
   } catch {
     return [];
   }
+}
+
+export function customFieldsOf(raw: string | null): Record<string, string> {
+  const value = parseJson<unknown>(raw, {});
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => typeof v === "string" && v.trim() !== "")
+      .map(([k, v]): [string, string] => [k, String(v)])
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+}
+
+function customFieldsText(value: Record<string, string> | null | undefined): string | null {
+  const clean = Object.fromEntries(
+    Object.entries(value ?? {})
+      .map(([k, v]): [string, string] => [k.trim(), v.trim()])
+      .filter(([k, v]) => k && v)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+  return Object.keys(clean).length > 0 ? JSON.stringify(clean) : null;
 }
 
 function parseJson<T>(raw: string | null, fallback: T): T {
@@ -573,8 +599,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       ? ((error.data as { reason?: string } | undefined)?.reason ?? null)
       : null;
 
+  async function googleOf(organizationId: string): Promise<GooglePort | null> {
+    return (await deps.googleFor?.(organizationId)) ?? deps.google ?? null;
+  }
+
   async function fillGoogleDocument(row: WorkOrderRow): Promise<WorkOrderRow | null> {
-    const google = deps.google;
+    const google = await googleOf(row.organizationId);
     const settings = google ? await integrationOf(row.organizationId) : null;
     if (!google || !settings?.googleTemplateId || !settings.googleDocumentsFolderId) return null;
     const [project, agencyName, builder] = await Promise.all([
@@ -583,7 +613,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       deps.builders.get(row.builderNearAccount).catch(() => null),
     ]);
     const contacts = await contactsOf(row, builder);
-    const values = documentFields({
+    const fields = documentFields({
       code: row.code,
       project: project?.title ?? row.projectId,
       contractorName: row.contractorName ?? builder?.name ?? row.builderNearAccount,
@@ -601,16 +631,30 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       autoRenew: row.autoRenew,
       scope: row.scope,
     });
+    const { values, blank } = mappedValues({
+      fields,
+      map: parseFieldMap(settings.googleFieldMap),
+      custom: customFieldsOf(row.customFields),
+    });
     const copy = await google.copy(settings.googleTemplateId, {
       name: `Work Order ${row.code}: ${row.title}`,
       parentId: settings.googleDocumentsFolderId,
     });
     const occurrences = await google.fill(copy.id, values);
+    const leftover = await google
+      .read(copy.id)
+      .then((doc) => templateTags(doc).map((t) => t.tag))
+      .catch(() => [] as string[]);
+    const warnings = [
+      ...leftover.map((tag) => `Template tag {{${tag}}} wasn't filled`),
+      ...blank.map((label) => `"${label}" was left blank`),
+    ];
     const url = copy.webViewLink ?? `https://docs.google.com/document/d/${copy.id}/edit`;
     const updated = await update(row.id, {
       documentId: copy.id,
       preparedDocumentUrl: url,
       documentFields: JSON.stringify(requiredFields(values, occurrences)),
+      documentWarning: warnings.length > 0 ? warnings.join("; ") : null,
     });
     await recordGoogle(row.organizationId, null);
     return updated;
@@ -650,7 +694,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
   async function checkSignedDocuments(organizationId: string) {
     const counts = { checked: 0, attached: 0, mismatch: 0, unmatched: 0, error: 0 };
-    const google = deps.google;
+    const google = await googleOf(organizationId);
     const settings = google ? await integrationOf(organizationId) : null;
     if (!google || !settings?.googleSignedFolderId) return counts;
     let files: DriveFile[];
@@ -671,6 +715,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .filter((f) => f.outcome !== "error")
         .map((f) => f.fileId),
     );
+    for (const { fileId } of await db
+      .select({ fileId: workOrders.signedDriveFileId })
+      .from(workOrders)
+      .where(
+        and(eq(workOrders.organizationId, organizationId), isNotNull(workOrders.signedDriveFileId)),
+      )) {
+      if (fileId) done.add(fileId);
+    }
     let open = await db
       .select()
       .from(workOrders)
@@ -797,7 +849,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   async function prepareOfferDocument(row: WorkOrderRow) {
     let current = row;
     let pdf: Uint8Array;
-    const google = deps.google;
+    const google = await googleOf(row.organizationId);
     const settings = google ? await integrationOf(row.organizationId) : null;
     if (google && settings?.googleTemplateId && settings.googleDocumentsFolderId) {
       try {
@@ -867,37 +919,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const completedAt = now();
     const sha256 = sha256Bytes(final);
     const fileName = `Work Order ${row.code} (signed).pdf`;
-    let driveFileId: string | null = null;
-    let driveUrl: string | null = null;
-    const google = deps.google;
-    const settings = google ? await integrationOf(row.organizationId) : null;
-    if (google && settings?.googleSignedFolderId) {
-      try {
-        const uploaded = await google.upload({
-          folderId: settings.googleSignedFolderId,
-          name: fileName,
-          bytes: final,
-          mimeType: "application/pdf",
-        });
-        driveFileId = uploaded.id;
-        driveUrl = uploaded.webViewLink;
-        await recordDriveFile({
-          organizationId: row.organizationId,
-          fileId: uploaded.id,
-          name: fileName,
-          url: uploaded.webViewLink,
-          sha256,
-          workOrderId: row.id,
-          outcome: "attached",
-          note: method === "documenso" ? "Signed in Documenso" : "Signed in MultiAgency",
-        });
-      } catch (error) {
-        await recordGoogle(
-          row.organizationId,
-          `Couldn't save the signed PDF of ${row.code} to Drive: ${errorText(error)}`,
-        );
-      }
-    }
     await db.insert(workOrderDocuments).values({
       id: crypto.randomUUID(),
       workOrderId: row.id,
@@ -906,19 +927,24 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       pdf: toBase64(final),
       sha256,
       termsHash: offered.termsHash,
-      driveFileId,
-      driveUrl,
+      driveFileId: null,
+      driveUrl: null,
       createdAt: completedAt,
     });
-    const signed = await update(row.id, {
+    const stored = await update(row.id, {
       signatureMethod: method,
       signedAt: completedAt,
       signers: JSON.stringify(
         ordered.map((s) => ({ name: s.name, role: s.role, signedAt: s.signedAt.toISOString() })),
       ),
       documentSha256: sha256,
-      documentUrl: driveUrl,
+      documentUrl: null,
+      signedDriveFileId: null,
+      signedDriveUrl: null,
+      signedDriveError: null,
     });
+    const signed = await saveSignedToDrive(stored);
+    const driveUrl = signed.signedDriveUrl;
     const payload = await payloadOf(signed);
     await notifyManagers(signed, "work_order_signed", payload);
     await notifyBuilder(signed, "work_order_signed", payload);
@@ -926,6 +952,70 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       document: driveUrl ?? absolute(builderLink(row.id)),
     });
     return autoActivate(signed, true);
+  }
+
+  const driveAttempts = new Map<string, number>();
+  const DRIVE_RETRY_MS = 5 * 60_000;
+
+  async function saveSignedToDrive(row: WorkOrderRow): Promise<WorkOrderRow> {
+    if (row.signedDriveFileId || !row.signedAt) return row;
+    if (row.signatureMethod !== "in_app" && row.signatureMethod !== "documenso") return row;
+    const google = await googleOf(row.organizationId);
+    const settings = google ? await integrationOf(row.organizationId) : null;
+    const folderId = settings?.googleSignedFolderId ?? settings?.googleDocumentsFolderId ?? null;
+    if (!google || !folderId) return row;
+    const doc = await latestDocument(row.id, "signed");
+    if (!doc) return row;
+    driveAttempts.set(row.id, now().getTime());
+    const name = `Work Order ${row.code} - ${row.title} (signed).pdf`.replace(/[\\/]/g, "-");
+    try {
+      const uploaded = await google.uploadPdf(folderId, name, fromBase64(doc.pdf));
+      const url = uploaded.webViewLink ?? `https://drive.google.com/file/d/${uploaded.id}/view`;
+      await recordDriveFile({
+        organizationId: row.organizationId,
+        fileId: uploaded.id,
+        name,
+        url,
+        sha256: doc.sha256,
+        workOrderId: row.id,
+        outcome: "attached",
+        note: row.signatureMethod === "documenso" ? "Signed in Documenso" : "Signed in MultiAgency",
+      });
+      await db
+        .update(workOrderDocuments)
+        .set({ driveFileId: uploaded.id, driveUrl: url })
+        .where(eq(workOrderDocuments.id, doc.id));
+      driveAttempts.delete(row.id);
+      return update(row.id, {
+        signedDriveFileId: uploaded.id,
+        signedDriveUrl: url,
+        signedDriveError: null,
+        documentUrl: row.documentUrl ?? url,
+      });
+    } catch (error) {
+      const message = `Couldn't save the signed PDF of ${row.code} to Google Drive: ${errorText(error)}`;
+      await recordGoogle(row.organizationId, message);
+      return update(row.id, { signedDriveError: message });
+    }
+  }
+
+  async function retryDriveUploads(counts: Record<string, number>) {
+    const rows = await db
+      .select()
+      .from(workOrders)
+      .where(
+        and(
+          isNotNull(workOrders.signedAt),
+          isNull(workOrders.signedDriveFileId),
+          inArray(workOrders.signatureMethod, ["in_app", "documenso"]),
+        ),
+      );
+    for (const row of rows) {
+      const last = driveAttempts.get(row.id);
+      if (last !== undefined && now().getTime() - last < DRIVE_RETRY_MS) continue;
+      const saved = await saveSignedToDrive(row).catch(() => row);
+      if (saved.signedDriveFileId) counts.driveUploads = (counts.driveUploads ?? 0) + 1;
+    }
   }
 
   function clientMeta(meta: { ip?: string | null; userAgent?: string | null } = {}) {
@@ -1612,7 +1702,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         signedAt: row.signedAt?.toISOString() ?? null,
         signers: parseJson<Signer[]>(row.signers, []),
         preparedDocumentUrl: row.preparedDocumentUrl,
+        documentWarning: row.documentWarning,
+        driveUrl: row.signedDriveUrl,
+        driveError: row.signedDriveFileId ? null : row.signedDriveError,
       },
+      customFields: customFieldsOf(row.customFields),
       title: row.title,
       scope: row.scope,
       repos: parseList(row.repos),
@@ -2615,6 +2709,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           representativeName: parent.representativeName,
           representativeEmail: parent.representativeEmail,
           ipModel: parent.ipModel,
+          customFields: parent.customFields,
           signatureMethod: parent.signatureMethod,
           signers: parent.signers,
           signedAt: parent.signedAt,
@@ -2965,6 +3060,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           representativeName: optionalText(fields.representativeName),
           representativeEmail: fields.representativeEmail,
           ipModel: optionalText(fields.ipModel),
+          customFields: customFieldsText(fields.customFields),
           status: "draft",
           createdBy: scope.actorId,
         })
@@ -3038,6 +3134,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         }
         const patch = {
           ...next,
+          customFields:
+            input.customFields === undefined
+              ? row.customFields
+              : customFieldsText(input.customFields),
           repos: JSON.stringify(next.repos),
           projectTitle: project.title,
           projectSlug: project.slug,
@@ -3066,6 +3166,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
                 documentUrl: null,
                 documentId: null,
                 documentFields: null,
+                documentWarning: null,
               }
             : {}),
           ...(payeeChanged ? { payeeConfirmedAt: null, payeeConfirmedBy: null } : {}),
@@ -3120,6 +3221,19 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     },
 
     checkDrive: async (scope: OrganizationScope) => checkSignedDocuments(scope.organizationId),
+
+    saveSignedToDrive: async (scope: OrganizationScope, input: { id: string }) => {
+      const row = await ownRow(scope, input.id);
+      if (!row.signedAt || row.signedDriveFileId) return view(row);
+      if (!(await googleOf(row.organizationId))) {
+        throw badRequest("GOOGLE_FAILED", "Connect Google Drive first");
+      }
+      const saved = await saveSignedToDrive(row);
+      if (!saved.signedDriveFileId && saved.signedDriveError) {
+        throw badRequest("GOOGLE_FAILED", saved.signedDriveError);
+      }
+      return view(saved);
+    },
 
     requestPayeeConfirmation: async (scope: OrganizationScope, input: { id: string }) => {
       const row = await ownRow(scope, input.id);
@@ -4000,6 +4114,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         counts.autoManual = auto.manual;
         await followUpPayouts(counts);
         await retryBlockedPayouts(counts);
+        await retryDriveUploads(counts);
         await deliverOutbox();
       } finally {
         await releaseLock(holder, TICK_LOCK_ID);

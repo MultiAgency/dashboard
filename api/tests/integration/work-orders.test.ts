@@ -3,7 +3,14 @@ import { eq } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib/dist/pdf-lib.esm.js";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Database } from "../../src/db";
-import { billings, compensationRequests, notifications, workOrders } from "../../src/db/schema";
+import {
+  billings,
+  compensationRequests,
+  notifications,
+  workOrderDriveFiles,
+  workOrderIntegrations,
+  workOrders,
+} from "../../src/db/schema";
 import { rememberedLogin } from "../../src/services/builder-logins";
 import { requireTreasury } from "../../src/services/organization-access";
 import { atomicToNear, topUpFor } from "../../src/services/payouts/policy";
@@ -16,6 +23,7 @@ import type { DaoProposal } from "../../src/services/sputnik";
 import { enrichWithChainStatus } from "../../src/services/sputnik";
 import {
   contains,
+  documentFields,
   longDate,
   normalizeText,
   pdfText,
@@ -976,7 +984,7 @@ describe("work orders", () => {
       expect(done.documentUrl).toBe("https://drive.google.com/file/d/upload-1/view");
       expect(google.uploads[0]).toMatchObject({
         folderId: "signed",
-        name: "Work Order WO-0001 (signed).pdf",
+        name: "Work Order WO-0001 - Contributor role (signed).pdf",
       });
       await refused(
         service.countersign(await studio(), { id: created.id, name: "Rita Rep" }),
@@ -1028,6 +1036,69 @@ describe("work orders", () => {
       expect(await service.myDocument(carol(), { id: created.id }).catch(() => null)).toBeNull();
       await service.offer(await studio(), { id: created.id });
       expect((await service.myDocument(carol(), { id: created.id })).current).toBe(true);
+    });
+
+    test("template tags fill from known fields, fixed text and values asked on the work order", async () => {
+      google.setDoc(
+        "tpl",
+        "Contractor {{contractor_name}} aka {{builder}} in {{jurisdiction}} at {{address}}. {{mystery}}",
+      );
+      await db
+        .update(workOrderIntegrations)
+        .set({
+          googleFieldMap: JSON.stringify({
+            builder: { kind: "field", field: "contractor_name" },
+            jurisdiction: { kind: "text", value: "Delaware" },
+            address: { kind: "ask", label: "Builder address" },
+          }),
+        })
+        .where(eq(workOrderIntegrations.organizationId, "studio"));
+      const created = await service.create(
+        await studio(),
+        fields({ tokenId: REAL_USDC, customFields: { address: "1 Main St" } }),
+      );
+      expect(google.textOf("doc-1")).toBe(
+        "Contractor Carol aka Carol in Delaware at 1 Main St. {{mystery}}",
+      );
+      expect(created.customFields).toEqual({ address: "1 Main St" });
+      expect(created.signature.documentWarning).toBe("Template tag {{mystery}} wasn't filled");
+
+      const blank = await service.create(await studio(), fields({ tokenId: REAL_USDC }));
+      expect(blank.signature.documentWarning).toContain('"Builder address" was left blank');
+    });
+
+    test("an organization's own Google connection is used before the service account", async () => {
+      const own = new FakeGoogle(["work_order_id"]);
+      own.kind = "oauth";
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        googleFor: async (organizationId) => (organizationId === "studio" ? own : null),
+      });
+      await service.create(await studio(), fields({ tokenId: REAL_USDC }));
+      expect(own.copies.map((c) => c.templateId)).toEqual(["tpl"]);
+      expect(google.copies).toEqual([]);
+    });
+
+    test("the payout method describes a NEAR payment for both payout paths", () => {
+      const values = documentFields({
+        code: "WO-1",
+        project: "P",
+        contractorName: "C",
+        contractorEmail: null,
+        representativeName: "R",
+        representativeEmail: null,
+        periodStart: "2026-09-01",
+        periodEnd: "2026-09-30",
+        budgetDecimal: "1",
+        budget: "$1",
+        ipModel: null,
+        payee: "c.near",
+        github: "",
+        repos: [],
+        autoRenew: false,
+        scope: null,
+      });
+      expect(values.payout_method).toBe("Paid in NEAR to the account above");
     });
 
     test("matching is exact: a value must stand on its own in the PDF", () => {
@@ -1207,6 +1278,67 @@ describe("work orders", () => {
       await service.offer(await studio(), { id: first.id });
       await service.remove(await studio(), { id: first.id });
       expect(documenso.cancelled.at(-1)?.envelopeId).toBe("envelope_3");
+    });
+
+    async function completed() {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.syncPendingSignatures();
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
+      await service.syncPendingSignatures();
+      return service.get(await studio(), { id: created.id });
+    }
+
+    const driveFolders = (signedFolderId: string | null) =>
+      createWorkOrderIntegrations({ db }).saveGoogle("studio", "studio-admin", {
+        templateId: null,
+        documentsFolderId: "docs",
+        signedFolderId,
+      });
+
+    test("the signed PDF is saved to the Signed folder once, and the folder check skips it", async () => {
+      await driveFolders("signed");
+      const signed = await completed();
+      expect(signed.status).toBe("active");
+      expect(google.uploads.map((u) => [u.folderId, u.name])).toEqual([
+        ["signed", "Work Order WO-0001 - Contributor role (signed).pdf"],
+      ]);
+      expect(signed.signature.driveUrl).toBe("https://drive.google.com/file/d/upload-1/view");
+      expect(signed.signature.driveError).toBeNull();
+      await service.tick("t1");
+      clock = new Date(clock.getTime() + 3_600_000);
+      await service.tick("t2");
+      expect(google.uploads).toHaveLength(1);
+      await db.delete(workOrderDriveFiles);
+      expect((await service.checkDrive(await studio())).checked).toBe(0);
+    });
+
+    test("a failed upload doesn't block signing and is retried on a later tick", async () => {
+      await driveFolders(null);
+      google.failUploads = 1;
+      const signed = await completed();
+      expect(signed.status).toBe("active");
+      expect(signed.signature.driveError).toMatch(/Drive upload failed/);
+      expect(google.uploads).toHaveLength(0);
+      await service.tick("t1");
+      expect(google.uploads).toHaveLength(0);
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      const tick = await service.tick("t2");
+      expect(tick.counts.driveUploads).toBe(1);
+      expect(google.uploads.map((u) => u.folderId)).toEqual(["docs"]);
+      const saved = await service.get(await studio(), { id: signed.id });
+      expect(saved.signature.driveUrl).toBe("https://drive.google.com/file/d/upload-1/view");
+      expect(saved.signature.driveError).toBeNull();
+    });
+
+    test("without a Google connection the signed PDF stays in MultiAgency only", async () => {
+      await driveFolders("signed");
+      service = createWorkOrdersService({ ...serviceDeps, google: null, esign: documenso });
+      const signed = await completed();
+      expect(signed.status).toBe("active");
+      expect(signed.signature.driveUrl).toBeNull();
+      expect(signed.signature.driveError).toBeNull();
+      expect(google.uploads).toHaveLength(0);
     });
 
     test("the background check picks up both signatures without anyone opening the page", async () => {

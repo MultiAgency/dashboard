@@ -63,7 +63,7 @@ export function documentFields(input: {
     ip_other: box(other),
     ip_other_text: other ? (input.ipModel ?? "") : "",
     payee_account: input.payee,
-    payout_method: "Transfer from the Agency DAO to the NEAR account",
+    payout_method: "Paid in NEAR to the account above",
     contractor_github: input.github,
     repos: input.repos.join(", "),
     auto_renew: box(input.autoRenew),
