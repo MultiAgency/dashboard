@@ -18,18 +18,27 @@ function base64Bytes(value: string): Uint8Array {
   return Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
 }
 
-export async function signAgentIntent(
+export async function ownerWalletKey(
   authClient: AuthClient,
-  intent: Record<string, unknown>,
   ownerAccountId: string,
-): Promise<Record<string, unknown>> {
+): Promise<string | null> {
   await authClient.near.ensureConnected();
-  const connected = authClient.near.getAccountId();
+  const state = authClient.near.getState();
+  const connected = state?.accountId ?? null;
   if (connected !== ownerAccountId) {
     throw new Error(
       `Connect ${ownerAccountId}, the payout agent's owner, to sign. You're connected as ${connected ?? "nobody"}.`,
     );
   }
+  return state?.publicKey ?? null;
+}
+
+export async function signAgentIntent(
+  authClient: AuthClient,
+  intent: Record<string, unknown>,
+  ownerAccountId: string,
+): Promise<Record<string, unknown>> {
+  await ownerWalletKey(authClient, ownerAccountId);
   if (intent.standard === "nep413") {
     const { payload } = intent as unknown as Nep413;
     const signed = await authClient.near.getNearClient().signMessage(

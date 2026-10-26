@@ -21,7 +21,7 @@ import { useSyncPayoutRules } from "@/components/work-orders/allow-payees-button
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { useAuthClient } from "@/lib/auth";
-import { signAgentIntent } from "@/lib/payout-agent-signing";
+import { ownerWalletKey, signAgentIntent } from "@/lib/payout-agent-signing";
 import { proposalIdOf } from "@/lib/proposal-id";
 import {
   payoutAgentQueryKey,
@@ -75,7 +75,8 @@ export function PayoutAgentSettings() {
     mutationFn: async (action: Action) => {
       const owner = query.data?.settings?.ownerAccountId;
       if (!owner) throw new Error("Save the payout settings first");
-      const prepared = await apiClient.workOrders.preparePayoutAction({ action });
+      const publicKey = action === "create_agent" ? await ownerWalletKey(authClient, owner) : null;
+      const prepared = await apiClient.workOrders.preparePayoutAction({ action, publicKey });
       const signedData = await signAgentIntent(authClient, prepared.intent, owner);
       return apiClient.workOrders.submitPayoutAction({
         correlationId: prepared.correlationId,
