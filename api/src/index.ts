@@ -273,6 +273,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
         payees: workOrderPayees(db),
         fullAccessKeys,
       });
+      const signedInNearKeys = async (userId: string | null | undefined) => {
+        if (!authPool || !userId) return {};
+        const { rows } = await authPool.query<{ account_id: string; public_key: string }>(
+          "SELECT account_id, public_key FROM near_account WHERE user_id = $1",
+          [userId],
+        );
+        return Object.fromEntries(rows.map((r) => [r.account_id, r.public_key]));
+      };
       const userEmail = async (userId: string) => {
         if (!authPool) return null;
         const { rows } = await authPool.query<{ email: string | null }>(
@@ -369,6 +377,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         workOrderEmails: sendEmail !== null,
         google,
         payoutAgents,
+        signedInNearKeys,
         workOrderTimers,
       };
     }),
@@ -416,6 +425,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
       workOrderEmails,
       google,
       payoutAgents,
+      signedInNearKeys,
     } = services;
 
     const googleUrl = {
@@ -1157,7 +1167,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
         preparePayoutAction: builder.workOrders.preparePayoutAction
           .use(agencyManager)
           .handler(async ({ context, input }) =>
-            payoutAgents.prepare(context.scope.organizationId, input),
+            payoutAgents.prepare(context.scope.organizationId, {
+              ...input,
+              signedInKeys:
+                input.action === "create_agent"
+                  ? await signedInNearKeys(context.userId)
+                  : undefined,
+            }),
           ),
 
         submitPayoutAction: builder.workOrders.submitPayoutAction

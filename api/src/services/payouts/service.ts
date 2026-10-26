@@ -327,6 +327,7 @@ export function createPayoutAgents(deps: {
     row: PayoutAgentRow,
     action: PayoutAction,
     publicKey?: string | null,
+    signedInKeys?: Record<string, string>,
   ) {
     if (action === "create_agent") {
       if (row.agentId) throw badRequest("AGENT_EXISTS", "The payout agent already exists");
@@ -335,6 +336,11 @@ export function createPayoutAgents(deps: {
           "AGENT_PENDING",
           "The payout agent is still being created; check again in a few minutes",
         );
+      }
+      const signedInKey = signedInKeys?.[row.ownerAccountId];
+      if (!publicKey && signedInKey && deps.fullAccessKeys) {
+        const keys = await deps.fullAccessKeys(row.ownerAccountId).catch((): string[] => []);
+        if (keys.includes(signedInKey)) publicKey = signedInKey;
       }
       if (!publicKey && deps.fullAccessKeys) {
         const keys = await deps.fullAccessKeys(row.ownerAccountId).catch((error: unknown) => {
@@ -547,11 +553,15 @@ export function createPayoutAgents(deps: {
 
   async function prepareIntent(
     organizationId: string,
-    input: { action: PayoutAction; publicKey?: string | null },
+    input: {
+      action: PayoutAction;
+      publicKey?: string | null;
+      signedInKeys?: Record<string, string>;
+    },
   ) {
     const row = await settings(organizationId);
     if (!row) throw badRequest("NO_SETTINGS", "Save the payout settings first");
-    const built = await prepareRequest(row, input.action, input.publicKey);
+    const built = await prepareRequest(row, input.action, input.publicKey, input.signedInKeys);
     let generated: GenerateIntentResponse;
     try {
       generated = await api().generateIntent(built.request);
@@ -834,7 +844,11 @@ export function createPayoutAgents(deps: {
 
     prepare: async (
       organizationId: string,
-      input: { action: PayoutAction; publicKey?: string | null },
+      input: {
+        action: PayoutAction;
+        publicKey?: string | null;
+        signedInKeys?: Record<string, string>;
+      },
     ) => prepareIntent(organizationId, input),
 
     submit: submitIntent,

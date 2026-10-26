@@ -167,6 +167,44 @@ describe("payout funding and automatic payee rules", () => {
     });
   });
 
+  describe("creating the agent", () => {
+    const signedIn = `ed25519:${"2".repeat(44)}`;
+    const other = `ed25519:${"3".repeat(44)}`;
+
+    async function saveSettings(payouts: PayoutAgents) {
+      await payouts.saveSettings(ORG, "studio-admin", {
+        ownerAccountId: "rita.near",
+        monthlyBudgetUsd: "5000",
+        maxPayoutNear: "500",
+      });
+    }
+
+    test("an owner with several full-access keys uses the key they signed in with", async () => {
+      ownerKeys = [other, signedIn];
+      const payouts = payoutsWith();
+      await saveSettings(payouts);
+      await expect(payouts.prepare(ORG, { action: "create_agent" })).rejects.toThrow(
+        "has 2 full-access keys",
+      );
+      await payouts.prepare(ORG, {
+        action: "create_agent",
+        signedInKeys: { "rita.near": signedIn },
+      });
+      expect(agent.generated.at(-1)).toMatchObject({
+        owner: { account_id: "rita.near", public_key: signedIn },
+      });
+    });
+
+    test("a sign-in key that is no longer a full-access key of the owner isn't used", async () => {
+      ownerKeys = [other, `ed25519:${"4".repeat(44)}`];
+      const payouts = payoutsWith();
+      await saveSettings(payouts);
+      await expect(
+        payouts.prepare(ORG, { action: "create_agent", signedInKeys: { "rita.near": signedIn } }),
+      ).rejects.toThrow("has 2 full-access keys");
+    });
+  });
+
   describe("grant reminders", () => {
     test("managers are reminded once per grant when under 14 days remain", async () => {
       const payouts = payoutsWith();
