@@ -1,8 +1,15 @@
-import { FunnelIcon, MagnifyingGlassIcon, TrayIcon } from "@phosphor-icons/react";
+import {
+  ArrowRightIcon,
+  ArrowUpRightIcon,
+  FunnelIcon,
+  MagnifyingGlassIcon,
+  TrayIcon,
+} from "@phosphor-icons/react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { cn } from "cn";
 import { type MouseEvent, useMemo, useState } from "react";
 import { LoadError } from "@/components/load-error";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +33,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { type WorkOrder, WorkOrderStatusBadge } from "@/components/work-orders/work-order-status";
 import { formatTokenAmount } from "@/lib/format-amount";
+import { periodHint, periodRange } from "@/lib/format-date";
 import {
   defaultInboxView,
   filterInbox,
@@ -83,49 +91,68 @@ function StatusLine({ workOrder }: { workOrder: WorkOrder }) {
 function NextAction({ workOrder }: { workOrder: WorkOrder }) {
   const navigate = useNavigate();
   const next = workOrder.progress.next;
-  if (!workOrder.progress.needsYou || next?.kind !== "link") return null;
-  if (next.external) {
+  if (!workOrder.progress.needsYou || !next) return null;
+  if (next.kind === "link" && next.external) {
     return (
-      <Button asChild size="xs" variant="outline" className="relative z-10">
+      <Button asChild size="xs" className="relative z-10">
         <a href={next.href} target="_blank" rel="noopener noreferrer">
+          {next.label}
+          <ArrowUpRightIcon aria-hidden />
+        </a>
+      </Button>
+    );
+  }
+  if (next.kind === "link") {
+    return (
+      <Button asChild size="xs" className="relative z-10">
+        <a
+          href={next.href}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+            event.preventDefault();
+            void navigate({ href: next.href });
+          }}
+        >
           {next.label}
         </a>
       </Button>
     );
   }
   return (
-    <Button asChild size="xs" variant="outline" className="relative z-10">
-      <a
-        href={next.href}
-        onClick={(event) => {
-          if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
-          event.preventDefault();
-          void navigate({ href: next.href });
-        }}
-      >
+    <Button asChild size="xs" className="relative z-10">
+      <Link to="/admin/work-orders/$id" params={{ id: workOrder.id }}>
         {next.label}
-      </a>
+        <ArrowRightIcon aria-hidden />
+      </Link>
     </Button>
   );
+}
+
+function waitingText(workOrder: WorkOrder): string {
+  const { waitingOn } = workOrder.progress;
+  if (waitingOn === "you") return "Your turn";
+  if (waitingOn === null) return "Done";
+  if (waitingOn === "system") return "Automatic";
+  return `Waiting on ${waitingLabel(waitingOn, builderName(workOrder))}`;
 }
 
 function NextStep({ workOrder }: { workOrder: WorkOrder }) {
   const { waitingOn, headline, since } = workOrder.progress;
   const ago = relativeSince(since);
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <div className="flex min-w-0 items-center gap-1.5">
+    <div className="flex min-w-0 flex-col items-start gap-1.5">
+      <div className="flex min-w-0 items-center gap-1.5 text-xs">
         <span
           aria-hidden
-          className={cn("size-2 shrink-0 rounded-full", WAITING_DOT[waitingOn ?? "none"])}
+          className={cn("size-1.5 shrink-0 rounded-full", WAITING_DOT[waitingOn ?? "none"])}
         />
         <span
           className={cn(
             "truncate font-medium",
-            waitingOn === "you" ? "text-foreground" : "text-muted-foreground",
+            waitingOn === "you" ? "text-primary" : "text-muted-foreground",
           )}
         >
-          {waitingLabel(waitingOn, builderName(workOrder))}
+          {waitingText(workOrder)}
         </span>
         {ago && since && (
           <time
@@ -137,9 +164,15 @@ function NextStep({ workOrder }: { workOrder: WorkOrder }) {
           </time>
         )}
       </div>
-      <span className="truncate text-muted-foreground" title={headline}>
+      <p
+        className={cn(
+          "line-clamp-2 text-pretty",
+          waitingOn === "you" ? "text-foreground" : "text-muted-foreground",
+        )}
+        title={headline}
+      >
         {headline}
-      </span>
+      </p>
       <div className="empty:hidden">
         <NextAction workOrder={workOrder} />
       </div>
@@ -147,12 +180,75 @@ function NextStep({ workOrder }: { workOrder: WorkOrder }) {
   );
 }
 
-function Committed({ workOrder }: { workOrder: WorkOrder }) {
+function initials(name: string): string {
+  const parts = name
+    .replace(/\.near$/, "")
+    .split(/[\s._-]+/)
+    .filter(Boolean);
+  return (parts[0]?.[0] ?? "?").concat(parts[1]?.[0] ?? "").toUpperCase();
+}
+
+function BuilderCell({ workOrder }: { workOrder: WorkOrder }) {
+  const name = builderName(workOrder);
   return (
-    <span className="tabular-nums">
-      {formatTokenAmount(workOrder.committedAmount, workOrder.tokenId)} of{" "}
-      {formatTokenAmount(workOrder.budgetAmount, workOrder.tokenId)}
-    </span>
+    <div className="flex min-w-0 items-center gap-2">
+      <Avatar size="sm">
+        <AvatarFallback className="text-[0.625rem]">{initials(name)}</AvatarFallback>
+      </Avatar>
+      <div className="flex min-w-0 flex-col">
+        <span className="truncate" title={name}>
+          {name}
+        </span>
+        <span className="truncate text-muted-foreground text-xs" title={workOrder.projectTitle}>
+          {workOrder.projectTitle}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function PeriodCell({ workOrder }: { workOrder: WorkOrder }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const hint = periodHint(workOrder.periodStart, workOrder.periodEnd, today);
+  return (
+    <div className="flex flex-col">
+      <span
+        className="whitespace-nowrap tabular-nums"
+        title={`${workOrder.periodStart} → ${workOrder.periodEnd}`}
+      >
+        {periodRange(workOrder.periodStart, workOrder.periodEnd)}
+      </span>
+      {hint && <span className="text-muted-foreground text-xs">{hint}</span>}
+    </div>
+  );
+}
+
+function share(part: string, whole: string): number {
+  const total = Number(whole);
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  return Math.min(1, Math.max(0, Number(part) / total));
+}
+
+function Committed({ workOrder, bar = true }: { workOrder: WorkOrder; bar?: boolean }) {
+  const used = share(workOrder.committedAmount, workOrder.budgetAmount);
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="whitespace-nowrap tabular-nums">
+        {formatTokenAmount(workOrder.committedAmount, workOrder.tokenId)}
+        <span className="text-muted-foreground">
+          {" "}
+          / {formatTokenAmount(workOrder.budgetAmount, workOrder.tokenId)}
+        </span>
+      </span>
+      {bar && (
+        <div aria-hidden className="h-1 w-full max-w-24 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn("h-full rounded-full", used >= 1 ? "bg-muted-foreground" : "bg-primary")}
+            style={{ width: `${used * 100}%` }}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -163,23 +259,26 @@ function InboxTable({ rows }: { rows: WorkOrder[] }) {
     void navigate({ to: "/admin/work-orders/$id", params: { id } });
   };
   return (
-    <div className="hidden md:block">
+    <div className="hidden overflow-hidden border md:block">
       <Table className="table-fixed">
         <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead scope="col" className="w-[22%] text-muted-foreground">
+          <TableRow className="bg-muted/30 hover:bg-muted/30">
+            <TableHead scope="col" className="w-[24%] pl-4 text-muted-foreground text-xs">
               Work order
             </TableHead>
-            <TableHead scope="col" className="w-[34%] text-muted-foreground">
+            <TableHead scope="col" className="w-[36%] text-muted-foreground text-xs">
               Next step
             </TableHead>
-            <TableHead scope="col" className="w-[16%] text-muted-foreground">
+            <TableHead scope="col" className="w-[18%] text-muted-foreground text-xs">
               Builder
             </TableHead>
-            <TableHead scope="col" className="hidden w-[12%] text-muted-foreground lg:table-cell">
+            <TableHead
+              scope="col"
+              className="hidden w-[11%] text-muted-foreground text-xs lg:table-cell"
+            >
               Period
             </TableHead>
-            <TableHead scope="col" className="w-[16%] text-muted-foreground">
+            <TableHead scope="col" className="w-[11%] pr-4 text-muted-foreground text-xs">
               Committed
             </TableHead>
           </TableRow>
@@ -188,31 +287,33 @@ function InboxTable({ rows }: { rows: WorkOrder[] }) {
           {rows.map((workOrder) => (
             <TableRow
               key={workOrder.id}
-              className="cursor-pointer align-top"
+              className={cn(
+                "cursor-pointer align-top",
+                workOrder.progress.needsYou && "shadow-[inset_2px_0_0_var(--color-primary)]",
+              )}
               onClick={(event) => open(event, workOrder.id)}
             >
-              <TableCell className="whitespace-normal">
+              <TableCell className="whitespace-normal py-3.5 pl-4">
                 <div className="flex min-w-0 flex-col gap-1">
-                  <CodeLink workOrder={workOrder} />
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <CodeLink workOrder={workOrder} />
+                    <StatusLine workOrder={workOrder} />
+                  </div>
                   <span className="truncate text-muted-foreground" title={workOrder.title}>
                     {workOrder.title}
                   </span>
-                  <StatusLine workOrder={workOrder} />
                 </div>
               </TableCell>
-              <TableCell className="whitespace-normal">
+              <TableCell className="whitespace-normal py-3.5">
                 <NextStep workOrder={workOrder} />
               </TableCell>
-              <TableCell className="whitespace-normal">
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate">{builderName(workOrder)}</span>
-                  <span className="truncate text-muted-foreground">{workOrder.projectTitle}</span>
-                </div>
+              <TableCell className="whitespace-normal py-3.5">
+                <BuilderCell workOrder={workOrder} />
               </TableCell>
-              <TableCell className="hidden whitespace-normal text-muted-foreground tabular-nums lg:table-cell">
-                {workOrder.periodStart} → {workOrder.periodEnd}
+              <TableCell className="hidden whitespace-normal py-3.5 lg:table-cell">
+                <PeriodCell workOrder={workOrder} />
               </TableCell>
-              <TableCell className="whitespace-normal">
+              <TableCell className="whitespace-normal py-3.5 pr-4">
                 <Committed workOrder={workOrder} />
               </TableCell>
             </TableRow>
@@ -229,7 +330,10 @@ function InboxCards({ rows }: { rows: WorkOrder[] }) {
       {rows.map((workOrder) => (
         <li
           key={workOrder.id}
-          className="relative flex min-w-0 flex-col gap-2 border p-3 text-xs hover:bg-muted/50"
+          className={cn(
+            "relative flex min-w-0 flex-col gap-2 border p-3 text-xs hover:bg-muted/50",
+            workOrder.progress.needsYou && "border-l-2 border-l-primary",
+          )}
         >
           <div className="flex min-w-0 items-start justify-between gap-2">
             <div className="flex min-w-0 flex-col gap-0.5">
@@ -241,9 +345,9 @@ function InboxCards({ rows }: { rows: WorkOrder[] }) {
           <NextStep workOrder={workOrder} />
           <div className="flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 text-muted-foreground">
             <span className="truncate">
-              {builderName(workOrder)} · {workOrder.projectTitle}
+              {builderName(workOrder)} · {periodRange(workOrder.periodStart, workOrder.periodEnd)}
             </span>
-            <Committed workOrder={workOrder} />
+            <Committed workOrder={workOrder} bar={false} />
           </div>
         </li>
       ))}

@@ -24,3 +24,19 @@ export function dateTime(value: string): string {
     minute: "2-digit",
   });
 }
+
+export function periodRange(start: string, end: string): string {
+  if (start === end) return shortDate(start);
+  const sameYear = start.slice(0, 4) === end.slice(0, 4);
+  const sameMonth = sameYear && start.slice(5, 7) === end.slice(5, 7);
+  if (sameMonth) return `${shortDate(start)} – ${Number(end.slice(8, 10))}`;
+  return `${shortDate(start)} – ${shortDate(end)}`;
+}
+
+export function periodHint(start: string, end: string, today: string): string | null {
+  const days = Math.round((Date.parse(end) - Date.parse(today)) / 86_400_000);
+  if (start > today) return `starts ${shortDate(start)}`;
+  if (days < 0) return "ended";
+  if (days === 0) return "ends today";
+  return `${days}d left`;
+}
