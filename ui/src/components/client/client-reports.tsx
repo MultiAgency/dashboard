@@ -28,32 +28,29 @@ import { ReportPreview, reportOverviewCsvValues } from "@/components/admin/repor
 import { AdminError } from "@/components/admin-error";
 import type { EngagementView } from "@/components/engagement-status";
 import { ReportNoteField } from "@/components/report-note-field";
-import { SavedReportsList } from "@/components/saved-reports";
-import { useApiClient } from "@/lib/api";
+import {
+  reportPeriod,
+  type SavedReportSummary,
+  SavedReportsList,
+} from "@/components/saved-reports";
+import { type ApiClient, useApiClient } from "@/lib/api";
+import { formatPeriod } from "@/lib/budget-periods";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 import {
+  clientAgreementsQueryOptions,
   clientPortalProjectsListQueryOptions,
   clientSavedReportQueryOptions,
   clientSavedReportsQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
 import { formatAllocatedSpent } from "@/lib/report-amounts";
-
-function isoDate(date: Date): string {
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
-}
-
-function monthRange(year: number, month: number) {
-  return { start: isoDate(new Date(year, month, 1)), end: isoDate(new Date(year, month + 1, 0)) };
-}
+import { MONTH_PRESETS } from "@/lib/report-dates";
 
 const ALL_PROJECTS = "all";
+const NO_AGREEMENT = "none";
 
-const MONTH_PRESETS = [
-  { label: "This month", range: (now: Date) => monthRange(now.getFullYear(), now.getMonth()) },
-  { label: "Last month", range: (now: Date) => monthRange(now.getFullYear(), now.getMonth() - 1) },
-];
+type ClientReportFilters = Parameters<ApiClient["clientPortal"]["reports"]["preview"]>[0];
+type PreviewReport = Awaited<ReturnType<ApiClient["clientPortal"]["reports"]["preview"]>>;
 
 export function ClientReports({
   engagement,
@@ -63,7 +60,7 @@ export function ClientReports({
 }: {
   engagement: EngagementView;
   reportId: string | undefined;
-  onOpenReport: (id: string) => void;
+  onOpenReport: (id: string | undefined) => void;
   initialProjectId?: string;
 }) {
   const apiClient = useApiClient();
@@ -73,7 +70,12 @@ export function ClientReports({
     ...clientSavedReportQueryOptions(apiClient, engagement.id, reportId ?? ""),
     enabled: !!reportId,
   });
-  const report = reportId ? (openedQuery.data?.report ?? null) : null;
+  const [preview, setPreview] = useState<{
+    filters: Omit<ClientReportFilters, "engagementId">;
+    report: PreviewReport;
+  } | null>(null);
+  const report: PreviewReport | null =
+    preview?.report ?? (reportId ? (openedQuery.data?.report ?? null) : null);
   const projects =
     useQuery(clientPortalProjectsListQueryOptions(apiClient, engagement.id)).data?.data ?? [];
   const [pickedProjectId, setProjectId] = useState(initialProjectId ?? ALL_PROJECTS);
@@ -81,24 +83,60 @@ export function ClientReports({
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const agreements =
+    useQuery(clientAgreementsQueryOptions(apiClient, engagement.id)).data?.data ?? [];
+  const [agreementId, setAgreementId] = useState(NO_AGREEMENT);
+  const agreement = agreements.find((a) => a.id === agreementId);
   const openReport = onOpenReport;
 
-  const generateMutation = useMutation({
-    mutationFn: () =>
-      apiClient.clientPortal.reports.generate({
-        engagementId: engagement.id,
+  const previewMutation = useMutation({
+    mutationFn: async () => {
+      const filters = {
+        agreementId: agreement?.id,
         projectId: projectId === ALL_PROJECTS ? undefined : projectId,
         note: note.trim() || undefined,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-      }),
-    onSuccess: async (data) => {
-      await refreshAfter(queryClient, { type: "reports" });
-      openReport(data.id);
-      toast.success("Report generated and saved");
+        startDate: agreement ? undefined : startDate || undefined,
+        endDate: agreement ? undefined : endDate || undefined,
+      };
+      return {
+        filters,
+        report: await apiClient.clientPortal.reports.preview({
+          engagementId: engagement.id,
+          ...filters,
+        }),
+      };
     },
+    onSuccess: (result) => setPreview(result),
     onError: (err: Error) => toast.error(err.message || "Failed to generate report"),
   });
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      if (!preview) throw new Error("Generate a report first");
+      return apiClient.clientPortal.reports.generate({
+        engagementId: engagement.id,
+        ...preview.filters,
+      });
+    },
+    onSuccess: async (data) => {
+      await refreshAfter(queryClient, { type: "reports" });
+      setPreview(null);
+      openReport(data.id);
+      toast.success("Report saved");
+    },
+    onError: (err: Error) => toast.error(err.message || "Failed to save report"),
+  });
+
+  const deleteReport = async (saved: SavedReportSummary) => {
+    try {
+      await apiClient.clientPortal.reports.delete({ engagementId: engagement.id, id: saved.id });
+      if (saved.id === reportId) openReport(undefined);
+      await refreshAfter(queryClient, { type: "reports" });
+      toast.success("Report deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete report");
+    }
+  };
 
   const handleDownload = () => {
     if (!report) return;
@@ -133,8 +171,8 @@ export function ClientReports({
     <div className="flex flex-col gap-6">
       <p className="max-w-2xl text-sm text-pretty text-muted-foreground print:hidden">
         Generate a report of the Projects {engagement.agency.name} shares with you, with their
-        budget and billings. Reports are saved with their memo, so everyone on your team can open
-        them later.
+        budget and billings. Save a report to keep it with its memo, so everyone on your team can
+        open it later. Reports {engagement.agency.name} shares with you show up here too.
       </p>
       <Card className="print:hidden">
         <CardHeader>
@@ -175,27 +213,52 @@ export function ClientReports({
                 </SelectContent>
               </Select>
             </Field>
+            {agreements.length > 0 && (
+              <Field>
+                <FieldLabel htmlFor="client-report-agreement">Agreement</FieldLabel>
+                <Select value={agreementId} onValueChange={setAgreementId}>
+                  <SelectTrigger id="client-report-agreement" className="w-full sm:w-80">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_AGREEMENT}>Any agreement (use dates)</SelectItem>
+                    {agreements.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.title} ({formatPeriod(a.startDate, a.endDate)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
             <ReportNoteField id="client-report-note" value={note} onChange={setNote} />
-            <div className="grid items-start gap-4 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="client-report-start">Start date (optional)</FieldLabel>
-                <Input
-                  id="client-report-start"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="client-report-end">End date (optional)</FieldLabel>
-                <Input
-                  id="client-report-end"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </Field>
-            </div>
+            {agreement ? (
+              <p className="text-sm text-muted-foreground">
+                Covers {formatPeriod(agreement.startDate, agreement.endDate)} and every budget
+                attached to {agreement.title}.
+              </p>
+            ) : (
+              <div className="grid items-start gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="client-report-start">Start date (optional)</FieldLabel>
+                  <Input
+                    id="client-report-start"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="client-report-end">End date (optional)</FieldLabel>
+                  <Input
+                    id="client-report-end"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </Field>
+              </div>
+            )}
           </FieldGroup>
         </CardContent>
         <CardFooter className="flex-wrap justify-end gap-2">
@@ -211,12 +274,34 @@ export function ClientReports({
               </Button>
             </>
           )}
-          <Button onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending}>
-            {generateMutation.isPending && <Spinner data-icon="inline-start" />}
-            Generate report
+          {preview && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setPreview(null)}
+                disabled={saveMutation.isPending}
+              >
+                Discard
+              </Button>
+              <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+                {saveMutation.isPending && <Spinner data-icon="inline-start" />}
+                Save report
+              </Button>
+            </>
+          )}
+          <Button
+            variant={preview ? "outline" : "default"}
+            onClick={() => previewMutation.mutate()}
+            disabled={previewMutation.isPending}
+          >
+            {previewMutation.isPending && <Spinner data-icon="inline-start" />}
+            Generate preview
           </Button>
         </CardFooter>
       </Card>
+
+      {openedQuery.isError && !preview && <AdminError error={openedQuery.error} />}
+      {report && <ReportPreview report={report} showBuilders={false} />}
 
       <section className="flex flex-col gap-3 print:hidden" aria-labelledby="client-saved-reports">
         <SectionHeader id="client-saved-reports" title="Saved reports" />
@@ -231,15 +316,21 @@ export function ClientReports({
         ) : (
           <SavedReportsList
             reports={savedQuery.data?.data ?? []}
-            selectedId={reportId}
-            onOpen={openReport}
-            describe={(r) => r.projectTitle ?? "All shared projects"}
+            selectedId={preview ? undefined : reportId}
+            onOpen={(id) => {
+              setPreview(null);
+              openReport(id);
+            }}
+            titleOf={(r) =>
+              [r.agreementTitle, r.projectTitle ?? "All shared projects", reportPeriod(r)]
+                .filter(Boolean)
+                .join(" · ")
+            }
+            agencyName={engagement.agency.name}
+            onDelete={deleteReport}
           />
         )}
       </section>
-
-      {openedQuery.isError && <AdminError error={openedQuery.error} />}
-      {report && <ReportPreview report={report} showBuilders={false} />}
     </div>
   );
 }

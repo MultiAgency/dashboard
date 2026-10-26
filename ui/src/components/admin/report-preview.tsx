@@ -12,6 +12,10 @@ import {
 import { ClientBreakdownSection } from "@/components/admin/client-breakdown-section";
 import { StatCard } from "@/components/budget";
 import { TokenAmountCell } from "@/components/token-amounts";
+import {
+  type DeliveredWork,
+  DeliveredWorkSection,
+} from "@/components/work-orders/delivered-work-section";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   collectReportTokenIds,
@@ -28,6 +32,12 @@ export type ReportViewData = {
     billedByToken: TokenAmount[];
     period: string;
   };
+  projectBreakdown?: Array<{
+    projectTitle: string;
+    projectSlug: string;
+    budgetByToken: TokenAmount[];
+    billedByToken: TokenAmount[];
+  }>;
   contributorStats: Array<{
     nearAccount: string;
     name: string;
@@ -42,6 +52,16 @@ export type ReportViewData = {
     spentByToken: TokenAmount[];
     builders?: string[];
   }>;
+  agreement?: {
+    title: string;
+    kind: "retainer" | "project";
+    startDate: string;
+    endDate: string;
+    tokenId: string;
+    agreedAmount: string;
+    allocated: string;
+  } | null;
+  deliveredWork?: DeliveredWork[];
   notes?: string;
 };
 
@@ -50,6 +70,11 @@ type TokenSummaryRow = {
   tokenLabel: string;
   budget?: string;
   billed?: string;
+};
+
+type ProjectBudgetRow = TokenSummaryRow & {
+  projectTitle: string;
+  projectSlug: string;
 };
 
 type BuilderRow = {
@@ -103,6 +128,36 @@ const tokenSummaryColumns: ColumnDef<TokenSummaryRow>[] = [
         row.billed ? formatTokenAmount(row.billed, row.tokenId) : "—",
     },
   },
+];
+
+function buildProjectBudgetRows(
+  breakdown: NonNullable<ReportViewData["projectBreakdown"]>,
+): ProjectBudgetRow[] {
+  return breakdown.flatMap((project) =>
+    buildTokenSummaryRows(project.budgetByToken, project.billedByToken).map((row) => ({
+      ...row,
+      projectTitle: project.projectTitle,
+      projectSlug: project.projectSlug,
+    })),
+  );
+}
+
+const projectBudgetColumns: ColumnDef<ProjectBudgetRow>[] = [
+  {
+    id: "project",
+    header: "Project",
+    accessorKey: "projectTitle",
+    cell: ({ row }) => (
+      <div className="flex flex-col gap-0.5">
+        <span className="font-medium">{row.original.projectTitle}</span>
+        <span className="text-muted-foreground">@{row.original.projectSlug}</span>
+      </div>
+    ),
+    meta: {
+      exportValue: (row: ProjectBudgetRow) => row.projectTitle,
+    },
+  },
+  ...(tokenSummaryColumns as ColumnDef<ProjectBudgetRow>[]),
 ];
 
 function useBuilderColumns(tokenIds: string[]): ColumnDef<BuilderRow>[] {
@@ -167,6 +222,11 @@ export function ReportPreview({ report, showBuilders = true, actions }: ReportPr
     [report.overview.budgetByToken, report.overview.billedByToken],
   );
 
+  const projectBudgetRows = useMemo(
+    () => buildProjectBudgetRows(report.projectBreakdown ?? []),
+    [report.projectBreakdown],
+  );
+
   const builderTokenIds = useMemo(
     () => collectReportTokenIds(...report.contributorStats.map((s) => s.billedByToken)),
     [report.contributorStats],
@@ -201,6 +261,20 @@ export function ReportPreview({ report, showBuilders = true, actions }: ReportPr
             <div className="sm:col-span-2">
               <StatCard label="Period" value={report.overview.period} />
             </div>
+            {report.agreement && (
+              <>
+                <div className="sm:col-span-2">
+                  <StatCard
+                    label={report.agreement.kind === "retainer" ? "Retainer" : "Project agreement"}
+                    value={report.agreement.title}
+                  />
+                </div>
+                <StatCard
+                  label="Allocated of agreed"
+                  value={`${formatTokenAmount(report.agreement.allocated, report.agreement.tokenId)} of ${formatTokenAmount(report.agreement.agreedAmount, report.agreement.tokenId)}`}
+                />
+              </>
+            )}
           </div>
           <DataTable
             columns={tokenSummaryColumns}
@@ -213,8 +287,33 @@ export function ReportPreview({ report, showBuilders = true, actions }: ReportPr
         </CardContent>
       </Card>
 
+      {projectBudgetRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Budget by project</h2>
+            </CardTitle>
+            <CardDescription>Budget and billed amounts per project for the period.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              columns={projectBudgetColumns}
+              data={projectBudgetRows}
+              emptyMessage="No project budgets"
+              csvFilename="report-budget-by-project"
+              viewId="report-budget-by-project"
+              searchPlaceholder="Filter projects…"
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {report.clientBreakdown.length > 0 && (
         <ClientBreakdownSection breakdown={report.clientBreakdown} />
+      )}
+
+      {report.deliveredWork && report.deliveredWork.length > 0 && (
+        <DeliveredWorkSection items={report.deliveredWork} />
       )}
 
       {showBuilders && report.contributorStats.length > 0 && (

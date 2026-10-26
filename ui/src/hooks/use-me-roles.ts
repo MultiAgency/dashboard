@@ -19,7 +19,6 @@ export function useMeRoles() {
 
   return {
     isAuthenticated,
-    isPlatformAdmin: session?.user?.role === "admin",
     orgRole,
     canAccessAdmin: isManager(orgRole),
     agencyDao: query.data?.agencyDao ?? null,

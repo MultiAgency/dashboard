@@ -203,6 +203,33 @@ export const projectContributors = pgTable(
   }),
 );
 
+export const AGREEMENT_KINDS = ["retainer", "project"] as const;
+
+export const clientAgreements = pgTable(
+  "client_agreements",
+  {
+    id: text("id").primaryKey(),
+    engagementId: text("engagement_id")
+      .notNull()
+      .references(() => engagements.id),
+    kind: text("kind", { enum: AGREEMENT_KINDS }).notNull(),
+    title: text("title").notNull(),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    tokenId: text("token_id").notNull(),
+    agreedAmount: text("agreed_amount").notNull(),
+    note: text("note"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    engagementIdx: index("client_agreements_engagement").on(t.engagementId, t.startDate),
+  }),
+);
+
+export type ClientAgreement = typeof clientAgreements.$inferSelect;
+
 export const budgets = pgTable(
   "budgets",
   {
@@ -217,9 +244,12 @@ export const budgets = pgTable(
       onDelete: "set null",
     }),
     fundingDaoAccountId: text("funding_dao_account_id"),
+    effectiveOn: date("effective_on"),
+    agreementId: text("agreement_id").references(() => clientAgreements.id),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
+    agreementIdx: index("budgets_agreement_id").on(t.agreementId),
     cursor: index("budgets_cursor").on(t.createdAt, t.id),
     projectIdx: index("budgets_project_id").on(t.projectId),
     engagementIdx: index("budgets_engagement_id").on(t.engagementId),
@@ -229,6 +259,34 @@ export const budgets = pgTable(
 
 export type Budget = typeof budgets.$inferSelect;
 export type NewBudget = typeof budgets.$inferInsert;
+
+export const budgetRevisions = pgTable(
+  "budget_revisions",
+  {
+    id: text("id").primaryKey(),
+    budgetId: text("budget_id").notNull(),
+    action: text("action", { enum: ["edited", "deleted"] }).notNull(),
+    projectId: text("project_id").notNull(),
+    tokenId: text("token_id").notNull(),
+    amount: text("amount").notNull(),
+    note: text("note"),
+    effectiveOn: date("effective_on"),
+    relatedBudgetId: text("related_budget_id"),
+    engagementId: text("engagement_id"),
+    fundingDaoAccountId: text("funding_dao_account_id"),
+    agreementId: text("agreement_id"),
+    actorAccountId: text("actor_account_id").notNull(),
+    budgetCreatedAt: timestamp("budget_created_at", { withTimezone: false }).notNull(),
+    changedBy: text("changed_by").notNull(),
+    changedAt: timestamp("changed_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    budgetIdx: index("budget_revisions_budget").on(t.budgetId),
+    projectIdx: index("budget_revisions_project").on(t.projectId, t.changedAt),
+  }),
+);
+
+export type BudgetRevision = typeof budgetRevisions.$inferSelect;
 
 export const prepayments = pgTable(
   "prepayments",
@@ -502,54 +560,411 @@ export const reportSnapshots = pgTable(
     endDate: text("end_date"),
     note: text("note"),
     payload: text("payload").notNull(),
+    sharedAt: timestamp("shared_at", { withTimezone: false }),
+    sharedByUserId: text("shared_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
     organizationIdx: index("report_snapshots_organization").on(t.organizationId, t.createdAt, t.id),
+    engagementSharedIdx: index("report_snapshots_engagement_shared").on(t.engagementId, t.sharedAt),
   }),
 );
 
 export type ReportSnapshotRow = typeof reportSnapshots.$inferSelect;
 
+export const WORK_ORDER_STATUSES = [
+  "draft",
+  "offered",
+  "accepted",
+  "active",
+  "ended",
+  "exhausted",
+  "terminated",
+] as const;
+
+export const RENEWAL_STATUSES = ["renewed", "needs_approval", "declined"] as const;
+
+export const SIGNATURE_METHODS = ["in_app", "google_esign", "documenso"] as const;
+
 export const workOrders = pgTable(
   "work_orders",
   {
     id: text("id").primaryKey(),
+    code: text("code").notNull(),
     organizationId: text("organization_id").notNull(),
-    nearAccount: text("near_account").notNull(),
-    status: text("status", { enum: ["draft", "signed", "completed", "terminated"] })
-      .notNull()
-      .default("draft"),
-    startsOn: date("starts_on", { mode: "string" }).notNull(),
-    endsOn: date("ends_on", { mode: "string" }).notNull(),
+    projectId: text("project_id").notNull(),
+    projectTitle: text("project_title"),
+    projectSlug: text("project_slug"),
+    builderNearAccount: text("builder_near_account").notNull(),
+    githubLogin: text("github_login"),
+    title: text("title").notNull(),
+    scope: text("scope"),
+    repos: text("repos").notNull().default("[]"),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    graceDays: integer("grace_days").notNull().default(2),
+    tokenId: text("token_id").notNull(),
+    budgetAmount: text("budget_amount").notNull(),
+    payoutTokenId: text("payout_token_id"),
+    autoRenew: boolean("auto_renew").notNull().default(false),
+    status: text("status", { enum: WORK_ORDER_STATUSES }).notNull().default("draft"),
+    offeredAt: timestamp("offered_at", { withTimezone: false }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: false }),
+    acceptedByUserId: text("accepted_by_user_id"),
+    acceptedTermsHash: text("accepted_terms_hash"),
+    contractorName: text("contractor_name"),
+    contractorEmail: text("contractor_email"),
+    representativeName: text("representative_name"),
+    representativeEmail: text("representative_email"),
+    ipModel: text("ip_model"),
+    preparedDocumentUrl: text("prepared_document_url"),
+    documentId: text("document_id"),
+    documentFields: text("document_fields"),
+    signatureMethod: text("signature_method", { enum: SIGNATURE_METHODS }),
+    signers: text("signers"),
+    signedAt: timestamp("signed_at", { withTimezone: false }),
+    payeeConfirmedAt: timestamp("payee_confirmed_at", { withTimezone: false }),
+    payeeConfirmedBy: text("payee_confirmed_by"),
+    documentSha256: text("document_sha256"),
     documentUrl: text("document_url"),
-    closedAt: timestamp("closed_at", { withTimezone: false }),
+    esignEnvelopeId: text("esign_envelope_id"),
+    esignBuilderUrl: text("esign_builder_url"),
+    esignRepresentativeUrl: text("esign_representative_url"),
+    esignError: text("esign_error"),
+    activatedAt: timestamp("activated_at", { withTimezone: false }),
+    activatedBy: text("activated_by"),
+    lastCollectedAt: timestamp("last_collected_at", { withTimezone: false }),
+    endingSoonAt: timestamp("ending_soon_at", { withTimezone: false }),
+    autoDraftedFor: date("auto_drafted_for"),
+    renewedFrom: text("renewed_from"),
+    renewalRoot: text("renewal_root"),
+    renewalSeq: integer("renewal_seq").notNull().default(1),
+    renewalStatus: text("renewal_status", { enum: RENEWAL_STATUSES }),
+    renewalAssessment: text("renewal_assessment"),
+    renewalDecidedBy: text("renewal_decided_by"),
+    renewalDecidedAt: timestamp("renewal_decided_at", { withTimezone: false }),
+    renewalNote: text("renewal_note"),
+    renewedTo: text("renewed_to"),
     createdBy: text("created_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
-    organizationIdx: index("work_orders_organization").on(t.organizationId),
-    nearAccountIdx: index("work_orders_near_account").on(t.nearAccount),
+    organizationCode: uniqueIndex("work_orders_organization_code").on(t.organizationId, t.code),
+    organizationStatus: index("work_orders_organization_status").on(t.organizationId, t.status),
+    builderIdx: index("work_orders_builder").on(t.builderNearAccount),
+    projectIdx: index("work_orders_project").on(t.projectId),
   }),
 );
 
 export type WorkOrderRow = typeof workOrders.$inferSelect;
 
-export const workOrderLines = pgTable(
-  "work_order_lines",
+export const EVIDENCE_KINDS = [
+  "assigned_issue",
+  "merged_pr",
+  "unlinked_pr",
+  "review",
+  "manual",
+] as const;
+
+export const workOrderEvidence = pgTable(
+  "work_order_evidence",
   {
+    id: text("id").primaryKey(),
     workOrderId: text("work_order_id")
       .notNull()
       .references(() => workOrders.id, { onDelete: "cascade" }),
-    projectId: text("project_id").notNull(),
-    tokenId: text("token_id").notNull(),
-    amount: text("amount").notNull(),
+    kind: text("kind", { enum: EVIDENCE_KINDS }).notNull(),
+    repo: text("repo"),
+    number: integer("number"),
+    url: text("url").notNull(),
+    title: text("title").notNull(),
+    state: text("state").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: false }),
+    assignedAt: timestamp("assigned_at", { withTimezone: false }),
+    assignedBy: text("assigned_by"),
+    authorized: boolean("authorized").notNull().default(false),
+    confirmed: boolean("confirmed").notNull().default(false),
+    flags: text("flags").notNull().default("[]"),
+    links: text("links").notNull().default("[]"),
+    details: text("details").notNull().default("{}"),
+    collectedAt: timestamp("collected_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
   (t) => ({
-    pk: primaryKey({ columns: [t.workOrderId, t.projectId, t.tokenId] }),
-    projectIdx: index("work_order_lines_project").on(t.projectId),
+    unique: uniqueIndex("work_order_evidence_unique").on(t.workOrderId, t.kind, t.url),
   }),
 );
 
-export type WorkOrderLineRow = typeof workOrderLines.$inferSelect;
+export type WorkOrderEvidenceRow = typeof workOrderEvidence.$inferSelect;
+
+export const COMPENSATION_REQUEST_STATUSES = [
+  "draft",
+  "submitted",
+  "approved",
+  "paying",
+  "proposed",
+  "paid",
+  "rejected",
+  "failed",
+] as const;
+
+export const AUTO_DECISIONS = ["manual", "veto_window", "auto_pay"] as const;
+
+export const TRUST_MODES = ["off", "suggest", "auto"] as const;
+
+export const compensationRequests = pgTable(
+  "compensation_requests",
+  {
+    id: text("id").primaryKey(),
+    workOrderId: text("work_order_id")
+      .notNull()
+      .references(() => workOrders.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    coversFrom: date("covers_from").notNull(),
+    coversTo: date("covers_to").notNull(),
+    status: text("status", { enum: COMPENSATION_REQUEST_STATUSES }).notNull().default("draft"),
+    requestedAmount: text("requested_amount").notNull(),
+    approvedAmount: text("approved_amount"),
+    approvedBy: text("approved_by"),
+    decidedAt: timestamp("decided_at", { withTimezone: false }),
+    note: text("note"),
+    summary: text("summary"),
+    contributionsMd: text("contributions_md").notNull(),
+    assessmentMd: text("assessment_md").notNull(),
+    assessmentEdited: boolean("assessment_edited").notNull().default(false),
+    manualItems: text("manual_items").notNull().default("[]"),
+    evidenceIds: text("evidence_ids"),
+    reportMd: text("report_md"),
+    reportSha256: text("report_sha256"),
+    billingId: text("billing_id").references(() => billings.id, { onDelete: "set null" }),
+    payoutTokenId: text("payout_token_id"),
+    payoutAmount: text("payout_amount"),
+    priceUsd: text("price_usd"),
+    pricedAt: timestamp("priced_at", { withTimezone: false }),
+    proposalId: text("proposal_id"),
+    autoPayBlockedReason: text("auto_pay_blocked_reason"),
+    autoPayBlockedAt: timestamp("auto_pay_blocked_at", { withTimezone: false }),
+    autoPayTriedAt: timestamp("auto_pay_tried_at", { withTimezone: false }),
+    submittedAt: timestamp("submitted_at", { withTimezone: false }),
+    paidAt: timestamp("paid_at", { withTimezone: false }),
+    trust: text("trust"),
+    autoApproveAt: timestamp("auto_approve_at", { withTimezone: false }),
+    autoDecision: text("auto_decision", { enum: AUTO_DECISIONS }),
+    autoStoppedBy: text("auto_stopped_by"),
+    autoStoppedAt: timestamp("auto_stopped_at", { withTimezone: false }),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    sequence: uniqueIndex("compensation_requests_sequence").on(t.workOrderId, t.seq),
+    statusIdx: index("compensation_requests_status").on(t.status),
+    autoApproveIdx: index("compensation_requests_auto_approve_at").on(t.autoApproveAt),
+  }),
+);
+
+export type CompensationRequestRow = typeof compensationRequests.$inferSelect;
+
+export const workOrderJobLock = pgTable("work_order_job_lock", {
+  id: text("id").primaryKey(),
+  holder: text("holder").notNull(),
+  until: timestamp("until", { withTimezone: false }).notNull(),
+});
+
+export const workOrderIntegrations = pgTable("work_order_integrations", {
+  organizationId: text("organization_id").primaryKey(),
+  googleTemplateId: text("google_template_id"),
+  googleDocumentsFolderId: text("google_documents_folder_id"),
+  googleSignedFolderId: text("google_signed_folder_id"),
+  googleCheckedAt: timestamp("google_checked_at", { withTimezone: false }),
+  googleLastError: text("google_last_error"),
+  trustMode: text("trust_mode", { enum: TRUST_MODES }).notNull().default("suggest"),
+  trustVetoHours: integer("trust_veto_hours").notNull().default(24),
+  updatedBy: text("updated_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
+
+export type WorkOrderIntegrationRow = typeof workOrderIntegrations.$inferSelect;
+
+export const workOrderOutbox = pgTable(
+  "work_order_outbox",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    workOrderId: text("work_order_id"),
+    eventType: text("event_type").notNull(),
+    payload: text("payload").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: false })
+      .notNull()
+      .default(sql`now()`),
+    deliveredAt: timestamp("delivered_at", { withTimezone: false }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    due: index("work_order_outbox_due").on(t.deliveredAt, t.nextAttemptAt),
+    organizationIdx: index("work_order_outbox_organization").on(t.organizationId, t.createdAt),
+  }),
+);
+
+export type WorkOrderOutboxRow = typeof workOrderOutbox.$inferSelect;
+
+export const DRIVE_FILE_OUTCOMES = ["attached", "mismatch", "unmatched", "error"] as const;
+
+export const workOrderDriveFiles = pgTable(
+  "work_order_drive_files",
+  {
+    fileId: text("file_id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    name: text("name").notNull(),
+    url: text("url"),
+    sha256: text("sha256"),
+    workOrderId: text("work_order_id"),
+    outcome: text("outcome", { enum: DRIVE_FILE_OUTCOMES }).notNull(),
+    note: text("note"),
+    processedAt: timestamp("processed_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    organizationIdx: index("work_order_drive_files_organization").on(
+      t.organizationId,
+      t.processedAt,
+    ),
+  }),
+);
+
+export type WorkOrderDriveFileRow = typeof workOrderDriveFiles.$inferSelect;
+
+export const WORK_ORDER_DOCUMENT_KINDS = ["offered", "signed"] as const;
+
+export const workOrderDocuments = pgTable(
+  "work_order_documents",
+  {
+    id: text("id").primaryKey(),
+    workOrderId: text("work_order_id")
+      .notNull()
+      .references(() => workOrders.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: WORK_ORDER_DOCUMENT_KINDS }).notNull(),
+    fileName: text("file_name").notNull(),
+    pdf: text("pdf").notNull(),
+    sha256: text("sha256").notNull(),
+    termsHash: text("terms_hash").notNull(),
+    driveFileId: text("drive_file_id"),
+    driveUrl: text("drive_url"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    workOrderIdx: index("work_order_documents_work_order").on(t.workOrderId, t.createdAt),
+  }),
+);
+
+export type WorkOrderDocumentRow = typeof workOrderDocuments.$inferSelect;
+
+export const SIGNER_ROLES = ["contractor", "representative"] as const;
+
+export const workOrderSignatures = pgTable(
+  "work_order_signatures",
+  {
+    id: text("id").primaryKey(),
+    workOrderId: text("work_order_id")
+      .notNull()
+      .references(() => workOrders.id, { onDelete: "cascade" }),
+    documentSha256: text("document_sha256").notNull(),
+    role: text("role", { enum: SIGNER_ROLES }).notNull(),
+    name: text("name").notNull(),
+    email: text("email"),
+    userId: text("user_id"),
+    nearAccount: text("near_account"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    signedAt: timestamp("signed_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    once: uniqueIndex("work_order_signatures_once").on(t.workOrderId, t.documentSha256, t.role),
+  }),
+);
+
+export type WorkOrderSignatureRow = typeof workOrderSignatures.$inferSelect;
+
+export const payoutAgents = pgTable("payout_agents", {
+  organizationId: text("organization_id").primaryKey(),
+  ownerAccountId: text("owner_account_id").notNull(),
+  agentId: text("agent_id"),
+  grantTokenEnc: text("grant_token_enc"),
+  grantExpiresAt: timestamp("grant_expires_at", { withTimezone: false }),
+  grantRemindedFor: timestamp("grant_reminded_for", { withTimezone: false }),
+  monthlyBudgetUsd: text("monthly_budget_usd").notNull(),
+  maxPayoutNear: text("max_payout_near").notNull(),
+  updatedBy: text("updated_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
+
+export type PayoutAgentRow = typeof payoutAgents.$inferSelect;
+
+export const PAYOUT_ACTIONS = [
+  "create_agent",
+  "issue_grant",
+  "sync_policy",
+  "freeze",
+  "unfreeze",
+] as const;
+
+export const payoutIntents = pgTable("payout_intents", {
+  correlationId: text("correlation_id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  action: text("action", { enum: PAYOUT_ACTIONS }).notNull(),
+  intentType: text("intent_type").notNull(),
+  intent: text("intent").notNull(),
+  signerAccountId: text("signer_account_id").notNull(),
+  signerPublicKey: text("signer_public_key").notNull(),
+  agentId: text("agent_id"),
+  grantTokenEnc: text("grant_token_enc"),
+  grantExpiresAt: timestamp("grant_expires_at", { withTimezone: false }),
+  status: text("status").notNull(),
+  failureCode: text("failure_code"),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
+
+export type PayoutIntentRow = typeof payoutIntents.$inferSelect;
+
+export const AGENT_PAYOUT_STATUSES = [
+  "sending",
+  "queued",
+  "processing",
+  "paid",
+  "failed",
+  "refused",
+  "uncertain",
+  "needs_review",
+] as const;
+
+export const agentPayouts = pgTable(
+  "agent_payouts",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    requestId: text("request_id").notNull(),
+    attempt: integer("attempt").notNull(),
+    status: text("status", { enum: AGENT_PAYOUT_STATUSES }).notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestBody: text("request_body").notNull(),
+    correlationId: text("correlation_id"),
+    recipient: text("recipient").notNull(),
+    amount: text("amount").notNull(),
+    assetId: text("asset_id").notNull(),
+    txHash: text("tx_hash"),
+    txUrl: text("tx_url"),
+    reason: text("reason"),
+    provenUnsent: boolean("proven_unsent").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    attempt: uniqueIndex("agent_payouts_attempt").on(t.requestId, t.attempt),
+    statusIdx: index("agent_payouts_status").on(t.status),
+  }),
+);
+
+export type AgentPayoutRow = typeof agentPayouts.$inferSelect;

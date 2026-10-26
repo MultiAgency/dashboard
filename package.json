@@ -90,6 +90,7 @@
     "db:assign-owner": "tsx scripts/assign-organization-owner.ts",
     "db:migrate:project-ownership": "tsx scripts/migrate-project-ownership.ts",
     "db:seed:dev": "bun scripts/seed-dev.ts",
+    "work-orders:run": "bun --env-file=.env scripts/run-work-orders.ts",
     "types:gen": "node node_modules/.bin/bos types gen && bun scripts/ensure-auth-types.ts",
     "postinstall": "bun run types:gen || true",
     "changeset": "changeset",

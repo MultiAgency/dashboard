@@ -2,17 +2,20 @@ import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import type { PluginContext } from "../lib/organizations";
 import type { AgencyService } from "./agency";
+import type { AgreementView } from "./agreements";
 import type { BillingsService } from "./billings";
 import type { ProjectLedgers } from "./ledger";
-import type {
-  AgencyScope,
-  OrganizationAccessService,
-  SharedEngagement,
-  TreasuryScope,
+import {
+  type AgencyScope,
+  hasRole,
+  type OrganizationAccessService,
+  ROLE_MATRIX,
+  type SharedEngagement,
+  type TreasuryScope,
 } from "./organization-access";
 import type { Project, ProjectDirectory } from "./project-directory";
 import { sumByToken } from "./report-tokens";
-import type { ReportsService } from "./reports";
+import { clientSafe, type ReportInput, type ReportsService, type ReportViewer } from "./reports";
 
 const notFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
 
@@ -24,6 +27,39 @@ function withTreasury(scope: AgencyScope): TreasuryScope | null {
   return scope.agencyDao ? (scope as TreasuryScope) : null;
 }
 
+type ClientReportInput = {
+  engagementId: string;
+  agreementId?: string;
+  projectId?: string;
+  note?: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+function clientReportInput(engagement: SharedEngagement, input: ClientReportInput): ReportInput {
+  if (input.projectId) assertShared(engagement, input.projectId);
+  return {
+    engagementId: engagement.engagement.id,
+    agreementId: input.agreementId,
+    projectId: input.projectId,
+    forClient: true,
+    note: input.note,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    subcontractorDao:
+      engagement.engagement.kind === "subcontract" ? (engagement.viewerAgencyDao ?? "") : undefined,
+  };
+}
+
+function clientViewer(context: PluginContext, engagement: SharedEngagement): ReportViewer {
+  return {
+    organizationId: engagement.engagement.clientOrganizationId,
+    userId: context.userId ?? engagement.scope.actorId,
+    canManage: hasRole(ROLE_MATRIX.manage, engagement.viewerRole),
+    side: "client",
+  };
+}
+
 export function createClientPortalService(
   access: OrganizationAccessService,
   agency: AgencyService,
@@ -31,6 +67,7 @@ export function createClientPortalService(
   reports: ReportsService,
   directory: ProjectDirectory,
   projectLedgers: ProjectLedgers,
+  agreementsOf: (engagementId: string) => Promise<AgreementView[]> = async () => [],
 ) {
   const shared = (context: PluginContext, engagementId: string) =>
     Effect.tryPromise({
@@ -133,49 +170,54 @@ export function createClientPortalService(
         });
       }),
 
-    generateReport: (
-      context: PluginContext,
-      input: {
-        engagementId: string;
-        projectId?: string;
-        note?: string;
-        startDate?: string;
-        endDate?: string;
-      },
-    ) =>
+    previewReport: (context: PluginContext, input: ClientReportInput) =>
       Effect.gen(function* () {
         const engagement = yield* shared(context, input.engagementId);
-        if (input.projectId) assertShared(engagement, input.projectId);
-        return yield* reports.generateSaved(
+        const report = yield* reports.generate(
           engagement.scope,
-          {
-            engagementId: engagement.engagement.id,
-            projectId: input.projectId,
-            forClient: true,
-            note: input.note,
-            startDate: input.startDate,
-            endDate: input.endDate,
-            subcontractorDao:
-              engagement.engagement.kind === "subcontract"
-                ? (engagement.viewerAgencyDao ?? "")
-                : undefined,
-          },
+          clientReportInput(engagement, input),
+        );
+        return clientSafe(report);
+      }),
+
+    generateReport: (context: PluginContext, input: ClientReportInput) =>
+      Effect.gen(function* () {
+        const engagement = yield* shared(context, input.engagementId);
+        const report = yield* reports.generateSaved(
+          engagement.scope,
+          clientReportInput(engagement, input),
           {
             organizationId: engagement.engagement.clientOrganizationId,
             userId: context.userId ?? engagement.scope.actorId,
           },
         );
+        return clientSafe(report);
       }),
 
     listReports: async (context: PluginContext, input: { engagementId: string }) => {
-      const { engagement } = await access.sharedWith(context, input.engagementId);
-      return reports.listSaved(engagement.clientOrganizationId, { engagementId: engagement.id });
+      const engagement = await access.sharedWith(context, input.engagementId);
+      return reports.listForClient(engagement.engagement, clientViewer(context, engagement));
     },
 
     getReport: async (context: PluginContext, input: { engagementId: string; id: string }) => {
-      const { engagement } = await access.sharedWith(context, input.engagementId);
-      return reports.getSaved(engagement.clientOrganizationId, input.id, {
-        engagementId: engagement.id,
+      const engagement = await access.sharedWith(context, input.engagementId);
+      return reports.getForClient(
+        engagement.engagement,
+        input.id,
+        clientViewer(context, engagement),
+      );
+    },
+
+    listAgreements: async (context: PluginContext, input: { engagementId: string }) => {
+      const engagement = await access.sharedWith(context, input.engagementId);
+      if (engagement.engagement.kind !== "client") return { data: [] };
+      return { data: await agreementsOf(engagement.engagement.id) };
+    },
+
+    deleteReport: async (context: PluginContext, input: { engagementId: string; id: string }) => {
+      const engagement = await access.sharedWith(context, input.engagementId);
+      return reports.deleteSaved(clientViewer(context, engagement), input.id, {
+        engagementId: engagement.engagement.id,
       });
     },
 

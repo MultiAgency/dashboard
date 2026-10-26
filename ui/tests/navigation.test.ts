@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { allocationPlanEnabled } from "../src/lib/change-orders";
 import {
   availableViews,
   clientEngagementSections,
@@ -6,23 +7,14 @@ import {
   viewForPath,
   workspaceNavigation,
 } from "../src/lib/navigation";
+import { prepaymentsEnabled } from "../src/lib/prepayments";
+
+// The plan test is skipped while the Allocation plan is omitted for now; see allocationPlanEnabled.
 
 const labels = (...args: Parameters<typeof workspaceNavigation>) =>
   workspaceNavigation(...args).flatMap((g) => g.items.map((i) => i.label));
 
 describe("workspaceNavigation", () => {
-  it("shows Work orders only to a platform admin who manages the Agency", () => {
-    const access = { hasAgencyDao: true, hasAgencySections: true, hasClientSections: false };
-
-    expect(labels({ ...access, role: "owner", isPlatformAdmin: true }, "agency")).toContain(
-      "Work orders",
-    );
-    expect(labels({ ...access, role: "owner" }, "agency")).not.toContain("Work orders");
-    expect(labels({ ...access, role: "member", isPlatformAdmin: true }, "agency")).not.toContain(
-      "Work orders",
-    );
-  });
-
   it.each([
     ["nothing to someone without a role", null, true, true, []],
     [
@@ -30,21 +22,31 @@ describe("workspaceNavigation", () => {
       "owner",
       false,
       false,
-      ["Projects", "Reports", "Engagements", "Builders", "Team", "Settings"],
+      ["Projects", "Reports", "Engagements", "Builders", "Work orders", "Team", "Settings"],
     ],
     [
       "money only with an Agency DAO",
       "admin",
       true,
       false,
-      ["Projects", "Reports", "Engagements", "Builders", "Team", "Billings", "Budgets", "Settings"],
+      [
+        "Projects",
+        "Reports",
+        "Engagements",
+        "Builders",
+        "Work orders",
+        "Team",
+        "Billings",
+        "Budgets",
+        "Settings",
+      ],
     ],
     [
       "members the screens they can use, without management links",
       "member",
       true,
       true,
-      ["Projects", "Reports", "Builders", "Billings", "Budgets"],
+      ["Projects", "Reports", "Builders", "Work orders", "Billings", "Budgets"],
     ],
   ] as const)("gives %s", (_, role, hasAgencyDao, hasClientSections, expected) => {
     expect(
@@ -103,16 +105,34 @@ describe("viewing role", () => {
 });
 
 describe("clientEngagementSections", () => {
-  it("gives Client members every section of their Engagement, Prepayments and the plan included", () => {
-    expect(clientEngagementSections("e1", "client")).toEqual([
-      { to: "/client/e1", label: "Overview" },
-      { to: "/client/e1/projects", label: "Shared projects" },
-      { to: "/client/e1/prepayments", label: "Prepayments" },
-      { to: "/client/e1/plan", label: "Plan & Change orders" },
-      { to: "/client/e1/billings", label: "Billings" },
-      { to: "/client/e1/reports", label: "Reports" },
-      { to: "/client/e1/ideas", label: "Ideas" },
-    ]);
+  it.skipIf(!allocationPlanEnabled)(
+    "gives Client members every section of their Engagement, Prepayments and the plan included",
+    () => {
+      expect(clientEngagementSections("e1", "client")).toEqual([
+        { to: "/client/e1", label: "Overview" },
+        { to: "/client/e1/projects", label: "Shared projects" },
+        { to: "/client/e1/prepayments", label: "Prepayments" },
+        { to: "/client/e1/plan", label: "Plan & Change orders" },
+        { to: "/client/e1/billings", label: "Billings" },
+        { to: "/client/e1/reports", label: "Reports" },
+        { to: "/client/e1/ideas", label: "Ideas" },
+      ]);
+    },
+  );
+
+  it.skipIf(allocationPlanEnabled)(
+    "leaves out the plan while the Allocation plan is omitted",
+    () => {
+      expect(clientEngagementSections("e1", "client").map((s) => s.label)).not.toContain(
+        "Plan & Change orders",
+      );
+    },
+  );
+
+  it.skipIf(prepaymentsEnabled)("leaves out Prepayments while they are omitted", () => {
+    expect(clientEngagementSections("e1", "client").map((s) => s.label)).not.toContain(
+      "Prepayments",
+    );
   });
 
   it("leaves out ideas for a Subcontractor, who does not submit ideas to the hiring Agency", () => {

@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import {
   Alert,
   AlertDescription,
-  Badge,
   Budget,
   Button,
   Card,
@@ -27,14 +26,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components";
+import {
+  BudgetEntryActions,
+  DeletedBudgetEntries,
+  EntryDetails,
+} from "@/components/admin/budget-entry-actions";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Empty, Field } from "@/components/admin-form";
 import { useBudgetActions } from "@/hooks/use-budget-actions";
+import { useMeRoles } from "@/hooks/use-me-roles";
 import {
   reconcileBudgetAuditFilters,
   resolveBudgetAuditDropdownOptions,
 } from "@/lib/admin-filter-graph";
 import { useApiClient } from "@/lib/api";
+import { formatPeriod } from "@/lib/budget-periods";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminBudgetsLogQueryKey,
@@ -43,10 +49,12 @@ import {
   adminProjectsForTokenQueryKey,
   adminProjectsListQueryOptions,
   adminTokensQueryOptions,
+  agreementsListQueryOptions,
   clientPortalProjectBudgetQueryOptions,
   engagementsListQueryOptions,
   refreshAfter,
 } from "@/lib/queries";
+import { isoDate } from "@/lib/report-dates";
 import { CUSTOM_TOKEN, deriveBaseAmount, TokenAmountFields } from "./token-amount-fields";
 
 function budgetVerb(amount: string, relatedBudgetId: string | null): string {
@@ -55,16 +63,34 @@ function budgetVerb(amount: string, relatedBudgetId: string | null): string {
   return negative ? "deallocate" : "budget";
 }
 
-function VerbTag({ verb }: { verb: string }) {
+function formatTimestamp(value: string | Date): string {
+  return new Date(value).toISOString().slice(0, 16).replace("T", " ");
+}
+
+function EntryDate({ value }: { value: string | Date }) {
+  const full = formatTimestamp(value);
   return (
-    <Badge variant={verb === "deallocate" || verb === "transfer out" ? "outline" : "secondary"}>
-      {verb}
-    </Badge>
+    <TableCell className="whitespace-nowrap text-muted-foreground tabular-nums" title={full}>
+      {full.slice(0, 10)}
+    </TableCell>
   );
 }
 
-function formatTimestamp(value: string | Date): string {
-  return new Date(value).toISOString().slice(0, 16).replace("T", " ");
+function EntryAmount({
+  amount,
+  tokenId,
+  relatedBudgetId,
+}: {
+  amount: string;
+  tokenId: string;
+  relatedBudgetId: string | null;
+}) {
+  return (
+    <TableCell className="whitespace-nowrap">
+      <span className="block font-medium tabular-nums">{formatTokenAmount(amount, tokenId)}</span>
+      <span className="block text-muted-foreground">{budgetVerb(amount, relatedBudgetId)}</span>
+    </TableCell>
+  );
 }
 
 function ListSkeleton() {
@@ -161,6 +187,10 @@ function AgencyAuditLogPanel({
 }) {
   const apiClient = useApiClient();
   const projectById = new Map(projects.map((p) => [p.id, p] as const));
+  const agreementsQuery = useQuery(agreementsListQueryOptions(apiClient, {}));
+  const agreementById = new Map(
+    (agreementsQuery.data?.data ?? []).map((agreement) => [agreement.id, agreement] as const),
+  );
 
   const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
@@ -267,6 +297,7 @@ function AgencyAuditLogPanel({
 
   const rows = logQuery.data?.pages.flatMap((p) => p.data) ?? [];
   const filtersActive = filterProject !== "" || filterToken !== "" || filterEngagement !== "";
+  const { canAccessAdmin } = useMeRoles();
 
   return (
     <Card>
@@ -339,11 +370,15 @@ function AgencyAuditLogPanel({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead scope="col">When</TableHead>
-                  <TableHead scope="col">Event</TableHead>
+                  <TableHead scope="col">Date</TableHead>
                   <TableHead scope="col">Amount</TableHead>
                   <TableHead scope="col">Project</TableHead>
                   <TableHead scope="col">Details</TableHead>
+                  {canAccessAdmin && (
+                    <TableHead scope="col">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -351,16 +386,13 @@ function AgencyAuditLogPanel({
                   const project = projectById.get(a.projectId);
                   return (
                     <TableRow key={a.id}>
-                      <TableCell className="text-muted-foreground tabular-nums">
-                        {formatTimestamp(a.createdAt)}
-                      </TableCell>
-                      <TableCell>
-                        <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
-                      </TableCell>
-                      <TableCell className="font-medium tabular-nums">
-                        {formatTokenAmount(a.amount, a.tokenId)}
-                      </TableCell>
-                      <TableCell>
+                      <EntryDate value={a.createdAt} />
+                      <EntryAmount
+                        amount={a.amount}
+                        tokenId={a.tokenId}
+                        relatedBudgetId={a.relatedBudgetId}
+                      />
+                      <TableCell className="whitespace-normal">
                         {project ? project.title : a.projectId}
                         {a.engagementId && (
                           <span className="block text-muted-foreground">
@@ -368,13 +400,17 @@ function AgencyAuditLogPanel({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="whitespace-normal text-muted-foreground">
-                        {a.note && <span className="block text-foreground">{a.note}</span>}
-                        <span className="block">by {a.actorAccountId}</span>
-                        {a.fundingDaoAccountId && (
-                          <span className="block">from {a.fundingDaoAccountId}</span>
-                        )}
+                      <TableCell className="whitespace-normal">
+                        <EntryDetails
+                          entry={a}
+                          agreement={agreementById.get(a.agreementId ?? "")}
+                        />
                       </TableCell>
+                      {canAccessAdmin && (
+                        <TableCell>
+                          <BudgetEntryActions entry={a} tokens={tokens} />
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
@@ -392,6 +428,10 @@ function AgencyAuditLogPanel({
             label={filtersActive ? "No events match these filters" : "No budget events yet"}
           />
         )}
+        <DeletedBudgetEntries
+          projectId={filterProject || undefined}
+          projectTitleOf={(id) => projectById.get(id)?.title ?? id}
+        />
       </CardContent>
     </Card>
   );
@@ -410,6 +450,7 @@ function TransferPanel({
   const [customTokenId, setCustomTokenId] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [effectiveOn, setEffectiveOn] = useState(() => isoDate(new Date()));
 
   const tokensQuery = useQuery(adminTokensQueryOptions(apiClient));
   const tokens = tokensQuery.data?.tokens ?? [];
@@ -447,6 +488,7 @@ function TransferPanel({
         tokenId: effectiveTokenId,
         amount: amountInBase,
         note: note.trim() || undefined,
+        effectiveOn: effectiveOn || undefined,
       }),
     onSuccess: async () => {
       await refreshAfter(queryClient, {
@@ -480,8 +522,7 @@ function TransferPanel({
           <h2>Transfer between projects</h2>
         </CardTitle>
         <CardDescription>
-          Moves your own budget atomically, as two linked audit rows. Budget attributed to a
-          Client's Engagement moves only through Change orders.
+          Moves budget between projects atomically, as two linked audit rows.
         </CardDescription>
       </CardHeader>
       <form
@@ -552,6 +593,15 @@ function TransferPanel({
                 )}
               </dl>
             )}
+            <Field label="Budget date" htmlFor="transfer-effective-on">
+              <Input
+                id="transfer-effective-on"
+                type="date"
+                value={effectiveOn}
+                onChange={(e) => setEffectiveOn(e.target.value)}
+                disabled={isPending}
+              />
+            </Field>
             <Field label="Note" htmlFor="transfer-note">
               <Input
                 id="transfer-note"
@@ -596,6 +646,7 @@ export function ProjectBudgetPanel({
   const apiClient = useApiClient();
   const clientPortal = engagementId !== undefined;
   const { allocate, deallocate } = useBudgetActions(projectId);
+  const { canAccessAdmin } = useMeRoles();
 
   const adminBudgetQuery = useQuery({
     ...adminProjectBudgetQueryOptions(apiClient, projectId),
@@ -615,6 +666,13 @@ export function ProjectBudgetPanel({
   });
 
   const budgetRows = budgetsQuery.data?.pages.flatMap((p) => p.data) ?? [];
+  const agreementsQuery = useQuery({
+    ...agreementsListQueryOptions(apiClient, { projectId }),
+    enabled: !readOnly && !clientPortal,
+  });
+  const agreements = agreementsQuery.data?.data ?? [];
+  const agreementById = new Map(agreements.map((agreement) => [agreement.id, agreement] as const));
+  const [agreementId, setAgreementId] = useState("");
 
   const tokensQuery = useQuery({
     ...adminTokensQueryOptions(apiClient),
@@ -626,6 +684,7 @@ export function ProjectBudgetPanel({
   const [customTokenId, setCustomTokenId] = useState("");
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [effectiveOn, setEffectiveOn] = useState(() => isoDate(new Date()));
 
   const isCustom = tokenSelection === CUSTOM_TOKEN;
   const effectiveTokenId = isCustom ? customTokenId.trim() : tokenSelection;
@@ -648,6 +707,8 @@ export function ProjectBudgetPanel({
           tokenId: effectiveTokenId,
           amount: amountInBase,
           note: note.trim() || undefined,
+          effectiveOn: effectiveOn || undefined,
+          agreementId: agreementId || undefined,
         },
         {
           onSuccess: () => {
@@ -667,6 +728,8 @@ export function ProjectBudgetPanel({
           tokenId: effectiveTokenId,
           amount: amountInBase,
           note: note.trim() || undefined,
+          effectiveOn: effectiveOn || undefined,
+          agreementId: agreementId || undefined,
         },
         {
           onSuccess: () => {
@@ -679,7 +742,12 @@ export function ProjectBudgetPanel({
   };
 
   const isPending = createMutation.isPending || deallocateMutation.isPending;
-  const canSubmit = effectiveTokenId.length > 0 && isValidAmount && !isPending;
+  const agreementOptions = agreements.filter((a) => a.tokenId === effectiveTokenId);
+  const canSubmit =
+    effectiveTokenId.length > 0 &&
+    isValidAmount &&
+    (!agreementId || agreementOptions.some((a) => a.id === agreementId)) &&
+    !isPending;
 
   if (budgetQuery.isError) {
     return <AdminError error={budgetQuery.error} />;
@@ -785,6 +853,34 @@ export function ProjectBudgetPanel({
                     )}
                   </p>
                 )}
+                {agreementOptions.length > 0 && (
+                  <Field label="Agreement (optional)" htmlFor="budget-agreement">
+                    <ChoiceSelect
+                      id="budget-agreement"
+                      value={agreementId}
+                      onValueChange={(value) => {
+                        setAgreementId(value);
+                        const picked = agreementById.get(value);
+                        if (picked) setEffectiveOn(picked.startDate);
+                      }}
+                      emptyLabel="No agreement"
+                      disabled={isPending}
+                      options={agreementOptions.map((a) => ({
+                        value: a.id,
+                        label: `${a.title} (${formatPeriod(a.startDate, a.endDate)})`,
+                      }))}
+                    />
+                  </Field>
+                )}
+                <Field label="Budget date" htmlFor="budget-effective-on">
+                  <Input
+                    id="budget-effective-on"
+                    type="date"
+                    value={effectiveOn}
+                    onChange={(e) => setEffectiveOn(e.target.value)}
+                    disabled={isPending}
+                  />
+                </Field>
                 <Field label="Note" htmlFor="budget-note">
                   <Input
                     id="budget-note"
@@ -829,31 +925,36 @@ export function ProjectBudgetPanel({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead scope="col">When</TableHead>
-                      <TableHead scope="col">Event</TableHead>
+                      <TableHead scope="col">Date</TableHead>
                       <TableHead scope="col">Amount</TableHead>
                       <TableHead scope="col">Details</TableHead>
+                      {canAccessAdmin && (
+                        <TableHead scope="col">
+                          <span className="sr-only">Actions</span>
+                        </TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {budgetRows.map((a) => (
                       <TableRow key={a.id}>
-                        <TableCell className="text-muted-foreground tabular-nums">
-                          {formatTimestamp(a.createdAt)}
+                        <EntryDate value={a.createdAt} />
+                        <EntryAmount
+                          amount={a.amount}
+                          tokenId={a.tokenId}
+                          relatedBudgetId={a.relatedBudgetId}
+                        />
+                        <TableCell className="whitespace-normal">
+                          <EntryDetails
+                            entry={a}
+                            agreement={agreementById.get(a.agreementId ?? "")}
+                          />
                         </TableCell>
-                        <TableCell>
-                          <VerbTag verb={budgetVerb(a.amount, a.relatedBudgetId)} />
-                        </TableCell>
-                        <TableCell className="font-medium tabular-nums">
-                          {formatTokenAmount(a.amount, a.tokenId)}
-                        </TableCell>
-                        <TableCell className="whitespace-normal text-muted-foreground">
-                          {a.note && <span className="block text-foreground">{a.note}</span>}
-                          <span className="block">by {a.actorAccountId}</span>
-                          {a.fundingDaoAccountId && (
-                            <span className="block">from {a.fundingDaoAccountId}</span>
-                          )}
-                        </TableCell>
+                        {canAccessAdmin && (
+                          <TableCell>
+                            <BudgetEntryActions entry={a} tokens={tokens} />
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -867,6 +968,7 @@ export function ProjectBudgetPanel({
             ) : (
               <Empty icon={<ListBulletsIcon aria-hidden />} label="No budget events yet" />
             )}
+            <DeletedBudgetEntries projectId={projectId} />
           </CardContent>
         </Card>
       )}

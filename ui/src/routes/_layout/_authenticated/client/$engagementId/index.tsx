@@ -17,7 +17,9 @@ import { AdminError } from "@/components/admin-error";
 import { AgentLinksCard } from "@/components/agent-links";
 import { PrepaidBalanceCard } from "@/components/prepayments";
 import { TokenAmountCell } from "@/components/token-amounts";
+import { agentLinksEnabled } from "@/lib/agent-links";
 import { useApiClient } from "@/lib/api";
+import { prepaymentsEnabled } from "@/lib/prepayments";
 import { clientPortalDashboardSummaryQueryOptions } from "@/lib/queries";
 import { tokenDisplayName } from "@/lib/report-amounts";
 import { cn } from "@/lib/utils";
@@ -95,8 +97,8 @@ function EngagementOverview() {
             </CardContent>
           )}
         </Card>
-        <PrepaidBalanceCard engagementId={engagement.id} />
-        <AgentLinksCard engagementId={engagement.id} />
+        {prepaymentsEnabled && <PrepaidBalanceCard engagementId={engagement.id} />}
+        {agentLinksEnabled && <AgentLinksCard engagementId={engagement.id} />}
       </div>
     </div>
   );

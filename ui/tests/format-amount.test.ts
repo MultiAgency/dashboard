@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { baseToDecimal, formatTokenAmount, parseDecimalToBase } from "../src/lib/format-amount";
+import {
+  baseToDecimal,
+  formatTokenAmount,
+  formatUsd,
+  parseDecimalToBase,
+} from "../src/lib/format-amount";
 
 const ONE_NEAR = "1000000000000000000000000";
 const HALF_NEAR = "500000000000000000000000";
@@ -64,6 +69,35 @@ describe("formatTokenAmount", () => {
 
   test("falls back to raw for invalid amount string", () => {
     expect(formatTokenAmount("not-a-number", "near")).toBe("not-a-number near");
+  });
+});
+
+describe("formatUsd", () => {
+  test("formats whole dollars without cents", () => {
+    expect(formatUsd("1000000")).toBe("$1");
+    expect(formatUsd("1234000000")).toBe("$1,234");
+  });
+
+  test("rounds half up to the nearest cent", () => {
+    expect(formatUsd("1234999")).toBe("$1.23");
+    expect(formatUsd("1235000")).toBe("$1.24");
+    expect(formatUsd("1999999")).toBe("$2");
+  });
+
+  test("shows amounts below a cent as <$0.01", () => {
+    expect(formatUsd("4999")).toBe("<$0.01");
+    expect(formatUsd("9999")).toBe("$0.01");
+    expect(formatUsd("1")).toBe("<$0.01");
+    expect(formatUsd("-1")).toBe("-<$0.01");
+  });
+
+  test("handles zero and negatives", () => {
+    expect(formatUsd("0")).toBe("$0");
+    expect(formatUsd("-1505000")).toBe("-$1.51");
+  });
+
+  test("falls back to raw for an invalid amount", () => {
+    expect(formatUsd("abc")).toBe("abc usd");
   });
 });
 

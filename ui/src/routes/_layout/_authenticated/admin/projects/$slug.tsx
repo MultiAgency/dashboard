@@ -46,6 +46,7 @@ import { ConnectTreasuryPrompt } from "@/components/connect-treasury-prompt";
 import { LoadError } from "@/components/load-error";
 import { PageHeader } from "@/components/page-header";
 import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
+import { WorkOrdersCard } from "@/components/work-orders/work-orders-card";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { nearnListingHref } from "@/lib/nearn";
@@ -231,7 +232,13 @@ function AdminProjectDetail() {
           {needsTreasury ? (
             <ConnectTreasuryPrompt />
           ) : agencyDao ? (
-            <ProjectBudgetPanel projectId={project.id} showAgencyBudgetLink />
+            <div className="flex flex-col gap-6">
+              <ProjectBudgetPanel projectId={project.id} showAgencyBudgetLink />
+              <WorkOrdersCard
+                filter={{ projectId: project.id }}
+                description="Builders contracted on this project: each work order's budget cap and what's committed under it."
+              />
+            </div>
           ) : null}
         </TabsContent>
 

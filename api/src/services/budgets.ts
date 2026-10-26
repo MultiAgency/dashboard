@@ -5,11 +5,16 @@ import type { Database } from "../db";
 import { cursorOf, cursorWhere } from "../db/cursor";
 import {
   type Budget,
+  type BudgetRevision,
+  budgetRevisions,
   budgets,
+  type ClientAgreement,
+  clientAgreements,
   engagementProjects,
   engagements,
   organizationDaos,
 } from "../db/schema";
+import { clientEngagementIdsForProject } from "./agreements";
 import {
   type BillingStatuses,
   type ChainStatusFetcher,
@@ -19,6 +24,12 @@ import {
 import type { TreasuryScope } from "./organization-access";
 import { lockEngagement, prepaidBalances } from "./prepaid-balance";
 import type { ProjectDirectory } from "./project-directory";
+
+// The Allocation plan and Change orders are omitted for now. Budget entries are allocated to
+// the Project, and a Client sees the budget of every Project shared with them. Recording a
+// Prepayment no longer writes Budget entries. The code stays in place; set this to true to
+// bring the plan-driven flow back.
+export const ALLOCATION_PLAN_ENABLED: boolean = false;
 
 export class BudgetInsufficientError extends Error {
   constructor(
@@ -31,6 +42,16 @@ export class BudgetInsufficientError extends Error {
       `Insufficient budget for project=${projectId} token=${tokenId}: sum=${currentSum.toString()} delta=${delta.toString()} would go negative`,
     );
     this.name = "BudgetInsufficientError";
+  }
+}
+
+export class BudgetEntryError extends Error {
+  constructor(
+    readonly reason: "NOT_FOUND" | "TRANSFER_NOT_EDITABLE" | "AMOUNT_NOT_POSITIVE",
+    message: string,
+  ) {
+    super(message);
+    this.name = "BudgetEntryError";
   }
 }
 
@@ -84,7 +105,8 @@ function requireOwnBudget(sums: LockedSums, projectId: string, tokenId: string, 
   if (sums.total + delta < 0n) {
     throw new BudgetInsufficientError(projectId, tokenId, sums.total, delta);
   }
-  if (sums.own + delta < 0n) {
+  // Omitted for now: without Change orders, Engagement-attributed budget moves like the Agency's own.
+  if (ALLOCATION_PLAN_ENABLED && sums.own + delta < 0n) {
     throw new EngagementBudgetError(
       "ENGAGEMENT_ATTRIBUTED",
       `Only ${sums.own.toString()} of this Project's ${tokenId} budget is the Agency's own. The rest is attributed to Engagements and moves only through Change orders.`,
@@ -103,8 +125,18 @@ export type BudgetListItem = Pick<
   | "relatedBudgetId"
   | "engagementId"
   | "fundingDaoAccountId"
+  | "effectiveOn"
+  | "agreementId"
   | "createdAt"
->;
+> & { lastEdit: BudgetEdit | null };
+
+export type BudgetEdit = {
+  changedAt: Date;
+  changedBy: string;
+  previousAmount: string;
+  previousNote: string | null;
+  previousEffectiveOn: string | null;
+};
 
 export interface ListBudgetsInput {
   projectIds: string[] | null;
@@ -137,6 +169,8 @@ export async function listBudgets(
       relatedBudgetId: budgets.relatedBudgetId,
       engagementId: budgets.engagementId,
       fundingDaoAccountId: budgets.fundingDaoAccountId,
+      effectiveOn: budgets.effectiveOn,
+      agreementId: budgets.agreementId,
       createdAt: budgets.createdAt,
     })
     .from(budgets)
@@ -151,11 +185,179 @@ export async function listBudgets(
     .orderBy(desc(budgets.createdAt), desc(budgets.id))
     .limit(input.limit);
 
+  const edits =
+    rows.length > 0
+      ? await db
+          .select()
+          .from(budgetRevisions)
+          .where(
+            and(
+              inArray(
+                budgetRevisions.budgetId,
+                rows.map((r) => r.id),
+              ),
+              eq(budgetRevisions.action, "edited"),
+            ),
+          )
+          .orderBy(desc(budgetRevisions.changedAt), desc(budgetRevisions.id))
+      : [];
+  const lastEdit = new Map<string, BudgetEdit>();
+  for (const edit of edits) {
+    if (lastEdit.has(edit.budgetId)) continue;
+    lastEdit.set(edit.budgetId, {
+      changedAt: edit.changedAt,
+      changedBy: edit.changedBy,
+      previousAmount: edit.amount,
+      previousNote: edit.note,
+      previousEffectiveOn: edit.effectiveOn,
+    });
+  }
+
   const last = rows[rows.length - 1];
   return {
-    data: rows,
+    data: rows.map((row) => ({ ...row, lastEdit: lastEdit.get(row.id) ?? null })),
     nextCursor: rows.length === input.limit && last ? cursorOf(last.createdAt, last.id) : null,
   };
+}
+
+async function lockBudget(tx: Database, id: string): Promise<Budget | null> {
+  const [row] = await tx.select().from(budgets).where(eq(budgets.id, id)).for("update");
+  return row ?? null;
+}
+
+async function recordRevision(
+  tx: Database,
+  row: Budget,
+  action: BudgetRevision["action"],
+  changedBy: string,
+) {
+  await tx.insert(budgetRevisions).values({
+    id: crypto.randomUUID(),
+    budgetId: row.id,
+    action,
+    projectId: row.projectId,
+    tokenId: row.tokenId,
+    amount: row.amount,
+    note: row.note,
+    effectiveOn: row.effectiveOn,
+    relatedBudgetId: row.relatedBudgetId,
+    engagementId: row.engagementId,
+    fundingDaoAccountId: row.fundingDaoAccountId,
+    agreementId: row.agreementId,
+    actorAccountId: row.actorAccountId,
+    budgetCreatedAt: row.createdAt,
+    changedBy,
+  });
+}
+
+export interface EditBudgetInput {
+  id: string;
+  amount?: string;
+  note?: string | null;
+  effectiveOn?: string | null;
+  agreementId?: string | null;
+  actorAccountId: string;
+}
+
+export async function editBudget(db: Database, input: EditBudgetInput): Promise<Budget> {
+  return db.transaction(async (tx) => {
+    const row = await lockBudget(tx as Database, input.id);
+    if (!row) throw new BudgetEntryError("NOT_FOUND", "Budget entry not found");
+    if (row.relatedBudgetId) {
+      throw new BudgetEntryError(
+        "TRANSFER_NOT_EDITABLE",
+        "A transfer can't be edited. Delete it and transfer again.",
+      );
+    }
+    if (input.amount !== undefined && BigInt(input.amount) <= 0n) {
+      throw new BudgetEntryError(
+        "AMOUNT_NOT_POSITIVE",
+        "The amount must be more than zero. Delete the entry instead.",
+      );
+    }
+    const amount =
+      input.amount === undefined
+        ? row.amount
+        : row.amount.startsWith("-")
+          ? `-${input.amount}`
+          : input.amount;
+    const note = input.note === undefined ? row.note : input.note?.trim() || null;
+    const effectiveOn = input.effectiveOn === undefined ? row.effectiveOn : input.effectiveOn;
+    const agreementId = input.agreementId === undefined ? row.agreementId : input.agreementId;
+    if (
+      amount === row.amount &&
+      note === row.note &&
+      effectiveOn === row.effectiveOn &&
+      agreementId === row.agreementId
+    ) {
+      return row;
+    }
+
+    const delta = BigInt(amount) - BigInt(row.amount);
+    if (delta !== 0n) {
+      const sums = await lockedBudgetSums(tx as Database, row.projectId, row.tokenId);
+      requireOwnBudget(sums, row.projectId, row.tokenId, delta);
+    }
+    await recordRevision(tx as Database, row, "edited", input.actorAccountId);
+    const [updated] = await tx
+      .update(budgets)
+      .set({ amount, note, effectiveOn, agreementId })
+      .where(eq(budgets.id, row.id))
+      .returning();
+    if (!updated) throw new Error("budgets update returned no row");
+    return updated;
+  });
+}
+
+export async function deleteBudget(
+  db: Database,
+  input: { id: string; actorAccountId: string },
+): Promise<{ deleted: number }> {
+  return db.transaction(async (tx) => {
+    const row = await lockBudget(tx as Database, input.id);
+    if (!row) throw new BudgetEntryError("NOT_FOUND", "Budget entry not found");
+    const related = row.relatedBudgetId
+      ? await lockBudget(tx as Database, row.relatedBudgetId)
+      : null;
+    const rows = related ? [row, related] : [row];
+    for (const entry of rows) {
+      const delta = -BigInt(entry.amount);
+      if (delta < 0n) {
+        const sums = await lockedBudgetSums(tx as Database, entry.projectId, entry.tokenId);
+        requireOwnBudget(sums, entry.projectId, entry.tokenId, delta);
+      }
+    }
+    for (const entry of rows) {
+      await recordRevision(tx as Database, entry, "deleted", input.actorAccountId);
+    }
+    await tx.delete(budgets).where(
+      inArray(
+        budgets.id,
+        rows.map((r) => r.id),
+      ),
+    );
+    return { deleted: rows.length };
+  });
+}
+
+export async function listDeletedBudgets(
+  db: Database,
+  input: { projectIds: string[] | null; limit: number },
+): Promise<BudgetRevision[]> {
+  if (input.projectIds !== null && input.projectIds.length === 0) return [];
+  return db
+    .select()
+    .from(budgetRevisions)
+    .where(
+      and(
+        eq(budgetRevisions.action, "deleted"),
+        input.projectIds !== null
+          ? inArray(budgetRevisions.projectId, input.projectIds)
+          : undefined,
+      ),
+    )
+    .orderBy(desc(budgetRevisions.changedAt), desc(budgetRevisions.id))
+    .limit(input.limit);
 }
 
 export interface CreateBudgetInput {
@@ -165,6 +367,8 @@ export interface CreateBudgetInput {
   note: string | null;
   actorAccountId: string;
   fundingDaoAccountId?: string | null;
+  effectiveOn?: string | null;
+  agreementId?: string | null;
 }
 
 export async function createBudget(db: Database, input: CreateBudgetInput): Promise<Budget> {
@@ -178,6 +382,8 @@ export async function createBudget(db: Database, input: CreateBudgetInput): Prom
       note: input.note,
       actorAccountId: input.actorAccountId,
       fundingDaoAccountId: input.fundingDaoAccountId ?? null,
+      effectiveOn: input.effectiveOn ?? null,
+      agreementId: input.agreementId ?? null,
     })
     .returning();
   if (!row) throw new Error("budgets insert returned no row");
@@ -201,6 +407,7 @@ export interface TransferBudgetInput {
   note: string | null;
   actorAccountId: string;
   fundingDaoAccountId?: string | null;
+  effectiveOn?: string | null;
 }
 
 export async function transferBudget(
@@ -219,6 +426,7 @@ export async function transferBudget(
       note: input.note,
       actorAccountId: input.actorAccountId,
       fundingDaoAccountId: input.fundingDaoAccountId ?? null,
+      effectiveOn: input.effectiveOn ?? null,
       createdAt,
     };
     const inserted = await tx
@@ -399,16 +607,47 @@ export async function writeEngagementEntries(
   });
 }
 
+export async function resolveAgreement(
+  db: Database,
+  organizationId: string | null,
+  input: { projectId: string; tokenId: string; agreementId?: string | null },
+): Promise<ClientAgreement | null> {
+  if (!input.agreementId) return null;
+  const engagementIds = await clientEngagementIdsForProject(db, organizationId, input.projectId);
+  const [agreement] = await db
+    .select()
+    .from(clientAgreements)
+    .where(eq(clientAgreements.id, input.agreementId))
+    .limit(1);
+  if (!agreement || !engagementIds.includes(agreement.engagementId)) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "That agreement doesn't cover this project",
+      data: { reason: "AGREEMENT_NOT_FOR_PROJECT" },
+    });
+  }
+  if (agreement.tokenId !== input.tokenId) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "The budget's token must match the agreement's token",
+      data: { reason: "AGREEMENT_TOKEN_MISMATCH" },
+    });
+  }
+  return agreement;
+}
+
 const toOrpcError = (err: unknown) =>
   err instanceof ORPCError
     ? err
-    : err instanceof BudgetInsufficientError
-      ? new ORPCError("BAD_REQUEST", { message: err.message })
-      : err instanceof EngagementBudgetError
-        ? new ORPCError("BAD_REQUEST", { message: err.message, data: { reason: err.reason } })
-        : new ORPCError("INTERNAL_SERVER_ERROR", {
-            message: err instanceof Error ? err.message : String(err),
-          });
+    : err instanceof BudgetEntryError
+      ? err.reason === "NOT_FOUND"
+        ? new ORPCError("NOT_FOUND", { message: err.message })
+        : new ORPCError("BAD_REQUEST", { message: err.message, data: { reason: err.reason } })
+      : err instanceof BudgetInsufficientError
+        ? new ORPCError("BAD_REQUEST", { message: err.message })
+        : err instanceof EngagementBudgetError
+          ? new ORPCError("BAD_REQUEST", { message: err.message, data: { reason: err.reason } })
+          : new ORPCError("INTERNAL_SERVER_ERROR", {
+              message: err instanceof Error ? err.message : String(err),
+            });
 
 const engagementNotFound = () => new ORPCError("NOT_FOUND", { message: "Engagement not found" });
 
@@ -432,6 +671,17 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
       .from(engagementProjects)
       .where(eq(engagementProjects.engagementId, engagementId));
     return rows.map((r) => r.projectId);
+  };
+
+  const entryInAgency = async (scope: TreasuryScope, id: string) => {
+    const [row] = await db
+      .select({ projectId: budgets.projectId, tokenId: budgets.tokenId })
+      .from(budgets)
+      .where(eq(budgets.id, id))
+      .limit(1);
+    if (!row) throw new BudgetEntryError("NOT_FOUND", "Budget entry not found");
+    await directory.forAgency(scope).require(row.projectId);
+    return row;
   };
 
   const inAgency = <A>(scope: TreasuryScope, projectIds: string[], run: () => Promise<A>) =>
@@ -482,29 +732,53 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
 
     create: (
       scope: TreasuryScope,
-      input: { projectId: string; tokenId: string; amount: string; note?: string },
+      input: {
+        projectId: string;
+        tokenId: string;
+        amount: string;
+        note?: string;
+        effectiveOn?: string;
+        agreementId?: string;
+      },
     ) =>
-      inAgency(scope, [input.projectId], async () => ({
-        budget: await createBudget(db, {
-          ...input,
-          note: input.note ?? null,
-          actorAccountId: scope.actorId,
-          fundingDaoAccountId: scope.agencyDao,
-        }),
-      })),
+      inAgency(scope, [input.projectId], async () => {
+        const agreement = await resolveAgreement(db, scope.organizationId, input);
+        return {
+          budget: await createBudget(db, {
+            ...input,
+            note: input.note ?? null,
+            effectiveOn: input.effectiveOn ?? agreement?.startDate ?? null,
+            agreementId: agreement?.id ?? null,
+            actorAccountId: scope.actorId,
+            fundingDaoAccountId: scope.agencyDao,
+          }),
+        };
+      }),
 
     deallocate: (
       scope: TreasuryScope,
-      input: { projectId: string; tokenId: string; amount: string; note?: string },
+      input: {
+        projectId: string;
+        tokenId: string;
+        amount: string;
+        note?: string;
+        effectiveOn?: string;
+        agreementId?: string;
+      },
     ) =>
-      inAgency(scope, [input.projectId], async () => ({
-        budget: await deallocateBudget(db, {
-          ...input,
-          note: input.note ?? null,
-          actorAccountId: scope.actorId,
-          fundingDaoAccountId: scope.agencyDao,
-        }),
-      })),
+      inAgency(scope, [input.projectId], async () => {
+        const agreement = await resolveAgreement(db, scope.organizationId, input);
+        return {
+          budget: await deallocateBudget(db, {
+            ...input,
+            note: input.note ?? null,
+            effectiveOn: input.effectiveOn ?? agreement?.startDate ?? null,
+            agreementId: agreement?.id ?? null,
+            actorAccountId: scope.actorId,
+            fundingDaoAccountId: scope.agencyDao,
+          }),
+        };
+      }),
 
     transfer: (
       scope: TreasuryScope,
@@ -514,6 +788,7 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
         tokenId: string;
         amount: string;
         note?: string;
+        effectiveOn?: string;
       },
     ) =>
       inAgency(scope, [input.fromProjectId, input.toProjectId], () =>
@@ -524,6 +799,52 @@ export function createBudgetsService(db: Database, directory: ProjectDirectory) 
           fundingDaoAccountId: scope.agencyDao,
         }),
       ),
+
+    update: (
+      scope: TreasuryScope,
+      input: {
+        id: string;
+        amount?: string;
+        note?: string | null;
+        effectiveOn?: string | null;
+        agreementId?: string | null;
+      },
+    ) =>
+      Effect.tryPromise({
+        try: async () => {
+          const entry = await entryInAgency(scope, input.id);
+          if (input.agreementId) {
+            await resolveAgreement(db, scope.organizationId, {
+              ...entry,
+              agreementId: input.agreementId,
+            });
+          }
+          return { budget: await editBudget(db, { ...input, actorAccountId: scope.actorId }) };
+        },
+        catch: toOrpcError,
+      }),
+
+    remove: (scope: TreasuryScope, input: { id: string }) =>
+      Effect.tryPromise({
+        try: async () => {
+          await entryInAgency(scope, input.id);
+          return deleteBudget(db, { id: input.id, actorAccountId: scope.actorId });
+        },
+        catch: toOrpcError,
+      }),
+
+    listDeleted: (scope: TreasuryScope, input: { projectId?: string; limit: number }) =>
+      Effect.gen(function* () {
+        const projects = directory.forAgency(scope);
+        const projectIds = input.projectId
+          ? [(yield* Effect.promise(() => projects.require(input.projectId!))).id]
+          : (yield* Effect.promise(() => projects.list())).map((p) => p.id);
+        return {
+          data: yield* Effect.promise(() =>
+            listDeletedBudgets(db, { projectIds, limit: input.limit }),
+          ),
+        };
+      }),
   };
 }
 

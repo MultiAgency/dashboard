@@ -7,6 +7,7 @@ import {
 } from "every-plugin/errors";
 import { oc } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
+import { myWorkOrdersContract, workOrdersContract } from "./work-orders-contract";
 
 const tokenList = z.object({
   tokens: z.array(
@@ -255,50 +256,6 @@ const registryMember = z.object({
     .nullable(),
 });
 
-const workOrderStatus = z.enum(["draft", "signed", "completed", "terminated"]);
-
-const workOrderWarning = z.enum(["overpaid", "overBudget", "endingSoon", "noAgreement"]);
-
-const workOrderInput = z.object({
-  nearAccount: nearAccountId,
-  status: workOrderStatus,
-  startsOn: z.iso.date(),
-  endsOn: z.iso.date(),
-  documentUrl: z.url().nullable().optional(),
-  lines: z
-    .array(
-      z.object({
-        projectId: z.string().min(1),
-        tokenId: tokenId,
-        amount: z.string().regex(/^\d+$/),
-      }),
-    )
-    .min(1)
-    .max(50),
-});
-
-const workOrder = z.object({
-  id: z.string(),
-  nearAccount: z.string(),
-  status: workOrderStatus,
-  startsOn: z.string(),
-  endsOn: z.string(),
-  documentUrl: z.string().nullable(),
-  closedAt: z.string().nullable(),
-  lines: z.array(
-    z.object({
-      projectId: z.string(),
-      projectTitle: z.string().nullable(),
-      tokenId: z.string(),
-      amount: z.string(),
-      paid: z.string(),
-      remaining: z.string(),
-      warnings: z.array(workOrderWarning),
-    }),
-  ),
-  warnings: z.array(workOrderWarning),
-});
-
 const engagementParty = z.object({ id: z.string(), name: z.string(), slug: z.string() });
 
 const engagementStatus = z.enum(["proposed", "active", "declined", "ended"]);
@@ -345,6 +302,16 @@ const reportOutput = z.object({
     period: z.string(),
   }),
   project: z.object({ title: z.string(), slug: z.string() }).nullable().optional(),
+  projectBreakdown: z
+    .array(
+      z.object({
+        projectTitle: z.string(),
+        projectSlug: z.string(),
+        budgetByToken: z.array(tokenAmount),
+        billedByToken: z.array(tokenAmount),
+      }),
+    )
+    .optional(),
   contributorStats: z.array(
     z.object({
       nearAccount: z.string(),
@@ -363,6 +330,37 @@ const reportOutput = z.object({
       builders: z.array(z.string()).optional(),
     }),
   ),
+  agreement: z
+    .object({
+      id: z.string(),
+      engagementId: z.string(),
+      title: z.string(),
+      kind: z.enum(["retainer", "project"]),
+      startDate: z.string(),
+      endDate: z.string(),
+      tokenId: z.string(),
+      agreedAmount: z.string(),
+      allocated: z.string(),
+    })
+    .nullable()
+    .optional(),
+  deliveredWork: z
+    .array(
+      z.object({
+        workOrderCode: z.string(),
+        workOrderTitle: z.string(),
+        projectTitle: z.string(),
+        projectSlug: z.string(),
+        builderName: z.string(),
+        requestCode: z.string(),
+        coversFrom: z.string(),
+        coversTo: z.string(),
+        status: z.enum(["approved", "proposed", "paid"]),
+        contributionsMd: z.string(),
+        amount: tokenAmount.nullable(),
+      }),
+    )
+    .optional(),
   notes: z.string(),
   generatedAt: z.string(),
 });
@@ -377,10 +375,23 @@ const savedReportSummary = z.object({
   endDate: z.string().nullable(),
   note: z.string().nullable(),
   projectTitle: z.string().nullable().optional(),
+  agreementTitle: z.string().nullable().optional(),
+  sharedAt: z.date().nullable().optional(),
+  fromAgency: z.boolean().optional(),
+  canDelete: z.boolean().optional(),
+  canShare: z.boolean().optional(),
   createdAt: z.date(),
 });
 
 const savedReport = savedReportSummary.extend({ report: reportOutput });
+
+const reportFilters = {
+  agreementId: z.string().optional(),
+  projectId: z.string().optional(),
+  note: z.string().max(4000).optional(),
+  startDate: reportDate,
+  endDate: reportDate,
+};
 
 const notification = z.object({
   id: z.string(),
@@ -424,7 +435,65 @@ const budget = z.object({
   relatedBudgetId: z.string().nullable(),
   engagementId: z.string().nullable(),
   fundingDaoAccountId: z.string().nullable(),
+  effectiveOn: z.string().nullable(),
+  agreementId: z.string().nullable().optional(),
   createdAt: z.date(),
+  lastEdit: z
+    .object({
+      changedAt: z.date(),
+      changedBy: z.string(),
+      previousAmount: z.string(),
+      previousNote: z.string().nullable(),
+      previousEffectiveOn: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+});
+
+const agreementDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const agreementKind = z.enum(["retainer", "project"]);
+
+const agreement = z.object({
+  id: z.string(),
+  engagementId: z.string(),
+  kind: agreementKind,
+  title: z.string(),
+  startDate: z.string(),
+  endDate: z.string(),
+  tokenId: z.string(),
+  agreedAmount: z.string(),
+  note: z.string().nullable(),
+  allocated: z.string(),
+  budgetCount: z.number().int().nonnegative(),
+  createdBy: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+const agreementFields = {
+  kind: agreementKind,
+  title: z.string().trim().min(1).max(120),
+  startDate: agreementDay,
+  endDate: agreementDay,
+  tokenId,
+  agreedAmount: baseAmount,
+  note: z.string().max(2000).nullable().optional(),
+};
+
+const deletedBudget = z.object({
+  id: z.string(),
+  budgetId: z.string(),
+  projectId: z.string(),
+  tokenId: z.string(),
+  amount: z.string(),
+  note: z.string().nullable(),
+  effectiveOn: z.string().nullable(),
+  relatedBudgetId: z.string().nullable(),
+  actorAccountId: z.string(),
+  budgetCreatedAt: z.date(),
+  changedBy: z.string(),
+  changedAt: z.date(),
 });
 
 const prepaymentPeriod = z
@@ -566,7 +635,6 @@ const assignment = z.object({
   projectId: z.string(),
   nearAccount: z.string(),
   role: z.string().nullable(),
-  onboardingStatus: z.string(),
   assignedBy: z.object({ id: z.string(), name: z.string() }).nullable(),
   canRemove: z.boolean(),
   createdAt: z.date(),
@@ -615,6 +683,10 @@ export const proposalListItem = proposalPublicItem.extend({
 });
 
 export const contract = oc.router({
+  workOrders: workOrdersContract,
+
+  myWorkOrders: myWorkOrdersContract,
+
   ping: oc.route({ method: "GET", path: "/ping" }).output(
     z.object({
       status: z.literal("ok"),
@@ -849,18 +921,40 @@ export const contract = oc.router({
     },
 
     reports: {
+      preview: oc
+        .route({ method: "POST", path: "/admin/reports/preview" })
+        .input(z.object({ engagementId: z.string().optional(), ...reportFilters }))
+        .output(reportOutput)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
       generate: oc
         .route({ method: "POST", path: "/admin/reports/generate" })
         .input(
           z.object({
             engagementId: z.string().optional(),
-            projectId: z.string().optional(),
-            note: z.string().max(4000).optional(),
-            startDate: reportDate,
-            endDate: reportDate,
+            ...reportFilters,
+            share: z.boolean().optional(),
           }),
         )
         .output(generatedReport)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+      share: oc
+        .route({ method: "POST", path: "/admin/reports/{id}/share" })
+        .input(z.object({ id: z.string().min(1) }))
+        .output(savedReportSummary)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+      unshare: oc
+        .route({ method: "POST", path: "/admin/reports/{id}/unshare" })
+        .input(z.object({ id: z.string().min(1) }))
+        .output(savedReportSummary)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      delete: oc
+        .route({ method: "DELETE", path: "/admin/reports/{id}" })
+        .input(z.object({ id: z.string().min(1) }))
+        .output(z.object({ deleted: z.literal(true) }))
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
       list: oc
@@ -1261,12 +1355,36 @@ export const contract = oc.router({
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
     },
 
+    agreements: {
+      list: oc
+        .route({ method: "GET", path: "/client/{engagementId}/agreements" })
+        .input(z.object({ engagementId: z.string().min(1) }))
+        .output(z.object({ data: z.array(agreement) }))
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+    },
+
     reports: {
+      preview: oc
+        .route({ method: "POST", path: "/client/{engagementId}/reports/preview" })
+        .input(
+          z.object({
+            engagementId: z.string().min(1),
+            agreementId: z.string().min(1).optional(),
+            projectId: z.string().min(1).optional(),
+            note: z.string().max(4000).optional(),
+            startDate: reportDate,
+            endDate: reportDate,
+          }),
+        )
+        .output(reportOutput)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
       generate: oc
         .route({ method: "POST", path: "/client/{engagementId}/reports/generate" })
         .input(
           z.object({
             engagementId: z.string().min(1),
+            agreementId: z.string().min(1).optional(),
             projectId: z.string().min(1).optional(),
             note: z.string().max(4000).optional(),
             startDate: reportDate,
@@ -1274,6 +1392,12 @@ export const contract = oc.router({
           }),
         )
         .output(generatedReport)
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+      delete: oc
+        .route({ method: "DELETE", path: "/client/{engagementId}/reports/{id}" })
+        .input(z.object({ engagementId: z.string().min(1), id: z.string().min(1) }))
+        .output(z.object({ deleted: z.literal(true) }))
         .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
 
       list: oc
@@ -1358,50 +1482,6 @@ export const contract = oc.router({
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
-  workOrders: {
-    list: oc
-      .route({ method: "GET", path: "/admin/work-orders" })
-      .output(z.object({ data: z.array(workOrder) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
-
-    create: oc
-      .route({ method: "POST", path: "/admin/work-orders" })
-      .input(workOrderInput)
-      .output(z.object({ data: workOrder }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST }),
-
-    update: oc
-      .route({ method: "PATCH", path: "/admin/work-orders/{id}" })
-      .input(workOrderInput.extend({ id: z.string() }))
-      .output(z.object({ data: workOrder }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, NOT_FOUND }),
-
-    remove: oc
-      .route({ method: "DELETE", path: "/admin/work-orders/{id}" })
-      .input(z.object({ id: z.string() }))
-      .output(z.object({ ok: z.literal(true) }))
-      .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, NOT_FOUND }),
-
-    uncoveredPayouts: oc
-      .route({ method: "GET", path: "/admin/work-orders/uncovered-payouts" })
-      .output(
-        z.object({
-          data: z.array(
-            z.object({
-              billingId: z.string(),
-              projectId: z.string(),
-              projectTitle: z.string().nullable(),
-              nearAccount: z.string().nullable(),
-              tokenId: z.string(),
-              amount: z.string(),
-              recordedAt: z.string(),
-            }),
-          ),
-        }),
-      )
-      .errors({ UNAUTHORIZED, FORBIDDEN }),
-  },
-
   members: {
     list: oc
       .route({ method: "GET", path: "/platform/members" })
@@ -1454,7 +1534,6 @@ export const contract = oc.router({
           projectId: z.string(),
           nearAccount: nearAccountId,
           role: z.string().max(80).optional(),
-          onboardingStatus: z.string().max(40).optional(),
         }),
       )
       .output(
@@ -1462,7 +1541,6 @@ export const contract = oc.router({
           projectId: z.string(),
           nearAccount: z.string(),
           role: z.string().nullable(),
-          onboardingStatus: z.string(),
         }),
       )
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
@@ -1480,6 +1558,43 @@ export const contract = oc.router({
       )
       .output(z.object({ ok: z.literal(true) }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+  },
+
+  agreements: {
+    list: oc
+      .route({ method: "GET", path: "/agreements" })
+      .input(z.object({ engagementId: z.string().optional(), projectId: z.string().optional() }))
+      .output(z.object({ data: z.array(agreement) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+
+    create: oc
+      .route({ method: "POST", path: "/engagements/{engagementId}/agreements" })
+      .input(z.object({ engagementId: z.string().min(1), ...agreementFields }))
+      .output(agreement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    update: oc
+      .route({ method: "PATCH", path: "/agreements/{id}" })
+      .input(
+        z.object({
+          id: z.string().min(1),
+          kind: agreementFields.kind.optional(),
+          title: agreementFields.title.optional(),
+          startDate: agreementDay.optional(),
+          endDate: agreementDay.optional(),
+          tokenId: tokenId.optional(),
+          agreedAmount: baseAmount.optional(),
+          note: agreementFields.note,
+        }),
+      )
+      .output(agreement)
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    delete: oc
+      .route({ method: "DELETE", path: "/agreements/{id}" })
+      .input(z.object({ id: z.string().min(1) }))
+      .output(z.object({ deleted: z.literal(true) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
   budgets: {
@@ -1508,6 +1623,8 @@ export const contract = oc.router({
           tokenId,
           amount: baseAmount,
           note: z.string().max(2000).optional(),
+          effectiveOn: reportDate,
+          agreementId: z.string().optional(),
         }),
       )
       .output(z.object({ budget }))
@@ -1521,6 +1638,8 @@ export const contract = oc.router({
           tokenId,
           amount: baseAmount,
           note: z.string().max(2000).optional(),
+          effectiveOn: reportDate,
+          agreementId: z.string().optional(),
         }),
       )
       .output(z.object({ budget }))
@@ -1539,6 +1658,7 @@ export const contract = oc.router({
               .regex(/^\d+$/, "positive integer string in the token's smallest unit")
               .max(80),
             note: z.string().max(2000).optional(),
+            effectiveOn: reportDate,
           })
           .refine((v) => v.fromProjectId !== v.toProjectId, {
             message: "fromProjectId and toProjectId must differ",
@@ -1547,6 +1667,41 @@ export const contract = oc.router({
       )
       .output(z.object({ from: budget, to: budget }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    update: oc
+      .route({ method: "PATCH", path: "/admin/budgets/{id}" })
+      .input(
+        z.object({
+          id: z.string().min(1),
+          amount: baseAmount.optional(),
+          note: z.string().max(2000).nullable().optional(),
+          effectiveOn: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullable()
+            .optional(),
+          agreementId: z.string().nullable().optional(),
+        }),
+      )
+      .output(z.object({ budget }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    delete: oc
+      .route({ method: "DELETE", path: "/admin/budgets/{id}" })
+      .input(z.object({ id: z.string().min(1) }))
+      .output(z.object({ deleted: z.number().int().nonnegative() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+
+    deleted: oc
+      .route({ method: "GET", path: "/admin/budgets/deleted" })
+      .input(
+        z.object({
+          projectId: z.string().optional(),
+          limit: z.number().int().min(1).max(200).default(100),
+        }),
+      )
+      .output(z.object({ data: z.array(deletedBudget) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
   },
 
   billings: {
@@ -1840,7 +1995,6 @@ export const contract = oc.router({
               organizationId: z.string(),
               agencyName: z.string(),
               role: z.string().nullable(),
-              onboardingStatus: z.string(),
               createdAt: z.date(),
             }),
           ),

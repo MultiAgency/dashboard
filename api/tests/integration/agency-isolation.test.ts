@@ -159,5 +159,31 @@ describe("agency isolation", () => {
         run(service.create(alpha, { projectId: "beta-project", tokenId: "near", amount: "5" })),
       ).rejects.toThrow("Project not found");
     });
+
+    test("an agency cannot edit, delete or see deleted budget entries of another agency", async () => {
+      const service = createBudgetsService(db, directory);
+      await allocate("beta-project", "99");
+      const [betaRow] = await db.select().from(budgets);
+
+      await expect(run(service.update(alpha, { id: betaRow!.id, amount: "1" }))).rejects.toThrow(
+        "Project not found",
+      );
+      await expect(run(service.remove(alpha, { id: betaRow!.id }))).rejects.toThrow(
+        "Project not found",
+      );
+      expect((await db.select().from(budgets))[0]?.amount).toBe("99");
+
+      await allocate("alpha-project", "10");
+      const alphaRow = (await db.select().from(budgets)).find(
+        (b) => b.projectId === "alpha-project",
+      );
+      expect(await run(service.remove(alphaTreasurer, { id: alphaRow!.id }))).toEqual({
+        deleted: 1,
+      });
+      const deleted = await run(service.listDeleted(alpha, { limit: 50 }));
+      expect(deleted.data.map((d) => [d.projectId, d.changedBy])).toEqual([
+        ["alpha-project", "treasurer.near"],
+      ]);
+    });
   });
 });

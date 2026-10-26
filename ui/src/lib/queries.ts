@@ -157,24 +157,6 @@ export function adminProjectsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
-export const workOrdersQueryKey = ["admin", "work-orders"] as const;
-
-export function workOrdersQueryOptions(apiClient: ApiClient) {
-  return queryOptions({
-    queryKey: [...workOrdersQueryKey, "list", ...workspaceKey()] as const,
-    queryFn: () => apiClient.workOrders.list(),
-    retry: false,
-  });
-}
-
-export function uncoveredPayoutsQueryOptions(apiClient: ApiClient) {
-  return queryOptions({
-    queryKey: [...workOrdersQueryKey, "uncovered", ...workspaceKey()] as const,
-    queryFn: () => apiClient.workOrders.uncoveredPayouts(),
-    retry: false,
-  });
-}
-
 export const adminContributorsListQueryKey = ["admin", "contributors", "list"] as const;
 
 export function adminContributorsListQueryOptions(apiClient: ApiClient) {
@@ -252,6 +234,10 @@ export function adminProjectBudgetsLogQueryKey(projectId: string) {
   return ["admin", "budgets", "project", ...workspaceKey(), projectId] as const;
 }
 
+export function adminDeletedBudgetsQueryKey(projectId: string | null) {
+  return ["admin", "budgets", "deleted", ...workspaceKey(), projectId] as const;
+}
+
 export function adminProjectsForTokenQueryKey(tokenId: string) {
   return ["admin", "budgets", "projects-for-token", ...workspaceKey(), tokenId] as const;
 }
@@ -268,6 +254,107 @@ export function proposalsQueryKey() {
 
 export function adminApplicationsListQueryKey(kind?: string | null, status?: string | null) {
   return ["admin", "applications", "list", kind ?? null, status ?? null] as const;
+}
+
+export const adminWorkOrdersQueryKey = ["admin", "work-orders"] as const;
+
+const SIGNATURE_POLL_MS = 10_000;
+const AUTO_APPROVAL_POLL_MS = 30_000;
+
+function awaitingSignature(wo: {
+  status: string;
+  signing: { representative: unknown; esign: { sent: boolean } | null };
+}) {
+  return (
+    !!wo.signing.esign?.sent &&
+    (wo.status === "offered" || (wo.status === "accepted" && !wo.signing.representative))
+  );
+}
+
+function awaitingAutoApproval(wo: {
+  requests: { status: string; trust: { autoApproveAt: string | null } | null }[];
+}) {
+  return wo.requests.some((r) => r.status === "submitted" && !!r.trust?.autoApproveAt);
+}
+
+export function adminWorkOrdersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "list", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.list({}),
+    retry: false,
+  });
+}
+
+export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "detail", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.workOrders.get({ id }),
+    retry: false,
+    refetchInterval: (query) => {
+      const wo = query.state.data;
+      if (!wo) return false;
+      if (awaitingSignature(wo)) return SIGNATURE_POLL_MS;
+      return awaitingAutoApproval(wo) ? AUTO_APPROVAL_POLL_MS : false;
+    },
+  });
+}
+
+export const workOrderIntegrationQueryKey = ["admin", "work-order-integration"] as const;
+
+export function workOrderIntegrationQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderIntegrationQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.integration({}),
+    retry: false,
+  });
+}
+
+export const workOrderTrustQueryKey = ["admin", "work-order-trust"] as const;
+
+export function workOrderTrustQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderTrustQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.trustSettings({}),
+    retry: false,
+  });
+}
+
+export const payoutAgentQueryKey = ["admin", "payout-agent"] as const;
+
+export function payoutAgentQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...payoutAgentQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.payoutAgent({}),
+    retry: false,
+  });
+}
+
+export function payoutFundingQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...payoutAgentQueryKey, "funding", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.payoutFunding({}),
+    retry: false,
+  });
+}
+
+export const myWorkOrdersQueryKey = ["me", "work-orders"] as const;
+
+export function myWorkOrdersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...myWorkOrdersQueryKey, "list"] as const,
+    queryFn: () => apiClient.myWorkOrders.list({}),
+    retry: false,
+  });
+}
+
+export function myWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...myWorkOrdersQueryKey, "detail", id] as const,
+    queryFn: () => apiClient.myWorkOrders.get({ id }),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data && awaitingSignature(query.state.data) ? SIGNATURE_POLL_MS : false,
+  });
 }
 
 export const adminTokensQueryKey = ["admin", "tokens"] as const;
@@ -478,6 +565,32 @@ export function adminSavedReportQueryOptions(apiClient: ApiClient, id: string) {
   });
 }
 
+export const agreementsQueryKey = ["agreements"] as const;
+
+export function agreementsListQueryOptions(
+  apiClient: ApiClient,
+  filter: { engagementId?: string; projectId?: string },
+) {
+  return queryOptions({
+    queryKey: [
+      ...agreementsQueryKey,
+      ...workspaceKey(),
+      filter.engagementId ?? null,
+      filter.projectId ?? null,
+    ] as const,
+    queryFn: () => apiClient.agreements.list(filter),
+    retry: false,
+  });
+}
+
+export function clientAgreementsQueryOptions(apiClient: ApiClient, engagementId: string) {
+  return queryOptions({
+    queryKey: [...agreementsQueryKey, "client", ...workspaceKey(), engagementId] as const,
+    queryFn: () => apiClient.clientPortal.agreements.list({ engagementId }),
+    retry: false,
+  });
+}
+
 export function clientSavedReportsQueryOptions(apiClient: ApiClient, engagementId: string) {
   return queryOptions({
     queryKey: [...savedReportsQueryKey, "client", ...workspaceKey(), engagementId] as const,
@@ -604,6 +717,7 @@ export type DataChange =
   | { type: "ideas" }
   | { type: "agentLinks" }
   | { type: "reports" }
+  | { type: "agreements" }
   | { type: "settings" };
 
 function staleKeys(change: DataChange): QueryKey[] {
@@ -617,6 +731,7 @@ function staleKeys(change: DataChange): QueryKey[] {
           projectId,
         ]),
         clientPortalQueryKey,
+        agreementsQueryKey,
       ];
     case "billings":
       return [
@@ -678,6 +793,8 @@ function staleKeys(change: DataChange): QueryKey[] {
       return [agentLinksQueryKey];
     case "reports":
       return [savedReportsQueryKey];
+    case "agreements":
+      return [agreementsQueryKey];
     case "settings":
       return [adminSettingsQueryKey, publicSettingsQueryKey];
   }

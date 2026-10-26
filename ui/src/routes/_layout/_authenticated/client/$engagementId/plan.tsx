@@ -1,12 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { ChangeOrdersPanel } from "@/components/change-orders";
 import { PrepaidBalanceCard } from "@/components/prepayments";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
+import { allocationPlanEnabled } from "@/lib/change-orders";
 import { clientPortalProjectsListQueryOptions } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/client/$engagementId/plan")({
+  beforeLoad: ({ params }) => {
+    // Allocation plan omitted for now: send old links back to the Engagement overview.
+    if (!allocationPlanEnabled) {
+      throw redirect({ to: "/client/$engagementId", params });
+    }
+  },
   component: EngagementPlan,
 });
 

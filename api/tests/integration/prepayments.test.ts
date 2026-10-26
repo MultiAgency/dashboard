@@ -2,6 +2,7 @@ import { Effect } from "every-plugin/effect";
 import { beforeEach, describe, expect, test } from "vitest";
 import { budgets } from "../../src/db/schema";
 import {
+  ALLOCATION_PLAN_ENABLED,
   createBudget,
   createBudgetsService,
   writeEngagementEntries,
@@ -9,6 +10,8 @@ import {
 import { type OrganizationScope, requireTreasury } from "../../src/services/organization-access";
 import { engagementWorld, ORIGIN, refused, STUDIO_SEED } from "../fakes/engagements";
 import { migratedDatabase } from "./_pg";
+
+// Skipped while the Allocation plan is omitted for now; see ALLOCATION_PLAN_ENABLED.
 
 const STUDIO_DAO = "studio.sputnik-dao.testnet";
 const USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
@@ -280,28 +283,31 @@ describe("prepayments", () => {
       await spendRefused(id, "internal", "1", "NOT_SHARED");
     });
 
-    test("plain Budgets routes move only the Agency's own budget", async () => {
-      const id = await engagement(["p1"]);
-      await record(id, "1000", "2026-09");
-      await spend(id, "p1", "600");
-      const service = createBudgetsService(database.db, world.directory);
-      const scope = requireTreasury(await studio());
-      const run = <A>(effect: Effect.Effect<A, unknown>) => Effect.runPromise(effect);
-      const own = async <A>(effect: Effect.Effect<A, unknown>) =>
-        expect(await Effect.runPromise(Effect.flip(effect))).toMatchObject({
-          data: { reason: "ENGAGEMENT_ATTRIBUTED" },
-        });
-      const move = { fromProjectId: "p1", toProjectId: "internal", tokenId: "near" };
-      await run(service.create(scope, { projectId: "p1", tokenId: "near", amount: "100" }));
+    test.skipIf(!ALLOCATION_PLAN_ENABLED)(
+      "plain Budgets routes move only the Agency's own budget",
+      async () => {
+        const id = await engagement(["p1"]);
+        await record(id, "1000", "2026-09");
+        await spend(id, "p1", "600");
+        const service = createBudgetsService(database.db, world.directory);
+        const scope = requireTreasury(await studio());
+        const run = <A>(effect: Effect.Effect<A, unknown>) => Effect.runPromise(effect);
+        const own = async <A>(effect: Effect.Effect<A, unknown>) =>
+          expect(await Effect.runPromise(Effect.flip(effect))).toMatchObject({
+            data: { reason: "ENGAGEMENT_ATTRIBUTED" },
+          });
+        const move = { fromProjectId: "p1", toProjectId: "internal", tokenId: "near" };
+        await run(service.create(scope, { projectId: "p1", tokenId: "near", amount: "100" }));
 
-      await own(service.deallocate(scope, { projectId: "p1", tokenId: "near", amount: "101" }));
-      await own(service.transfer(scope, { ...move, amount: "101" }));
+        await own(service.deallocate(scope, { projectId: "p1", tokenId: "near", amount: "101" }));
+        await own(service.transfer(scope, { ...move, amount: "101" }));
 
-      const { from, to } = await run(service.transfer(scope, { ...move, amount: "100" }));
-      for (const leg of [from, to]) {
-        expect(leg).toMatchObject({ engagementId: null, fundingDaoAccountId: STUDIO_DAO });
-      }
-      expect(await nearBalance(id)).toBe("400");
-    });
+        const { from, to } = await run(service.transfer(scope, { ...move, amount: "100" }));
+        for (const leg of [from, to]) {
+          expect(leg).toMatchObject({ engagementId: null, fundingDaoAccountId: STUDIO_DAO });
+        }
+        expect(await nearBalance(id)).toBe("400");
+      },
+    );
   });
 });

@@ -27,6 +27,7 @@ import {
 import { AdminSectionError, AdminSectionSkeleton } from "@/components/admin-section-states";
 import { BuilderAvatar } from "@/components/builder-avatar";
 import { PageHeader } from "@/components/page-header";
+import { WorkOrdersCard } from "@/components/work-orders/work-orders-card";
 import { formatTokenAmount } from "@/lib/format-amount";
 import {
   adminAssignmentsListQueryOptions,
@@ -196,6 +197,11 @@ function ContributorDetailPage() {
       )}
 
       <BuilderSummaryPanel billings={billings} projectCount={assignments.length} />
+
+      <WorkOrdersCard
+        filter={{ builderNearAccount: nearAccount }}
+        description="Their terms on each project: period, budget cap and what's committed."
+      />
 
       <Card>
         <CardHeader>

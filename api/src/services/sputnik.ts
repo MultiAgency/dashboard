@@ -57,6 +57,7 @@ interface SputnikRole {
 
 interface SputnikPolicy {
   roles: SputnikRole[];
+  proposal_bond?: string;
 }
 
 const policyCache = new Map<string, { policy: SputnikPolicy; expiresAt: number }>();
@@ -76,6 +77,11 @@ async function fetchPolicy(daoAccountId: string): Promise<SputnikPolicy> {
     }
     throw err;
   }
+}
+
+export async function getProposalBond(daoAccountId: string): Promise<string> {
+  const policy = await fetchPolicy(daoAccountId);
+  return policy.proposal_bond ?? "0";
 }
 
 export interface DaoRole {
@@ -429,6 +435,20 @@ async function rpcCall<T>(accountId: string, body: unknown): Promise<T> {
   }
 }
 
+export async function fullAccessKeys(accountId: string): Promise<string[]> {
+  const result = await rpcCall<{
+    keys: { public_key: string; access_key: { permission: unknown } }[];
+  }>(accountId, {
+    jsonrpc: "2.0",
+    id: "full-access-keys",
+    method: "query",
+    params: { request_type: "view_access_key_list", finality: "final", account_id: accountId },
+  });
+  return result.keys
+    .filter((key) => key.access_key.permission === "FullAccess")
+    .map((key) => key.public_key);
+}
+
 // All call_function views; inner result.error must surface (else misleading EOF).
 async function viewCall<T>(
   networkAccountId: string,
@@ -626,6 +646,7 @@ export async function enrichWithChainStatus<T extends { proposalId: string }>(
   b: T,
   orgAccountId: string,
 ): Promise<T & { status: DaoProposalStatus }> {
+  if (b.proposalId.startsWith("intents:")) return { ...b, status: "Approved" as const };
   const proposalId = Number.parseInt(b.proposalId, 10);
   if (Number.isNaN(proposalId)) return { ...b, status: "InProgress" as const };
   const proposal = await getProposal(db, orgAccountId, proposalId);

@@ -35,7 +35,16 @@
         "RESEND_API_KEY",
         "NOTIFY_FROM_EMAIL",
         "APP_ORIGIN",
-        "FASTNEAR_API_KEY"
+        "FASTNEAR_API_KEY",
+        "GITHUB_TOKEN",
+        "WORK_ORDERS_RUN_SECRET",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_SERVICE_ACCOUNT_JSON",
+        "NEAR_INTENTS_AGENT_API_KEY",
+        "NEAR_INTENTS_AGENT_API_URL",
+        "DOCUMENSO_API_KEY",
+        "DOCUMENSO_API_URL",
+        "PAYOUTS_SECRET_KEY"
       ],
       "production": "https://multiagentic-284-api-dashboard-multiagency-84be60ed0-ze.zephyrcloud.app",
       "integrity": "sha384-c7Sn14MLP768jjZPFG4XiMSf/N5kyBYWJ34ukGY+/iI+jg0SW1MwZApFeABIejHe"

@@ -1,3 +1,6 @@
+import { allocationPlanEnabled } from "@/lib/change-orders";
+import { prepaymentsEnabled } from "@/lib/prepayments";
+
 export type WorkspaceRole = "owner" | "admin" | "member";
 
 export type NavItem = { to: string; label: string; match?: string };
@@ -11,7 +14,6 @@ export type WorkspaceAccess = {
   hasAgencyDao: boolean;
   hasAgencySections: boolean;
   hasClientSections: boolean;
-  isPlatformAdmin?: boolean;
 };
 
 export function availableViews(
@@ -76,10 +78,8 @@ export function workspaceNavigation(
       items: [
         ...(manager ? [{ to: "/admin/engagements", label: "Engagements" }] : []),
         { to: "/admin/contributors", label: "Builders", match: "/admin/contributors" },
+        { to: "/admin/work-orders", label: "Work orders", match: "/admin/work-orders" },
         ...(manager ? [{ to: "/admin/members", label: "Team" }] : []),
-        ...(manager && access.isPlatformAdmin
-          ? [{ to: "/admin/work-orders", label: "Work orders" }]
-          : []),
       ],
     },
   ];
@@ -130,8 +130,8 @@ export function clientEngagementSections(engagementId: string, kind: EngagementK
   return [
     { to: base, label: "Overview" },
     { to: `${base}/projects`, label: "Shared projects" },
-    { to: `${base}/prepayments`, label: "Prepayments" },
-    { to: `${base}/plan`, label: "Plan & Change orders" },
+    ...(prepaymentsEnabled ? [{ to: `${base}/prepayments`, label: "Prepayments" }] : []),
+    ...(allocationPlanEnabled ? [{ to: `${base}/plan`, label: "Plan & Change orders" }] : []),
     { to: `${base}/billings`, label: "Billings" },
     { to: `${base}/reports`, label: "Reports" },
     ...(acceptsIdeas(kind) ? [{ to: `${base}/ideas`, label: "Ideas" }] : []),

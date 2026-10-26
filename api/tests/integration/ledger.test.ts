@@ -47,7 +47,7 @@ describe("project ledger", () => {
 
   beforeEach(async () => {
     DAO = uniqueDao();
-    await pg.query("TRUNCATE budgets, billings, listings, proposals");
+    await pg.query("TRUNCATE budgets, billings, listings, proposals, compensation_requests");
   });
 
   afterAll(async () => {

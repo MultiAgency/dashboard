@@ -1,5 +1,7 @@
+import { timingSafeEqual } from "node:crypto";
+import { AgentApi } from "@near-intents-agent-api/sdk";
 import { createPlugin } from "every-plugin";
-import { Effect, Either } from "every-plugin/effect";
+import { Effect } from "every-plugin/effect";
 import { ORPCError } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 import pg from "pg";
@@ -19,15 +21,16 @@ import type { PluginsClient } from "./lib/plugins-types.gen";
 import { createAgencyService } from "./services/agency";
 import { createAgencyDaoService } from "./services/agency-dao";
 import { createAgentLinksService } from "./services/agent-links";
+import { agreementsOfEngagement, createAgreementsService } from "./services/agreements";
 import { createApplicationsService } from "./services/applications";
 import { createAssignmentsService } from "./services/assignments";
-import { createBillingsService, withPayingStatus } from "./services/billings";
+import { createBillingsService } from "./services/billings";
 import { createBudgetsService } from "./services/budgets";
 import { createChangeOrdersService } from "./services/change-orders";
 import { createClientPortalService } from "./services/client-portal";
 import { createCommunityService } from "./services/community";
 import { createContactFormService } from "./services/contact-form";
-import { createContributorsService, isPlatformAdmin } from "./services/contributors";
+import { createContributorsService } from "./services/contributors";
 import { createEngagementsService } from "./services/engagements";
 import { createIdeasService } from "./services/ideas";
 import { createProjectLedgers } from "./services/ledger";
@@ -36,26 +39,78 @@ import { createMeService } from "./services/me";
 import { createNearnService } from "./services/nearn";
 import { createNotifications } from "./services/notifications";
 import { resendEmailSender } from "./services/notify";
-import { createOrganizationAccess, ROLE_MATRIX } from "./services/organization-access";
+import {
+  agencyDaoOf,
+  createOrganizationAccess,
+  hasRole,
+  type OrganizationScope,
+  ROLE_MATRIX,
+} from "./services/organization-access";
+import { atomicToNear, nearToAtomic, topUpFor } from "./services/payouts/policy";
+import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
-import { createReportsService } from "./services/reports";
+import { createReportsService, type ReportViewer } from "./services/reports";
 import {
   getAdminSettings,
   getResolvedPublicSettings,
   upsertSettings,
 } from "./services/settings-admin";
-import { getRoles } from "./services/sputnik";
+import { fullAccessKeys, getProposal, getProposalBond, getRoles } from "./services/sputnik";
 import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
-import { createWorkOrdersService } from "./services/work-orders";
+import { createConsistencyChecker } from "./services/work-orders/consistency";
+import { createDocumenso } from "./services/work-orders/documenso";
+import { cachedOwnership, createGitHub } from "./services/work-orders/github";
+import {
+  createGoogle,
+  googleIdOf,
+  parseServiceAccount,
+  readServiceAccount,
+} from "./services/work-orders/google";
+import { createWorkOrderIntegrations, createWorkOrderOutbox } from "./services/work-orders/outbox";
+import { createPriceFeed } from "./services/work-orders/prices";
+import { scheduleWorkOrders, stopWorkOrders } from "./services/work-orders/scheduler";
+import { createWorkOrdersService } from "./services/work-orders/service";
+import { createSummarizer } from "./services/work-orders/summarizer";
+import { isTimeZone, UTC } from "./services/work-orders/time";
+import { DEFAULT_RENEWAL } from "./services/work-orders/types";
 
 export default createPlugin.withPlugins<PluginsClient>()({
   variables: z.object({
     agencyDaoAccount: z.string().optional(),
     appOrigin: z.string().url().default("https://dev.multiagency.ai"),
     communityApiUrl: z.string().url().default("https://nearbuilders.org/api"),
+    workOrderRenewal: z
+      .object({
+        minActiveWeeksPct: z
+          .number()
+          .int()
+          .min(0)
+          .max(100)
+          .default(DEFAULT_RENEWAL.minActiveWeeksPct),
+        minApprovedPrs: z.number().int().min(0).default(DEFAULT_RENEWAL.minApprovedPrs),
+        minIssuesDonePct: z
+          .number()
+          .int()
+          .min(0)
+          .max(100)
+          .default(DEFAULT_RENEWAL.minIssuesDonePct),
+        maxUnapprovedPrs: z.number().int().min(0).default(DEFAULT_RENEWAL.maxUnapprovedPrs),
+      })
+      .default(DEFAULT_RENEWAL),
+    workOrderTimezone: z
+      .string()
+      .refine(isTimeZone, "Use an IANA time zone, e.g. Asia/Karachi")
+      .default(UTC),
+    workOrderSchedule: z
+      .object({
+        tickSeconds: z.number().int().min(0).default(15),
+        runMinutes: z.number().int().min(0).default(360),
+        firstRunSeconds: z.number().int().min(0).default(30),
+      })
+      .default({ tickSeconds: 15, runMinutes: 360, firstRunSeconds: 30 }),
   }),
 
   secrets: z.object({
@@ -67,6 +122,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
     RESEND_API_KEY: z.string().optional(),
     NOTIFY_FROM_EMAIL: z.string().optional(),
     APP_ORIGIN: z.string().url().optional(),
+    GITHUB_TOKEN: z.string().optional(),
+    WORK_ORDERS_RUN_SECRET: z.string().optional(),
+    ANTHROPIC_API_KEY: z.string().optional(),
+    GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+    NEAR_INTENTS_AGENT_API_KEY: z.string().optional(),
+    NEAR_INTENTS_AGENT_API_URL: z.string().optional(),
+    DOCUMENSO_API_KEY: z.string().optional(),
+    DOCUMENSO_API_URL: z.string().optional(),
+    PAYOUTS_SECRET_KEY: z.string().optional(),
   }),
 
   context: ContextSchema,
@@ -122,7 +186,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const assignments = createAssignmentsService(db, directory, access, organizationDirectory);
       const budgets = createBudgetsService(db, directory);
       const billings = createBillingsService(db, directory, access);
-      const reports = createReportsService(db, directory, plugins, organizationDirectory);
+      const reports = createReportsService(
+        db,
+        directory,
+        plugins,
+        organizationDirectory,
+        notifications,
+      );
       const changeOrders = createChangeOrdersService({
         db,
         organizations: organizationDirectory,
@@ -154,34 +224,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         organizations: organizationDirectory,
       });
       const agentLinks = createAgentLinksService({ db });
-      const workOrders = createWorkOrdersService({
-        db,
-        isPlatformAdmin: (scope) => isPlatformAdmin(scope.pluginContext),
-        projectsOf: async (scope) =>
-          (await directory.forAgency(scope).list()).map((p) => ({ id: p.id, title: p.title })),
-        accountsOf: (scope, nearAccount) =>
-          Effect.runPromise(contributors.accountsOf(scope.pluginContext, nearAccount)),
-        agreementOnFile: async (scope) => {
-          const members = await Effect.runPromise(
-            Effect.either(contributors.members(scope.pluginContext)),
-          );
-          if (Either.isLeft(members)) return () => true;
-          const signed = new Set(
-            members.right.data
-              .filter((m) => m.agreement)
-              .flatMap((m) => [m.nearAccount, ...m.accounts.map((a) => a.account)])
-              .filter((a): a is string => Boolean(a)),
-          );
-          return (nearAccount) => signed.has(nearAccount);
-        },
-        approved: (scope, rows) =>
-          Promise.all(
-            rows.map(
-              async (row) =>
-                (await withPayingStatus(db, row, scope.agencyDao)).status === "Approved",
-            ),
-          ),
-      });
+      const agreements = createAgreementsService(db);
       const clientPortal = createClientPortalService(
         access,
         agency,
@@ -189,6 +232,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         reports,
         directory,
         projectLedgers,
+        (engagementId) => agreementsOfEngagement(db, engagementId),
       );
       const me = createMeService({
         db,
@@ -201,6 +245,91 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const treasury = createTreasuryService(directory, projectLedgers);
       const nearn = createNearnService();
       const community = createCommunityService(config.variables.communityApiUrl);
+      const github = createGitHub(config.secrets.GITHUB_TOKEN ?? null);
+      const workOrderIntegrations = createWorkOrderIntegrations({ db });
+      const workOrderOutbox = createWorkOrderOutbox({
+        db,
+        sendEmail,
+        immediate: true,
+      });
+      const workOrderAiDrafts = !!config.secrets.ANTHROPIC_API_KEY;
+      const serviceAccount = parseServiceAccount(
+        readServiceAccount(config.secrets.GOOGLE_SERVICE_ACCOUNT_JSON),
+      );
+      const google = serviceAccount ? createGoogle(serviceAccount) : null;
+      const agentApiKey = config.secrets.NEAR_INTENTS_AGENT_API_KEY;
+      const payoutAgents = createPayoutAgents({
+        db,
+        api: agentApiKey
+          ? (new AgentApi({
+              apiKey: agentApiKey,
+              ...(config.secrets.NEAR_INTENTS_AGENT_API_URL
+                ? { baseUrl: config.secrets.NEAR_INTENTS_AGENT_API_URL }
+                : {}),
+              timeoutMs: 180_000,
+            }) as unknown as AgentApiPort)
+          : null,
+        secretKey: config.secrets.PAYOUTS_SECRET_KEY ?? null,
+        payees: workOrderPayees(db),
+        fullAccessKeys,
+      });
+      const userEmail = async (userId: string) => {
+        if (!authPool) return null;
+        const { rows } = await authPool.query<{ email: string | null }>(
+          'SELECT email FROM "user" WHERE id = $1 LIMIT 1',
+          [userId],
+        );
+        return rows[0]?.email ?? null;
+      };
+      const workOrders = createWorkOrdersService({
+        db,
+        directory,
+        scopeOfOrganization: (organizationId) =>
+          access.readScopeOfAgency({ userId: "system:work-orders" }, organizationId),
+        agencyDaoOf: (organizationId) => agencyDaoOf(db, organizationId),
+        organizationName: async (organizationId) =>
+          (await organizationDirectory.get(organizationId))?.name ?? organizationId,
+        builders: {
+          get: async (nearAccount) => {
+            try {
+              const { data } = await plugins.builders({}).getBuilder({ nearAccount });
+              return {
+                nearAccount: data.nearAccount,
+                name: data.name,
+                githubLogin: data.githubLogin,
+                userId: data.userId,
+              };
+            } catch {
+              return null;
+            }
+          },
+        },
+        github,
+        ownership: cachedOwnership(github, 10 * 60_000),
+        proposal: (daoAccountId, proposalId) => getProposal(db, daoAccountId, proposalId),
+        proposalBond: getProposalBond,
+        prices: createPriceFeed(),
+        esign: config.secrets.DOCUMENSO_API_KEY
+          ? createDocumenso({
+              apiKey: config.secrets.DOCUMENSO_API_KEY,
+              apiUrl: config.secrets.DOCUMENSO_API_URL,
+            })
+          : null,
+        notifications,
+        thresholds: config.variables.workOrderRenewal,
+        outbox: workOrderOutbox,
+        summarizer: createSummarizer(config.secrets.ANTHROPIC_API_KEY),
+        consistency: config.secrets.ANTHROPIC_API_KEY
+          ? createConsistencyChecker({ apiKey: config.secrets.ANTHROPIC_API_KEY })
+          : null,
+        payouts: payoutAgents.available ? payoutAgents : null,
+        google,
+        userEmail,
+        appOrigin,
+        timeZone: config.variables.workOrderTimezone,
+      });
+      const workOrderTimers = scheduleWorkOrders(workOrders, config.variables.workOrderSchedule);
+      const workOrdersRunSecret = config.secrets.WORK_ORDERS_RUN_SECRET ?? null;
 
       yield* Effect.logInfo(`[API] plugins.projects available: ${typeof plugins?.projects}`);
       yield* Effect.logInfo("[API] Services Initialized");
@@ -218,7 +347,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
         changeOrders,
         ideas,
         agentLinks,
-        workOrders,
         notifications,
         organizationDirectory,
         authPool,
@@ -226,6 +354,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         budgets,
         billings,
         reports,
+        agreements,
         clientPortal,
         me,
         proposals,
@@ -233,11 +362,20 @@ export default createPlugin.withPlugins<PluginsClient>()({
         treasury,
         nearn,
         community,
+        workOrders,
+        workOrdersRunSecret,
+        workOrderIntegrations,
+        workOrderAiDrafts,
+        workOrderEmails: sendEmail !== null,
+        google,
+        payoutAgents,
+        workOrderTimers,
       };
     }),
 
   shutdown: (services) =>
     Effect.gen(function* () {
+      stopWorkOrders(services.workOrderTimers);
       if (services.authPool) yield* Effect.promise(() => services.authPool!.end());
       yield* Effect.logInfo("[API] Shutdown");
     }),
@@ -257,13 +395,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
       changeOrders,
       ideas,
       agentLinks,
-      workOrders,
       notifications,
       organizationDirectory,
       assignments,
       budgets,
       billings,
       reports,
+      agreements,
       clientPortal,
       me,
       proposals,
@@ -271,7 +409,105 @@ export default createPlugin.withPlugins<PluginsClient>()({
       treasury,
       nearn,
       community,
+      workOrders,
+      workOrdersRunSecret,
+      workOrderIntegrations,
+      workOrderAiDrafts,
+      workOrderEmails,
+      google,
+      payoutAgents,
     } = services;
+
+    const googleUrl = {
+      document: (id: string | null) =>
+        id ? `https://docs.google.com/document/d/${id}/edit` : null,
+      folder: (id: string | null) => (id ? `https://drive.google.com/drive/folders/${id}` : null),
+    };
+
+    const checkGoogleFile = async (
+      label: string,
+      value: string | null,
+      kind: "document" | "folder",
+      sharedDriveOnly = false,
+    ): Promise<string | null> => {
+      if (!value) return null;
+      const id = googleIdOf(value);
+      if (!id) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: `${label}: paste the Google ${kind === "document" ? "Docs" : "Drive folder"} link`,
+          data: { reason: "INVALID_GOOGLE_LINK" },
+        });
+      }
+      if (!google) return id;
+      const mime =
+        kind === "document"
+          ? "application/vnd.google-apps.document"
+          : "application/vnd.google-apps.folder";
+      try {
+        const file = await google.file(id);
+        if (file.mimeType !== mime) {
+          throw new Error(`it's not a Google ${kind === "document" ? "Doc" : "Drive folder"}`);
+        }
+        if (sharedDriveOnly && !file.driveId) {
+          throw new Error(
+            "it's in a My Drive. Use a folder inside a Shared Drive: a service account has no Drive storage of its own, so it can only create the filled documents there",
+          );
+        }
+      } catch (error) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: `${label}: ${error instanceof Error ? error.message : String(error)}`,
+          data: { reason: "GOOGLE_ACCESS" },
+        });
+      }
+      return id;
+    };
+
+    const integrationView = async (organizationId: string) => {
+      const [settings, deliveries] = await Promise.all([
+        workOrderIntegrations.settings(organizationId),
+        workOrderIntegrations.recent(organizationId),
+      ]);
+      return {
+        emailEnabled: workOrderEmails,
+        aiDraftsEnabled: workOrderAiDrafts,
+        deliveries: deliveries.map((d) => ({
+          id: d.id,
+          eventType: d.eventType,
+          attempts: d.attempts,
+          deliveredAt: d.deliveredAt?.toISOString() ?? null,
+          lastError: d.lastError,
+          createdAt: d.createdAt.toISOString(),
+        })),
+        google: {
+          available: google !== null,
+          serviceAccountEmail: google?.email ?? null,
+          templateUrl: googleUrl.document(settings?.googleTemplateId ?? null),
+          documentsFolderUrl: googleUrl.folder(settings?.googleDocumentsFolderId ?? null),
+          signedFolderUrl: googleUrl.folder(settings?.googleSignedFolderId ?? null),
+          checkedAt: settings?.googleCheckedAt?.toISOString() ?? null,
+          lastError: settings?.googleLastError ?? null,
+          files: (await workOrderIntegrations.driveFiles(organizationId)).map((f) => ({
+            fileId: f.fileId,
+            name: f.name,
+            url: f.url,
+            workOrderId: f.workOrderId,
+            outcome: f.outcome,
+            note: f.note,
+            processedAt: f.processedAt.toISOString(),
+          })),
+        },
+      };
+    };
+
+    const signerMeta = (headers: Headers | undefined) => ({
+      ip:
+        headers?.get("cf-connecting-ip") ??
+        headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+        headers?.get("x-real-ip") ??
+        null,
+      userAgent: headers?.get("user-agent") ?? null,
+    });
+
     const auth = createAuthMiddleware(builder);
     const {
       member,
@@ -283,6 +519,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
       defaultOrganizationMember,
       defaultOrganizationManager,
     } = access.middleware(builder);
+    const agencyReportViewer = (context: {
+      scope: OrganizationScope;
+      userId?: string | null;
+    }): ReportViewer => ({
+      organizationId: context.scope.organizationId,
+      userId: context.userId ?? context.scope.actorId,
+      canManage: hasRole(ROLE_MATRIX.manage, context.scope.role),
+      side: "agency",
+    });
 
     return {
       ping: builder.ping.handler(async () => ({
@@ -404,27 +649,61 @@ export default createPlugin.withPlugins<PluginsClient>()({
         },
 
         reports: {
-          generate: builder.agency.reports.generate
+          preview: builder.agency.reports.preview
             .use(agencyMember)
             .handler(async ({ context, input }) =>
-              runEffect(
-                reports.generateSaved(context.scope, input, {
-                  organizationId: context.scope.organizationId,
-                  userId: context.userId ?? context.scope.actorId,
-                }),
-              ),
+              runEffect(reports.generate(context.scope, input)),
             ),
+
+          generate: builder.agency.reports.generate
+            .use(agencyMember)
+            .handler(async ({ context, input }) => {
+              const { share, ...reportInput } = input;
+              const viewer = agencyReportViewer(context);
+              if (share) await reports.assertShareable(viewer, reportInput.engagementId ?? null);
+              const saved = await runEffect(
+                reports.generateSaved(context.scope, reportInput, {
+                  organizationId: viewer.organizationId,
+                  userId: viewer.userId,
+                }),
+              );
+              if (share) await reports.setShared(viewer, saved.id, true);
+              return saved;
+            }),
 
           list: builder.agency.reports.list
             .use(agencyMember)
             .handler(async ({ context, input }) =>
-              reports.listSaved(context.scope.organizationId, input),
+              reports.listSaved(context.scope.organizationId, input, agencyReportViewer(context)),
             ),
 
           get: builder.agency.reports.get
             .use(agencyMember)
             .handler(async ({ context, input }) =>
-              reports.getSaved(context.scope.organizationId, input.id),
+              reports.getSaved(
+                context.scope.organizationId,
+                input.id,
+                {},
+                agencyReportViewer(context),
+              ),
+            ),
+
+          share: builder.agency.reports.share
+            .use(agencyMember)
+            .handler(async ({ context, input }) =>
+              reports.setShared(agencyReportViewer(context), input.id, true),
+            ),
+
+          unshare: builder.agency.reports.unshare
+            .use(agencyMember)
+            .handler(async ({ context, input }) =>
+              reports.setShared(agencyReportViewer(context), input.id, false),
+            ),
+
+          delete: builder.agency.reports.delete
+            .use(agencyMember)
+            .handler(async ({ context, input }) =>
+              reports.deleteSaved(agencyReportViewer(context), input.id),
             ),
         },
       },
@@ -567,28 +846,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context, input }) => ideas.decline(context.scope, input)),
       },
 
-      workOrders: {
-        list: builder.workOrders.list
-          .use(agencyManager)
-          .handler(async ({ context }) => workOrders.list(context.scope)),
-
-        create: builder.workOrders.create
-          .use(agencyManager)
-          .handler(async ({ context, input }) => workOrders.create(context.scope, input)),
-
-        update: builder.workOrders.update
-          .use(agencyManager)
-          .handler(async ({ context, input }) => workOrders.update(context.scope, input)),
-
-        remove: builder.workOrders.remove
-          .use(agencyManager)
-          .handler(async ({ context, input }) => workOrders.remove(context.scope, input)),
-
-        uncoveredPayouts: builder.workOrders.uncoveredPayouts
-          .use(agencyManager)
-          .handler(async ({ context }) => workOrders.uncoveredPayouts(context.scope)),
-      },
-
       agentLinks: {
         list: builder.agentLinks.list
           .use(member)
@@ -652,7 +909,23 @@ export default createPlugin.withPlugins<PluginsClient>()({
             ),
         },
 
+        agreements: {
+          list: builder.clientPortal.agreements.list
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.listAgreements(context, input)),
+        },
+
         reports: {
+          preview: builder.clientPortal.reports.preview
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) =>
+              runEffect(clientPortal.previewReport(context, input)),
+            ),
+
+          delete: builder.clientPortal.reports.delete
+            .use(auth.requireAuth)
+            .handler(async ({ context, input }) => clientPortal.deleteReport(context, input)),
+
           generate: builder.clientPortal.reports.generate
             .use(auth.requireAuth)
             .handler(async ({ context, input }) =>
@@ -777,6 +1050,316 @@ export default createPlugin.withPlugins<PluginsClient>()({
           ),
       },
 
+      workOrders: {
+        list: builder.workOrders.list
+          .use(agencyMember)
+          .handler(async ({ context, input }) => workOrders.list(context.scope, input)),
+
+        get: builder.workOrders.get
+          .use(agencyMember)
+          .handler(async ({ context, input }) => workOrders.get(context.scope, input)),
+
+        create: builder.workOrders.create
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.create(context.scope, input)),
+
+        update: builder.workOrders.update
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.update(context.scope, input)),
+
+        delete: builder.workOrders.delete
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.remove(context.scope, input)),
+
+        offer: builder.workOrders.offer
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.offer(context.scope, input)),
+
+        document: builder.workOrders.document
+          .use(agencyMember)
+          .handler(async ({ context, input }) => workOrders.document(context.scope, input)),
+
+        countersign: builder.workOrders.countersign
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            workOrders.countersign(context.scope, input, signerMeta(context.reqHeaders)),
+          ),
+
+        activate: builder.workOrders.activate
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.activate(context.scope, input)),
+
+        terminate: builder.workOrders.terminate
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.terminate(context.scope, input)),
+
+        attachDocument: builder.workOrders.attachDocument
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.attachDocument(context.scope, input)),
+
+        collect: builder.workOrders.collect
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.collect(context.scope, input)),
+
+        draftRequest: builder.workOrders.draftRequest
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.draftRequest(context.scope, input)),
+
+        approveRequest: builder.workOrders.approveRequest
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.approveRequest(context.scope, input)),
+
+        rejectRequest: builder.workOrders.rejectRequest
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.rejectRequest(context.scope, input)),
+
+        linkProposal: builder.workOrders.linkProposal
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => workOrders.linkProposal(context.scope, input)),
+
+        paymentProposal: builder.workOrders.paymentProposal
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => workOrders.paymentProposal(context.scope, input)),
+
+        payNow: builder.workOrders.payNow
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.payNow(context.scope, input)),
+
+        stopAutoApproval: builder.workOrders.stopAutoApproval
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.stopAutoApproval(context.scope, input)),
+
+        trustSettings: builder.workOrders.trustSettings
+          .use(agencyManager)
+          .handler(async ({ context }) => workOrders.trustSettings(context.scope)),
+
+        saveTrustSettings: builder.workOrders.saveTrustSettings
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            await workOrderIntegrations.saveTrust(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+            return workOrders.trustSettings(context.scope);
+          }),
+
+        payoutAgent: builder.workOrders.payoutAgent
+          .use(agencyManager)
+          .handler(async ({ context }) => payoutAgents.view(context.scope.organizationId)),
+
+        savePayoutAgent: builder.workOrders.savePayoutAgent
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            payoutAgents.saveSettings(context.scope.organizationId, context.scope.actorId, input),
+          ),
+
+        preparePayoutAction: builder.workOrders.preparePayoutAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            payoutAgents.prepare(context.scope.organizationId, input),
+          ),
+
+        submitPayoutAction: builder.workOrders.submitPayoutAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            payoutAgents.submit(context.scope.organizationId, input),
+          ),
+
+        allowPayees: builder.workOrders.allowPayees
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const result = await payoutAgents.ensurePayees(context.scope.organizationId);
+            return { ...result, view: await payoutAgents.view(context.scope.organizationId) };
+          }),
+
+        payoutFunding: builder.workOrders.payoutFunding
+          .use(treasuryManager)
+          .handler(async ({ context }) => {
+            const [needs, agent] = await Promise.all([
+              workOrders.fundingNeeds(context.scope),
+              payoutAgents.view(context.scope.organizationId),
+            ]);
+            const bufferPercent = needs.priceUsd ? 2 : 0;
+            const needed = needs.near + (needs.near * BigInt(bufferPercent)) / 100n;
+            const balance = agent.balance ? BigInt(nearToAtomic(agent.balance.near)) : null;
+            const check = await payoutAgents.fundingCheck(context.scope.organizationId, {
+              near: needed,
+              priceUsd: needs.priceUsd,
+            });
+            return {
+              items: needs.items.map((item) => ({
+                ...item,
+                near: atomicToNear(BigInt(item.near)),
+              })),
+              priceUsd: needs.priceUsd,
+              bufferPercent,
+              neededNear: atomicToNear(needed),
+              balanceNear: agent.balance?.near ?? null,
+              topUpNear: atomicToNear(topUpFor(needed, balance ?? 0n)),
+              lowBalance: check?.lowBalance ?? false,
+              monthlyBudgetUsd: check?.monthlyBudgetUsd ?? null,
+              monthlyNeededUsd: check?.monthlyNeededUsd ?? null,
+              suggestedBudgetUsd: check?.suggestedBudgetUsd ?? null,
+              budgetTooLow: check?.budgetTooLow ?? false,
+            };
+          }),
+
+        payoutTopUp: builder.workOrders.payoutTopUp
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => {
+            const deposit = await payoutAgents.depositAddress(context.scope.organizationId);
+            return {
+              address: deposit.address,
+              memo: deposit.memo,
+              minAmount: deposit.minAmount,
+              daoAccountId: context.scope.agencyDao,
+              method: "add_proposal" as const,
+              args: {
+                proposal: {
+                  description: `Top up the MultiAgency payout agent with ${input.amountNear} NEAR`,
+                  kind: {
+                    Transfer: {
+                      token_id: "",
+                      receiver_id: deposit.address,
+                      amount: nearToAtomic(input.amountNear),
+                      msg: null,
+                    },
+                  },
+                },
+              },
+              deposit: await getProposalBond(context.scope.agencyDao),
+              gas: "100000000000000",
+            };
+          }),
+
+        refreshPayment: builder.workOrders.refreshPayment
+          .use(agencyMember)
+          .handler(async ({ context, input }) => workOrders.refreshPayment(context.scope, input)),
+
+        decideRenewal: builder.workOrders.decideRenewal
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.decideRenewal(context.scope, input)),
+
+        setGithubLogin: builder.workOrders.setGithubLogin
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.setGithubLogin(context.scope, input)),
+
+        prepareDocument: builder.workOrders.prepareDocument
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.prepareDocument(context.scope, input)),
+
+        requestPayeeConfirmation: builder.workOrders.requestPayeeConfirmation
+          .use(agencyManager)
+          .handler(async ({ context, input }) =>
+            workOrders.requestPayeeConfirmation(context.scope, input),
+          ),
+
+        integration: builder.workOrders.integration
+          .use(agencyManager)
+          .handler(async ({ context }) => integrationView(context.scope.organizationId)),
+
+        saveGoogle: builder.workOrders.saveGoogle
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const templateId = await checkGoogleFile("Template", input.templateUrl, "document");
+            const documentsFolderId = await checkGoogleFile(
+              "Documents folder",
+              input.documentsFolderUrl,
+              "folder",
+              true,
+            );
+            const signedFolderId = await checkGoogleFile(
+              "Signed folder",
+              input.signedFolderUrl,
+              "folder",
+            );
+            await workOrderIntegrations.saveGoogle(
+              context.scope.organizationId,
+              context.scope.actorId,
+              {
+                templateId,
+                documentsFolderId,
+                signedFolderId,
+              },
+            );
+            return integrationView(context.scope.organizationId);
+          }),
+
+        checkDrive: builder.workOrders.checkDrive
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const result = await workOrders.checkDrive(context.scope);
+            return { ...(await integrationView(context.scope.organizationId)), result };
+          }),
+
+        run: builder.workOrders.run.handler(async ({ context }) => {
+          const given = context.reqHeaders?.get("authorization") ?? "";
+          if (!workOrdersRunSecret || !sameSecret(given, `Bearer ${workOrdersRunSecret}`)) {
+            throw new ORPCError("UNAUTHORIZED", { message: "A valid run secret is required" });
+          }
+          return workOrders.run();
+        }),
+      },
+
+      myWorkOrders: {
+        list: builder.myWorkOrders.list
+          .use(auth.requireAuth)
+          .handler(async ({ context }) => workOrders.mine(context)),
+
+        get: builder.myWorkOrders.get
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.mineGet(context, input)),
+
+        document: builder.myWorkOrders.document
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.myDocument(context, input)),
+
+        sign: builder.myWorkOrders.sign
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) =>
+            workOrders.sign(context, input, signerMeta(context.reqHeaders)),
+          ),
+
+        confirmPayee: builder.myWorkOrders.confirmPayee
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.confirmPayee(context, input)),
+
+        decline: builder.myWorkOrders.decline
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.decline(context, input)),
+
+        draftRequest: builder.myWorkOrders.draftRequest
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.mineDraftRequest(context, input)),
+
+        editRequest: builder.myWorkOrders.editRequest
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.editRequest(context, input)),
+
+        submitRequest: builder.myWorkOrders.submitRequest
+          .use(auth.requireAuth)
+          .handler(async ({ context, input }) => workOrders.submitRequest(context, input)),
+      },
+
+      agreements: {
+        list: builder.agreements.list
+          .use(agencyMember)
+          .handler(async ({ context, input }) => agreements.list(context.scope, input)),
+
+        create: builder.agreements.create
+          .use(agencyManager)
+          .handler(async ({ context, input }) => agreements.create(context.scope, input)),
+
+        update: builder.agreements.update
+          .use(agencyManager)
+          .handler(async ({ context, input }) => agreements.update(context.scope, input)),
+
+        delete: builder.agreements.delete
+          .use(agencyManager)
+          .handler(async ({ context, input }) => agreements.remove(context.scope, input)),
+      },
+
       budgets: {
         list: builder.budgets.list
           .use(treasuryMember)
@@ -795,6 +1378,20 @@ export default createPlugin.withPlugins<PluginsClient>()({
         transfer: builder.budgets.transfer
           .use(treasuryManager)
           .handler(async ({ context, input }) => runEffect(budgets.transfer(context.scope, input))),
+
+        update: builder.budgets.update
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => runEffect(budgets.update(context.scope, input))),
+
+        delete: builder.budgets.delete
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => runEffect(budgets.remove(context.scope, input))),
+
+        deleted: builder.budgets.deleted
+          .use(treasuryMember)
+          .handler(async ({ context, input }) =>
+            runEffect(budgets.listDeleted(context.scope, input)),
+          ),
       },
 
       billings: {
@@ -1007,3 +1604,9 @@ export default createPlugin.withPlugins<PluginsClient>()({
     };
   },
 });
+
+function sameSecret(given: string, expected: string): boolean {
+  const left = Buffer.from(given);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
+}

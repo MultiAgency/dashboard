@@ -16,7 +16,9 @@
     "typescript": "catalog:"
   },
   "dependencies": {
+    "@better-auth/core": "catalog:",
     "@electric-sql/pglite": "catalog:",
+    "@near-intents-agent-api/sdk": "0.4.1",
     "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/server": "catalog:",
@@ -25,9 +27,11 @@
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "every-plugin": "catalog:",
+    "near-kit": "catalog:",
+    "pdf-lib": "^1.17.1",
     "pg": "catalog:",
-    "zod": "catalog:",
-    "@better-auth/core": "catalog:"
+    "unpdf": "^1.9.1",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@effect/language-service": "^0.85.1",

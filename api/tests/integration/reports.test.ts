@@ -5,6 +5,7 @@ import { ORPCError } from "every-plugin/orpc";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { billings, budgets, engagementProjects, engagements, proposals } from "../../src/db/schema";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
+import { ALLOCATION_PLAN_ENABLED } from "../../src/services/budgets";
 import { createProjectDirectory, type ProjectsClient } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
 import { inMemoryOrganizations } from "../fakes/organizations";
@@ -298,6 +299,156 @@ describe("reports.generate", () => {
         }),
       ]),
     );
+  });
+
+  test.skipIf(ALLOCATION_PLAN_ENABLED)(
+    "generate — Admin → Budgets entries count as the Engagement's allocation while the Allocation plan is omitted",
+    async () => {
+      await insertClient("client-a");
+      await linkProject("client-a", "project-a");
+      await insertBudget("budget-own", "project-a", "near", "4300");
+
+      const reports = buildReports(
+        createFakePlugins([
+          makeProject({ id: "project-a", slug: "project-a-slug", title: "Project A" }),
+        ]),
+      );
+
+      const agencyWide = await Effect.runPromise(reports.generate(scope, {}));
+      expect(agencyWide.clientBreakdown).toEqual([
+        expect.objectContaining({
+          clientName: "Client A",
+          budgetByToken: [{ tokenId: "near", amount: "4300" }],
+        }),
+      ]);
+
+      const forClient = await Effect.runPromise(
+        reports.generate(scope, { engagementId: "client-a", forClient: true }),
+      );
+      expect(forClient.overview.budgetByToken).toEqual([{ tokenId: "near", amount: "4300" }]);
+      expect(forClient.clientBreakdown).toEqual([
+        expect.objectContaining({ budgetByToken: [{ tokenId: "near", amount: "4300" }] }),
+      ]);
+    },
+  );
+
+  test("generate — budgets count in the period of their effective date, not the day they were entered", async () => {
+    await insertClient("client-a");
+    await linkProject("client-a", "project-a");
+    await db.insert(budgets).values([
+      {
+        id: "budget-september",
+        projectId: "project-a",
+        tokenId: "near",
+        amount: "700",
+        effectiveOn: "2026-09-01",
+        actorAccountId: "admin.near",
+        createdAt: new Date("2026-10-08T10:00:00.000Z"),
+      },
+      {
+        id: "budget-october",
+        projectId: "project-a",
+        tokenId: "near",
+        amount: "300",
+        actorAccountId: "admin.near",
+        createdAt: new Date("2026-10-08T10:00:00.000Z"),
+      },
+    ]);
+
+    const reports = buildReports(
+      createFakePlugins([makeProject({ id: "project-a", slug: "project-a-slug" })]),
+    );
+
+    const september = await Effect.runPromise(
+      reports.generate(scope, { startDate: "2026-09-01", endDate: "2026-09-30" }),
+    );
+    expect(september.overview.budgetByToken).toEqual([{ tokenId: "near", amount: "700" }]);
+
+    const october = await Effect.runPromise(
+      reports.generate(scope, { startDate: "2026-10-01", endDate: "2026-10-31" }),
+    );
+    expect(october.overview.budgetByToken).toEqual([{ tokenId: "near", amount: "300" }]);
+  });
+
+  test("generate — projectBreakdown lists each project's budget and billed amounts for the period", async () => {
+    await db.insert(budgets).values([
+      {
+        id: "budget-a-sep",
+        projectId: "project-a",
+        tokenId: "near",
+        amount: "700",
+        effectiveOn: "2026-09-01",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-a-aug",
+        projectId: "project-a",
+        tokenId: "near",
+        amount: "999",
+        effectiveOn: "2026-08-01",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-b-sep",
+        projectId: "project-b",
+        tokenId: "near",
+        amount: "300",
+        effectiveOn: "2026-09-15",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-c-aug",
+        projectId: "project-c",
+        tokenId: "near",
+        amount: "50",
+        effectiveOn: "2026-08-01",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-d-in",
+        projectId: "project-d",
+        tokenId: "near",
+        amount: "400",
+        effectiveOn: "2026-09-05",
+        actorAccountId: "admin.near",
+      },
+      {
+        id: "budget-d-out",
+        projectId: "project-d",
+        tokenId: "near",
+        amount: "-400",
+        effectiveOn: "2026-09-20",
+        actorAccountId: "admin.near",
+      },
+    ]);
+
+    const reports = buildReports(
+      createFakePlugins([
+        makeProject({ id: "project-a", slug: "project-a-slug", title: "Alpha" }),
+        makeProject({ id: "project-b", slug: "project-b-slug", title: "Bravo" }),
+        makeProject({ id: "project-c", slug: "project-c-slug", title: "Charlie" }),
+        makeProject({ id: "project-d", slug: "project-d-slug", title: "Delta" }),
+      ]),
+    );
+
+    const september = await Effect.runPromise(
+      reports.generate(scope, { startDate: "2026-09-01", endDate: "2026-09-30" }),
+    );
+
+    expect(september.projectBreakdown).toEqual([
+      {
+        projectTitle: "Alpha",
+        projectSlug: "project-a-slug",
+        budgetByToken: [{ tokenId: "near", amount: "700" }],
+        billedByToken: [],
+      },
+      {
+        projectTitle: "Bravo",
+        projectSlug: "project-b-slug",
+        budgetByToken: [{ tokenId: "near", amount: "300" }],
+        billedByToken: [],
+      },
+    ]);
   });
 
   test("generate (client route) — scoped to one client, doesn't leak another client's data into the response", async () => {

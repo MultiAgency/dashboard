@@ -103,8 +103,99 @@
     {
       "idx": 14,
       "version": "7",
-      "when": 1791158400000,
-      "tag": "0015_work_orders",
+      "when": 1791936000000,
+      "tag": "0015_budget_effective_on",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792022400000,
+      "tag": "0016_report_sharing",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0017_budget_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792281600000,
+      "tag": "0018_client_agreements",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792368000000,
+      "tag": "0019_work_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792454400000,
+      "tag": "0020_work_order_google",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792540800000,
+      "tag": "0021_work_order_usd",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792627200000,
+      "tag": "0022_work_order_signing",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792713600000,
+      "tag": "0023_payout_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792800000000,
+      "tag": "0024_work_order_documenso",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0025_work_order_auto_pay",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793059200000,
+      "tag": "0027_work_order_trust",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793145600000,
+      "tag": "0028_drop_n8n",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793232000000,
+      "tag": "0029_owner_signing",
       "breakpoints": true
     }
   ]

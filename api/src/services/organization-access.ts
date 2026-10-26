@@ -69,6 +69,7 @@ export type SharedEngagement = {
   projectIds: string[];
   scope: AgencyScope;
   viewerAgencyDao: string | null;
+  viewerRole: OrganizationRole | null;
 };
 
 export type SubcontractedProject = {
@@ -86,7 +87,10 @@ export type WorkableProject = {
 
 const projectNotFound = () => new ORPCError("NOT_FOUND", { message: "Project not found" });
 
-function hasRole(roles: readonly OrganizationRole[], role: OrganizationRole | null): boolean {
+export function hasRole(
+  roles: readonly OrganizationRole[],
+  role: OrganizationRole | null,
+): boolean {
   return role !== null && roles.includes(role);
 }
 
@@ -353,6 +357,7 @@ export function createOrganizationAccess(deps: {
       projectIds: await sharedProjectIds(engagement.id),
       scope: await readScopeOfAgency(context, engagement.agencyOrganizationId),
       viewerAgencyDao: access.agencyDao,
+      viewerRole: access.role,
     };
   }
 
@@ -377,6 +382,7 @@ export function createOrganizationAccess(deps: {
         projectIds: await sharedProjectIds(engagement.id),
         scope: await readScopeOfAgency(context, engagement.agencyOrganizationId),
         viewerAgencyDao: access.agencyDao,
+        viewerRole: access.role,
       })),
     );
   }

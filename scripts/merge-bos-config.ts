@@ -56,7 +56,19 @@ if (import.meta.main) {
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.error(`bos.config.json: ${reason}; resolve it by hand.`);
-    Bun.spawnSync(["git", "merge-file", "-L", "ours", "-L", "base", "-L", "theirs", oursPath, basePath, theirsPath]);
+    Bun.spawnSync([
+      "git",
+      "merge-file",
+      "-L",
+      "ours",
+      "-L",
+      "base",
+      "-L",
+      "theirs",
+      oursPath,
+      basePath,
+      theirsPath,
+    ]);
     process.exit(1);
   }
 }
