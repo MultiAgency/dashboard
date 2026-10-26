@@ -13,6 +13,7 @@ import {
   DialogContent,
   PageHeader,
 } from "@/components";
+import { AgencyNamePrompt } from "@/components/agency-name-prompt";
 import { WorkOrderForm } from "@/components/work-orders/work-order-form";
 import {
   RenewalBadge,
@@ -132,6 +133,8 @@ function WorkOrdersPage() {
           )
         }
       />
+
+      {canManage && <AgencyNamePrompt />}
 
       {waiting.length > 0 && (
         <Alert>
