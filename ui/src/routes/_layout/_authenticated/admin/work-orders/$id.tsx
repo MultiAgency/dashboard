@@ -68,7 +68,7 @@ function WorkOrderPage() {
       if (action === "collect") return apiClient.workOrders.collect({ id });
       return apiClient.workOrders.delete({ id });
     },
-    onSuccess: async (_, action) => {
+    onSuccess: async (result, action) => {
       if (action === "delete") {
         await navigate({ to: "/admin/work-orders" });
         queryClient.removeQueries({
@@ -77,8 +77,16 @@ function WorkOrderPage() {
         });
       }
       await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      const signFirst =
+        action === "offer" &&
+        typeof result === "object" &&
+        result !== null &&
+        "signing" in result &&
+        result.signing.awaitingRepresentative;
       const done: Record<Action, string> = {
-        offer: "Offered to the builder; they accept it from My work",
+        offer: signFirst
+          ? "Ready to sign: sign it in Documenso to send it to the builder"
+          : "Offered to the builder; they accept it from My work",
         activate: "Active: the work period has started",
         terminate: "Terminated: nothing more is paid under it",
         delete: "Deleted",
@@ -171,6 +179,19 @@ function WorkOrderPage() {
               ))}
             </ul>
           </AlertDescription>
+          {canManage &&
+            wo.signing.awaitingRepresentative &&
+            wo.signing.esign?.representativeUrl && (
+              <AlertDescription>
+                <Button size="sm" className="mt-2" asChild>
+                  <a href={wo.signing.esign.representativeUrl} target="_blank" rel="noreferrer">
+                    {wo.representativeName
+                      ? `Sign as ${wo.representativeName} to send it`
+                      : "Sign in Documenso to send it"}
+                  </a>
+                </Button>
+              </AlertDescription>
+            )}
         </Alert>
       )}
 
