@@ -514,6 +514,42 @@ export const workOrdersContract = {
     .output(compensationRequest)
     .errors(errors),
 
+  payoutReadiness: oc
+    .route({ method: "GET", path: "/admin/work-order-requests/{requestId}/payout-readiness" })
+    .input(z.object({ requestId: z.string().min(1), amount }))
+    .output(
+      z.object({
+        ready: z.boolean(),
+        code: z.string().nullable(),
+        reason: z.string().nullable(),
+        near: z.string().nullable(),
+        balanceNear: z.string().nullable(),
+        priceUsd: z.string().nullable(),
+      }),
+    )
+    .errors(errors),
+
+  payoutCoverage: oc
+    .route({ method: "GET", path: "/admin/work-orders/{id}/payout-coverage" })
+    .input(byId)
+    .output(
+      z
+        .object({
+          covered: z.boolean(),
+          unpaid: z.string(),
+          balanceNear: z.string().nullable(),
+          neededNear: z.string(),
+          shortfallNear: z.string().nullable(),
+          lowBalance: z.boolean(),
+          neededUsd: z.string().nullable(),
+          monthlyBudgetUsd: z.string().nullable(),
+          monthlyRemainingUsd: z.string().nullable(),
+          overMonthly: z.boolean(),
+        })
+        .nullable(),
+    )
+    .errors(errors),
+
   rejectRequest: oc
     .route({ method: "POST", path: "/admin/work-order-requests/{requestId}/reject" })
     .input(z.object({ requestId: z.string().min(1), note: z.string().trim().min(1).max(2000) }))

@@ -23,6 +23,8 @@ import { nearAccountsOf, type PluginContext } from "../../lib/organizations";
 import { rememberedLogin, rememberLogin } from "../builder-logins";
 import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
+import { atomicToNear } from "../payouts/policy";
+import type { FundingCheck } from "../payouts/service";
 import type { Project, ProjectDirectory } from "../project-directory";
 import type { DaoProposal } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
@@ -112,7 +114,13 @@ export type WorkOrderDeps = {
     readiness(
       organizationId: string,
       payee: string,
-    ): Promise<{ ready: boolean; reason: string | null }>;
+      amountAtomic?: string | bigint | null,
+      priceUsd?: string | null,
+    ): Promise<{ ready: boolean; code?: string | null; reason: string | null }>;
+    fundingCheck?(
+      organizationId: string,
+      needs: { near: bigint; priceUsd: string | null },
+    ): Promise<FundingCheck | null>;
     send(
       organizationId: string,
       input: { requestId: string; recipient: string; amount: string },
@@ -223,6 +231,18 @@ const STUCK_PAYING_MS = 10 * 60_000;
 
 function payoutInFlight(last: AgentPayoutView | null | undefined): boolean {
   return !!last && IN_FLIGHT.includes(last.status);
+}
+
+const NOT_PAYING_NOW = new Set(["unavailable", "no_agent"]);
+
+type FundingCode = "insufficient_balance" | "over_monthly_budget" | "over_cap";
+
+function fundingCodeOf(text: string): FundingCode | null {
+  if (/insufficient[_ ]balance/i.test(text)) return "insufficient_balance";
+  if (/over_monthly_budget|spend_budget_exceeded|month's budget/i.test(text))
+    return "over_monthly_budget";
+  if (/over_cap|cap per payout/i.test(text)) return "over_cap";
+  return null;
 }
 
 const REPO = /^[A-Za-z0-9-]{1,39}\/(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$/;
@@ -353,6 +373,17 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   const payoutTokenOf = (row: Pick<WorkOrderRow, "tokenId" | "payoutTokenId">) =>
     row.tokenId === USD ? NATIVE_TOKEN_ID : row.tokenId;
 
+  async function nearOf(
+    row: WorkOrderRow,
+    amount: bigint,
+  ): Promise<{ near: bigint; priceUsd: string | null }> {
+    if (row.tokenId !== USD) return { near: amount, priceUsd: null };
+    if (!deps.prices) throw badRequest("NO_PRICES", "USD prices aren't available on this server");
+    const decimals = getTokenMetadata(NATIVE_TOKEN_ID)?.decimals ?? 24;
+    const quote = await deps.prices.price(NATIVE_TOKEN_ID);
+    return { near: usdToTokens(amount, quote.priceUsd, decimals), priceUsd: quote.priceUsd };
+  }
+
   async function quotePayout(row: WorkOrderRow, request: CompensationRequestRow) {
     const tokenId = payoutTokenOf(row);
     if (row.tokenId !== USD) {
@@ -390,6 +421,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     renewal?: WorkOrderEvent["renewal"];
     note?: string | null;
     document?: string | null;
+    hold?: WorkOrderEvent["hold"];
   };
 
   async function contactsOf(row: WorkOrderRow, builder: BuilderProfile | null) {
@@ -461,6 +493,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           document: extra.document ?? row.documentUrl ?? row.preparedDocumentUrl ?? null,
           sign: row.esignBuilderUrl ?? null,
           countersign: row.esignRepresentativeUrl ?? null,
+          settings: absolute("/admin/settings#payouts"),
         },
         reportMd: extra.reportMd ?? null,
         terms:
@@ -483,6 +516,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         mismatches: extra.mismatches ?? null,
         note: extra.note ?? null,
         renewal: extra.renewal ?? null,
+        hold: extra.hold ?? null,
       };
       await deps.outbox.enqueue(row.organizationId, row.id, event);
     } catch (error) {
@@ -2161,6 +2195,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           payoutTokenId: NATIVE_TOKEN_ID,
           payoutAmount: payout.amount,
           autoPayBlockedReason: null,
+          autoPayBlockedCode: null,
           autoPayBlockedAt: null,
           updatedAt: now(),
         })
@@ -2192,19 +2227,67 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return paid;
   }
 
+  async function fundingHoldOf(
+    request: CompensationRequestRow,
+    row: WorkOrderRow,
+    reason: string,
+  ): Promise<WorkOrderEvent["hold"]> {
+    const payouts = deps.payouts;
+    let code = fundingCodeOf(reason);
+    let plain = reason;
+    if (payouts && request.payoutAmount) {
+      const check = await payouts
+        .readiness(
+          row.organizationId,
+          row.builderNearAccount,
+          request.payoutAmount,
+          request.priceUsd,
+        )
+        .catch(() => null);
+      const checked = check && !check.ready ? fundingCodeOf(check.code ?? "") : null;
+      if (check && checked) {
+        code = checked;
+        plain = check.reason ?? reason;
+      }
+    }
+    if (!code) return null;
+    const funding =
+      payouts?.fundingCheck && request.payoutAmount
+        ? await payouts
+            .fundingCheck(row.organizationId, {
+              near: BigInt(request.payoutAmount),
+              priceUsd: request.priceUsd,
+            })
+            .catch(() => null)
+        : null;
+    return {
+      code,
+      reason: plain,
+      balanceNear: funding?.balanceNear ?? null,
+      neededNear:
+        funding?.neededNear ??
+        (request.payoutAmount ? atomicToNear(BigInt(request.payoutAmount)) : null),
+    };
+  }
+
   async function blockPayout(
     request: CompensationRequestRow,
     row: WorkOrderRow,
     reason: string,
     note: string,
   ): Promise<CompensationRequestRow> {
+    const hold = await fundingHoldOf(await mustRequest(request.id), row, reason);
     const blocked = await updateUnpaid(request.id, {
       status: "approved",
       note,
       autoPayBlockedReason: reason,
+      autoPayBlockedCode: hold?.code ?? null,
       autoPayBlockedAt: request.autoPayBlockedAt ?? now(),
       autoPayTriedAt: now(),
     });
+    if (blocked.status === "approved" && hold && hold.code !== request.autoPayBlockedCode) {
+      await announce(row, "request.payout_blocked", { request: blocked, hold });
+    }
     if (blocked.status === "approved" && !request.autoPayBlockedAt) {
       await notifyManagers(
         row,
@@ -2240,6 +2323,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         status: "approved",
         note: `The automatic payout needs a person to check it: ${reason}. Check the payout agent's history before paying it again, or pay it through a DAO proposal.`,
         autoPayBlockedReason: null,
+        autoPayBlockedCode: null,
         autoPayBlockedAt: null,
       });
       await notifyManagers(
@@ -2258,6 +2342,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       status: "paying",
       note: null,
       autoPayBlockedReason: null,
+      autoPayBlockedCode: null,
       autoPayBlockedAt: null,
     });
   }
@@ -2401,7 +2486,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       try {
         const row = await mustRow(request.workOrderId);
         if (FINAL.includes(row.status)) {
-          await updateRequest(request.id, { autoPayBlockedReason: null, autoPayBlockedAt: null });
+          await updateRequest(request.id, {
+            autoPayBlockedReason: null,
+            autoPayBlockedCode: null,
+            autoPayBlockedAt: null,
+          });
           continue;
         }
         const [claimed] = await db
@@ -2725,6 +2814,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           decidedAt: now(),
           note: null,
           autoPayBlockedReason: null,
+          autoPayBlockedCode: null,
           autoPayBlockedAt: null,
           autoPayTriedAt: null,
           updatedAt: now(),
@@ -3245,6 +3335,93 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         input.confirmEvidenceIds,
       );
       return requestView(approved, row);
+    },
+
+    payoutReadiness: async (
+      scope: OrganizationScope,
+      input: { requestId: string; amount: string },
+    ) => {
+      const request = await mustRequest(input.requestId);
+      const row = await ownRow(scope, request.workOrderId);
+      const payouts = deps.payouts;
+      const result = (
+        code: string | null,
+        reason: string | null,
+        extra: { near?: string; balanceNear?: string | null; priceUsd?: string | null } = {},
+      ) => ({
+        ready: code === null,
+        code,
+        reason,
+        near: extra.near ?? null,
+        balanceNear: extra.balanceNear ?? null,
+        priceUsd: extra.priceUsd ?? null,
+      });
+      if (!payouts) return result("unavailable", "Automatic payouts aren't set up");
+      if (payoutTokenOf(row) !== NATIVE_TOKEN_ID) {
+        return result(
+          "unavailable",
+          "Automatic payouts pay in NEAR; this work order pays in another token",
+        );
+      }
+      let priced: { near: bigint; priceUsd: string | null };
+      try {
+        priced = await nearOf(row, BigInt(input.amount));
+      } catch (error) {
+        return result("unreachable", `Couldn't get the NEAR price: ${errorText(error)}`);
+      }
+      const near = atomicToNear(priced.near);
+      const check = await payouts.readiness(
+        row.organizationId,
+        row.builderNearAccount,
+        priced.near,
+        priced.priceUsd,
+      );
+      if (check.ready) return result(null, null, { near, priceUsd: priced.priceUsd });
+      const code = check.code ?? (check.reason === NO_AGENT ? "no_agent" : "unreachable");
+      const funding =
+        !NOT_PAYING_NOW.has(code) && payouts.fundingCheck
+          ? await payouts
+              .fundingCheck(row.organizationId, { near: priced.near, priceUsd: priced.priceUsd })
+              .catch(() => null)
+          : null;
+      return result(code, check.reason ?? "The payout agent isn't ready", {
+        near,
+        balanceNear: funding?.balanceNear ?? null,
+        priceUsd: priced.priceUsd,
+      });
+    },
+
+    payoutCoverage: async (scope: OrganizationScope, input: { id: string }) => {
+      const row = await ownRow(scope, input.id);
+      const payouts = deps.payouts;
+      if (!payouts?.fundingCheck || FINAL.includes(row.status)) return null;
+      if (payoutTokenOf(row) !== NATIVE_TOKEN_ID) return null;
+      const { paid } = amountsOf(row, await requestsOf(row.id));
+      const budget = BigInt(row.budgetAmount);
+      const unpaid = budget > paid ? budget - paid : 0n;
+      if (unpaid <= 0n) return null;
+      const priced = await nearOf(row, unpaid).catch(() => null);
+      if (!priced) return null;
+      const check = await payouts
+        .fundingCheck(row.organizationId, { near: priced.near, priceUsd: priced.priceUsd })
+        .catch(() => null);
+      if (!check) return null;
+      const overMonthly =
+        check.monthlyNeededUsd !== null &&
+        check.monthlyRemainingUsd !== null &&
+        Number(check.monthlyNeededUsd) > Number(check.monthlyRemainingUsd);
+      return {
+        covered: !check.lowBalance && !overMonthly,
+        unpaid: display(unpaid, row.tokenId),
+        balanceNear: check.balanceNear,
+        neededNear: check.neededNear,
+        shortfallNear: check.shortfallNear,
+        lowBalance: check.lowBalance,
+        neededUsd: check.monthlyNeededUsd,
+        monthlyBudgetUsd: check.monthlyBudgetUsd,
+        monthlyRemainingUsd: check.monthlyRemainingUsd,
+        overMonthly,
+      };
     },
 
     fundingNeeds: async (scope: OrganizationScope) => {

@@ -103,6 +103,41 @@ describe("work order emails", () => {
     expect(to("request.needs_review", { request: { ...request, status: "failed" } })).toEqual([]);
   });
 
+  test("a payout on hold emails only the representative, with a link to fund the agent", () => {
+    const base = event("request.payout_blocked");
+    const held = event("request.payout_blocked", {
+      request: {
+        id: "SI-004-R1",
+        status: "approved",
+        requestedUsd: "1",
+        approvedUsd: "1",
+        tokenAmount: "1000000",
+        symbol: "USD",
+        requested: "$1",
+        approved: "$1",
+        note: null,
+      },
+      links: { ...base.links, settings: "https://app.example/admin/settings#payouts" },
+      hold: {
+        code: "insufficient_balance",
+        reason: "The agent holds 0.0148 NEAR; this payout needs 0.22 NEAR",
+        balanceNear: "0.0148",
+        neededNear: "0.22",
+      },
+    });
+    const emails = composeEmails(held);
+    expect(emails.map((m) => m.to)).toEqual(["rita@example.com"]);
+    const [email] = emails;
+    expect(email?.subject).toBe("Payout on hold: fund the agent to pay Carol $1");
+    expect(email?.html).toContain("Payout on hold");
+    expect(email?.html).toContain("Fund the agent to pay Carol $1");
+    expect(email?.html).toContain('href="https://app.example/admin/settings#payouts"');
+    expect(email?.text).toContain("The agent holds 0.0148 NEAR; this payout needs 0.22 NEAR.");
+    expect(email?.text).toContain("paid automatically");
+    expect(email?.text).toContain("0.0148 NEAR");
+    expect(composeEmails(event("request.payout_blocked"))).toEqual([]);
+  });
+
   test("the offer email links straight to the signing page", () => {
     const base = event("work_order.offered");
     const [offer] = composeEmails(

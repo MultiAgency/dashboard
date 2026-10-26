@@ -60,6 +60,7 @@ export type FundingCheck = {
   neededNear: string;
   shortfallNear: string | null;
   monthlyBudgetUsd: string | null;
+  monthlyRemainingUsd: string | null;
   monthlyNeededUsd: string | null;
   suggestedBudgetUsd: string | null;
   budgetTooLow: boolean;
@@ -735,6 +736,7 @@ export function createPayoutAgents(deps: {
       neededNear: atomicToNear(needs.near),
       shortfallNear: shortfall === null ? null : atomicToNear(shortfall),
       monthlyBudgetUsd,
+      monthlyRemainingUsd: current?.usage.budget.monthly.remaining_usd ?? null,
       monthlyNeededUsd: neededUsd === null ? null : neededUsd.toFixed(2),
       suggestedBudgetUsd: budgetTooLow && neededUsd !== null ? String(Math.ceil(neededUsd)) : null,
       budgetTooLow,

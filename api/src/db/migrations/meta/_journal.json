@@ -211,6 +211,13 @@
       "when": 1793404800000,
       "tag": "0031_work_order_representative",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793491200000,
+      "tag": "0032_work_order_payout_hold",
+      "breakpoints": true
     }
   ]
 }

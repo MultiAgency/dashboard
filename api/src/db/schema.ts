@@ -756,6 +756,7 @@ export const compensationRequests = pgTable(
     pricedAt: timestamp("priced_at", { withTimezone: false }),
     proposalId: text("proposal_id"),
     autoPayBlockedReason: text("auto_pay_blocked_reason"),
+    autoPayBlockedCode: text("auto_pay_blocked_code"),
     autoPayBlockedAt: timestamp("auto_pay_blocked_at", { withTimezone: false }),
     autoPayTriedAt: timestamp("auto_pay_tried_at", { withTimezone: false }),
     submittedAt: timestamp("submitted_at", { withTimezone: false }),

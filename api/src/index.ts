@@ -1106,6 +1106,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.approveRequest(context.scope, input)),
 
+        payoutReadiness: builder.workOrders.payoutReadiness
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.payoutReadiness(context.scope, input)),
+
+        payoutCoverage: builder.workOrders.payoutCoverage
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.payoutCoverage(context.scope, input)),
+
         rejectRequest: builder.workOrders.rejectRequest
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.rejectRequest(context.scope, input)),

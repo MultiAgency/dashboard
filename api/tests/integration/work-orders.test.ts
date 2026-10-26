@@ -6,7 +6,7 @@ import type { Database } from "../../src/db";
 import { billings, compensationRequests, notifications, workOrders } from "../../src/db/schema";
 import { rememberedLogin } from "../../src/services/builder-logins";
 import { requireTreasury } from "../../src/services/organization-access";
-import { topUpFor } from "../../src/services/payouts/policy";
+import { atomicToNear, topUpFor } from "../../src/services/payouts/policy";
 import {
   createPayoutAgents,
   type PayoutAgents,
@@ -1667,6 +1667,114 @@ describe("work orders", () => {
         `multiagency:${draft.id}:a1`,
         `multiagency:${draft.id}:a2`,
         `multiagency:${draft.id}:a3`,
+      ]);
+    });
+
+    test("before approving, the admin sees that the agent can't pay it right away", async () => {
+      const { draft } = await approvedRequest();
+      const near = atomicToNear(usdToTokens(600_000_000n, "4.99", 24));
+      const without = await createWorkOrdersService(serviceDeps).payoutReadiness(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(without).toMatchObject({ ready: false, code: "unavailable" });
+      expect(
+        await service.payoutReadiness(await studio(), { requestId: draft.id, amount: "600000000" }),
+      ).toMatchObject({ ready: false, code: "no_agent" });
+      await setUpAgent();
+      const empty = await service.payoutReadiness(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(empty).toEqual({
+        ready: false,
+        code: "insufficient_balance",
+        reason: `The agent holds 0 NEAR; this payout needs ${near} NEAR`,
+        near,
+        balanceNear: "0",
+        priceUsd: "4.99",
+      });
+      agent.balanceRaw = (200n * 10n ** 24n).toString();
+      agent.monthlySpentUsd = "4800";
+      expect(
+        await service.payoutReadiness(await studio(), { requestId: draft.id, amount: "600000000" }),
+      ).toMatchObject({ ready: false, code: "over_monthly_budget", balanceNear: "200" });
+      agent.monthlySpentUsd = "0";
+      expect(
+        await service.payoutReadiness(await studio(), { requestId: draft.id, amount: "600000000" }),
+      ).toEqual({
+        ready: true,
+        code: null,
+        reason: null,
+        near,
+        balanceNear: null,
+        priceUsd: "4.99",
+      });
+      const detail = await service.get(await studio(), { id: draft.workOrderId });
+      expect(detail.requests.find((r) => r.id === draft.id)?.status).toBe("submitted");
+      expect(agent.withdrawals).toEqual([]);
+    });
+
+    test("the work order page warns when the agent can't cover its budget", async () => {
+      const { wo } = await approvedRequest();
+      await setUpAgent();
+      const needed = atomicToNear(usdToTokens(1_000_000_000n, "4.99", 24));
+      expect(await service.payoutCoverage(await studio(), { id: wo.id })).toEqual({
+        covered: false,
+        unpaid: "$1,000",
+        balanceNear: "0",
+        neededNear: needed,
+        shortfallNear: expect.any(String),
+        lowBalance: true,
+        neededUsd: "1000.00",
+        monthlyBudgetUsd: "5000",
+        monthlyRemainingUsd: "5000.00",
+        overMonthly: false,
+      });
+      agent.balanceRaw = (300n * 10n ** 24n).toString();
+      agent.monthlySpentUsd = "4500";
+      expect(await service.payoutCoverage(await studio(), { id: wo.id })).toMatchObject({
+        covered: false,
+        lowBalance: false,
+        overMonthly: true,
+        monthlyRemainingUsd: "500.00",
+      });
+      agent.monthlySpentUsd = "0";
+      expect(await service.payoutCoverage(await studio(), { id: wo.id })).toMatchObject({
+        covered: true,
+      });
+      const plain = createWorkOrdersService(serviceDeps);
+      expect(await plain.payoutCoverage(await studio(), { id: wo.id })).toBeNull();
+    });
+
+    test("a payout on hold for funds emails the representative once, not on every retry", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("t1");
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("t2");
+      expect(agent.withdrawals).toHaveLength(3);
+      const held = events.filter((e) => e.type === "request.payout_blocked");
+      expect(held).toHaveLength(1);
+      const near = atomicToNear(usdToTokens(600_000_000n, "4.99", 24));
+      expect(held[0]?.hold).toEqual({
+        code: "insufficient_balance",
+        reason: `The agent holds 0 NEAR; this payout needs ${near} NEAR`,
+        balanceNear: "0",
+        neededNear: near,
+      });
+      expect(held[0]?.links.settings).toBe("https://app.example/admin/settings#payouts");
+      expect(held[0]?.request?.id).toBe(`${held[0]?.workOrder.id}-R1`);
+      agent.monthlySpentUsd = "4800";
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("t3");
+      const again = events.filter((e) => e.type === "request.payout_blocked");
+      expect(again.map((e) => e.hold?.code)).toEqual([
+        "insufficient_balance",
+        "over_monthly_budget",
       ]);
     });
 

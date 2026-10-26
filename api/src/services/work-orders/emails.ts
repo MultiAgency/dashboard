@@ -19,6 +19,33 @@ const COUNTING_RULES = [
   "At the end of the period, the report and compensation request are drafted automatically.",
 ];
 
+const HOLD_FIXES: Record<
+  string,
+  { subject: string; heading: string; why: string; next: string; action: string }
+> = {
+  insufficient_balance: {
+    subject: "fund the agent",
+    heading: "Fund the agent",
+    why: "it doesn't hold enough NEAR",
+    next: "Top up the payout agent from the treasury.",
+    action: "Fund the agent",
+  },
+  over_monthly_budget: {
+    subject: "raise the monthly budget",
+    heading: "Raise the monthly budget",
+    why: "it would go over this month's payout budget",
+    next: "Raise the monthly budget in the payout settings, or wait for it to reset.",
+    action: "Open the payout settings",
+  },
+  over_cap: {
+    subject: "raise the payout cap",
+    heading: "Raise the payout cap",
+    why: "it's more than the agent may send in one payout",
+    next: "Raise the maximum per payout in the payout settings.",
+    action: "Open the payout settings",
+  },
+};
+
 export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
   const out: WorkOrderEmail[] = [];
   const wo = e.workOrder;
@@ -172,6 +199,36 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
         secondary:
           e.payout?.txUrl && e.links.contractor
             ? [{ label: "Open the work order", url: e.links.contractor }]
+            : [],
+      });
+      break;
+    }
+    case "request.payout_blocked": {
+      const hold = e.hold;
+      if (!hold) break;
+      const amount = r?.approved ?? r?.requested ?? "";
+      const fix = HOLD_FIXES[hold.code] ?? HOLD_FIXES.insufficient_balance!;
+      const settings = e.links.settings ?? e.links.review;
+      send("representative", `Payout on hold: ${fix.subject} to pay ${builder} ${amount}`.trim(), {
+        preheader: `${r?.id ?? wo.id} for ${builder} is approved but can't be paid yet.`,
+        eyebrow: "Payout on hold",
+        heading: `${fix.heading} to pay ${builder}${amount ? ` ${amount}` : ""}`,
+        paragraphs: [
+          `Payout request ${r?.id ?? ""} is approved, but the payout agent can't send it yet: ${fix.why}.`,
+          `${hold.reason.replace(/\.$/, "")}.`,
+          `${fix.next} It's paid automatically once that's done: there's no need to approve it again.`,
+        ],
+        details: summary(
+          ["Request", r?.id ?? ""],
+          ["Amount", amount],
+          ["Paid to", e.contractor.nearAccount],
+          ["Agent holds", hold.balanceNear ? `${hold.balanceNear} NEAR` : ""],
+          ["Needs", hold.neededNear ? `${hold.neededNear} NEAR` : ""],
+        ),
+        action: settings ? { label: fix.action, url: settings } : null,
+        secondary:
+          e.links.review && settings !== e.links.review
+            ? [{ label: "Open the work order", url: e.links.review }]
             : [],
       });
       break;
