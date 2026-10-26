@@ -633,6 +633,11 @@ export const workOrders = pgTable(
     preparedDocumentUrl: text("prepared_document_url"),
     documentId: text("document_id"),
     documentFields: text("document_fields"),
+    customFields: text("custom_fields"),
+    documentWarning: text("document_warning"),
+    signedDriveFileId: text("signed_drive_file_id"),
+    signedDriveUrl: text("signed_drive_url"),
+    signedDriveError: text("signed_drive_error"),
     signatureMethod: text("signature_method", { enum: SIGNATURE_METHODS }),
     signers: text("signers"),
     signedAt: timestamp("signed_at", { withTimezone: false }),
@@ -791,6 +796,12 @@ export const workOrderIntegrations = pgTable("work_order_integrations", {
   googleSignedFolderId: text("google_signed_folder_id"),
   googleCheckedAt: timestamp("google_checked_at", { withTimezone: false }),
   googleLastError: text("google_last_error"),
+  googleOauthToken: text("google_oauth_token"),
+  googleOauthEmail: text("google_oauth_email"),
+  googleOauthError: text("google_oauth_error"),
+  googleOauthConnectedAt: timestamp("google_oauth_connected_at", { withTimezone: false }),
+  googleOauthConnectedBy: text("google_oauth_connected_by"),
+  googleFieldMap: text("google_field_map"),
   trustMode: text("trust_mode", { enum: TRUST_MODES }).notNull().default("suggest"),
   trustVetoHours: integer("trust_veto_hours").notNull().default(24),
   defaultRepresentativeName: text("default_representative_name"),
@@ -801,6 +812,14 @@ export const workOrderIntegrations = pgTable("work_order_integrations", {
 });
 
 export type WorkOrderIntegrationRow = typeof workOrderIntegrations.$inferSelect;
+
+export const googleOauthStates = pgTable("google_oauth_states", {
+  stateHash: text("state_hash").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  userId: text("user_id").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: false }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
 
 export const workOrderOutbox = pgTable(
   "work_order_outbox",
