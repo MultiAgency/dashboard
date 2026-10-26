@@ -68,7 +68,7 @@ export function BuilderSigning({
         </CardTitle>
         <CardDescription>
           {waiting && esign
-            ? `${wo.agencyName} sent you this work order to sign. Documenso emailed you a signing request; you can also open it from here. You'll be paid to ${wo.builder.nearAccount}.`
+            ? `${wo.agencyName} sent you this work order to sign. We emailed you a link to sign it; you can also open it from here. You'll be paid to ${wo.builder.nearAccount}.`
             : waiting
               ? `${wo.agencyName} sent you this work order to sign. Read it, then sign with your full name below. You're signed in with ${wo.builder.nearAccount}, the account you'll be paid to.`
               : complete

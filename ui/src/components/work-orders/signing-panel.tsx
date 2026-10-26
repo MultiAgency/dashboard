@@ -212,7 +212,7 @@ function SignatureStatus({
         <span>
           Signed by {builder.name} in Documenso on {day(builder.signedAt)}.{" "}
           {canManage
-            ? "Documenso emailed the representative to countersign."
+            ? "Countersign it below to complete the agreement."
             : "Waiting for the representative's countersignature."}
         </span>
         {esignError}
@@ -283,7 +283,7 @@ function SignatureStatus({
     return (
       <div className="flex flex-col gap-3">
         <span className="text-muted-foreground">
-          Sent through Documenso on {day(wo.offeredAt)}: it emailed the builder a signing request.
+          Sent through Documenso on {day(wo.offeredAt)}: the builder was emailed a link to sign.
           Waiting for their signature; you're asked to countersign after them.
         </span>
         {esignError}
