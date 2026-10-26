@@ -329,6 +329,32 @@ export function payoutAgentQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export function payoutCoverageQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "payout-coverage", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.workOrders.payoutCoverage({ id }),
+    retry: false,
+  });
+}
+
+export function payoutReadinessQueryOptions(
+  apiClient: ApiClient,
+  requestId: string,
+  amount: string,
+) {
+  return queryOptions({
+    queryKey: [
+      ...adminWorkOrdersQueryKey,
+      "payout-readiness",
+      ...workspaceKey(),
+      requestId,
+      amount,
+    ] as const,
+    queryFn: () => apiClient.workOrders.payoutReadiness({ requestId, amount }),
+    retry: false,
+  });
+}
+
 export function payoutFundingQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...payoutAgentQueryKey, "funding", ...workspaceKey()] as const,

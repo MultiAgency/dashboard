@@ -1,7 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Button,
   Card,
   CardAction,
@@ -35,6 +39,7 @@ import {
   adminWorkOrdersQueryKey,
   payoutAgentQueryKey,
   payoutAgentQueryOptions,
+  payoutReadinessQueryOptions,
 } from "@/lib/queries";
 import { ReportMarkdown } from "./report-markdown";
 import { RequestTrust } from "./request-trust";
@@ -43,6 +48,8 @@ import {
   RequestStatusBadge,
   type WorkOrderDetail,
 } from "./work-order-status";
+
+const QUIET_READINESS = ["unavailable", "no_agent"];
 
 export function RequestsPanel({
   workOrder,
@@ -326,6 +333,20 @@ function ApproveForm({
   }
   const over = base && BigInt(base) > BigInt(workOrder.remainingAmount);
   const blocked = needsEvidenceConfirm && !withoutEvidence;
+  const quotable = base && !error && !over && BigInt(base) > 0n ? base : "";
+  const [quoted, setQuoted] = useState(quotable);
+  useEffect(() => {
+    const timer = setTimeout(() => setQuoted(quotable), 400);
+    return () => clearTimeout(timer);
+  }, [quotable]);
+  const readiness = useQuery({
+    ...payoutReadinessQueryOptions(apiClient, request.id, quoted),
+    enabled: !!quoted && (workOrder.tokenId === "usd" || workOrder.tokenId === "near"),
+  }).data;
+  const hold =
+    readiness && !readiness.ready && readiness.code && !QUIET_READINESS.includes(readiness.code)
+      ? readiness
+      : null;
   const approve = useMutation({
     mutationFn: () =>
       apiClient.workOrders.approveRequest({
@@ -365,7 +386,9 @@ function ApproveForm({
         <DialogDescription>
           Up to {formatTokenAmount(workOrder.remainingAmount, workOrder.tokenId)} remains.{" "}
           {autoPays
-            ? "Approving pays it right away in NEAR through your payout agent."
+            ? hold
+              ? "Approving queues it for your payout agent, which pays it in NEAR."
+              : "Approving pays it right away in NEAR through your payout agent."
             : "Approving reserves it; the money moves once the DAO approves the transfer proposal."}
         </DialogDescription>
       </DialogHeader>
@@ -382,6 +405,29 @@ function ApproveForm({
           <p className="text-sm text-destructive">
             {error || "That's more than the remaining budget."}
           </p>
+        )}
+        {hold && quoted === quotable && (
+          <Alert>
+            <AlertTitle>Approving won't pay right away</AlertTitle>
+            <AlertDescription className="flex flex-col gap-3">
+              <span>
+                {hold.code === "insufficient_balance" && hold.balanceNear && hold.near
+                  ? `The agent holds ${hold.balanceNear} NEAR and this needs ${hold.near} NEAR.`
+                  : `${(hold.reason ?? "The payout agent isn't ready").replace(/\.$/, "")}.`}{" "}
+                You can still approve: it's queued and paid automatically once the agent can cover
+                it.
+              </span>
+              <span className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/admin/settings" hash="payouts">
+                    {hold.code === "insufficient_balance"
+                      ? "Fund the agent"
+                      : "Open the payout settings"}
+                  </Link>
+                </Button>
+              </span>
+            </AlertDescription>
+          </Alert>
         )}
         {pending.length > 0 && (
           <fieldset className="flex flex-col gap-2">
