@@ -19,16 +19,22 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { FieldLabel, Field as ShadcnField } from "@/components/ui/field";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
+import { nextCycle } from "@/lib/budget-periods";
 import { baseToDecimal, tokenSymbol } from "@/lib/format-amount";
+import { openPendingTab, type PendingTab } from "@/lib/pending-tab";
 import {
   adminContributorsListQueryOptions,
   adminProjectsListQueryOptions,
   adminWorkOrdersQueryKey,
+  adminWorkOrdersQueryOptions,
   tokensListQueryOptions,
   workOrderIntegrationQueryOptions,
+  workOrderNextCodeQueryOptions,
   workOrderRepresentativeQueryOptions,
 } from "@/lib/queries";
 import { defaultRepresentative } from "@/lib/representative";
+import { defaultPeriod, duplicateTitle, recentBudgets, todayIn } from "@/lib/work-order-defaults";
+import { BudgetChips } from "./budget-chips";
 import { SetupPreflight } from "./setup-checklist";
 import type { WorkOrder } from "./work-order-status";
 
@@ -71,10 +77,17 @@ function repoFromProject(repository: string | null | undefined): string {
   return (match?.[1] ?? repository).replace(/\.git$/, "");
 }
 
-function monthOf(date: Date): { start: string; end: string } {
-  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0));
-  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+function amountOf(budgetAmount: string, tokenId: string, tokens: Lists["tokens"]): string {
+  if (tokenId === USD) return baseToDecimal(budgetAmount, USD_DECIMALS);
+  const token = tokens.find((t) => t.tokenId === tokenId);
+  return token ? baseToDecimal(budgetAmount, token.decimals) : budgetAmount;
+}
+
+type Intent = "draft" | "sign";
+
+function formTitle(editing?: WorkOrder, template?: WorkOrder): string {
+  if (editing) return `Edit ${editing.code}`;
+  return template ? `New from ${template.code}` : "New work order";
 }
 
 type Lists = {
@@ -87,9 +100,11 @@ type Lists = {
 
 export function WorkOrderForm({
   editing,
+  template,
   onDone,
 }: {
   editing?: WorkOrder;
+  template?: WorkOrder;
   onDone: (workOrder: WorkOrder) => void;
 }) {
   const apiClient = useApiClient();
@@ -101,7 +116,7 @@ export function WorkOrderForm({
   const failed = projectsQuery.error ?? buildersQuery.error ?? tokensQuery.error;
   const title = (
     <DialogHeader>
-      <DialogTitle>{editing ? `Edit ${editing.code}` : "New work order"}</DialogTitle>
+      <DialogTitle>{formTitle(editing, template)}</DialogTitle>
     </DialogHeader>
   );
   if (failed) {
@@ -152,11 +167,12 @@ export function WorkOrderForm({
       </>
     );
   }
-  return <WorkOrderFields editing={editing} onDone={onDone} {...lists} />;
+  return <WorkOrderFields editing={editing} template={template} onDone={onDone} {...lists} />;
 }
 
 function WorkOrderFields({
   editing,
+  template,
   onDone,
   projects,
   builders,
@@ -165,62 +181,72 @@ function WorkOrderFields({
   askFields,
 }: Lists & {
   editing?: WorkOrder;
+  template?: WorkOrder;
   onDone: (workOrder: WorkOrder) => void;
 }) {
   const apiClient = useApiClient();
   const authClient = useAuthClient();
   const queryClient = useQueryClient();
   const me = useQuery(sessionQueryOptions(authClient)).data?.user;
-  const month = monthOf(new Date());
-  const [draft, setDraft] = useState<Draft>(() => {
-    const token = editing ? tokens.find((t) => t.tokenId === editing.tokenId) : undefined;
-    const defaults = defaultRepresentative(representative, me);
-    return editing
-      ? {
-          code: editing.code,
-          projectId: editing.projectId,
-          builderNearAccount: editing.builder.nearAccount,
-          title: editing.title,
-          scope: editing.scope ?? "",
-          repos: editing.repos.join("\n"),
-          periodStart: editing.periodStart,
-          periodEnd: editing.periodEnd,
-          graceDays: String(editing.graceDays),
-          tokenId: editing.tokenId,
-          amount:
-            editing.tokenId === USD
-              ? baseToDecimal(editing.budgetAmount, USD_DECIMALS)
-              : token
-                ? baseToDecimal(editing.budgetAmount, token.decimals)
-                : editing.budgetAmount,
-          autoRenew: editing.autoRenew,
-          githubLogin: editing.builder.githubLogin ?? "",
-          contractorEmail: editing.contractorEmail ?? "",
-          representativeName: editing.representativeName ?? "",
-          representativeEmail: editing.representativeEmail ?? "",
-          ipModel: editing.ipModel ?? "",
-        }
-      : {
-          code: "",
-          projectId: "",
-          builderNearAccount: "",
-          title: "",
-          scope: "",
-          repos: "",
-          periodStart: month.start,
-          periodEnd: month.end,
-          graceDays: "2",
-          tokenId: USD,
-          amount: "",
-          autoRenew: false,
-          githubLogin: "",
-          contractorEmail: "",
-          representativeName: defaults.name,
-          representativeEmail: defaults.email,
-          ipModel: "",
-        };
+  const listQuery = useQuery(adminWorkOrdersQueryOptions(apiClient));
+  const nextCodeQuery = useQuery({
+    ...workOrderNextCodeQueryOptions(apiClient),
+    enabled: !editing,
   });
-  const [custom, setCustom] = useState<Record<string, string>>(() => editing?.customFields ?? {});
+  const budgetChoices = editing ? [] : recentBudgets(listQuery.data?.data ?? []);
+  const [draft, setDraft] = useState<Draft>(() => {
+    const defaults = defaultRepresentative(representative, me);
+    const source = editing ?? template;
+    if (source) {
+      const period = editing
+        ? { start: editing.periodStart, end: editing.periodEnd }
+        : nextCycle(source.periodStart, source.periodEnd);
+      return {
+        code: editing ? editing.code : "",
+        projectId: source.projectId,
+        builderNearAccount: source.builder.nearAccount,
+        title: editing
+          ? source.title
+          : duplicateTitle(source.title, source.periodStart, period.start),
+        scope: source.scope ?? "",
+        repos: source.repos.join("\n"),
+        periodStart: period.start,
+        periodEnd: period.end,
+        graceDays: String(source.graceDays),
+        tokenId: source.tokenId,
+        amount: amountOf(source.budgetAmount, source.tokenId, tokens),
+        autoRenew: source.autoRenew,
+        githubLogin: source.builder.githubLogin ?? "",
+        contractorEmail: source.contractorEmail ?? "",
+        representativeName: source.representativeName ?? (editing ? "" : defaults.name),
+        representativeEmail: source.representativeEmail ?? (editing ? "" : defaults.email),
+        ipModel: source.ipModel ?? "",
+      };
+    }
+    const period = defaultPeriod(todayIn(listQuery.data?.data[0]?.timeZone));
+    return {
+      code: "",
+      projectId: "",
+      builderNearAccount: "",
+      title: "",
+      scope: "",
+      repos: "",
+      periodStart: period.start,
+      periodEnd: period.end,
+      graceDays: "2",
+      tokenId: USD,
+      amount: "",
+      autoRenew: false,
+      githubLogin: "",
+      contractorEmail: "",
+      representativeName: defaults.name,
+      representativeEmail: defaults.email,
+      ipModel: "",
+    };
+  });
+  const [custom, setCustom] = useState<Record<string, string>>(
+    () => (editing ?? template)?.customFields ?? {},
+  );
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const token =
@@ -236,7 +262,7 @@ function WorkOrderFields({
   const tokenId = draft.tokenId || tokens[0]?.tokenId || "";
 
   const save = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ intent, tab }: { intent: Intent; tab: PendingTab | null }) => {
       const fields = {
         projectId: draft.projectId,
         builderNearAccount: draft.builderNearAccount,
@@ -255,7 +281,7 @@ function WorkOrderFields({
         representativeName: draft.representativeName.trim() || null,
         representativeEmail: draft.representativeEmail.trim() || null,
         ipModel: draft.ipModel || null,
-        ...(askFields.length > 0 || editing
+        ...(askFields.length > 0 || editing || template
           ? {
               customFields: Object.fromEntries(
                 Object.entries(custom)
@@ -266,16 +292,40 @@ function WorkOrderFields({
           : {}),
         ...(draft.code.trim() ? { code: draft.code.trim() } : {}),
       };
-      return editing
-        ? apiClient.workOrders.update({ id: editing.id, ...fields })
-        : apiClient.workOrders.create(fields);
+      if (editing) return apiClient.workOrders.update({ id: editing.id, ...fields });
+      const created = await apiClient.workOrders.create(fields);
+      if (intent === "draft") {
+        toast.success(`${created.code} created as a draft`);
+        return created;
+      }
+      try {
+        const offered = await apiClient.workOrders.offer({ id: created.id });
+        const next = offered.progress.next;
+        if (next?.kind === "link" && next.external) {
+          tab?.go(next.href);
+          toast.success(`${offered.code} created: sign it in Documenso to send it to the builder`);
+        } else {
+          tab?.close();
+          toast.success(`${offered.code} created and offered to the builder`);
+        }
+        return offered;
+      } catch (err) {
+        tab?.close();
+        toast.error(
+          `${created.code} is saved as a draft but wasn't offered: ${(err as Error).message || "something went wrong"}`,
+        );
+        return created;
+      }
     },
     onSuccess: async (workOrder) => {
       await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
-      toast.success(editing ? `${workOrder.code} updated` : `${workOrder.code} created as a draft`);
+      if (editing) toast.success(`${workOrder.code} updated`);
       onDone(workOrder);
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to save the work order"),
+    onError: (err: Error, { tab }) => {
+      tab?.close();
+      toast.error(err.message || "Failed to save the work order");
+    },
   });
 
   const selectedBuilder = builders.find((b) => b.nearAccount === draft.builderNearAccount);
@@ -305,17 +355,29 @@ function WorkOrderFields({
                     : badEmail
                       ? `${badEmail} isn't an email address.`
                       : null;
+  const primary: Intent = editing ? "draft" : "sign";
+  const submit = (intent: Intent) => {
+    if (reason || save.isPending) return;
+    const tab = intent === "sign" ? openPendingTab("Preparing the document to sign…") : null;
+    save.mutate({ intent, tab });
+  };
 
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!reason && !save.isPending) save.mutate();
+        const submitter = (e.nativeEvent as SubmitEvent).submitter;
+        submit(submitter?.getAttribute("value") === "sign" ? "sign" : "draft");
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey)) return;
+        e.preventDefault();
+        submit(primary);
       }}
     >
       <DialogHeader>
-        <DialogTitle>{editing ? `Edit ${editing.code}` : "New work order"}</DialogTitle>
+        <DialogTitle>{formTitle(editing, template)}</DialogTitle>
         <DialogDescription>
           A period, a budget cap and the repositories in scope for one builder on one project. It
           starts as a draft; the builder accepts the terms from their own account.
@@ -364,8 +426,21 @@ function WorkOrderFields({
           </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-[1fr_2fr] sm:items-start">
-          <Field label="Code" htmlFor="wo-code" helper="Optional, e.g. SI-004. Default WO-0001…">
-            <Input id="wo-code" value={draft.code} onChange={(e) => set("code", e.target.value)} />
+          <Field
+            label="Code"
+            htmlFor="wo-code"
+            helper={
+              nextCodeQuery.data
+                ? `Optional, e.g. SI-004. Left empty it's ${nextCodeQuery.data.code}.`
+                : "Optional, e.g. SI-004. Default WO-0001…"
+            }
+          >
+            <Input
+              id="wo-code"
+              value={draft.code}
+              placeholder={editing ? undefined : nextCodeQuery.data?.code}
+              onChange={(e) => set("code", e.target.value)}
+            />
           </Field>
           <Field label="Title" htmlFor="wo-title">
             <Input
@@ -453,6 +528,16 @@ function WorkOrderFields({
               value={draft.amount}
               aria-invalid={!!amountError}
               onChange={(e) => set("amount", e.target.value)}
+            />
+            <BudgetChips
+              choices={budgetChoices}
+              onPick={(choice) =>
+                setDraft((current) => ({
+                  ...current,
+                  tokenId: choice.tokenId,
+                  amount: amountOf(choice.budgetAmount, choice.tokenId, tokens),
+                }))
+              }
             />
           </Field>
         </div>
@@ -552,9 +637,32 @@ function WorkOrderFields({
       </FieldGroup>
       <DialogFooter className="flex-wrap items-center gap-3">
         {reason && <p className="mr-auto text-xs text-muted-foreground">{reason}</p>}
-        <Button type="submit" disabled={reason !== null || save.isPending}>
-          {save.isPending ? "Saving…" : editing ? "Save changes" : "Create draft"}
-        </Button>
+        {editing ? (
+          <Button type="submit" value="draft" disabled={reason !== null || save.isPending}>
+            {save.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        ) : (
+          <>
+            <Button
+              type="submit"
+              value="draft"
+              variant="outline"
+              disabled={reason !== null || save.isPending}
+            >
+              {save.isPending && save.variables?.intent === "draft" ? "Saving…" : "Save draft"}
+            </Button>
+            <Button
+              type="submit"
+              value="sign"
+              title="Ctrl or ⌘ + Enter"
+              disabled={reason !== null || save.isPending}
+            >
+              {save.isPending && save.variables?.intent === "sign"
+                ? "Creating…"
+                : "Create and sign"}
+            </Button>
+          </>
+        )}
       </DialogFooter>
     </form>
   );

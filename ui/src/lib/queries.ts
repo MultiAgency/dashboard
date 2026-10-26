@@ -286,6 +286,14 @@ export function adminWorkOrdersNeedsYouQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export function workOrderNextCodeQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "next-code", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.nextCode({}),
+    retry: false,
+  });
+}
+
 export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
   return queryOptions({
     queryKey: [...adminWorkOrdersQueryKey, "detail", ...workspaceKey(), id] as const,
