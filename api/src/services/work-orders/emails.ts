@@ -133,11 +133,19 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
       break;
     case "work_order.renewed": {
       const unsent = e.renewal?.unsent ?? null;
-      const signLink = e.links.countersign ?? null;
-      send("representative", `Sign the renewal: Work Order ${wo.id}`, {
-        preheader: unsent
-          ? `${builder}'s renewal is saved as a draft: it wasn't sent for signature.`
-          : `${builder}'s work order continues for ${period}. Sign it to send it to ${builder}.`,
+      const signLink = unsent ? null : (e.links.countersign ?? null);
+      const subject = unsent
+        ? `The renewal ${wo.id} wasn't sent: it needs you`
+        : signLink
+          ? `Sign the renewal: Work Order ${wo.id}`
+          : `Work Order ${wo.id} renews: ${builder} accepts it next`;
+      const preheader = unsent
+        ? `${builder}'s renewal is saved as a draft: it wasn't sent for signature.`
+        : signLink
+          ? `${builder}'s work order continues for ${period}. Sign it to send it to ${builder}.`
+          : `${builder} has the renewal to accept. You countersign it after.`;
+      send("representative", subject, {
+        preheader,
         eyebrow: "Work order renewed",
         heading: `${builder}'s work order renews as ${wo.id}`,
         paragraphs: [
@@ -146,15 +154,14 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
             ? `It's saved as a draft because it couldn't be sent for signature: ${unsent}. Open it to fix this and send it.`
             : signLink
               ? `Sign it first; ${builder} gets their signing link as soon as you have. It becomes active once you've both signed, and the signed PDF is filed like any other work order.`
-              : `${builder} accepts it from their work orders. It becomes active once they have.`,
+              : `${builder} has it to accept. Once they have, countersign it and it becomes active.`,
         ],
         details: summary(["Builder", builder], ["Budget", wo.budget]),
-        action:
-          !unsent && signLink
-            ? { label: "Review and sign", url: signLink }
-            : view("representative", unsent ? "Open the renewal" : "Open the work order"),
+        action: signLink
+          ? { label: "Review and sign", url: signLink }
+          : view("representative", unsent ? "Open the renewal" : "Open the work order"),
         secondary:
-          !unsent && signLink && e.links.review
+          signLink && e.links.review
             ? [{ label: "Open it in MultiAgency", url: e.links.review }]
             : [],
       });
