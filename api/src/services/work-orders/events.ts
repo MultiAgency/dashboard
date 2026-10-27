@@ -83,6 +83,7 @@ export type WorkOrderEvent = {
   renewal: null | {
     assessment: RenewalAssessment;
     renewedTo: { id: string; periodStart: string; periodEnd: string } | null;
+    unsent?: string | null;
   };
   hold?: null | {
     code: string;

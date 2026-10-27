@@ -30,6 +30,7 @@ import {
   normalizeText,
   pdfText,
 } from "../../src/services/work-orders/documents";
+import { composeEmails } from "../../src/services/work-orders/emails";
 import type { WorkOrderEvent } from "../../src/services/work-orders/events";
 import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
 import { usdToTokens } from "../../src/services/work-orders/prices";
@@ -721,17 +722,32 @@ describe("work orders", () => {
       expect(parent.renewal?.status).toBe("renewed");
       expect(parent.renewal?.decidedBy).toBe("auto");
       expect(child).toMatchObject({
-        status: "active",
+        status: "offered",
         periodStart: "2026-10-01",
         periodEnd: "2026-10-31",
         renewedFrom: parent.id,
+        acceptedAt: null,
+        signature: { method: null },
       });
+      expect(child.signing.builder).toBeNull();
       expect(
         (await service.get(await studio(), { id: parent.id })).requests.map((r) => r.status),
       ).toEqual(["draft"]);
       expect((await notificationsOf("carol")).map((n) => n.kind)).toEqual(
-        expect.arrayContaining(["compensation_request_ready", "work_order_renewed"]),
+        expect.arrayContaining([
+          "compensation_request_ready",
+          "work_order_renewed",
+          "work_order_offered",
+        ]),
       );
+      const renewed = events.find((e) => e.type === "work_order.renewed");
+      expect(renewed?.workOrder.id).toBe("WO-0001-M2");
+      expect(renewed?.workOrder.periodStart).toBe("2026-10-01");
+
+      await signAsBuilder(child.id);
+      const signed = await service.countersign(await studio(), { id: child.id, name: "Rita Rep" });
+      expect(signed).toMatchObject({ status: "active", periodStart: "2026-10-01" });
+      expect(signed.signature.method).toBe("in_app");
     });
 
     test("a missed metric needs manual approval; approve renews, decline doesn't", async () => {
@@ -1477,6 +1493,84 @@ describe("work orders", () => {
       const saved = await service.saveSignedToDrive(await studio(), { id: filed.id });
       expect(saved.signature.driveUrl).toBe("https://drive.google.com/file/d/legacy-1/view");
       expect(google.uploads).toHaveLength(0);
+    });
+
+    test("a renewal goes out for signature with the new dates, and its signed PDF is filed in Drive", async () => {
+      await driveFolders("signed");
+      const created = await service.create(
+        await studio(),
+        fields({
+          autoRenew: true,
+          representativeName: "Rita Rep",
+          representativeEmail: "rita@example.com",
+        }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      documenso.sign("representative", "2026-09-01T09:00:00.000Z");
+      await service.syncPendingSignatures();
+      documenso.sign("contractor", "2026-09-01T10:00:00.000Z");
+      await service.syncPendingSignatures();
+      expect((await service.get(await studio(), { id: created.id })).status).toBe("active");
+      expect(google.uploads).toHaveLength(1);
+
+      clock = new Date("2026-10-03T06:00:00.000Z");
+      await service.run();
+      await service.decideRenewal(await studio(), { id: created.id, decision: "approve" });
+      const child = (await service.list(await studio())).data.find((w) => w.code === "WO-0001-M2")!;
+      expect(child).toMatchObject({ status: "offered", periodStart: "2026-10-01" });
+      expect(child.signing.awaitingRepresentative).toBe(true);
+      expect(documenso.sent).toHaveLength(2);
+      expect(documenso.last().externalId).toBe(child.id);
+      const renewed = events.find((e) => e.type === "work_order.renewed");
+      expect(renewed?.links.countersign).toBe("https://sign.example/envelope_2/representative");
+      const email = composeEmails(renewed!).find((m) => m.to === "rita@example.com");
+      expect(email?.subject).toBe("Sign the renewal: Work Order WO-0001-M2");
+      expect(email?.html).toContain("https://sign.example/envelope_2/representative");
+
+      documenso.sign("representative", "2026-10-03T07:00:00.000Z");
+      await service.syncPendingSignatures();
+      expect(
+        events.filter((e) => e.type === "work_order.offered").map((e) => e.workOrder.id),
+      ).toContain("WO-0001-M2");
+      documenso.sign("contractor", "2026-10-03T08:00:00.000Z");
+      await service.syncPendingSignatures();
+      const active = await service.get(await studio(), { id: child.id });
+      expect(active).toMatchObject({ status: "active", periodStart: "2026-10-01" });
+      expect(active.signature.method).toBe("documenso");
+      expect(google.uploads.map((u) => u.name)).toEqual([
+        "Work Order WO-0001 - Contributor role (signed).pdf",
+        "Work Order WO-0001-M2 - Contributor role (signed).pdf",
+      ]);
+    });
+
+    test("a renewal that can't be sent stays a draft and tells the agency why", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({
+          autoRenew: true,
+          representativeName: "Rita Rep",
+          representativeEmail: "rita@example.com",
+        }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      documenso.sign("representative", "2026-09-01T09:00:00.000Z");
+      documenso.sign("contractor", "2026-09-01T10:00:00.000Z");
+      await service.syncPendingSignatures();
+      clock = new Date("2026-10-03T06:00:00.000Z");
+      await service.run();
+      documenso.send = async () => {
+        throw new Error("Documenso is down");
+      };
+      await service.decideRenewal(await studio(), { id: created.id, decision: "approve" });
+      const child = (await service.list(await studio())).data.find((w) => w.code === "WO-0001-M2")!;
+      expect(child.status).toBe("draft");
+      expect(child.signing.esign?.error ?? null).toMatch(
+        /wasn't sent for signature: .*Documenso is down/,
+      );
+      const renewed = events.find((e) => e.type === "work_order.renewed");
+      const email = composeEmails(renewed!).find((m) => m.to === "rita@example.com");
+      expect(email?.text).toContain("saved as a draft");
+      expect(email?.text).not.toContain("Review and sign");
     });
 
     test("an envelope sent before the agency signed first keeps the builder-first flow", async () => {

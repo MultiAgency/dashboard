@@ -2736,6 +2736,35 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return request;
   }
 
+  async function offerRow(row: WorkOrderRow): Promise<WorkOrderRow> {
+    if (row.status !== "draft") {
+      throw badRequest(
+        "NOT_DRAFT",
+        `Work order ${row.code} is ${row.status}: only a draft can be offered`,
+      );
+    }
+    if (parseList(row.repos).length === 0) {
+      throw badRequest("NO_REPOS", "Add at least one GitHub repository before offering it");
+    }
+    if (!row.githubLogin) {
+      throw badRequest("NO_GITHUB_LOGIN", "Add the builder's GitHub login before offering it");
+    }
+    if (deps.esign) {
+      const contacts = await contactsOf(
+        row,
+        await deps.builders.get(row.builderNearAccount).catch(() => null),
+      );
+      if (!contacts.contractorEmail || !contacts.representativeEmail) {
+        throw badRequest(
+          "NO_EMAILS",
+          "Add the builder's and the representative's email: the signing request goes to both",
+        );
+      }
+    }
+    const prepared = await sendForSignature(await prepareOfferDocument(row));
+    return update(prepared.id, { status: "offered", offeredAt: now() });
+  }
+
   async function renew(
     parent: WorkOrderRow,
     assessment: RenewalAssessment,
@@ -2753,17 +2782,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .where(and(eq(workOrders.organizationId, parent.organizationId), eq(workOrders.code, code)))
         .limit(1);
       if (taken) throw badRequest("CODE_TAKEN", `Work order ${code} already exists`);
-      const base = {
-        ...parent,
-        id: crypto.randomUUID(),
-        code,
-        periodStart: period.periodStart,
-        periodEnd: period.periodEnd,
-      };
+      const id = crypto.randomUUID();
       const [inserted] = await tx
         .insert(workOrders)
         .values({
-          id: base.id,
+          id,
           code,
           organizationId: parent.organizationId,
           projectId: parent.projectId,
@@ -2785,20 +2808,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           representativeEmail: parent.representativeEmail,
           ipModel: parent.ipModel,
           customFields: parent.customFields,
-          signatureMethod: parent.signatureMethod,
-          signers: parent.signers,
-          signedAt: parent.signedAt,
           payeeConfirmedAt: parent.payeeConfirmedAt,
           payeeConfirmedBy: parent.payeeConfirmedBy,
-          status: "active",
-          offeredAt: parent.offeredAt,
-          acceptedAt: parent.acceptedAt,
-          acceptedByUserId: parent.acceptedByUserId,
-          acceptedTermsHash: termsHash(base),
-          documentSha256: parent.documentSha256,
-          documentUrl: parent.documentUrl,
-          activatedAt: new Date(startOfDay(period.periodStart, timeZone)),
-          activatedBy: decidedBy === "auto" ? "renewal" : parent.activatedBy,
+          status: "draft",
           renewedFrom: parent.id,
           renewalRoot: root,
           renewalSeq: seq,
@@ -2820,19 +2832,32 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .where(eq(workOrders.id, parent.id));
       return inserted!;
     });
+    const sent = await withSignatureLock(child.id, async () =>
+      offerRow(await draftDocument(child)),
+    ).catch(async (error: unknown) => {
+      const drafted = await mustRow(child.id);
+      return update(drafted.id, {
+        esignError: `The renewal wasn't sent for signature: ${errorText(error)}`,
+      });
+    });
     const payload = await payloadOf(parent, {
       nextCode: code,
       period: `${period.periodStart} → ${period.periodEnd}`,
     });
-    await notifyBuilder(child, "work_order_renewed", payload);
-    await notifyManagers(child, "work_order_renewed", payload);
-    await announce(parent, "work_order.renewed", {
+    await notifyBuilder(sent, "work_order_renewed", payload);
+    await notifyManagers(sent, "work_order_renewed", payload);
+    if (sent.status === "offered" && !sent.esignEnvelopeId) {
+      await notifyBuilder(sent, "work_order_offered", await payloadOf(sent));
+      await announce(sent, "work_order.offered");
+    }
+    await announce(sent, "work_order.renewed", {
       renewal: {
         assessment,
         renewedTo: { id: code, periodStart: period.periodStart, periodEnd: period.periodEnd },
+        unsent: sent.status === "draft" ? sent.esignError : null,
       },
     });
-    return child;
+    return sent;
   }
 
   async function assessIfDue(initial: WorkOrderRow): Promise<void> {
@@ -3384,33 +3409,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     offer: async (scope: OrganizationScope, input: { id: string }) => {
       await ownRow(scope, input.id);
       return withSignatureLock(input.id, async () => {
-        const row = await ownRow(scope, input.id);
-        if (row.status !== "draft") {
-          throw badRequest(
-            "NOT_DRAFT",
-            `Work order ${row.code} is ${row.status}: only a draft can be offered`,
-          );
-        }
-        if (parseList(row.repos).length === 0) {
-          throw badRequest("NO_REPOS", "Add at least one GitHub repository before offering it");
-        }
-        if (!row.githubLogin) {
-          throw badRequest("NO_GITHUB_LOGIN", "Add the builder's GitHub login before offering it");
-        }
-        if (deps.esign) {
-          const contacts = await contactsOf(
-            row,
-            await deps.builders.get(row.builderNearAccount).catch(() => null),
-          );
-          if (!contacts.contractorEmail || !contacts.representativeEmail) {
-            throw badRequest(
-              "NO_EMAILS",
-              "Add the builder's and the representative's email: the signing request goes to both",
-            );
-          }
-        }
-        const prepared = await sendForSignature(await prepareOfferDocument(row));
-        const offered = await update(prepared.id, { status: "offered", offeredAt: now() });
+        const offered = await offerRow(await ownRow(scope, input.id));
         if (!offered.esignEnvelopeId) {
           await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
           await announce(offered, "work_order.offered");
