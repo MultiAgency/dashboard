@@ -814,6 +814,13 @@ describe("work orders", () => {
       const renewed = events.find((e) => e.type === "work_order.renewed");
       expect(renewed?.workOrder.id).toBe("WO-0001-M2");
       expect(renewed?.workOrder.periodStart).toBe("2026-10-01");
+      const agencyEmail = composeEmails({
+        ...renewed!,
+        representative: { name: "Rita Rep", email: "rita@example.com" },
+      }).find((m) => m.to === "rita@example.com");
+      expect(agencyEmail?.subject).toBe("Work Order WO-0001-M2 renews: Carol accepts it next");
+      expect(agencyEmail?.text).toContain("countersign it and it becomes active");
+      expect(agencyEmail?.text).not.toContain("Sign it first");
 
       await signAsBuilder(child.id);
       const signed = await service.countersign(await studio(), { id: child.id, name: "Rita Rep" });
@@ -847,6 +854,21 @@ describe("work orders", () => {
         service.decideRenewal(await studio(), { id: parent.id, decision: "decline" }),
         "RENEWAL_NOT_PENDING",
       );
+    });
+
+    test("offering clears an earlier send error, with or without Documenso", async () => {
+      const created = await service.create(await studio(), fields());
+      await db
+        .update(workOrders)
+        .set({ esignError: "The renewal wasn't sent for signature: Drive was down" })
+        .where(eq(workOrders.id, created.id));
+      expect((await service.get(await studio(), { id: created.id })).signing.esign?.error).toMatch(
+        /Drive was down/,
+      );
+      const offered = await service.offer(await studio(), { id: created.id });
+      expect(offered.status).toBe("offered");
+      expect(offered.signing.esign).toBeNull();
+      expect(offered.progress.attention.map((a) => a.key)).not.toContain("esign");
     });
 
     test("without the clause the work order just ends; a second runner waits for the lock", async () => {
@@ -1641,6 +1663,7 @@ describe("work orders", () => {
       const renewed = events.find((e) => e.type === "work_order.renewed");
       const email = composeEmails(renewed!).find((m) => m.to === "rita@example.com");
       expect(email?.text).toContain("saved as a draft");
+      expect(email?.subject).toBe("The renewal WO-0001-M2 wasn't sent: it needs you");
       expect(email?.text).not.toContain("Review and sign");
     });
 

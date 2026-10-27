@@ -13,10 +13,10 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-316-ui-dashboard-multiagency-351ba702b-ze.zephyrcloud.app",
-      "integrity": "sha384-Ks7dn+EGnfIucoShazdeNP6RzTcqXVdNF2AQpZhL1NEEnAEdDw0FsyhYq8rjmu21",
-      "ssr": "https://multiagentic-320-ui-dashboard-multiagency-2d9c2e171-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-xC+pypKnqsxJK1shMSgNRby904WD1c1tLrbr7YhXZbCvnCKsSsIftTcptJ9o4S8P"
+      "production": "https://multiagentic-346-ui-dashboard-multiagency-9b8369609-ze.zephyrcloud.app",
+      "integrity": "sha384-UO2KSyS/E8UodipONm4sceyyM2NA4eK7m8HCUZ72k/sf7teEfJ4tM6LSbHB9/Cyw",
+      "ssr": "https://multiagentic-350-ui-dashboard-multiagency-220a3ed87-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-OPyAWw6Tyat9bTM5zyVDlOoMK6d9WXzCxDRnnwg3C0upkGhEOYYjM/cn8ZEnEsQG"
     },
     "api": {
       "name": "api",
@@ -52,13 +52,13 @@
         "DOCUMENSO_API_URL",
         "PAYOUTS_SECRET_KEY"
       ],
-      "production": "https://multiagentic-319-api-dashboard-multiagency-d83707fcb-ze.zephyrcloud.app",
-      "integrity": "sha384-kkE+VfwmdrPJPCJvXIrgisKChnD4UAu9h7GA2+ROPrEC9bS6161AygyyT6mK2OoA"
+      "production": "https://multiagentic-349-api-dashboard-multiagency-8fbd6ea84-ze.zephyrcloud.app",
+      "integrity": "sha384-FOlepVx/FE8WVHFnqnObFqLfN2EyD7vu/YgtjqAOWX+CbKwb9Z5tZzfVwEVOB7+n"
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
       "variables": {
-        "baseUrl": "https://multiagency.ai",
+        "baseUrl": "https://dev.multiagency.ai",
         "trustedOrigins": [
           "http://localhost:3000"
         ],
@@ -80,7 +80,7 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-318-everything-dev-projects-plugin-d-ebcf3903c-ze.zephyrcloud.app",
+      "production": "https://multiagentic-347-everything-dev-projects-plugin-d-a1cc32daa-ze.zephyrcloud.app",
       "integrity": "sha384-qPOhAJTs/T7AsUmqhbdUnrcWJc4R5zW8DtsCJLScSOOyQS46quiS1qmJ/PfVmlH8"
     },
     "builders": {
@@ -90,7 +90,7 @@
         "REGISTRY_TOKEN_TESTNET",
         "REGISTRY_TOKEN_MAINNET"
       ],
-      "production": "https://multiagentic-317-everything-dev-builders-plugin-d-274dda0d1-ze.zephyrcloud.app"
+      "production": "https://multiagentic-348-everything-dev-builders-plugin-d-b169429d8-ze.zephyrcloud.app"
     }
   }
 }

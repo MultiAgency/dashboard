@@ -35,6 +35,7 @@ import { Route as LayoutAuthenticatedPlatformIndexRouteImport } from './routes/_
 import { Route as LayoutAuthenticatedClientIndexRouteImport } from './routes/_layout/_authenticated/client/index'
 import { Route as LayoutAuthenticatedAdminIndexRouteImport } from './routes/_layout/_authenticated/admin/index'
 import { Route as LayoutAuthenticatedWorkOrdersIdRouteImport } from './routes/_layout/_authenticated/work-orders/$id'
+import { Route as LayoutAuthenticatedPlatformMembersRouteImport } from './routes/_layout/_authenticated/platform/members'
 import { Route as LayoutAuthenticatedClientReportsRouteImport } from './routes/_layout/_authenticated/client/reports'
 import { Route as LayoutAuthenticatedAdminSettingsRouteImport } from './routes/_layout/_authenticated/admin/settings'
 import { Route as LayoutAuthenticatedAdminMembersRouteImport } from './routes/_layout/_authenticated/admin/members'
@@ -201,6 +202,12 @@ const LayoutAuthenticatedWorkOrdersIdRoute =
     id: '/work-orders/$id',
     path: '/work-orders/$id',
     getParentRoute: () => LayoutAuthenticatedRoute,
+  } as any)
+const LayoutAuthenticatedPlatformMembersRoute =
+  LayoutAuthenticatedPlatformMembersRouteImport.update({
+    id: '/members',
+    path: '/members',
+    getParentRoute: () => LayoutAuthenticatedPlatformRouteRoute,
   } as any)
 const LayoutAuthenticatedClientReportsRoute =
   LayoutAuthenticatedClientReportsRouteImport.update({
@@ -384,6 +391,7 @@ export interface FileRoutesByFullPath {
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/client/reports': typeof LayoutAuthenticatedClientReportsRoute
+  '/platform/members': typeof LayoutAuthenticatedPlatformMembersRoute
   '/work-orders/$id': typeof LayoutAuthenticatedWorkOrdersIdRoute
   '/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/client/': typeof LayoutAuthenticatedClientIndexRoute
@@ -432,6 +440,7 @@ export interface FileRoutesByTo {
   '/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/client/reports': typeof LayoutAuthenticatedClientReportsRoute
+  '/platform/members': typeof LayoutAuthenticatedPlatformMembersRoute
   '/work-orders/$id': typeof LayoutAuthenticatedWorkOrdersIdRoute
   '/admin': typeof LayoutAuthenticatedAdminIndexRoute
   '/client': typeof LayoutAuthenticatedClientIndexRoute
@@ -487,6 +496,7 @@ export interface FileRoutesById {
   '/_layout/_authenticated/admin/members': typeof LayoutAuthenticatedAdminMembersRoute
   '/_layout/_authenticated/admin/settings': typeof LayoutAuthenticatedAdminSettingsRoute
   '/_layout/_authenticated/client/reports': typeof LayoutAuthenticatedClientReportsRoute
+  '/_layout/_authenticated/platform/members': typeof LayoutAuthenticatedPlatformMembersRoute
   '/_layout/_authenticated/work-orders/$id': typeof LayoutAuthenticatedWorkOrdersIdRoute
   '/_layout/_authenticated/admin/': typeof LayoutAuthenticatedAdminIndexRoute
   '/_layout/_authenticated/client/': typeof LayoutAuthenticatedClientIndexRoute
@@ -541,6 +551,7 @@ export interface FileRouteTypes {
     | '/admin/members'
     | '/admin/settings'
     | '/client/reports'
+    | '/platform/members'
     | '/work-orders/$id'
     | '/admin/'
     | '/client/'
@@ -589,6 +600,7 @@ export interface FileRouteTypes {
     | '/admin/members'
     | '/admin/settings'
     | '/client/reports'
+    | '/platform/members'
     | '/work-orders/$id'
     | '/admin'
     | '/client'
@@ -643,6 +655,7 @@ export interface FileRouteTypes {
     | '/_layout/_authenticated/admin/members'
     | '/_layout/_authenticated/admin/settings'
     | '/_layout/_authenticated/client/reports'
+    | '/_layout/_authenticated/platform/members'
     | '/_layout/_authenticated/work-orders/$id'
     | '/_layout/_authenticated/admin/'
     | '/_layout/_authenticated/client/'
@@ -858,6 +871,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/work-orders/$id'
       preLoaderRoute: typeof LayoutAuthenticatedWorkOrdersIdRouteImport
       parentRoute: typeof LayoutAuthenticatedRoute
+    }
+    '/_layout/_authenticated/platform/members': {
+      id: '/_layout/_authenticated/platform/members'
+      path: '/members'
+      fullPath: '/platform/members'
+      preLoaderRoute: typeof LayoutAuthenticatedPlatformMembersRouteImport
+      parentRoute: typeof LayoutAuthenticatedPlatformRouteRoute
     }
     '/_layout/_authenticated/client/reports': {
       id: '/_layout/_authenticated/client/reports'
@@ -1162,11 +1182,14 @@ const LayoutAuthenticatedClientRouteRouteWithChildren =
   )
 
 interface LayoutAuthenticatedPlatformRouteRouteChildren {
+  LayoutAuthenticatedPlatformMembersRoute: typeof LayoutAuthenticatedPlatformMembersRoute
   LayoutAuthenticatedPlatformIndexRoute: typeof LayoutAuthenticatedPlatformIndexRoute
 }
 
 const LayoutAuthenticatedPlatformRouteRouteChildren: LayoutAuthenticatedPlatformRouteRouteChildren =
   {
+    LayoutAuthenticatedPlatformMembersRoute:
+      LayoutAuthenticatedPlatformMembersRoute,
     LayoutAuthenticatedPlatformIndexRoute:
       LayoutAuthenticatedPlatformIndexRoute,
   }

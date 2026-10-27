@@ -2891,7 +2891,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       }
     }
     const prepared = await sendForSignature(await prepareOfferDocument(row));
-    return update(prepared.id, { status: "offered", offeredAt: now() });
+    return update(prepared.id, { status: "offered", offeredAt: now(), esignError: null });
   }
 
   async function renew(
