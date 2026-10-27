@@ -59,6 +59,47 @@ const renewal = z.object({
   renewedTo: z.string().nullable(),
 });
 
+const progressAction = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("offer"), label: z.string() }),
+  z.object({ kind: z.literal("activate"), label: z.string() }),
+  z.object({ kind: z.literal("link"), label: z.string(), href: z.string(), external: z.boolean() }),
+  z.object({ kind: z.literal("approve"), label: z.string(), requestId: z.string() }),
+  z.object({ kind: z.literal("renewal"), label: z.string() }),
+  z.object({ kind: z.literal("edit"), label: z.string() }),
+]);
+
+const progressStepKey = z.enum([
+  "draft",
+  "agency_signs",
+  "builder_signs",
+  "active",
+  "request",
+  "approved",
+  "paid",
+  "wrap_up",
+]);
+
+export const workOrderProgress = z.object({
+  stage: progressStepKey,
+  waitingOn: z.enum(["you", "builder", "system", "dao"]).nullable(),
+  needsYou: z.boolean(),
+  headline: z.string(),
+  since: z.string().nullable(),
+  next: progressAction.nullable(),
+  steps: z.array(
+    z.object({
+      key: progressStepKey,
+      label: z.string(),
+      state: z.enum(["done", "current", "blocked", "upcoming"]),
+      at: z.string().nullable(),
+      detail: z.string().nullable(),
+    }),
+  ),
+  attention: z.array(
+    z.object({ key: z.string(), message: z.string(), action: progressAction.nullable() }),
+  ),
+});
+
 export const workOrder = z.object({
   id: z.string(),
   code: z.string(),
@@ -88,6 +129,7 @@ export const workOrder = z.object({
     builder: z.object({ name: z.string(), signedAt: z.string() }).nullable(),
     representative: z.object({ name: z.string(), signedAt: z.string() }).nullable(),
     needsCountersign: z.boolean(),
+    awaitingRepresentative: z.boolean(),
     esign: z
       .object({
         provider: z.literal("documenso"),
@@ -109,7 +151,11 @@ export const workOrder = z.object({
       }),
     ),
     preparedDocumentUrl: z.string().nullable(),
+    documentWarning: z.string().nullable(),
+    driveUrl: z.string().nullable(),
+    driveError: z.string().nullable(),
   }),
+  customFields: z.record(z.string(), z.string()),
   title: z.string(),
   scope: z.string().nullable(),
   repos: z.array(z.string()),
@@ -132,6 +178,7 @@ export const workOrder = z.object({
   documentUrl: z.string().nullable(),
   activatedAt: z.string().nullable(),
   activationBlockers: z.array(z.string()),
+  progress: workOrderProgress,
   lastCollectedAt: z.string().nullable(),
   waiting: z.number().int(),
   renewedFrom: z.string().nullable(),
@@ -195,6 +242,25 @@ export const trustSettings = z.object({
   vetoHours: z.number().int().min(1).max(168),
 });
 
+export const representativeDefaults = z.object({
+  name: z.string().trim().max(200).nullable(),
+  email: z
+    .string()
+    .trim()
+    .max(320)
+    .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+    .nullable(),
+});
+
+export const setupCheck = z.object({
+  key: z.string(),
+  label: z.string(),
+  state: z.enum(["ok", "missing", "warning", "optional"]),
+  detail: z.string().nullable(),
+  fixHref: z.string().nullable(),
+  required: z.boolean(),
+});
+
 export const compensationRequest = z.object({
   id: z.string(),
   workOrderId: z.string(),
@@ -234,6 +300,7 @@ export const compensationRequest = z.object({
       ]),
       amount: z.string(),
       txUrl: z.string().nullable(),
+      accountUrl: z.string().nullable(),
       reason: z.string().nullable(),
       canRetry: z.boolean(),
     })
@@ -300,6 +367,11 @@ const fields = {
   representativeName: z.string().trim().max(200).nullable().optional(),
   representativeEmail: z.string().trim().max(320).nullable().optional(),
   ipModel: z.string().trim().max(200).nullable().optional(),
+  customFields: z
+    .record(z.string().regex(/^[A-Za-z0-9_.-]{1,80}$/), z.string().max(2000))
+    .refine((value) => Object.keys(value).length <= 50, "At most 50 custom fields")
+    .nullable()
+    .optional(),
 };
 
 const byId = z.object({ id: z.string().min(1) });
@@ -374,6 +446,63 @@ const delivery = z.object({
   createdAt: z.string(),
 });
 
+const workOrderEmail = z.object({
+  id: z.string(),
+  eventType: z.string(),
+  to: z.string().nullable(),
+  subject: z.string().nullable(),
+  createdAt: z.string(),
+  deliveredAt: z.string().nullable(),
+  lastError: z.string().nullable(),
+});
+
+const fieldMapping = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("field"), field: z.string().min(1).max(80) }),
+  z.object({ kind: z.literal("text"), value: z.string().max(2000) }),
+  z.object({ kind: z.literal("ask"), label: z.string().trim().min(1).max(120) }),
+]);
+
+const tagName = z.string().regex(/^[A-Za-z0-9_.-]{1,80}$/);
+
+const suggestion = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("field"), field: z.string() }),
+  z.object({ kind: z.literal("ask") }),
+  z.object({ kind: z.literal("text") }),
+]);
+
+const templateScan = z.object({
+  templateName: z.string(),
+  tags: z.array(
+    z.object({
+      tag: z.string(),
+      count: z.number().int(),
+      known: z.boolean(),
+      mapping: fieldMapping.nullable(),
+    }),
+  ),
+  missing: z.array(z.string()),
+  spots: z.array(
+    z.object({
+      text: z.string(),
+      target: z.string(),
+      label: z.string(),
+      suggestion,
+      source: z.enum(["pattern", "ai"]),
+      count: z.number().int(),
+      contexts: z.array(z.string()),
+    }),
+  ),
+  aiUsed: z.boolean(),
+  text: z.string(),
+});
+
+const appliedSpot = z.object({
+  text: z.string().min(1).max(300),
+  target: z.string().min(1).max(300),
+  occurrence: z.number().int().min(0).max(500).nullable(),
+  mapping: z.union([fieldMapping, z.object({ kind: z.literal("ignore") })]),
+});
+
 const integration = z.object({
   emailEnabled: z.boolean(),
   aiDraftsEnabled: z.boolean(),
@@ -381,6 +510,20 @@ const integration = z.object({
   google: z.object({
     available: z.boolean(),
     serviceAccountEmail: z.string().nullable(),
+    oauth: z.object({
+      available: z.boolean(),
+      canConnect: z.boolean(),
+      connected: z.boolean(),
+      email: z.string().nullable(),
+      error: z.string().nullable(),
+      redirectUri: z.string().nullable(),
+      picker: z.boolean(),
+    }),
+    starterAvailable: z.boolean(),
+    aiFieldsAvailable: z.boolean(),
+    knownFields: z.array(z.object({ key: z.string(), label: z.string() })),
+    fieldMap: z.record(z.string(), fieldMapping),
+    askFields: z.array(z.object({ tag: z.string(), label: z.string() })),
     templateUrl: z.string().nullable(),
     documentsFolderUrl: z.string().nullable(),
     signedFolderUrl: z.string().nullable(),
@@ -413,10 +556,22 @@ export const workOrdersContract = {
     .output(z.object({ data: z.array(workOrder) }))
     .errors({ UNAUTHORIZED, FORBIDDEN }),
 
+  needsYouCount: oc
+    .route({ method: "GET", path: "/admin/work-orders/needs-you" })
+    .input(z.object({}))
+    .output(z.object({ count: z.number().int() }))
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
   get: oc
     .route({ method: "GET", path: "/admin/work-orders/{id}" })
     .input(byId)
     .output(workOrderDetail)
+    .errors(errors),
+
+  activity: oc
+    .route({ method: "GET", path: "/admin/work-orders/{id}/activity" })
+    .input(byId)
+    .output(z.object({ emails: z.array(workOrderEmail) }))
     .errors(errors),
 
   create: oc
@@ -449,6 +604,7 @@ export const workOrdersContract = {
         representativeName: fields.representativeName,
         representativeEmail: fields.representativeEmail,
         ipModel: fields.ipModel,
+        customFields: fields.customFields,
       }),
     )
     .output(workOrder)
@@ -459,6 +615,12 @@ export const workOrdersContract = {
     .input(byId)
     .output(z.object({ deleted: z.literal(true) }))
     .errors(errors),
+
+  nextCode: oc
+    .route({ method: "GET", path: "/admin/work-orders/next-code" })
+    .input(z.object({}))
+    .output(z.object({ code: z.string() }))
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
 
   offer: oc
     .route({ method: "POST", path: "/admin/work-orders/{id}/offer" })
@@ -533,6 +695,42 @@ export const workOrdersContract = {
     .output(compensationRequest)
     .errors(errors),
 
+  payoutReadiness: oc
+    .route({ method: "GET", path: "/admin/work-order-requests/{requestId}/payout-readiness" })
+    .input(z.object({ requestId: z.string().min(1), amount }))
+    .output(
+      z.object({
+        ready: z.boolean(),
+        code: z.string().nullable(),
+        reason: z.string().nullable(),
+        near: z.string().nullable(),
+        balanceNear: z.string().nullable(),
+        priceUsd: z.string().nullable(),
+      }),
+    )
+    .errors(errors),
+
+  payoutCoverage: oc
+    .route({ method: "GET", path: "/admin/work-orders/{id}/payout-coverage" })
+    .input(byId)
+    .output(
+      z
+        .object({
+          covered: z.boolean(),
+          unpaid: z.string(),
+          balanceNear: z.string().nullable(),
+          neededNear: z.string(),
+          shortfallNear: z.string().nullable(),
+          lowBalance: z.boolean(),
+          neededUsd: z.string().nullable(),
+          monthlyBudgetUsd: z.string().nullable(),
+          monthlyRemainingUsd: z.string().nullable(),
+          overMonthly: z.boolean(),
+        })
+        .nullable(),
+    )
+    .errors(errors),
+
   rejectRequest: oc
     .route({ method: "POST", path: "/admin/work-order-requests/{requestId}/reject" })
     .input(z.object({ requestId: z.string().min(1), note: z.string().trim().min(1).max(2000) }))
@@ -583,6 +781,24 @@ export const workOrdersContract = {
     .input(trustSettings)
     .output(trustSettings)
     .errors(errors),
+
+  representativeDefaults: oc
+    .route({ method: "GET", path: "/admin/work-order-representative" })
+    .input(z.object({}))
+    .output(representativeDefaults)
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+  saveRepresentativeDefaults: oc
+    .route({ method: "POST", path: "/admin/work-order-representative" })
+    .input(representativeDefaults)
+    .output(representativeDefaults)
+    .errors(errors),
+
+  setupStatus: oc
+    .route({ method: "GET", path: "/admin/work-order-setup" })
+    .input(z.object({}))
+    .output(z.array(setupCheck))
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
 
   payoutAgent: oc
     .route({ method: "GET", path: "/admin/payout-agent" })
@@ -745,6 +961,90 @@ export const workOrdersContract = {
     )
     .output(integration)
     .errors(errors),
+
+  saveSignedToDrive: oc
+    .route({ method: "POST", path: "/admin/work-orders/{id}/signed-drive" })
+    .input(byId)
+    .output(workOrder)
+    .errors(errors),
+
+  connectGoogle: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/connect" })
+    .input(z.object({}))
+    .output(z.object({ url: z.string() }))
+    .errors(errors),
+
+  disconnectGoogle: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/disconnect" })
+    .input(z.object({}))
+    .output(integration)
+    .errors(errors),
+
+  googlePickerToken: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/picker-token" })
+    .input(z.object({}))
+    .output(
+      z.object({
+        accessToken: z.string(),
+        expiresAt: z.string(),
+        apiKey: z.string(),
+        clientId: z.string(),
+        appId: z.string().nullable(),
+      }),
+    )
+    .errors(errors),
+
+  scanTemplate: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/scan" })
+    .input(z.object({ detect: z.boolean().default(false) }))
+    .output(templateScan)
+    .errors(errors),
+
+  saveTemplateFields: oc
+    .route({ method: "PUT", path: "/admin/work-order-integration/google/fields" })
+    .input(
+      z.object({
+        map: z
+          .record(tagName, fieldMapping)
+          .refine((value) => Object.keys(value).length <= 100, "At most 100 tags"),
+      }),
+    )
+    .output(integration)
+    .errors(errors),
+
+  previewTemplate: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/preview" })
+    .input(z.object({}))
+    .output(z.object({ url: z.string() }))
+    .errors(errors),
+
+  applyTemplateFields: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/apply-fields" })
+    .input(z.object({ spots: z.array(appliedSpot).min(1).max(100) }))
+    .output(integration.extend({ url: z.string() }))
+    .errors(errors),
+
+  copyStarterTemplate: oc
+    .route({ method: "POST", path: "/admin/work-order-integration/google/starter" })
+    .input(z.object({}))
+    .output(integration.extend({ url: z.string() }))
+    .errors(errors),
+
+  googleCallback: oc
+    .route({
+      method: "GET",
+      path: "/work-orders/google/callback",
+      successStatus: 302,
+      outputStructure: "detailed",
+    })
+    .input(
+      z.object({
+        code: z.string().max(2000).optional(),
+        state: z.string().max(200).optional(),
+        error: z.string().max(200).optional(),
+      }),
+    )
+    .output(z.object({ headers: z.object({ location: z.string() }) })),
 
   checkDrive: oc
     .route({ method: "POST", path: "/admin/work-order-integration/google/check" })

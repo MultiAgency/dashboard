@@ -1,11 +1,10 @@
+import { DotsThreeIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { z } from "zod";
 import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
   Badge,
   Button,
   Card,
@@ -22,12 +21,28 @@ import {
   DialogTitle,
   Input,
   PageHeader,
+  ScrollableTabsList,
+  Tabs,
+  TabsContent,
+  TabsTrigger,
 } from "@/components";
 import { AdminError } from "@/components/admin-error";
-import { Field, Loading } from "@/components/admin-form";
+import { Empty, Field, Loading } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ActivityTimeline } from "@/components/work-orders/activity-timeline";
+import { DuplicateWorkOrderButton } from "@/components/work-orders/duplicate-work-order-button";
 import { EvidenceList } from "@/components/work-orders/evidence-list";
+import { type InPageAction, NextStepCard } from "@/components/work-orders/next-step-card";
 import { PayeePayoutsPrompt } from "@/components/work-orders/payee-payouts-prompt";
+import { PayoutCoveragePrompt } from "@/components/work-orders/payout-coverage-prompt";
+import { ProgressStepper } from "@/components/work-orders/progress-stepper";
 import { RenewalPanel } from "@/components/work-orders/renewal-panel";
 import { RequestsPanel } from "@/components/work-orders/requests-panel";
 import { SigningPanel } from "@/components/work-orders/signing-panel";
@@ -40,17 +55,34 @@ import {
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
+import { warnIfPayoutsUncovered } from "@/lib/payout-coverage";
 import { adminWorkOrderQueryOptions, adminWorkOrdersQueryKey } from "@/lib/queries";
+
+const WORK_ORDER_TABS = ["overview", "documents", "payouts", "evidence", "activity"] as const;
+type WorkOrderTab = (typeof WORK_ORDER_TABS)[number];
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/work-orders/$id")({
   head: () => ({ meta: [{ title: "Work order" }] }),
+  validateSearch: z.object({
+    tab: z.enum(WORK_ORDER_TABS).optional().catch(undefined),
+  }),
   component: WorkOrderPage,
 });
 
 type Action = "offer" | "activate" | "terminate" | "delete" | "collect";
 
+function defaultTab(stage: WorkOrderDetail["progress"]["stage"]): WorkOrderTab {
+  if (stage === "request" || stage === "approved" || stage === "paid") return "payouts";
+  if (stage === "draft" || stage === "agency_signs" || stage === "builder_signs") {
+    return "documents";
+  }
+  return "overview";
+}
+
 function WorkOrderPage() {
   const { id } = Route.useParams();
+  const { tab } = Route.useSearch();
+  const routeNavigate = Route.useNavigate();
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -59,6 +91,9 @@ function WorkOrderPage() {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState<null | "terminate" | "delete">(null);
   const [documenting, setDocumenting] = useState(false);
+  const [approveRequestId, setApproveRequestId] = useState<string | null>(null);
+  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  const clearApprove = useCallback(() => setApproveRequestId(null), []);
 
   const act = useMutation({
     mutationFn: async (action: Action) => {
@@ -68,7 +103,7 @@ function WorkOrderPage() {
       if (action === "collect") return apiClient.workOrders.collect({ id });
       return apiClient.workOrders.delete({ id });
     },
-    onSuccess: async (_, action) => {
+    onSuccess: async (result, action) => {
       if (action === "delete") {
         await navigate({ to: "/admin/work-orders" });
         queryClient.removeQueries({
@@ -77,23 +112,70 @@ function WorkOrderPage() {
         });
       }
       await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      const signFirst =
+        action === "offer" &&
+        typeof result === "object" &&
+        result !== null &&
+        "signing" in result &&
+        result.signing.awaitingRepresentative;
       const done: Record<Action, string> = {
-        offer: "Offered to the builder; they accept it from My work",
+        offer: signFirst
+          ? "Ready to sign: sign it in Documenso to send it to the builder"
+          : "Offered to the builder; they accept it from My work",
         activate: "Active: the work period has started",
         terminate: "Terminated: nothing more is paid under it",
         delete: "Deleted",
         collect: "Evidence collected from GitHub",
       };
       toast.success(done[action]);
+      if (action === "offer") await warnIfPayoutsUncovered(queryClient, apiClient, id);
     },
     onError: (err: Error) => toast.error(err.message || "Something went wrong"),
   });
 
+  const stage = query.data?.progress.stage;
+  const activeTab: WorkOrderTab = tab ?? (stage ? defaultTab(stage) : "overview");
+  const selectTab = useCallback(
+    (value: WorkOrderTab) => {
+      void routeNavigate({ search: { tab: value }, replace: true, resetScroll: false });
+    },
+    [routeNavigate],
+  );
+
+  useEffect(() => {
+    if (!scrollTo || typeof document === "undefined") return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(scrollTo)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setScrollTo(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [scrollTo]);
+
   if (query.isError) return <AdminError error={query.error} />;
   if (!query.data) return <Loading label="Loading the work order" />;
   const wo = query.data;
+  const { progress } = wo;
   const editable = canManage && ["draft", "offered", "accepted"].includes(wo.status);
   const payable = ["active", "ended", "exhausted"].includes(wo.status);
+  const deletable = wo.status === "draft" || wo.status === "offered";
+  const terminable = !deletable && wo.status !== "terminated";
+  const nextKind = progress.next?.kind ?? null;
+  const showOffer = wo.status === "draft" && nextKind !== "offer";
+  const showActivate = wo.status === "accepted" && nextKind !== "activate";
+  const hasMore = payable || deletable || terminable;
+
+  const onAction = (action: InPageAction) => {
+    if (action.kind === "offer") act.mutate("offer");
+    else if (action.kind === "activate") act.mutate("activate");
+    else if (action.kind === "edit") setEditing(true);
+    else if (action.kind === "approve") {
+      selectTab("payouts");
+      setApproveRequestId(action.requestId);
+    } else if (action.kind === "renewal") {
+      selectTab("overview");
+      setScrollTo("work-order-renewal");
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -116,88 +198,169 @@ function WorkOrderPage() {
         actions={
           canManage && (
             <>
-              {payable && (
+              {showOffer && (
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={act.isPending}
-                  onClick={() => act.mutate("collect")}
+                  onClick={() => act.mutate("offer")}
                 >
-                  Collect now
+                  Offer to the builder
                 </Button>
               )}
+              {showActivate && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={act.isPending || wo.activationBlockers.length > 0}
+                  onClick={() => act.mutate("activate")}
+                >
+                  Activate now
+                </Button>
+              )}
+              <DuplicateWorkOrderButton workOrder={wo} />
               {editable && (
                 <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
                   Edit
                 </Button>
               )}
-              {wo.status === "draft" && (
-                <Button size="sm" disabled={act.isPending} onClick={() => act.mutate("offer")}>
-                  Offer to the builder
-                </Button>
-              )}
-              {wo.status === "accepted" && (
-                <Button
-                  size="sm"
-                  disabled={act.isPending || wo.activationBlockers.length > 0}
-                  onClick={() => act.mutate("activate")}
-                >
-                  Activate
-                </Button>
-              )}
-              {(wo.status === "draft" || wo.status === "offered") && (
-                <Button size="sm" variant="ghost" onClick={() => setConfirming("delete")}>
-                  Delete
-                </Button>
-              )}
-              {wo.status !== "terminated" && wo.status !== "draft" && wo.status !== "offered" && (
-                <Button size="sm" variant="ghost" onClick={() => setConfirming("terminate")}>
-                  Terminate
-                </Button>
+              {hasMore && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="ghost" aria-label="More actions">
+                      <DotsThreeIcon weight="bold" aria-hidden />
+                      More
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {payable && (
+                      <DropdownMenuItem
+                        disabled={act.isPending}
+                        onSelect={() => act.mutate("collect")}
+                      >
+                        Collect evidence now
+                      </DropdownMenuItem>
+                    )}
+                    {payable && (deletable || terminable) && <DropdownMenuSeparator />}
+                    {deletable && (
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => setConfirming("delete")}
+                      >
+                        Delete
+                      </DropdownMenuItem>
+                    )}
+                    {terminable && (
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => setConfirming("terminate")}
+                      >
+                        Terminate
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </>
           )
         }
       />
 
-      {wo.activationBlockers.length > 0 && (
-        <Alert>
-          <AlertTitle>Before it can start</AlertTitle>
-          <AlertDescription>It starts automatically once these are done.</AlertDescription>
-          <AlertDescription>
-            <ul className="list-disc pl-5">
-              {wo.activationBlockers.map((b) => (
-                <li key={b}>{b}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      )}
+      <ProgressStepper progress={progress} />
 
-      {canManage && <PayeePayoutsPrompt workOrder={wo} />}
+      <NextStepCard
+        progress={progress}
+        builderName={wo.builder.name ?? wo.builder.nearAccount}
+        canManage={canManage}
+        busy={act.isPending}
+        onAction={onAction}
+      >
+        {canManage && <PayeePayoutsPrompt workOrder={wo} />}
+        {canManage && <PayoutCoveragePrompt workOrder={wo} />}
+      </NextStepCard>
 
-      <Summary workOrder={wo} />
-      <SigningPanel workOrder={wo} canManage={canManage} onAttach={() => setDocumenting(true)} />
-      <RenewalPanel workOrder={wo} canManage={canManage} />
-      {payable && (
-        <RequestsPanel workOrder={wo} canManage={canManage} hasTreasury={agencyDao !== null} />
-      )}
+      <Tabs value={activeTab} onValueChange={(value) => selectTab(value as WorkOrderTab)}>
+        <ScrollableTabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="documents">Documents & signatures</TabsTrigger>
+          <TabsTrigger value="payouts">
+            Payouts
+            {wo.waiting > 0 && <Badge className="ml-1">{wo.waiting}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="evidence">Evidence</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+        </ScrollableTabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <h2>Evidence</h2>
-          </CardTitle>
-          <CardDescription>
-            {wo.lastCollectedAt
-              ? `Collected from GitHub on ${wo.lastCollectedAt.slice(0, 16).replace("T", " ")}. It's collected again every 6 hours.`
-              : "Collected from GitHub once the work order is active."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <EvidenceList evidence={wo.evidence} />
-        </CardContent>
-      </Card>
+        <TabsContent value="overview" className="flex flex-col gap-6">
+          <Summary workOrder={wo} />
+          <div id="work-order-renewal" className="scroll-mt-4 empty:hidden">
+            <RenewalPanel workOrder={wo} canManage={canManage} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="documents" className="flex flex-col gap-6">
+          <SigningPanel
+            workOrder={wo}
+            canManage={canManage}
+            onAttach={() => setDocumenting(true)}
+          />
+        </TabsContent>
+
+        <TabsContent value="payouts" className="flex flex-col gap-6">
+          {payable ? (
+            <RequestsPanel
+              workOrder={wo}
+              canManage={canManage}
+              hasTreasury={agencyDao !== null}
+              approveRequestId={approveRequestId}
+              onApproveOpened={clearApprove}
+            />
+          ) : (
+            <Card>
+              <CardContent>
+                <Empty
+                  label="No payouts yet."
+                  description="Payout requests start once the work order is active."
+                />
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="evidence" className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                <h2>Evidence</h2>
+              </CardTitle>
+              <CardDescription>
+                {wo.lastCollectedAt
+                  ? `Collected from GitHub on ${wo.lastCollectedAt.slice(0, 16).replace("T", " ")}. It's collected again every 6 hours.`
+                  : "Collected from GitHub once the work order is active."}
+              </CardDescription>
+              {canManage && payable && (
+                <CardAction>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={act.isPending}
+                    onClick={() => act.mutate("collect")}
+                  >
+                    Collect now
+                  </Button>
+                </CardAction>
+              )}
+            </CardHeader>
+            <CardContent>
+              <EvidenceList evidence={wo.evidence} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="activity" className="flex flex-col gap-6">
+          <ActivityTimeline workOrder={wo} />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={editing} onOpenChange={setEditing}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">

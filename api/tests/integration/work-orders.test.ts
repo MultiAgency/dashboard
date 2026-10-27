@@ -1,11 +1,21 @@
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib/dist/pdf-lib.esm.js";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Database } from "../../src/db";
-import { billings, compensationRequests, notifications, workOrders } from "../../src/db/schema";
+import {
+  billings,
+  compensationRequests,
+  notifications,
+  workOrderDocuments,
+  workOrderDriveFiles,
+  workOrderIntegrations,
+  workOrderOutbox,
+  workOrders,
+} from "../../src/db/schema";
+import { rememberedLogin } from "../../src/services/builder-logins";
 import { requireTreasury } from "../../src/services/organization-access";
-import { topUpFor } from "../../src/services/payouts/policy";
+import { atomicToNear, topUpFor } from "../../src/services/payouts/policy";
 import {
   createPayoutAgents,
   type PayoutAgents,
@@ -15,10 +25,12 @@ import type { DaoProposal } from "../../src/services/sputnik";
 import { enrichWithChainStatus } from "../../src/services/sputnik";
 import {
   contains,
+  documentFields,
   longDate,
   normalizeText,
   pdfText,
 } from "../../src/services/work-orders/documents";
+import { composeEmails } from "../../src/services/work-orders/emails";
 import type { WorkOrderEvent } from "../../src/services/work-orders/events";
 import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
 import { usdToTokens } from "../../src/services/work-orders/prices";
@@ -207,6 +219,15 @@ describe("work orders", () => {
   }
 
   describe("lifecycle", () => {
+    test("the next code previews the auto-numbered code without taking it", async () => {
+      expect(await service.nextCode(await studio())).toEqual({ code: "WO-0001" });
+      expect(await service.nextCode(await studio())).toEqual({ code: "WO-0001" });
+      await service.create(await studio(), fields());
+      await service.create(await studio(), fields({ code: "SI-004" }));
+      expect(await service.nextCode(await studio())).toEqual({ code: "WO-0002" });
+      expect((await service.create(await studio(), fields())).code).toBe("WO-0002");
+    });
+
     test("draft → offered → accepted by the builder's own account → active", async () => {
       const created = await service.create(await studio(), fields());
       expect(created.code).toBe("WO-0001");
@@ -239,6 +260,19 @@ describe("work orders", () => {
       await refused(service.activate(await studio(), { id: created.id }), "NOT_ACCEPTED");
       expect(activated.builder.githubLogin).toBe("carol-gh");
       expect((await notificationsOf("carol")).map((n) => n.kind)).toContain("work_order_activated");
+    });
+
+    test("counts the work orders that need the agency, from the list's progress", async () => {
+      expect(await service.needsYouCount(await member())).toEqual({ count: 0 });
+      const first = await service.create(await studio(), fields());
+      await service.create(await studio(), fields({ title: "Second role" }));
+      expect(await service.needsYouCount(await member())).toEqual({ count: 2 });
+      await service.offer(await studio(), { id: first.id });
+      const { data } = await service.list(await member());
+      expect(data.filter((w) => w.progress.needsYou)).toHaveLength(1);
+      expect(await service.needsYouCount(await member())).toEqual({ count: 1 });
+      await signAsBuilder(first.id);
+      expect(await service.needsYouCount(await member())).toEqual({ count: 2 });
     });
 
     test("another account can't see or accept the work order", async () => {
@@ -288,11 +322,125 @@ describe("work orders", () => {
       ).toBe("active");
     });
 
+    test("a GitHub login typed for a builder without one is remembered for the next work order", async () => {
+      const first = await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near", githubLogin: "@NoGit-GH" }),
+      );
+      expect(first.builder.githubLogin).toBe("nogit-gh");
+      expect(await rememberedLogin(db, "studio", "nogit.near")).toBe("nogit-gh");
+      expect(await rememberedLogin(db, "rival", "nogit.near")).toBeNull();
+      expect(builders.get("nogit.near")?.githubLogin).toBeNull();
+      const second = await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near", code: "WO-0099" }),
+      );
+      expect(second.builder.githubLogin).toBe("nogit-gh");
+    });
+
+    test("a GitHub login set later is remembered too", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near" }),
+      );
+      expect(await rememberedLogin(db, "studio", "nogit.near")).toBeNull();
+      await service.setGithubLogin(await studio(), { id: created.id, githubLogin: "nogit-gh" });
+      expect(await rememberedLogin(db, "studio", "nogit.near")).toBe("nogit-gh");
+      await service.update(await studio(), { id: created.id, githubLogin: "nogit-2" });
+      expect(await rememberedLogin(db, "studio", "nogit.near")).toBe("nogit-2");
+    });
+
+    test("a builder whose profile has a GitHub login keeps it; a different one isn't remembered", async () => {
+      const created = await service.create(await studio(), fields({ githubLogin: "carol-alt" }));
+      expect(created.builder.githubLogin).toBe("carol-alt");
+      expect(await rememberedLogin(db, "studio", CAROL)).toBeNull();
+      expect(builders.get(CAROL)?.githubLogin).toBe("carol-gh");
+      const next = await service.create(await studio(), fields({ code: "WO-0099" }));
+      expect(next.builder.githubLogin).toBe("carol-gh");
+    });
+
     test("only managers write; members read; other agencies see nothing", async () => {
       const created = await service.create(await studio(), fields());
       expect((await service.list(await member())).data.map((w) => w.id)).toEqual([created.id]);
       const rival = await world.manager("rival-admin", "rival");
       await refused(service.get(rival, { id: created.id }), "NOT_FOUND");
+    });
+
+    test("activity lists the emails sent for the work order, without their bodies", async () => {
+      const created = await service.create(await studio(), fields());
+      const other = await service.create(await studio(), fields({ code: "WO-0050" }));
+      const email = (to: string, subject: string) =>
+        JSON.stringify({ to, subject, text: "secret body", html: "<p>secret body</p>" });
+      await db.insert(workOrderOutbox).values([
+        {
+          id: "e1",
+          organizationId: "studio",
+          workOrderId: created.id,
+          eventType: "work_order.offered",
+          payload: email("carol@example.com", "Sign WO-0001"),
+          deliveredAt: new Date("2026-09-20T12:01:00.000Z"),
+          createdAt: new Date("2026-09-20T12:00:00.000Z"),
+        },
+        {
+          id: "e2",
+          organizationId: "studio",
+          workOrderId: created.id,
+          eventType: "work_order.signed",
+          payload: email("rita@example.com", "Carol signed WO-0001"),
+          lastError: "Resend is down",
+          createdAt: new Date("2026-09-21T12:00:00.000Z"),
+        },
+        {
+          id: "e4",
+          organizationId: "studio",
+          workOrderId: other.id,
+          eventType: "work_order.offered",
+          payload: email("carol@example.com", "Sign WO-0050"),
+          createdAt: new Date("2026-09-20T12:00:00.000Z"),
+        },
+        {
+          id: "e5",
+          organizationId: "studio",
+          workOrderId: created.id,
+          eventType: "work_order.active",
+          payload: "not json",
+          createdAt: new Date("2026-09-22T12:00:00.000Z"),
+        },
+      ]);
+
+      const { emails } = await service.activity(await member(), { id: created.id });
+      expect(emails).toEqual([
+        {
+          id: "e1",
+          eventType: "work_order.offered",
+          to: "carol@example.com",
+          subject: "Sign WO-0001",
+          createdAt: "2026-09-20T12:00:00.000Z",
+          deliveredAt: "2026-09-20T12:01:00.000Z",
+          lastError: null,
+        },
+        {
+          id: "e2",
+          eventType: "work_order.signed",
+          to: "rita@example.com",
+          subject: "Carol signed WO-0001",
+          createdAt: "2026-09-21T12:00:00.000Z",
+          deliveredAt: null,
+          lastError: "Resend is down",
+        },
+        {
+          id: "e5",
+          eventType: "work_order.active",
+          to: null,
+          subject: null,
+          createdAt: "2026-09-22T12:00:00.000Z",
+          deliveredAt: null,
+          lastError: null,
+        },
+      ]);
+      expect(JSON.stringify(emails)).not.toContain("secret body");
+      const rival = await world.manager("rival-admin", "rival");
+      await refused(service.activity(rival, { id: created.id }), "NOT_FOUND");
     });
 
     test("codes are unique per agency; unknown builders and bad repos are refused", async () => {
@@ -645,17 +793,32 @@ describe("work orders", () => {
       expect(parent.renewal?.status).toBe("renewed");
       expect(parent.renewal?.decidedBy).toBe("auto");
       expect(child).toMatchObject({
-        status: "active",
+        status: "offered",
         periodStart: "2026-10-01",
         periodEnd: "2026-10-31",
         renewedFrom: parent.id,
+        acceptedAt: null,
+        signature: { method: null },
       });
+      expect(child.signing.builder).toBeNull();
       expect(
         (await service.get(await studio(), { id: parent.id })).requests.map((r) => r.status),
       ).toEqual(["draft"]);
       expect((await notificationsOf("carol")).map((n) => n.kind)).toEqual(
-        expect.arrayContaining(["compensation_request_ready", "work_order_renewed"]),
+        expect.arrayContaining([
+          "compensation_request_ready",
+          "work_order_renewed",
+          "work_order_offered",
+        ]),
       );
+      const renewed = events.find((e) => e.type === "work_order.renewed");
+      expect(renewed?.workOrder.id).toBe("WO-0001-M2");
+      expect(renewed?.workOrder.periodStart).toBe("2026-10-01");
+
+      await signAsBuilder(child.id);
+      const signed = await service.countersign(await studio(), { id: child.id, name: "Rita Rep" });
+      expect(signed).toMatchObject({ status: "active", periodStart: "2026-10-01" });
+      expect(signed.signature.method).toBe("in_app");
     });
 
     test("a missed metric needs manual approval; approve renews, decline doesn't", async () => {
@@ -1009,7 +1172,7 @@ describe("work orders", () => {
       expect(done.documentUrl).toBe("https://drive.google.com/file/d/upload-1/view");
       expect(google.uploads[0]).toMatchObject({
         folderId: "signed",
-        name: "Work Order WO-0001 (signed).pdf",
+        name: "Work Order WO-0001 - Contributor role (signed).pdf",
       });
       await refused(
         service.countersign(await studio(), { id: created.id, name: "Rita Rep" }),
@@ -1055,11 +1218,75 @@ describe("work orders", () => {
         builder: null,
         representative: null,
         needsCountersign: false,
+        awaitingRepresentative: false,
         esign: null,
       });
       expect(await service.myDocument(carol(), { id: created.id }).catch(() => null)).toBeNull();
       await service.offer(await studio(), { id: created.id });
       expect((await service.myDocument(carol(), { id: created.id })).current).toBe(true);
+    });
+
+    test("template tags fill from known fields, fixed text and values asked on the work order", async () => {
+      google.setDoc(
+        "tpl",
+        "Contractor {{contractor_name}} aka {{builder}} in {{jurisdiction}} at {{address}}. {{mystery}}",
+      );
+      await db
+        .update(workOrderIntegrations)
+        .set({
+          googleFieldMap: JSON.stringify({
+            builder: { kind: "field", field: "contractor_name" },
+            jurisdiction: { kind: "text", value: "Delaware" },
+            address: { kind: "ask", label: "Builder address" },
+          }),
+        })
+        .where(eq(workOrderIntegrations.organizationId, "studio"));
+      const created = await service.create(
+        await studio(),
+        fields({ tokenId: REAL_USDC, customFields: { address: "1 Main St" } }),
+      );
+      expect(google.textOf("doc-1")).toBe(
+        "Contractor Carol aka Carol in Delaware at 1 Main St. {{mystery}}",
+      );
+      expect(created.customFields).toEqual({ address: "1 Main St" });
+      expect(created.signature.documentWarning).toBe("Template tag {{mystery}} wasn't filled");
+
+      const blank = await service.create(await studio(), fields({ tokenId: REAL_USDC }));
+      expect(blank.signature.documentWarning).toContain('"Builder address" was left blank');
+    });
+
+    test("an organization's own Google connection is used before the service account", async () => {
+      const own = new FakeGoogle(["work_order_id"]);
+      own.kind = "oauth";
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        googleFor: async (organizationId) => (organizationId === "studio" ? own : null),
+      });
+      await service.create(await studio(), fields({ tokenId: REAL_USDC }));
+      expect(own.copies.map((c) => c.templateId)).toEqual(["tpl"]);
+      expect(google.copies).toEqual([]);
+    });
+
+    test("the payout method describes a NEAR payment for both payout paths", () => {
+      const values = documentFields({
+        code: "WO-1",
+        project: "P",
+        contractorName: "C",
+        contractorEmail: null,
+        representativeName: "R",
+        representativeEmail: null,
+        periodStart: "2026-09-01",
+        periodEnd: "2026-09-30",
+        budgetDecimal: "1",
+        budget: "$1",
+        ipModel: null,
+        payee: "c.near",
+        github: "",
+        repos: [],
+        autoRenew: false,
+        scope: null,
+      });
+      expect(values.payout_method).toBe("Paid in NEAR to the account above");
     });
 
     test("matching is exact: a value must stand on its own in the PDF", () => {
@@ -1118,39 +1345,102 @@ describe("work orders", () => {
       return created;
     }
 
-    test("offering sends the document to the builder, then the representative, with a signatures page", async () => {
+    test("offering sends the document to the representative first, then the builder, with a signatures page", async () => {
       const created = await offered();
       const doc = documenso.last();
       expect(doc.externalId).toBe(created.id);
       expect(doc.subject).toBe(`Please sign Work Order ${created.code}`);
       expect(doc.signers.map((s) => [s.role, s.email])).toEqual([
-        ["contractor", "carol@example.com"],
         ["representative", "rita@example.com"],
+        ["contractor", "carol@example.com"],
       ]);
       const pages = (await PDFDocument.load(doc.pdf)).getPageCount();
       expect(doc.signers[0]?.signature.page).toBe(pages);
       expect(doc.signers[1]?.signature.y).toBeGreaterThan(doc.signers[0]?.signature.y ?? 100);
       const offeredDoc = await service.document(await studio(), { id: created.id });
       expect(offeredDoc.sha256).toBe(createHash("sha256").update(doc.pdf).digest("hex"));
-      const offer = events.find((e) => e.type === "work_order.offered");
-      expect(offer?.links.sign).toBe("https://sign.example/envelope_1/contractor");
+      expect(events.map((e) => e.type)).not.toContain("work_order.offered");
+      expect((await notificationsOf("carol")).map((n) => n.kind)).not.toContain(
+        "work_order_offered",
+      );
 
       const admin = await service.get(await studio(), { id: created.id });
       expect(admin.status).toBe("offered");
+      expect(admin.signing.awaitingRepresentative).toBe(true);
+      expect(admin.activationBlockers).toContain("Sign it in Documenso to send it to the builder");
       expect(admin.signing.esign).toMatchObject({
         sent: true,
         builderUrl: null,
         representativeUrl: "https://sign.example/envelope_1/representative",
       });
+      expect((await service.mine(carol())).data).toEqual([]);
+      const mine = await service.mineGet(carol(), { id: created.id });
+      expect(mine.signing.esign).toMatchObject({ builderUrl: null, representativeUrl: null });
+    });
+
+    test("the representative's signature sends the builder the offer once, and the builder's signature completes it", async () => {
+      const created = await offered();
+      const toSign = await service.get(await studio(), { id: created.id });
+      expect(toSign.progress).toMatchObject({
+        stage: "agency_signs",
+        waitingOn: "you",
+        next: {
+          kind: "link",
+          label: "Sign as Rita Rep",
+          href: "https://sign.example/envelope_1/representative",
+        },
+      });
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      const sent = await service.get(await studio(), { id: created.id });
+      expect(sent.status).toBe("offered");
+      expect(sent.signing.representative?.name).toBe("Rita Rep");
+      expect(sent.signing.awaitingRepresentative).toBe(false);
+      expect(sent.progress).toMatchObject({ stage: "builder_signs", waitingOn: "builder" });
+      expect(sent.activationBlockers).toContain(
+        "Waiting for the builder to accept the terms or sign the document",
+      );
+      await service.get(await studio(), { id: created.id });
+      await service.syncPendingSignatures();
+      const offers = events.filter((e) => e.type === "work_order.offered");
+      expect(offers).toHaveLength(1);
+      expect(offers[0]?.links.sign).toBe("https://sign.example/envelope_1/contractor");
+      expect(
+        (await notificationsOf("carol")).filter((n) => n.kind === "work_order_offered"),
+      ).toHaveLength(1);
+      expect((await service.mine(carol())).data.map((w) => w.id)).toEqual([created.id]);
       const mine = await service.mineGet(carol(), { id: created.id });
       expect(mine.signing.esign).toMatchObject({
         builderUrl: "https://sign.example/envelope_1/contractor",
         representativeUrl: null,
       });
+
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
+      await service.run();
+      const signed = await service.get(await studio(), { id: created.id });
+      expect(signed.status).toBe("active");
+      expect(signed.progress.steps.slice(0, 3).map((step) => step.state)).toEqual([
+        "done",
+        "done",
+        "done",
+      ]);
+      expect(signed.acceptedAt).toBe("2026-09-20T14:00:00.000Z");
+      expect(signed.signature.method).toBe("documenso");
+      expect(signed.signing.builder?.name).toBe("Carol");
+      expect(signed.signing.representative?.name).toBe("Rita Rep");
+      expect(signed.payee.confirmedAt).not.toBeNull();
+      expect(signed.documentSha256).toBe(
+        createHash("sha256").update("%PDF-1.7 signed envelope_1 %%EOF").digest("hex"),
+      );
+      expect(events.map((e) => e.type)).not.toContain("work_order.builder_signed");
+      expect(events.filter((e) => e.type === "work_order.signed")).toHaveLength(1);
+      expect(events.filter((e) => e.type === "work_order.offered")).toHaveLength(1);
+      expect((await notificationsOf("carol")).map((n) => n.kind)).toContain("work_order_activated");
     });
 
     test("builder actions never return the representative's signing link", async () => {
       const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.get(await studio(), { id: created.id });
       const confirmed = await service.confirmPayee(carol(), { id: created.id });
       expect(confirmed.signing.esign).toMatchObject({
         builderUrl: "https://sign.example/envelope_1/contractor",
@@ -1194,47 +1484,264 @@ describe("work orders", () => {
       expect(documenso.cancelled.at(-1)?.envelopeId).toBe("envelope_3");
     });
 
-    test("the builder's signature in Documenso accepts it, and both signatures store the signed PDF", async () => {
+    async function completed() {
       const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.syncPendingSignatures();
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
+      await service.syncPendingSignatures();
+      return service.get(await studio(), { id: created.id });
+    }
+
+    const driveFolders = (signedFolderId: string | null) =>
+      createWorkOrderIntegrations({ db }).saveGoogle("studio", "studio-admin", {
+        templateId: null,
+        documentsFolderId: "docs",
+        signedFolderId,
+      });
+
+    test("the signed PDF is saved to the Signed folder once, and the folder check skips it", async () => {
+      await driveFolders("signed");
+      const signed = await completed();
+      expect(signed.status).toBe("active");
+      expect(google.uploads.map((u) => [u.folderId, u.name])).toEqual([
+        ["signed", "Work Order WO-0001 - Contributor role (signed).pdf"],
+      ]);
+      expect(signed.signature.driveUrl).toBe("https://drive.google.com/file/d/upload-1/view");
+      expect(signed.signature.driveError).toBeNull();
+      await service.tick("t1");
+      clock = new Date(clock.getTime() + 3_600_000);
+      await service.tick("t2");
+      expect(google.uploads).toHaveLength(1);
+      await db.delete(workOrderDriveFiles);
+      expect((await service.checkDrive(await studio())).checked).toBe(0);
+    });
+
+    test("a failed upload doesn't block signing and is retried on a later tick", async () => {
+      await driveFolders(null);
+      google.failUploads = 1;
+      const signed = await completed();
+      expect(signed.status).toBe("active");
+      expect(signed.signature.driveError).toMatch(/Drive upload failed/);
+      expect(google.uploads).toHaveLength(0);
+      await service.tick("t1");
+      expect(google.uploads).toHaveLength(0);
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      const tick = await service.tick("t2");
+      expect(tick.counts.driveUploads).toBe(1);
+      expect(google.uploads.map((u) => u.folderId)).toEqual(["docs"]);
+      const saved = await service.get(await studio(), { id: signed.id });
+      expect(saved.signature.driveUrl).toBe("https://drive.google.com/file/d/upload-1/view");
+      expect(saved.signature.driveError).toBeNull();
+    });
+
+    test("without a Google connection the signed PDF stays in MultiAgency only", async () => {
+      await driveFolders("signed");
+      service = createWorkOrdersService({ ...serviceDeps, google: null, esign: documenso });
+      const signed = await completed();
+      expect(signed.status).toBe("active");
+      expect(signed.signature.driveUrl).toBeNull();
+      expect(signed.signature.driveError).toBeNull();
+      expect(google.uploads).toHaveLength(0);
+    });
+
+    test("a signed PDF already filed in Drive isn't uploaded again, and rows that never failed aren't retried", async () => {
+      await driveFolders("signed");
+      const live = service;
+      service = createWorkOrdersService({ ...serviceDeps, google: null, esign: documenso });
+      const filed = await completed();
+      expect(google.uploads).toHaveLength(0);
+      await db
+        .update(workOrderDocuments)
+        .set({ driveFileId: "legacy-1", driveUrl: "https://drive.google.com/file/d/legacy-1/view" })
+        .where(
+          and(eq(workOrderDocuments.workOrderId, filed.id), eq(workOrderDocuments.kind, "signed")),
+        );
+      service = live;
+      clock = new Date(clock.getTime() + 3_600_000);
+      await service.tick("t1");
+      expect(google.uploads).toHaveLength(0);
+      const saved = await service.saveSignedToDrive(await studio(), { id: filed.id });
+      expect(saved.signature.driveUrl).toBe("https://drive.google.com/file/d/legacy-1/view");
+      expect(google.uploads).toHaveLength(0);
+    });
+
+    test("a renewal goes out for signature with the new dates, and its signed PDF is filed in Drive", async () => {
+      await driveFolders("signed");
+      const created = await service.create(
+        await studio(),
+        fields({
+          autoRenew: true,
+          representativeName: "Rita Rep",
+          representativeEmail: "rita@example.com",
+        }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      documenso.sign("representative", "2026-09-01T09:00:00.000Z");
+      await service.syncPendingSignatures();
+      documenso.sign("contractor", "2026-09-01T10:00:00.000Z");
+      await service.syncPendingSignatures();
+      expect((await service.get(await studio(), { id: created.id })).status).toBe("active");
+      expect(google.uploads).toHaveLength(1);
+
+      clock = new Date("2026-10-03T06:00:00.000Z");
+      await service.run();
+      await service.decideRenewal(await studio(), { id: created.id, decision: "approve" });
+      const child = (await service.list(await studio())).data.find((w) => w.code === "WO-0001-M2")!;
+      expect(child).toMatchObject({ status: "offered", periodStart: "2026-10-01" });
+      expect(child.signing.awaitingRepresentative).toBe(true);
+      expect(documenso.sent).toHaveLength(2);
+      expect(documenso.last().externalId).toBe(child.id);
+      const renewed = events.find((e) => e.type === "work_order.renewed");
+      expect(renewed?.links.countersign).toBe("https://sign.example/envelope_2/representative");
+      const email = composeEmails(renewed!).find((m) => m.to === "rita@example.com");
+      expect(email?.subject).toBe("Sign the renewal: Work Order WO-0001-M2");
+      expect(email?.html).toContain("https://sign.example/envelope_2/representative");
+
+      documenso.sign("representative", "2026-10-03T07:00:00.000Z");
+      await service.syncPendingSignatures();
+      expect(
+        events.filter((e) => e.type === "work_order.offered").map((e) => e.workOrder.id),
+      ).toContain("WO-0001-M2");
+      documenso.sign("contractor", "2026-10-03T08:00:00.000Z");
+      await service.syncPendingSignatures();
+      const active = await service.get(await studio(), { id: child.id });
+      expect(active).toMatchObject({ status: "active", periodStart: "2026-10-01" });
+      expect(active.signature.method).toBe("documenso");
+      expect(google.uploads.map((u) => u.name)).toEqual([
+        "Work Order WO-0001 - Contributor role (signed).pdf",
+        "Work Order WO-0001-M2 - Contributor role (signed).pdf",
+      ]);
+    });
+
+    test("a renewal that can't be sent stays a draft and tells the agency why", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({
+          autoRenew: true,
+          representativeName: "Rita Rep",
+          representativeEmail: "rita@example.com",
+        }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      documenso.sign("representative", "2026-09-01T09:00:00.000Z");
+      documenso.sign("contractor", "2026-09-01T10:00:00.000Z");
+      await service.syncPendingSignatures();
+      clock = new Date("2026-10-03T06:00:00.000Z");
+      await service.run();
+      documenso.send = async () => {
+        throw new Error("Documenso is down");
+      };
+      await service.decideRenewal(await studio(), { id: created.id, decision: "approve" });
+      const child = (await service.list(await studio())).data.find((w) => w.code === "WO-0001-M2")!;
+      expect(child.status).toBe("draft");
+      expect(child.signing.esign?.error ?? null).toMatch(
+        /wasn't sent for signature: .*Documenso is down/,
+      );
+      const renewed = events.find((e) => e.type === "work_order.renewed");
+      const email = composeEmails(renewed!).find((m) => m.to === "rita@example.com");
+      expect(email?.text).toContain("saved as a draft");
+      expect(email?.text).not.toContain("Review and sign");
+    });
+
+    test("builders never get the agency's signing link or actions, and can't sign around Documenso", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T12:30:00.000Z");
+      await service.get(await studio(), { id: created.id });
+
+      const second = await service.create(
+        await studio(),
+        fields({
+          code: "WO-0002",
+          representativeName: "Rita Rep",
+          representativeEmail: "rita@example.com",
+        }),
+      );
+      await service.offer(await studio(), { id: second.id });
+      expect((await service.get(await studio(), { id: second.id })).progress.next).toMatchObject({
+        href: "https://sign.example/envelope_2/representative",
+      });
+      for (const view of [
+        await service.mineGet(carol(), { id: second.id }),
+        await service.mineGet(carol(), { id: created.id }),
+        ...(await service.mine(carol())).data,
+      ]) {
+        expect(JSON.stringify(view)).not.toMatch(/envelope_\d\/representative/);
+        expect(view.progress.next).toBeNull();
+        expect(view.progress.attention).toEqual([]);
+      }
+
+      for (const id of [second.id, created.id]) {
+        const doc = await service.myDocument(carol(), { id });
+        await refused(
+          service.sign(carol(), { id, documentSha256: doc.sha256, name: "Carol" }),
+          "SIGN_IN_DOCUMENSO",
+        );
+      }
+      expect((await service.get(await studio(), { id: second.id })).status).toBe("offered");
+    });
+
+    test("an envelope sent before the agency signed first keeps the builder-first flow", async () => {
+      const created = await offered();
+      await db
+        .update(workOrders)
+        .set({ esignRepresentativeFirst: false })
+        .where(eq(workOrders.id, created.id));
+      documenso.builderFirst = true;
+
+      const before = await service.get(await studio(), { id: created.id });
+      expect(before.signing.awaitingRepresentative).toBe(false);
+      expect(before.progress.waitingOn).toBe("builder");
+      expect((await service.mine(carol())).data.map((w) => w.id)).toEqual([created.id]);
+      const mine = await service.mineGet(carol(), { id: created.id });
+      expect(mine.signing.esign?.builderUrl).toBe("https://sign.example/envelope_1/contractor");
+
       documenso.sign("contractor", "2026-09-20T13:00:00.000Z");
       const accepted = await service.get(await studio(), { id: created.id });
       expect(accepted.status).toBe("accepted");
       expect(accepted.signing.builder?.name).toBe("Carol");
+      expect(accepted.signing.representative).toBeNull();
       expect(accepted.signing.needsCountersign).toBe(true);
-      const turn = events.find((e) => e.type === "work_order.builder_signed");
-      expect(turn?.links.countersign).toBe("https://sign.example/envelope_1/representative");
+      expect(accepted.progress).toMatchObject({ stage: "agency_signs", waitingOn: "you" });
+      expect(events.filter((e) => e.type === "work_order.offered")).toHaveLength(0);
 
       documenso.sign("representative", "2026-09-20T14:00:00.000Z");
       await service.run();
       const signed = await service.get(await studio(), { id: created.id });
-      expect(signed.signature.method).toBe("documenso");
-      expect(signed.signing.representative?.name).toBe("Rita Rep");
-      expect(signed.documentSha256).toBe(
-        createHash("sha256").update("%PDF-1.7 signed envelope_1 %%EOF").digest("hex"),
-      );
       expect(signed.status).toBe("active");
-      expect((await notificationsOf("carol")).map((n) => n.kind)).toContain("work_order_activated");
+      expect(signed.signing.representative?.name).toBe("Rita Rep");
     });
 
-    test("the background check picks up the builder's signature without anyone opening the page", async () => {
+    test("the background check picks up both signatures without anyone opening the page", async () => {
       const created = await offered();
       expect(await service.syncPendingSignatures()).toBe(1);
-      documenso.sign("contractor", "2026-09-20T13:00:00.000Z");
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.syncPendingSignatures();
+      expect(events.filter((e) => e.type === "work_order.offered")).toHaveLength(1);
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
       await service.syncPendingSignatures();
       const [row] = await db.select().from(workOrders).where(eq(workOrders.id, created.id));
-      expect(row?.status).toBe("accepted");
+      expect(row?.status).toBe("active");
       expect(row?.signatureMethod).toBe("documenso");
-      documenso.sign("representative", "2026-09-20T14:00:00.000Z");
-      await service.syncPendingSignatures();
+      expect(row?.acceptedTermsHash).not.toBeNull();
       expect(await service.syncPendingSignatures()).toBe(0);
     });
 
     test("declining in Documenso puts the work order back to draft with the reason", async () => {
       const created = await offered();
-      documenso.reject("contractor");
+      documenso.reject("representative");
       const back = await service.get(await studio(), { id: created.id });
       expect(back.status).toBe("draft");
       expect(back.signing.esign?.error).toBe("Declined in Documenso: Wrong budget");
+      expect(events.map((e) => e.type)).not.toContain("work_order.offered");
+
+      await service.offer(await studio(), { id: created.id });
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.syncPendingSignatures();
+      documenso.reject("contractor");
+      const declined = await service.get(await studio(), { id: created.id });
+      expect(declined.status).toBe("draft");
+      expect(declined.signing.esign?.error).toBe("Declined in Documenso: Wrong budget");
     });
 
     test("it isn't offered without both emails, or when Documenso refuses", async () => {
@@ -1478,6 +1985,7 @@ describe("work orders", () => {
       expect(released?.payout).toEqual({
         near: CAROL,
         txUrl: "https://nearblocks.io/txns/TXHASH1",
+        accountUrl: `https://nearblocks.io/address/${CAROL}`,
       });
       expect((await service.get(await studio(), { id: wo.id })).paidAmount).toBe("600000000");
     });
@@ -1496,9 +2004,13 @@ describe("work orders", () => {
       const detail = await service.get(await studio(), { id: paying.workOrderId });
       const request = detail.requests.find((r) => r.id === draft.id);
       expect(request?.status).toBe("paid");
-      expect(request?.agentPayout?.txUrl).toBe(
-        "https://explorer.near-intents.org/transactions/IH1",
-      );
+      expect(request?.agentPayout?.txUrl).toBeNull();
+      expect(request?.agentPayout?.accountUrl).toBe(`https://nearblocks.io/address/${CAROL}`);
+      const released = events.find((e) => e.type === "request.payout_released");
+      const email = composeEmails(released!).find((m) => m.subject.startsWith("Payout sent"));
+      expect(email?.html).toContain(`https://nearblocks.io/address/${CAROL}`);
+      expect(email?.html).not.toContain("explorer.near-intents.org");
+      expect(email?.text).toContain("See it on NearBlocks");
     });
 
     test("a request can't be rejected while its payout is going out", async () => {
@@ -1804,6 +2316,7 @@ describe("work orders", () => {
       expect(paused?.status).toBe("approved");
       expect(paused?.note).not.toMatch(/tried again automatically/);
       expect(paused?.daoPaymentStartedAt).not.toBeNull();
+      expect(paused?.autoPayBlockedCode).toBeNull();
       const rejected = await service.rejectRequest(await studio(), {
         requestId: draft.id,
         note: "Paying it as a new request instead",
@@ -1847,6 +2360,162 @@ describe("work orders", () => {
         `multiagency:${draft.id}:a2`,
         `multiagency:${draft.id}:a3`,
       ]);
+    });
+
+    test("before approving, the admin sees that the agent can't pay it right away", async () => {
+      const { draft } = await approvedRequest();
+      const near = atomicToNear(usdToTokens(600_000_000n, "4.99", 24));
+      const without = await createWorkOrdersService(serviceDeps).payoutReadiness(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(without).toMatchObject({ ready: false, code: "unavailable" });
+      expect(
+        await service.payoutReadiness(await studio(), { requestId: draft.id, amount: "600000000" }),
+      ).toMatchObject({ ready: false, code: "no_agent" });
+      await setUpAgent();
+      const empty = await service.payoutReadiness(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(empty).toEqual({
+        ready: false,
+        code: "insufficient_balance",
+        reason: `The agent holds 0 NEAR; this payout needs ${near} NEAR`,
+        near,
+        balanceNear: "0",
+        priceUsd: "4.99",
+      });
+      agent.balanceRaw = (200n * 10n ** 24n).toString();
+      agent.monthlySpentUsd = "4800";
+      expect(
+        await service.payoutReadiness(await studio(), { requestId: draft.id, amount: "600000000" }),
+      ).toMatchObject({ ready: false, code: "over_monthly_budget", balanceNear: "200" });
+      agent.monthlySpentUsd = "0";
+      expect(
+        await service.payoutReadiness(await studio(), { requestId: draft.id, amount: "600000000" }),
+      ).toEqual({
+        ready: true,
+        code: null,
+        reason: null,
+        near,
+        balanceNear: null,
+        priceUsd: "4.99",
+      });
+      const detail = await service.get(await studio(), { id: draft.workOrderId });
+      expect(detail.requests.find((r) => r.id === draft.id)?.status).toBe("submitted");
+      expect(agent.withdrawals).toEqual([]);
+    });
+
+    test("the work order page warns when the agent can't cover its budget", async () => {
+      const { wo } = await approvedRequest();
+      await setUpAgent();
+      const needed = atomicToNear(usdToTokens(1_000_000_000n, "4.99", 24));
+      expect(await service.payoutCoverage(await studio(), { id: wo.id })).toEqual({
+        covered: false,
+        unpaid: "$1,000",
+        balanceNear: "0",
+        neededNear: needed,
+        shortfallNear: expect.any(String),
+        lowBalance: true,
+        neededUsd: "1000.00",
+        monthlyBudgetUsd: "5000",
+        monthlyRemainingUsd: "5000.00",
+        overMonthly: false,
+      });
+      agent.balanceRaw = (300n * 10n ** 24n).toString();
+      agent.monthlySpentUsd = "4500";
+      expect(await service.payoutCoverage(await studio(), { id: wo.id })).toMatchObject({
+        covered: false,
+        lowBalance: false,
+        overMonthly: true,
+        monthlyRemainingUsd: "500.00",
+      });
+      agent.monthlySpentUsd = "0";
+      expect(await service.payoutCoverage(await studio(), { id: wo.id })).toMatchObject({
+        covered: true,
+      });
+      const plain = createWorkOrdersService(serviceDeps);
+      expect(await plain.payoutCoverage(await studio(), { id: wo.id })).toBeNull();
+    });
+
+    test("a payout on hold for funds emails the representative once, not on every retry", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("t1");
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("t2");
+      expect(agent.withdrawals).toHaveLength(3);
+      const held = events.filter((e) => e.type === "request.payout_blocked");
+      expect(held).toHaveLength(1);
+      const near = atomicToNear(usdToTokens(600_000_000n, "4.99", 24));
+      expect(held[0]?.hold).toEqual({
+        code: "insufficient_balance",
+        reason: `The agent holds 0 NEAR; this payout needs ${near} NEAR`,
+        balanceNear: "0",
+        neededNear: near,
+      });
+      expect(held[0]?.links.settings).toBe("https://app.example/admin/settings#payouts");
+      expect(held[0]?.request?.id).toBe(`${held[0]?.workOrder.id}-R1`);
+      agent.monthlySpentUsd = "4800";
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("t3");
+      const again = events.filter((e) => e.type === "request.payout_blocked");
+      expect(again.map((e) => e.hold?.code)).toEqual([
+        "insufficient_balance",
+        "over_monthly_budget",
+      ]);
+    });
+
+    test("an agent outage between funding holds doesn't email the same hold again", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      const held = () => events.filter((e) => e.type === "request.payout_blocked").length;
+      expect(held()).toBe(1);
+
+      const readiness = payouts.readiness;
+      payouts.readiness = async () => {
+        throw new Error("The payout agent API is unreachable");
+      };
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("outage");
+      const during = await service.get(await studio(), { id: draft.workOrderId });
+      expect(during.requests.find((r) => r.id === draft.id)?.autoPayBlocked?.reason).toMatch(
+        /unreachable/,
+      );
+
+      payouts.readiness = readiness;
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("back");
+      expect(agent.withdrawals.length).toBeGreaterThan(1);
+      expect(held()).toBe(1);
+    });
+
+    test("a payout the agent can't confirm asks for a check instead of showing it as sending", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { status: "FAILED", details: { reason: "unknown outcome" } };
+      const approved = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      const detail = await service.get(await studio(), { id: approved.workOrderId });
+      const request = detail.requests.find((r) => r.id === draft.id);
+      expect(request?.status).toBe("approved");
+      expect(detail.progress).toMatchObject({
+        waitingOn: "you",
+        headline: expect.stringMatching(/needs a check before it's paid again/),
+      });
+      expect(detail.progress.headline).not.toMatch(/^Sending/);
+      const tries = agent.withdrawals.length;
+      clock = new Date(clock.getTime() + 30 * 60_000);
+      await service.tick("later");
+      expect(agent.withdrawals).toHaveLength(tries);
     });
 
     test("a builder the rules don't allow yet is paid by the scheduler once the update is signed", async () => {
@@ -2014,8 +2683,8 @@ describe("work orders", () => {
         fields({ representativeName: "Rita Rep", representativeEmail: "rita@example.com" }),
       );
       await service.offer(await studio(), { id: created.id });
-      documenso.sign("contractor", "2026-09-20T13:00:00.000Z");
-      documenso.sign("representative", "2026-09-20T14:00:00.000Z");
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
       const result = await service.tick();
       expect(result.counts.signaturesChecked).toBe(1);
       const [row] = await db.select().from(workOrders).where(eq(workOrders.id, created.id));

@@ -523,6 +523,19 @@ export const organizationBuilders = pgTable(
   }),
 );
 
+export const organizationBuilderLogins = pgTable(
+  "organization_builder_logins",
+  {
+    organizationId: text("organization_id").notNull(),
+    nearAccount: text("near_account").notNull(),
+    githubLogin: text("github_login").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.organizationId, t.nearAccount] }),
+  }),
+);
+
 export const projectPublicSettings = pgTable("project_public_settings", {
   projectId: text("project_id").primaryKey(),
   showTeam: boolean("show_team").notNull().default(false),
@@ -620,6 +633,11 @@ export const workOrders = pgTable(
     preparedDocumentUrl: text("prepared_document_url"),
     documentId: text("document_id"),
     documentFields: text("document_fields"),
+    customFields: text("custom_fields"),
+    documentWarning: text("document_warning"),
+    signedDriveFileId: text("signed_drive_file_id"),
+    signedDriveUrl: text("signed_drive_url"),
+    signedDriveError: text("signed_drive_error"),
     signatureMethod: text("signature_method", { enum: SIGNATURE_METHODS }),
     signers: text("signers"),
     signedAt: timestamp("signed_at", { withTimezone: false }),
@@ -628,6 +646,7 @@ export const workOrders = pgTable(
     documentSha256: text("document_sha256"),
     documentUrl: text("document_url"),
     esignEnvelopeId: text("esign_envelope_id"),
+    esignRepresentativeFirst: boolean("esign_representative_first").notNull().default(false),
     esignBuilderUrl: text("esign_builder_url"),
     esignRepresentativeUrl: text("esign_representative_url"),
     esignError: text("esign_error"),
@@ -743,6 +762,8 @@ export const compensationRequests = pgTable(
     pricedAt: timestamp("priced_at", { withTimezone: false }),
     proposalId: text("proposal_id"),
     autoPayBlockedReason: text("auto_pay_blocked_reason"),
+    autoPayBlockedCode: text("auto_pay_blocked_code"),
+    autoPayHoldNotified: text("auto_pay_hold_notified"),
     autoPayBlockedAt: timestamp("auto_pay_blocked_at", { withTimezone: false }),
     autoPayTriedAt: timestamp("auto_pay_tried_at", { withTimezone: false }),
     daoPaymentStartedAt: timestamp("dao_payment_started_at", { withTimezone: false }),
@@ -778,14 +799,30 @@ export const workOrderIntegrations = pgTable("work_order_integrations", {
   googleSignedFolderId: text("google_signed_folder_id"),
   googleCheckedAt: timestamp("google_checked_at", { withTimezone: false }),
   googleLastError: text("google_last_error"),
+  googleOauthToken: text("google_oauth_token"),
+  googleOauthEmail: text("google_oauth_email"),
+  googleOauthError: text("google_oauth_error"),
+  googleOauthConnectedAt: timestamp("google_oauth_connected_at", { withTimezone: false }),
+  googleOauthConnectedBy: text("google_oauth_connected_by"),
+  googleFieldMap: text("google_field_map"),
   trustMode: text("trust_mode", { enum: TRUST_MODES }).notNull().default("suggest"),
   trustVetoHours: integer("trust_veto_hours").notNull().default(24),
+  defaultRepresentativeName: text("default_representative_name"),
+  defaultRepresentativeEmail: text("default_representative_email"),
   updatedBy: text("updated_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
 });
 
 export type WorkOrderIntegrationRow = typeof workOrderIntegrations.$inferSelect;
+
+export const googleOauthStates = pgTable("google_oauth_states", {
+  stateHash: text("state_hash").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  userId: text("user_id").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: false }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
 
 export const workOrderOutbox = pgTable(
   "work_order_outbox",

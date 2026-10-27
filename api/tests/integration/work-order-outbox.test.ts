@@ -4,7 +4,10 @@ import { workOrderOutbox } from "../../src/db/schema";
 import type { EmailMessage } from "../../src/services/notify";
 import { composeEmails } from "../../src/services/work-orders/emails";
 import type { WorkOrderEvent } from "../../src/services/work-orders/events";
-import { createWorkOrderOutbox } from "../../src/services/work-orders/outbox";
+import {
+  createWorkOrderIntegrations,
+  createWorkOrderOutbox,
+} from "../../src/services/work-orders/outbox";
 import { migratedDatabase } from "./_pg";
 
 function event(type: WorkOrderEvent["type"], over: Partial<WorkOrderEvent> = {}): WorkOrderEvent {
@@ -103,6 +106,41 @@ describe("work order emails", () => {
     expect(to("request.needs_review", { request: { ...request, status: "failed" } })).toEqual([]);
   });
 
+  test("a payout on hold emails only the representative, with a link to fund the agent", () => {
+    const base = event("request.payout_blocked");
+    const held = event("request.payout_blocked", {
+      request: {
+        id: "SI-004-R1",
+        status: "approved",
+        requestedUsd: "1",
+        approvedUsd: "1",
+        tokenAmount: "1000000",
+        symbol: "USD",
+        requested: "$1",
+        approved: "$1",
+        note: null,
+      },
+      links: { ...base.links, settings: "https://app.example/admin/settings#payouts" },
+      hold: {
+        code: "insufficient_balance",
+        reason: "The agent holds 0.0148 NEAR; this payout needs 0.22 NEAR",
+        balanceNear: "0.0148",
+        neededNear: "0.22",
+      },
+    });
+    const emails = composeEmails(held);
+    expect(emails.map((m) => m.to)).toEqual(["rita@example.com"]);
+    const [email] = emails;
+    expect(email?.subject).toBe("Payout on hold: fund the agent to pay Carol $1");
+    expect(email?.html).toContain("Payout on hold");
+    expect(email?.html).toContain("Fund the agent to pay Carol $1");
+    expect(email?.html).toContain('href="https://app.example/admin/settings#payouts"');
+    expect(email?.text).toContain("The agent holds 0.0148 NEAR; this payout needs 0.22 NEAR.");
+    expect(email?.text).toContain("paid automatically");
+    expect(email?.text).toContain("0.0148 NEAR");
+    expect(composeEmails(event("request.payout_blocked"))).toEqual([]);
+  });
+
   test("the offer email links straight to the signing page", () => {
     const base = event("work_order.offered");
     const [offer] = composeEmails(
@@ -143,6 +181,15 @@ describe("work order emails", () => {
     expect(sent[0]?.text).toContain("Download the signed PDF");
     expect(sent[0]?.html).toContain('href="https://drive.example/signed?id=1&amp;v=2"');
     expect(sent[0]?.subject).toBe("Work Order SI-004 is signed");
+    expect(sent[0]?.html).toContain('src="cid:multiagency-logo"');
+    expect(sent[0]?.inlineImages).toEqual([
+      expect.objectContaining({ contentId: "multiagency-logo", filename: "multiagency.png" }),
+    ]);
+    expect(
+      Buffer.from(sent[0]?.inlineImages?.[0]?.content ?? "", "base64")
+        .subarray(1, 4)
+        .toString(),
+    ).toBe("PNG");
     expect(await outbox.deliver()).toEqual({ delivered: 0, failed: 0 });
   });
 
@@ -172,6 +219,22 @@ describe("work order emails", () => {
     expect((await outbox.deliver()).delivered).toBe(0);
     clock = new Date(clock.getTime() + 61_000);
     expect((await outbox.deliver()).delivered).toBe(2);
+  });
+
+  test("an Agency's default representative is saved and read back", async () => {
+    const integrations = createWorkOrderIntegrations({ db });
+    expect(await integrations.representative("studio")).toEqual({ name: null, email: null });
+    await integrations.saveRepresentative("studio", "rita", {
+      name: "  Rita Rep ",
+      email: " Rita@Studio.Example ",
+    });
+    expect(await integrations.representative("studio")).toEqual({
+      name: "Rita Rep",
+      email: "rita@studio.example",
+    });
+    expect(await integrations.representative("rival")).toEqual({ name: null, email: null });
+    await integrations.saveRepresentative("studio", "rita", { name: "", email: null });
+    expect(await integrations.representative("studio")).toEqual({ name: null, email: null });
   });
 
   test("deliveries older than a day are given up", async () => {

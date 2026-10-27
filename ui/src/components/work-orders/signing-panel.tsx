@@ -67,9 +67,9 @@ export function SigningPanel({
           <h2>Signature and payout account</h2>
         </CardTitle>
         <CardDescription>
-          Offering the work order sends it for e-signature: the builder signs first, then the
-          representative. A payout account this Agency hasn't paid before is confirmed by its
-          wallet.
+          Offering the work order sends it for e-signature: the representative signs first, then the
+          builder, and it starts as soon as the builder signs. A payout account this Agency hasn't
+          paid before is confirmed by its wallet.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -198,37 +198,20 @@ function SignatureStatus({
       </div>
     );
   }
+  if (builder && representative && wo.signature.method === "documenso") {
+    return (
+      <span>
+        Signed in Documenso by {representative.name} on {day(representative.signedAt)} and by{" "}
+        {builder.name} on {day(builder.signedAt)}.
+      </span>
+    );
+  }
   if (builder && representative) {
     return (
       <span>
         Signed by {builder.name} on {day(builder.signedAt)} and countersigned by{" "}
         {representative.name} on {day(representative.signedAt)}.
       </span>
-    );
-  }
-  if (builder && esign?.sent) {
-    return (
-      <div className="flex flex-col gap-3">
-        <span>
-          Signed by {builder.name} in Documenso on {day(builder.signedAt)}.{" "}
-          {canManage
-            ? "Countersign it below to complete the agreement."
-            : "Waiting for the representative's countersignature."}
-        </span>
-        {esignError}
-        <div className="flex flex-wrap gap-2">
-          {canManage && esign.representativeUrl && (
-            <Button size="sm" asChild>
-              <a href={esign.representativeUrl} target="_blank" rel="noreferrer">
-                Countersign in Documenso
-              </a>
-            </Button>
-          )}
-          <Button size="sm" variant="outline" onClick={check}>
-            Check signatures
-          </Button>
-        </div>
-      </div>
     );
   }
   if (builder) {
@@ -279,12 +262,40 @@ function SignatureStatus({
       </div>
     );
   }
+  if (wo.status === "offered" && esign?.sent && wo.signing.awaitingRepresentative) {
+    return (
+      <div className="flex flex-col gap-3">
+        <span>
+          {canManage
+            ? "Sign it in Documenso to send it to the builder. They're emailed a link to sign as soon as you've signed."
+            : `Waiting for ${wo.representativeName ?? "the representative"} to sign it in Documenso; then it's sent to the builder.`}
+        </span>
+        {esignError}
+        <div className="flex flex-wrap gap-2">
+          {canManage && esign.representativeUrl && (
+            <Button size="sm" asChild>
+              <a href={esign.representativeUrl} target="_blank" rel="noreferrer">
+                {wo.representativeName
+                  ? `Sign as ${wo.representativeName} to send it`
+                  : "Sign in Documenso to send it"}
+              </a>
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={check}>
+            Check signatures
+          </Button>
+        </div>
+      </div>
+    );
+  }
   if (wo.status === "offered" && esign?.sent) {
+    const builderName = wo.contractorName ?? wo.builder.name ?? wo.builder.nearAccount;
     return (
       <div className="flex flex-col gap-3">
         <span className="text-muted-foreground">
-          Sent through Documenso on {day(wo.offeredAt)}: the builder was emailed a link to sign.
-          Waiting for their signature; you're asked to countersign after them.
+          {representative ? `Signed by ${representative.name}. ` : ""}Sent to {builderName} on{" "}
+          {day(representative?.signedAt ?? wo.offeredAt)}; waiting for their signature. It becomes
+          active as soon as they sign.
         </span>
         {esignError}
         <Button size="sm" variant="outline" className="self-start" onClick={check}>
@@ -306,8 +317,8 @@ function SignatureStatus({
   return (
     <div className="flex flex-col gap-1">
       <span className="text-muted-foreground">
-        Not sent yet. Offer to builder prepares the document and sends the builder a signing
-        request.
+        Not sent yet. Offering it prepares the document for signature: the representative signs
+        first, then the builder is sent a signing request.
       </span>
       {esignError}
     </div>
@@ -324,23 +335,64 @@ function DocumentRow({
   onAttach: () => void;
 }) {
   const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  const retryDrive = useMutation({
+    mutationFn: () => apiClient.workOrders.saveSignedToDrive({ id: wo.id }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      toast.success("Saved to Google Drive");
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't save it to Google Drive"),
+  });
   const sent = wo.status !== "draft" || wo.signing.documentSha256 !== null;
   const link = wo.documentSha256 ? wo.documentUrl : (wo.signature.preparedDocumentUrl ?? null);
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {(sent || link) && (
-        <OpenDocumentButton
-          href={link}
-          load={() => apiClient.workOrders.document({ id: wo.id })}
-          label={wo.documentSha256 ? "Open the signed document" : "Open document"}
-        />
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {(sent || link) && (
+          <OpenDocumentButton
+            href={link}
+            load={() => apiClient.workOrders.document({ id: wo.id })}
+            label={wo.documentSha256 ? "Open the signed document" : "Open document"}
+          />
+        )}
+        {wo.signature.driveUrl && (
+          <a
+            href={wo.signature.driveUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm underline-offset-4 hover:underline"
+          >
+            Saved to Google Drive
+          </a>
+        )}
+        {canManage && wo.status === "draft" && (
+          <Button size="sm" variant="ghost" onClick={onAttach}>
+            Attach a signed PDF by hand
+          </Button>
+        )}
+        {!sent && !link && (
+          <span className="text-muted-foreground">Prepared when you offer it.</span>
+        )}
+      </div>
+      {wo.signature.driveError && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-destructive">{wo.signature.driveError}</span>
+          {canManage && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={retryDrive.isPending}
+              onClick={() => retryDrive.mutate()}
+            >
+              Retry upload
+            </Button>
+          )}
+        </div>
       )}
-      {canManage && wo.status === "draft" && (
-        <Button size="sm" variant="ghost" onClick={onAttach}>
-          Attach a signed PDF by hand
-        </Button>
+      {wo.signature.documentWarning && (
+        <span className="text-muted-foreground">{wo.signature.documentWarning}</span>
       )}
-      {!sent && !link && <span className="text-muted-foreground">Prepared when you offer it.</span>}
     </div>
   );
 }

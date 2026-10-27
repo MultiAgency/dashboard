@@ -57,6 +57,7 @@ export function BuilderSigning({
 
   const waiting = wo.status === "offered";
   const esign = wo.signing.esign?.sent ? wo.signing.esign : null;
+  const agencyFirst = waiting && !!esign && wo.signing.awaitingRepresentative;
   const signedByBuilder = wo.signing.builder;
   const complete = signedByBuilder && wo.signing.representative;
 
@@ -67,15 +68,17 @@ export function BuilderSigning({
           <h2>{waiting ? `Sign Work Order ${wo.code}` : "Work order document"}</h2>
         </CardTitle>
         <CardDescription>
-          {waiting && esign
-            ? `${wo.agencyName} sent you this work order to sign. We emailed you a link to sign it; you can also open it from here. You'll be paid to ${wo.builder.nearAccount}.`
-            : waiting
-              ? `${wo.agencyName} sent you this work order to sign. Read it, then sign with your full name below. You're signed in with ${wo.builder.nearAccount}, the account you'll be paid to.`
-              : complete
-                ? `Signed by you on ${signedByBuilder.signedAt.slice(0, 10)} and countersigned by ${wo.signing.representative?.name} on ${wo.signing.representative?.signedAt.slice(0, 10)}.`
-                : signedByBuilder
-                  ? `You signed on ${signedByBuilder.signedAt.slice(0, 10)}. Waiting for ${wo.agencyName} to countersign.`
-                  : "The document of this work order."}
+          {agencyFirst
+            ? `${wo.agencyName} is signing this work order first. We'll email you a link to sign it as soon as they have.`
+            : waiting && esign
+              ? `${wo.agencyName} signed this work order. Sign it to accept; it starts right away. We emailed you a link to sign it; you can also open it from here. You'll be paid to ${wo.builder.nearAccount}.`
+              : waiting
+                ? `${wo.agencyName} sent you this work order to sign. Read it, then sign with your full name below. You're signed in with ${wo.builder.nearAccount}, the account you'll be paid to.`
+                : complete
+                  ? `Signed by you on ${signedByBuilder.signedAt.slice(0, 10)} and by ${wo.signing.representative?.name} on ${wo.signing.representative?.signedAt.slice(0, 10)}.`
+                  : signedByBuilder
+                    ? `You signed on ${signedByBuilder.signedAt.slice(0, 10)}. Waiting for ${wo.agencyName} to countersign.`
+                    : "The document of this work order."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -87,7 +90,7 @@ export function BuilderSigning({
             label={document.data?.kind === "signed" ? "Open the signed document" : "Open document"}
           />
         )}
-        {waiting && esign && (
+        {waiting && esign && !agencyFirst && (
           <div className="flex flex-wrap gap-2 border-t pt-4">
             {esign.builderUrl && (
               <Button asChild>
