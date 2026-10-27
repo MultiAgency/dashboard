@@ -149,6 +149,7 @@ function RequestItem({
     },
     onError: (err: Error) => toast.error(err.message || "Couldn't pay it"),
   });
+  const daoPaymentStarted = !!request.daoPaymentStartedAt;
   const [showReport, setShowReport] = useState(request.status === "submitted");
   const amount = (value: string | null) =>
     value ? formatTokenAmount(value, workOrder.tokenId) : "—";
@@ -226,19 +227,21 @@ function RequestItem({
         )}
         {canManage && request.status === "approved" && (
           <>
-            {autoPays && (
+            {autoPays && !daoPaymentStarted && (request.agentPayout?.canRetry ?? true) && (
               <Button size="sm" disabled={payNow.isPending} onClick={() => payNow.mutate()}>
                 {payNow.isPending ? "Paying…" : "Pay now (NEAR Intents)"}
               </Button>
             )}
-            <Button
-              size="sm"
-              variant={autoPays ? "outline" : "default"}
-              disabled={!hasTreasury}
-              onClick={() => setOpen("proposal")}
-            >
-              Pay through a DAO proposal
-            </Button>
+            {(request.agentPayout?.canRetry ?? true) && (
+              <Button
+                size="sm"
+                variant={autoPays ? "outline" : "default"}
+                disabled={!hasTreasury}
+                onClick={() => setOpen("proposal")}
+              >
+                Pay through a DAO proposal
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => setOpen("reject")}>
               Reject
             </Button>
@@ -507,20 +510,31 @@ function ProposalForm({
     onSuccess: linked,
     onError: (err: Error) => toast.error(err.message || "Couldn't link the proposal"),
   });
+  const quoteKey = ["admin", "work-order-quote", request.id];
   const quote = useQuery({
-    queryKey: ["admin", "work-order-quote", request.id],
+    queryKey: quoteKey,
     queryFn: () => apiClient.workOrders.paymentProposal({ requestId: request.id }),
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: 0,
     retry: false,
   });
+  const started = !!request.daoPaymentStartedAt;
+  const startDaoPayment = async () => {
+    const tx = await apiClient.workOrders.startDaoPayment({ requestId: request.id });
+    queryClient.setQueryData(quoteKey, tx);
+    await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+    return tx;
+  };
+  const start = useMutation({
+    mutationFn: startDaoPayment,
+    onError: (err: Error) => toast.error(err.message || "Couldn't lock the amount"),
+  });
   const create = useMutation({
     mutationFn: async () => {
-      const tx =
-        quote.data ?? (await apiClient.workOrders.paymentProposal({ requestId: request.id }));
       await authClient.near.ensureConnected();
       const signer = authClient.near.getAccountId();
       if (!signer) throw new Error("Connect your NEAR wallet first");
+      const tx = await startDaoPayment();
       const outcome = await authClient.near
         .getNearClient()
         .transaction(signer)
@@ -539,7 +553,7 @@ function ProposalForm({
     onSuccess: linked,
     onError: (err: Error) => toast.error(err.message || "Couldn't create the proposal"),
   });
-  const busy = link.isPending || create.isPending || quote.isFetching;
+  const busy = link.isPending || create.isPending || start.isPending || quote.isFetching;
   const q = quote.data?.quote;
   return (
     <form
@@ -553,7 +567,9 @@ function ProposalForm({
         <DialogTitle>Pay through the Agency DAO</DialogTitle>
         <DialogDescription>
           A transfer proposal paying {workOrder.builder.nearAccount}. It becomes a billing on the
-          project, and the request is paid when the DAO approves it.
+          project, and the request is paid when the DAO approves it. Creating the proposal, or
+          locking the amount to propose it elsewhere, turns automatic payment off for this request:
+          from then on it's paid through the DAO, or rejected so the builder can request it again.
         </DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-1 border p-3">
@@ -574,7 +590,7 @@ function ProposalForm({
             )}
           </>
         )}
-        {workOrder.tokenId === "usd" && (
+        {workOrder.tokenId === "usd" && !started && (
           <Button
             type="button"
             size="sm"
@@ -596,20 +612,43 @@ function ProposalForm({
           account needs permission to add transfer proposals.
         </p>
       </div>
-      <Field label="Or link one made elsewhere (e.g. Trezu)" htmlFor="proposal-id">
-        <Input
-          id="proposal-id"
-          inputMode="numeric"
-          placeholder="Proposal number"
-          value={proposalId}
-          onChange={(e) => setProposalId(e.target.value)}
-        />
-      </Field>
-      <DialogFooter>
-        <Button type="submit" variant="outline" disabled={!/^\d+$/.test(proposalId.trim()) || busy}>
-          {link.isPending ? "Checking…" : "Link proposal"}
-        </Button>
-      </DialogFooter>
+      {started ? (
+        <>
+          <Field label="Or link one made elsewhere (e.g. Trezu)" htmlFor="proposal-id">
+            <Input
+              id="proposal-id"
+              inputMode="numeric"
+              placeholder="Proposal number"
+              value={proposalId}
+              onChange={(e) => setProposalId(e.target.value)}
+            />
+          </Field>
+          <DialogFooter>
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={!/^\d+$/.test(proposalId.trim()) || busy}
+            >
+              {link.isPending ? "Checking…" : "Link proposal"}
+            </Button>
+          </DialogFooter>
+        </>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy || !q}
+            onClick={() => start.mutate()}
+          >
+            {start.isPending ? "Locking…" : "Lock the amount to propose it elsewhere (e.g. Trezu)"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            The amount is priced again when you lock it. Then create the proposal there with exactly
+            the locked amount and link its number here.
+          </p>
+        </div>
+      )}
     </form>
   );
 }

@@ -23,6 +23,55 @@ export function atomicToNear(atomic: bigint, digits = 4): string {
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
+export const WNEAR_STORAGE = 1_250_000_000_000_000_000_000n;
+const TOP_UP_ACTION_GAS = "15000000000000";
+
+export function topUpProposal(input: {
+  daoAccountId: string;
+  depositAddress: string;
+  memo: string | null;
+  amount: bigint;
+  amountNear: string;
+}) {
+  const wnear = NEAR_ASSET.slice("nep141:".length);
+  const call = (method_name: string, args: Record<string, unknown>, deposit: bigint) => ({
+    method_name,
+    args: Buffer.from(JSON.stringify(args)).toString("base64"),
+    deposit: deposit.toString(),
+    gas: TOP_UP_ACTION_GAS,
+  });
+  return {
+    description: `Top up the MultiAgency payout agent with ${input.amountNear} NEAR, wrapped as wNEAR (plus up to 0.0025 NEAR of wNEAR storage, refunded where already registered)`,
+    kind: {
+      FunctionCall: {
+        receiver_id: wnear,
+        actions: [
+          call(
+            "storage_deposit",
+            { account_id: input.daoAccountId, registration_only: true },
+            WNEAR_STORAGE,
+          ),
+          call("near_deposit", {}, input.amount),
+          call(
+            "storage_deposit",
+            { account_id: input.depositAddress, registration_only: true },
+            WNEAR_STORAGE,
+          ),
+          call(
+            "ft_transfer",
+            {
+              receiver_id: input.depositAddress,
+              amount: input.amount.toString(),
+              ...(input.memo ? { memo: input.memo } : {}),
+            },
+            1n,
+          ),
+        ],
+      },
+    },
+  };
+}
+
 export function topUpFor(needed: bigint, balance: bigint): bigint {
   const step = 10n ** BigInt(NEAR_DECIMALS - 2);
   const missing = needed > balance ? needed - balance : 0n;

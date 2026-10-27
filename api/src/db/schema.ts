@@ -745,6 +745,7 @@ export const compensationRequests = pgTable(
     autoPayBlockedReason: text("auto_pay_blocked_reason"),
     autoPayBlockedAt: timestamp("auto_pay_blocked_at", { withTimezone: false }),
     autoPayTriedAt: timestamp("auto_pay_tried_at", { withTimezone: false }),
+    daoPaymentStartedAt: timestamp("dao_payment_started_at", { withTimezone: false }),
     submittedAt: timestamp("submitted_at", { withTimezone: false }),
     paidAt: timestamp("paid_at", { withTimezone: false }),
     trust: text("trust"),

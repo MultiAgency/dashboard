@@ -513,9 +513,19 @@ describe("work orders", () => {
         service.paymentProposal(requireTreasury(await studio()), { requestId: request.id }),
       ).rejects.toThrow(/Approve the request/);
       await service.approveRequest(await studio(), { requestId: request.id, amount: "600000000" });
-      const tx = await service.paymentProposal(requireTreasury(await studio()), {
+      const preview = await service.paymentProposal(requireTreasury(await studio()), {
         requestId: request.id,
       });
+      const [untouched] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, request.id));
+      expect(untouched?.daoPaymentStartedAt).toBeNull();
+      expect(untouched?.note).toBeNull();
+      const tx = await service.startDaoPayment(requireTreasury(await studio()), {
+        requestId: request.id,
+      });
+      expect(tx).toEqual(preview);
       expect(tx.daoAccountId).toBe(DAO);
       expect(tx.deposit).toBe("100000000000000000000000");
       expect(tx.args.proposal.kind.Transfer).toEqual({
@@ -1213,26 +1223,46 @@ describe("work orders", () => {
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
       expect(events.find((e) => e.type === "request.approved")?.request?.approved).toBe("$600");
 
-      const tx = await service.paymentProposal(requireTreasury(await studio()), {
+      const preview = await service.paymentProposal(requireTreasury(await studio()), {
         requestId: draft.id,
       });
-      expect(tx.quote).toMatchObject({
+      expect(preview.quote).toMatchObject({
         usd: "600000000",
         tokenId: "near",
         amount: "120240480961923847695390781",
         priceUsd: "4.99",
       });
-      expect(tx.args.proposal.kind.Transfer).toMatchObject({
+      expect(preview.args.proposal.kind.Transfer).toMatchObject({
         token_id: "",
         amount: "120240480961923847695390781",
       });
-      expect(tx.args.proposal.description).toContain("$600 at 4.99 USD per NEAR");
+      expect(preview.args.proposal.description).toContain("$600 at 4.99 USD per NEAR");
 
       priceUsd = "5";
       const requote = await service.paymentProposal(requireTreasury(await studio()), {
         requestId: draft.id,
       });
       expect(requote.quote.amount).toBe("120000000000000000000000000");
+      transfer(20, { tokenId: "", amount: "120000000000000000000000000" });
+      await refused(
+        service.linkProposal(requireTreasury(await studio()), {
+          requestId: draft.id,
+          proposalId: "20",
+        }),
+        "NO_QUOTE",
+      );
+      const started = await service.startDaoPayment(requireTreasury(await studio()), {
+        requestId: draft.id,
+      });
+      expect(started.quote.amount).toBe("120000000000000000000000000");
+      priceUsd = "6";
+      const locked = await service.paymentProposal(requireTreasury(await studio()), {
+        requestId: draft.id,
+      });
+      expect(locked).toEqual(started);
+      expect(
+        await service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id }),
+      ).toEqual(started);
       transfer(21, { tokenId: "", amount: "120240480961923847695390781" });
       await refused(
         service.linkProposal(requireTreasury(await studio()), {
@@ -1501,7 +1531,7 @@ describe("work orders", () => {
     });
 
     test("a payout that needs review can still be rejected, and Pay now leaves it alone", async () => {
-      const { draft } = await approvedRequest();
+      const { wo, draft } = await approvedRequest();
       await setUpAgent();
       agent.nextWithdraw = { status: "PROCESSING" };
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
@@ -1512,15 +1542,59 @@ describe("work orders", () => {
           (n) => n.kind === "compensation_request_payout_failed",
         ).length;
       expect(await failedNotices()).toBe(1);
-      await expect(service.payNow(await studio(), { requestId: draft.id })).rejects.toThrow();
+      const view = await service.get(await studio(), { id: wo.id });
+      expect(view.requests.find((r) => r.id === draft.id)?.agentPayout).toMatchObject({
+        status: "needs_review",
+        canRetry: false,
+      });
+      if (agent.policy) agent.policy = { ...agent.policy, frozen: true };
+      await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
+      const [kept] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, draft.id));
+      expect(kept?.status).toBe("approved");
+      expect(kept?.note).toMatch(/needs a person to check it/);
+      expect(kept?.autoPayBlockedAt).toBeNull();
       clock = new Date(clock.getTime() + 10 * 60_000);
       await service.tick("t2");
       expect(await failedNotices()).toBe(1);
+      expect(agent.withdrawals).toHaveLength(1);
       const rejected = await service.rejectRequest(await studio(), {
         requestId: draft.id,
         note: "Checked the agent's history: nothing went out",
       });
       expect(rejected.status).toBe("rejected");
+    });
+
+    test("the follow-up doesn't mistake an earlier refused attempt for the one being sent", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      const kept = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(kept.status).toBe("approved");
+      clock = new Date(clock.getTime() + 60_000);
+      await db
+        .update(compensationRequests)
+        .set({ status: "paying", autoPayTriedAt: clock, updatedAt: clock })
+        .where(eq(compensationRequests.id, draft.id));
+      await service.tick("t1");
+      const [during] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, draft.id));
+      expect(during?.status).toBe("paying");
+      clock = new Date(clock.getTime() + 11 * 60_000);
+      await service.tick("t2");
+      const [after] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, draft.id));
+      expect(after?.status).toBe("approved");
+      expect(after?.note).toMatch(/interrupted before it reached the payout agent/);
     });
 
     test("a payout interrupted before it reached the agent is retried and paid", async () => {
@@ -1555,6 +1629,125 @@ describe("work orders", () => {
         .from(compensationRequests)
         .where(eq(compensationRequests.id, draft.id));
       expect(paid?.status).toBe("paid");
+      expect(agent.withdrawals).toHaveLength(1);
+    });
+
+    test("a payout that failed without proof nothing went out blocks the DAO path", async () => {
+      const { wo, draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { status: "PROCESSING" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      agent.statuses.set("pay-1", { status: "FAILED", details: {} });
+      await service.tick("t1");
+      const detail = await service.get(await studio(), { id: wo.id });
+      const request = detail.requests.find((r) => r.id === draft.id);
+      expect(request?.status).toBe("approved");
+      expect(request?.agentPayout).toMatchObject({ status: "failed", canRetry: false });
+      expect(request?.note).not.toMatch(/DAO proposal/);
+      const treasury = requireTreasury(await studio());
+      await refused(
+        service.linkProposal(treasury, { requestId: draft.id, proposalId: "7" }),
+        "AGENT_PAYOUT_UNSETTLED",
+      );
+      await refused(
+        service.paymentProposal(treasury, { requestId: draft.id }),
+        "AGENT_PAYOUT_UNSETTLED",
+      );
+      await refused(
+        service.startDaoPayment(treasury, { requestId: draft.id }),
+        "AGENT_PAYOUT_UNSETTLED",
+      );
+      const rejected = await service.rejectRequest(await studio(), {
+        requestId: draft.id,
+        note: "Checked the agent's history: nothing went out",
+      });
+      expect(rejected.status).toBe("rejected");
+    });
+
+    test("a DAO payment started while the agent is pricing the payout keeps its locked amount", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      let raced = false;
+      let locked: Awaited<ReturnType<typeof service.startDaoPayment>> | null = null;
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        payouts,
+        prices: {
+          price: async () => {
+            if (!raced) {
+              raced = true;
+              priceUsd = "5";
+              locked = await service.startDaoPayment(requireTreasury(await studio()), {
+                requestId: draft.id,
+              });
+              priceUsd = "6";
+            }
+            return { priceUsd, at: "2026-09-20T12:00:00.000Z" };
+          },
+        },
+      });
+      await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
+      expect(agent.withdrawals).toHaveLength(1);
+      const amount = locked!.quote.amount;
+      expect(amount).toBe("120000000000000000000000000");
+      transfer(31, { tokenId: "", amount });
+      const linked = await service.linkProposal(requireTreasury(await studio()), {
+        requestId: draft.id,
+        proposalId: "31",
+      });
+      expect(linked.status).toBe("proposed");
+      expect(linked.note).toBeNull();
+    });
+
+    test("a price left by a refused automatic payout isn't enough to link a proposal", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      const [tried] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, draft.id));
+      expect(tried?.payoutAmount).not.toBeNull();
+      transfer(34, { tokenId: "", amount: tried!.payoutAmount! });
+      await refused(
+        service.linkProposal(requireTreasury(await studio()), {
+          requestId: draft.id,
+          proposalId: "34",
+        }),
+        "NO_QUOTE",
+      );
+    });
+
+    test("starting the DAO path stops automatic payment for good; rejecting the request ends it", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      const blocked = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(blocked.autoPayBlocked).not.toBeNull();
+      await service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id });
+      agent.nextWithdraw = { status: "SUCCESS", details: { tx_hash: "TX9" } };
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("t1");
+      await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
+      expect(agent.withdrawals).toHaveLength(1);
+      const [paused] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, draft.id));
+      expect(paused?.status).toBe("approved");
+      expect(paused?.note).not.toMatch(/tried again automatically/);
+      expect(paused?.daoPaymentStartedAt).not.toBeNull();
+      const rejected = await service.rejectRequest(await studio(), {
+        requestId: draft.id,
+        note: "Paying it as a new request instead",
+      });
+      expect(rejected.status).toBe("rejected");
       expect(agent.withdrawals).toHaveLength(1);
     });
 

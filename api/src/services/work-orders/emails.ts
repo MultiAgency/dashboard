@@ -73,6 +73,24 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
         footnote: "Not for you? You can decline it from the signing page.",
       });
       break;
+    case "work_order.builder_signed":
+      send("representative", `Your turn to sign Work Order ${wo.id}`, {
+        preheader: `${builder} signed. Countersign to complete it.`,
+        eyebrow: "Countersignature needed",
+        heading: `${builder} signed Work Order ${wo.id}`,
+        paragraphs: [
+          `${builder} signed "${wo.title}". Countersign it for ${agency} to complete the work order.`,
+        ],
+        details: summary(["Builder", builder], ["Budget", wo.budget]),
+        action: e.links.countersign
+          ? { label: "Countersign", url: e.links.countersign }
+          : view("representative", "Countersign"),
+        secondary:
+          e.links.countersign && e.links.review
+            ? [{ label: "View it on MultiAgency", url: e.links.review }]
+            : [],
+      });
+      break;
     case "work_order.signed":
       send("representative", `Work Order ${wo.id} is signed`, {
         preheader: `${builder} and ${agency} have both signed.`,
@@ -148,6 +166,24 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
         block: e.reportMd ? { title: "Report", body: e.reportMd } : null,
       });
       break;
+    case "request.approved": {
+      const amount = r?.approved ?? r?.requested ?? "";
+      send("contractor", `Payout approved: ${amount} for ${wo.id}`, {
+        preheader: `${agency} approved ${amount} for request ${r?.id ?? wo.id}.`,
+        eyebrow: "Payout approved",
+        heading: `${agency} approved${amount ? ` ${amount}` : " your request"}`,
+        paragraphs: [
+          `Your payout request ${r?.id ?? ""} was approved. You'll get another email when it's paid to ${e.contractor.nearAccount}.`,
+        ],
+        details: summary(
+          ["Request", r?.id ?? ""],
+          ["Approved", amount],
+          ["Paid to", e.contractor.nearAccount],
+        ),
+        action: view("contractor"),
+      });
+      break;
+    }
     case "request.payout_released": {
       const amount = r?.approved ?? r?.requested ?? "";
       send("contractor", `Payout sent: ${amount} for ${wo.id}`, {

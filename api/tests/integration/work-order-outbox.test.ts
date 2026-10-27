@@ -75,13 +75,13 @@ describe("work order emails", () => {
     expect(to("work_order.signed")).toEqual(["rita@example.com"]);
     expect(to("work_order.renewed")).toEqual(["rita@example.com"]);
     expect(to("request.awaiting_approval")).toEqual(["carol@example.com", "rita@example.com"]);
+    expect(to("work_order.builder_signed")).toEqual(["rita@example.com"]);
+    expect(to("request.approved")).toEqual(["carol@example.com"]);
     for (const quiet of [
       "work_order.created",
-      "work_order.builder_signed",
       "work_order.confirm_payee",
       "work_order.declined",
       "request.report_ready",
-      "request.approved",
     ] as const) {
       expect(to(quiet)).toEqual([]);
     }
@@ -114,6 +114,23 @@ describe("work order emails", () => {
     expect(offer?.html).toContain('href="https://sign.example/abc"');
     expect(offer?.fromName).toBe("Studio via MultiAgency");
     expect(offer?.text).toContain("carol.near");
+  });
+
+  test("the representative's countersign email links straight to their signing page", () => {
+    const [email] = composeEmails(
+      event("work_order.builder_signed", {
+        links: {
+          contractor: "https://app.example/work-orders/1",
+          review: "https://app.example/admin/work-orders/1",
+          report: null,
+          confirm: null,
+          document: null,
+          countersign: "https://sign.example/envelope_1/representative",
+        },
+      }),
+    );
+    expect(email?.subject).toBe("Your turn to sign Work Order SI-004");
+    expect(email?.html).toContain('href="https://sign.example/envelope_1/representative"');
   });
 
   test("emails go out once through Resend", async () => {

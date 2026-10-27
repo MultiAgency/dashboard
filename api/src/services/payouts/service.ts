@@ -142,6 +142,10 @@ const errorText = (error: unknown) => {
   return error instanceof Error ? error.message : String(error);
 };
 
+export function payoutRetryable(payout: { status: string; provenUnsent: boolean }): boolean {
+  return payout.status === "refused" || (payout.status === "failed" && payout.provenUnsent);
+}
+
 function isRetryable(error: unknown): boolean {
   if (error instanceof AgentApiRequestError || error instanceof AgentApiResponseTooLargeError)
     return true;
@@ -898,7 +902,7 @@ export function createPayoutAgents(deps: {
         .where(eq(agentPayouts.requestId, input.requestId))
         .orderBy(desc(agentPayouts.attempt));
       const last = previous[0];
-      if (last && !(last.status === "refused" || (last.status === "failed" && last.provenUnsent))) {
+      if (last && !payoutRetryable(last)) {
         throw badRequest("PAYOUT_EXISTS", `A payout for this request is already ${last.status}`);
       }
       const attempt = (last?.attempt ?? 0) + 1;

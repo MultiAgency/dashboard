@@ -22,6 +22,7 @@ import {
 import { nearAccountsOf, type PluginContext } from "../../lib/organizations";
 import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
+import { payoutRetryable } from "../payouts/service";
 import type { Project, ProjectDirectory } from "../project-directory";
 import type { DaoProposal } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
@@ -162,6 +163,7 @@ export type AgentPayoutView = {
   txUrl: string | null;
   reason: string | null;
   provenUnsent: boolean;
+  createdAt: Date;
 };
 
 export type Signer = {
@@ -219,9 +221,19 @@ const IN_FLIGHT: AgentPayoutView["status"][] = [
   "paid",
 ];
 const STUCK_PAYING_MS = 10 * 60_000;
+const DAO_PAYMENT_NOTE =
+  "Being paid through a DAO proposal: automatic payment is off for this request. Link the proposal once it's created, or reject the request so the builder can request it again.";
 
 function payoutInFlight(last: AgentPayoutView | null | undefined): boolean {
   return !!last && IN_FLIGHT.includes(last.status);
+}
+
+function unsettledPayoutReason(payout: AgentPayoutView): string {
+  if (payout.status === "paid") return "The automatic payout already went out";
+  if (IN_FLIGHT.includes(payout.status)) {
+    return `The automatic payout is still being sent (${payout.status}); wait for it to settle`;
+  }
+  return `The last automatic payout is ${payout.status.replace(/_/g, " ")}: check the payout agent's history; if nothing went out, reject the request so the builder can request it again`;
 }
 
 const REPO = /^[A-Za-z0-9-]{1,39}\/(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$/;
@@ -352,10 +364,18 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   const payoutTokenOf = (row: Pick<WorkOrderRow, "tokenId" | "payoutTokenId">) =>
     row.tokenId === USD ? NATIVE_TOKEN_ID : row.tokenId;
 
-  async function quotePayout(row: WorkOrderRow, request: CompensationRequestRow) {
+  async function priceOf(row: WorkOrderRow, request: CompensationRequestRow) {
     const tokenId = payoutTokenOf(row);
     if (row.tokenId !== USD) {
       return { tokenId, amount: request.approvedAmount ?? "0", priceUsd: null, pricedAt: null };
+    }
+    if (request.daoPaymentStartedAt && request.payoutAmount && request.priceUsd) {
+      return {
+        tokenId,
+        amount: request.payoutAmount,
+        priceUsd: request.priceUsd,
+        pricedAt: request.pricedAt,
+      };
     }
     if (!deps.prices) throw badRequest("NO_PRICES", "USD prices aren't available on this server");
     const decimals = getTokenMetadata(tokenId)?.decimals;
@@ -371,15 +391,20 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     }
     const amount = usdToTokens(BigInt(request.approvedAmount ?? "0"), quote.priceUsd, decimals);
     if (amount <= 0n) throw badRequest("AMOUNT_NOT_POSITIVE", "The approved amount is too small");
-    const pricedAt = now();
-    await updateRequest(request.id, {
-      payoutTokenId: tokenId,
-      payoutAmount: amount.toString(),
-      priceUsd: quote.priceUsd,
-      pricedAt,
-    });
-    return { tokenId, amount: amount.toString(), priceUsd: quote.priceUsd, pricedAt };
+    return { tokenId, amount: amount.toString(), priceUsd: quote.priceUsd, pricedAt: now() };
   }
+
+  type PayoutQuote = Awaited<ReturnType<typeof priceOf>>;
+
+  const lockedPrice = (payout: PayoutQuote) =>
+    payout.priceUsd
+      ? {
+          payoutTokenId: payout.tokenId,
+          payoutAmount: payout.amount,
+          priceUsd: payout.priceUsd,
+          pricedAt: payout.pricedAt,
+        }
+      : {};
 
   type Announcement = {
     request?: CompensationRequestRow | null;
@@ -1445,6 +1470,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       reportSha256: request.reportSha256,
       overlaps,
       authorizedEvidence,
+      daoPaymentStartedAt: request.daoPaymentStartedAt?.toISOString() ?? null,
       autoPayBlocked:
         request.status === "approved" && request.autoPayBlockedReason && request.autoPayBlockedAt
           ? {
@@ -1464,6 +1490,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
                       amount: p.amount,
                       txUrl: p.txUrl,
                       reason: p.reason,
+                      canRetry: payoutRetryable(p),
                     }
                   : null,
               )
@@ -2176,7 +2203,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     payout: AgentPayoutView,
   ): Promise<CompensationRequestRow> {
     if (payout.status === "paid") return markPaidByAgent(request, row, payout);
-    if (payout.status === "refused" || (payout.status === "failed" && payout.provenUnsent)) {
+    if (payoutRetryable(payout)) {
       const reason = payout.reason ?? payout.status;
       return blockPayout(
         request,
@@ -2189,7 +2216,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       const reason = payout.reason ?? payout.status;
       const review = await updateUnpaid(request.id, {
         status: "approved",
-        note: `The automatic payout needs a person to check it: ${reason}. Check the payout agent's history before paying it again, or pay it through a DAO proposal.`,
+        note: `The automatic payout needs a person to check it: ${reason}. Check the payout agent's history; if nothing went out, reject the request so the builder can request it again.`,
         autoPayBlockedReason: null,
         autoPayBlockedAt: null,
       });
@@ -2225,6 +2252,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         reason: "Automatic payouts pay in NEAR; this work order pays in another token",
       };
     }
+    if (request.daoPaymentStartedAt) return { request, reason: DAO_PAYMENT_NOTE };
+    const last = await payouts.latest(request.id);
+    if (last && !payoutRetryable(last)) {
+      return {
+        request,
+        reason: unsettledPayoutReason(last),
+      };
+    }
     const readiness = await payouts.readiness(row.organizationId, row.builderNearAccount);
     if (!readiness.ready) {
       const reason = readiness.reason ?? "The payout agent isn't ready";
@@ -2239,12 +2274,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         reason,
       };
     }
-    const quote = await quotePayout(row, request);
+    const quote = await priceOf(row, request);
     const [claimed] = await db
       .update(compensationRequests)
-      .set({ status: "paying", updatedAt: now() })
+      .set({ ...lockedPrice(quote), status: "paying", autoPayTriedAt: now(), updatedAt: now() })
       .where(
-        and(eq(compensationRequests.id, request.id), eq(compensationRequests.status, "approved")),
+        and(
+          eq(compensationRequests.id, request.id),
+          eq(compensationRequests.status, "approved"),
+          isNull(compensationRequests.daoPaymentStartedAt),
+        ),
       )
       .returning();
     if (!claimed) {
@@ -2304,9 +2343,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       .where(eq(compensationRequests.status, "paying"));
     for (const request of paying) {
       try {
-        const payout = await payouts.latest(request.id);
+        const latest = await payouts.latest(request.id);
+        const started = request.autoPayTriedAt;
+        const payout = latest && !(started && latest.createdAt < started) ? latest : null;
         if (!payout) {
-          if (now().getTime() - request.updatedAt.getTime() > STUCK_PAYING_MS) {
+          if (now().getTime() - (started ?? request.updatedAt).getTime() > STUCK_PAYING_MS) {
             const reason = "the payout was interrupted before it reached the payout agent";
             await blockPayout(
               request,
@@ -2379,6 +2420,66 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         console.warn(`[API] payout of request ${request.id} couldn't be retried`, error);
       }
     }
+  }
+
+  async function daoPayable(scope: TreasuryScope & OrganizationScope, requestId: string) {
+    const request = await mustRequest(requestId);
+    const row = await ownRow(scope, request.workOrderId);
+    const { approvedAmount } = request;
+    if (request.status !== "approved" || !approvedAmount) {
+      throw badRequest("NOT_APPROVED", "Approve the request before paying it through the DAO");
+    }
+    const unsettled = await deps.payouts?.latest(request.id);
+    if (unsettled && !payoutRetryable(unsettled)) {
+      throw badRequest("AGENT_PAYOUT_UNSETTLED", unsettledPayoutReason(unsettled));
+    }
+    return { request: { ...request, approvedAmount }, row };
+  }
+
+  async function daoPaymentTransaction(
+    scope: TreasuryScope,
+    row: WorkOrderRow,
+    request: CompensationRequestRow,
+    payout: PayoutQuote,
+  ) {
+    const project = await projectOf(row);
+    const description = [
+      `${row.code}-R${request.seq}: ${row.title}`,
+      `Project: ${project?.title ?? row.projectId}`,
+      `Covers ${request.coversFrom} to ${request.coversTo}`,
+      payout.priceUsd
+        ? `${display(request.approvedAmount ?? "0", row.tokenId)} at ${payout.priceUsd} USD per ${symbolOf(payout.tokenId)}`
+        : null,
+      request.reportSha256 ? `Report SHA-256: ${request.reportSha256}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    return {
+      quote: {
+        usd: row.tokenId === USD ? request.approvedAmount : null,
+        tokenId: payout.tokenId,
+        amount: payout.amount,
+        priceUsd: payout.priceUsd,
+        pricedAt: payout.pricedAt?.toISOString() ?? null,
+      },
+      daoAccountId: scope.agencyDao,
+      method: "add_proposal" as const,
+      args: {
+        proposal: {
+          description,
+          kind: {
+            Transfer: {
+              token_id: payout.tokenId === NATIVE_TOKEN_ID ? "" : payout.tokenId,
+              receiver_id: row.builderNearAccount,
+              amount: payout.amount,
+              msg: null,
+            },
+          },
+        },
+      },
+      deposit: await deps.proposalBond(scope.agencyDao),
+      gas: "100000000000000",
+    };
   }
 
   async function syncPayment(request: CompensationRequestRow): Promise<CompensationRequestRow> {
@@ -3304,11 +3405,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       scope: TreasuryScope & OrganizationScope,
       input: { requestId: string; proposalId: string },
     ) => {
-      const request = await mustRequest(input.requestId);
-      const row = await ownRow(scope, request.workOrderId);
-      if (request.status !== "approved" || !request.approvedAmount) {
-        throw badRequest("NOT_APPROVED", "Approve the request before linking its payment proposal");
-      }
+      const { request, row } = await daoPayable(scope, input.requestId);
       const id = Number.parseInt(input.proposalId, 10);
       if (!Number.isInteger(id) || id < 0)
         throw badRequest("INVALID_PROPOSAL", "Invalid proposal id");
@@ -3345,18 +3442,23 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (tokenId !== payoutToken) {
         throw badRequest("WRONG_TOKEN", `Proposal ${id} pays in ${tokenId}, not ${payoutToken}`);
       }
-      const expected = row.tokenId === USD ? request.payoutAmount : request.approvedAmount;
+      const expected =
+        row.tokenId !== USD
+          ? request.approvedAmount
+          : request.daoPaymentStartedAt
+            ? request.payoutAmount
+            : null;
       if (!expected) {
         throw badRequest(
           "NO_QUOTE",
-          "Get a quote first: open the payment and use the amount it shows",
+          "Lock the amount first: open the payment, lock it, and create the proposal with exactly that amount",
         );
       }
       if (kind.amount !== expected) {
         throw badRequest(
           "WRONG_AMOUNT",
           row.tokenId === USD
-            ? `Proposal ${id} pays ${display(kind.amount, tokenId)}, not the quoted ${display(expected, tokenId)} (${display(request.approvedAmount, row.tokenId)} at ${request.priceUsd} USD). Refresh the quote or fix the proposal.`
+            ? `Proposal ${id} pays ${display(kind.amount, tokenId)}, not the locked ${display(expected, tokenId)} (${display(request.approvedAmount, row.tokenId)} at ${request.priceUsd} USD). The proposal must pay exactly the locked amount.`
             : `Proposal ${id} pays ${display(kind.amount, tokenId)}, not the approved ${display(request.approvedAmount, row.tokenId)}`,
         );
       }
@@ -3381,6 +3483,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             status: "proposed",
             proposalId: String(id),
             billingId: billing!.id,
+            note: null,
             updatedAt: now(),
           })
           .where(
@@ -3400,53 +3503,41 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       scope: TreasuryScope & OrganizationScope,
       input: { requestId: string },
     ) => {
-      const request = await mustRequest(input.requestId);
-      const row = await ownRow(scope, request.workOrderId);
-      if (request.status !== "approved" || !request.approvedAmount) {
-        throw badRequest(
-          "NOT_APPROVED",
-          "Approve the request before creating its payment proposal",
-        );
+      const { request, row } = await daoPayable(scope, input.requestId);
+      return daoPaymentTransaction(scope, row, request, await priceOf(row, request));
+    },
+
+    startDaoPayment: async (
+      scope: TreasuryScope & OrganizationScope,
+      input: { requestId: string },
+    ) => {
+      const { request, row } = await daoPayable(scope, input.requestId);
+      const payout = await priceOf(row, request);
+      if (request.daoPaymentStartedAt) {
+        return daoPaymentTransaction(scope, row, request, payout);
       }
-      const project = await projectOf(row);
-      const payout = await quotePayout(row, request);
-      const description = [
-        `${row.code}-R${request.seq}: ${row.title}`,
-        `Project: ${project?.title ?? row.projectId}`,
-        `Covers ${request.coversFrom} to ${request.coversTo}`,
-        payout.priceUsd
-          ? `${display(request.approvedAmount, row.tokenId)} at ${payout.priceUsd} USD per ${symbolOf(payout.tokenId)}`
-          : null,
-        request.reportSha256 ? `Report SHA-256: ${request.reportSha256}` : null,
-      ]
-        .filter(Boolean)
-        .join("\n");
-      return {
-        quote: {
-          usd: row.tokenId === USD ? request.approvedAmount : null,
-          tokenId: payout.tokenId,
-          amount: payout.amount,
-          priceUsd: payout.priceUsd,
-          pricedAt: payout.pricedAt?.toISOString() ?? null,
-        },
-        daoAccountId: scope.agencyDao,
-        method: "add_proposal" as const,
-        args: {
-          proposal: {
-            description,
-            kind: {
-              Transfer: {
-                token_id: payout.tokenId === NATIVE_TOKEN_ID ? "" : payout.tokenId,
-                receiver_id: row.builderNearAccount,
-                amount: payout.amount,
-                msg: null,
-              },
-            },
-          },
-        },
-        deposit: await deps.proposalBond(scope.agencyDao),
-        gas: "100000000000000",
-      };
+      const [started] = await db
+        .update(compensationRequests)
+        .set({
+          ...lockedPrice(payout),
+          daoPaymentStartedAt: now(),
+          autoPayBlockedReason: null,
+          autoPayBlockedAt: null,
+          note: DAO_PAYMENT_NOTE,
+          updatedAt: now(),
+        })
+        .where(
+          and(
+            eq(compensationRequests.id, request.id),
+            eq(compensationRequests.status, "approved"),
+            isNull(compensationRequests.daoPaymentStartedAt),
+          ),
+        )
+        .returning();
+      if (!started) {
+        throw badRequest("NOT_APPROVED", "The request changed meanwhile; reload it and try again");
+      }
+      return daoPaymentTransaction(scope, row, started, payout);
     },
 
     refreshPayment: async (scope: OrganizationScope, input: { requestId: string }) => {

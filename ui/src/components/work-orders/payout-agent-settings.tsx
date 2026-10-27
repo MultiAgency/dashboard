@@ -452,7 +452,7 @@ export function PayoutAgentSettings() {
                 <Field
                   label="Or top up a custom amount (NEAR)"
                   htmlFor="payout-topup"
-                  helper={`Creates a transfer proposal in ${agencyDao} to the agent's deposit address. Try a small amount first.`}
+                  helper={`Creates a proposal in ${agencyDao} that wraps the NEAR and sends it to the agent's deposit address as wNEAR. Your role needs to allow "call" proposals. Try a small amount first.`}
                 >
                   <Input
                     id="payout-topup"

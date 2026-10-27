@@ -216,6 +216,7 @@ export const compensationRequest = z.object({
   reportSha256: z.string().nullable(),
   overlaps: z.array(z.string()),
   authorizedEvidence: z.number().int(),
+  daoPaymentStartedAt: z.string().nullable(),
   autoPayBlocked: z
     .object({ reason: z.string(), since: z.string(), triedAt: z.string().nullable() })
     .nullable(),
@@ -234,6 +235,7 @@ export const compensationRequest = z.object({
       amount: z.string(),
       txUrl: z.string().nullable(),
       reason: z.string().nullable(),
+      canRetry: z.boolean(),
     })
     .nullable(),
   payout: z
@@ -302,6 +304,34 @@ const fields = {
 
 const byId = z.object({ id: z.string().min(1) });
 const byRequest = z.object({ requestId: z.string().min(1) });
+
+const daoPaymentTransaction = z.object({
+  quote: z.object({
+    usd: z.string().nullable(),
+    tokenId: z.string(),
+    amount: z.string(),
+    priceUsd: z.string().nullable(),
+    pricedAt: z.string().nullable(),
+  }),
+  daoAccountId: z.string(),
+  method: z.literal("add_proposal"),
+  args: z.object({
+    proposal: z.object({
+      description: z.string(),
+      kind: z.object({
+        Transfer: z.object({
+          token_id: z.string(),
+          receiver_id: z.string(),
+          amount: z.string(),
+          msg: z.null(),
+        }),
+      }),
+    }),
+  }),
+  deposit: z.string(),
+  gas: z.string(),
+});
+
 const range = { coversFrom: day.optional(), coversTo: day.optional() };
 const errors = { UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST };
 
@@ -518,34 +548,13 @@ export const workOrdersContract = {
   paymentProposal: oc
     .route({ method: "GET", path: "/admin/work-order-requests/{requestId}/proposal" })
     .input(byRequest)
-    .output(
-      z.object({
-        quote: z.object({
-          usd: z.string().nullable(),
-          tokenId: z.string(),
-          amount: z.string(),
-          priceUsd: z.string().nullable(),
-          pricedAt: z.string().nullable(),
-        }),
-        daoAccountId: z.string(),
-        method: z.literal("add_proposal"),
-        args: z.object({
-          proposal: z.object({
-            description: z.string(),
-            kind: z.object({
-              Transfer: z.object({
-                token_id: z.string(),
-                receiver_id: z.string(),
-                amount: z.string(),
-                msg: z.null(),
-              }),
-            }),
-          }),
-        }),
-        deposit: z.string(),
-        gas: z.string(),
-      }),
-    )
+    .output(daoPaymentTransaction)
+    .errors(errors),
+
+  startDaoPayment: oc
+    .route({ method: "POST", path: "/admin/work-order-requests/{requestId}/dao-payment" })
+    .input(byRequest)
+    .output(daoPaymentTransaction)
     .errors(errors),
 
   payNow: oc

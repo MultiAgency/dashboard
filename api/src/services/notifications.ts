@@ -176,7 +176,7 @@ export const NOTIFICATION_KINDS = {
   }),
   compensation_request_payout_failed: (p) => ({
     title: `The automatic payout of ${p.requestCode} needs a check`,
-    body: `The payout agent couldn't confirm the payment of ${p.approved} for ${p.requestCode}: ${p.reason}. Check the agent's history before paying it again, or pay it through a DAO proposal.`,
+    body: `The payout agent couldn't confirm the payment of ${p.approved} for ${p.requestCode}: ${p.reason}. Check the agent's history; if nothing went out, reject the request so the builder can request it again.`,
   }),
   compensation_request_rejected: (p) => ({
     title: `${p.requestCode} was rejected`,

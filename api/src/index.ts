@@ -46,7 +46,7 @@ import {
   type OrganizationScope,
   ROLE_MATRIX,
 } from "./services/organization-access";
-import { atomicToNear, nearToAtomic, topUpFor } from "./services/payouts/policy";
+import { atomicToNear, nearToAtomic, topUpFor, topUpProposal } from "./services/payouts/policy";
 import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
@@ -1118,6 +1118,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(treasuryManager)
           .handler(async ({ context, input }) => workOrders.paymentProposal(context.scope, input)),
 
+        startDaoPayment: builder.workOrders.startDaoPayment
+          .use(treasuryManager)
+          .handler(async ({ context, input }) => workOrders.startDaoPayment(context.scope, input)),
+
         payNow: builder.workOrders.payNow
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.payNow(context.scope, input)),
@@ -1219,17 +1223,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
               daoAccountId: context.scope.agencyDao,
               method: "add_proposal" as const,
               args: {
-                proposal: {
-                  description: `Top up the MultiAgency payout agent with ${input.amountNear} NEAR`,
-                  kind: {
-                    Transfer: {
-                      token_id: "",
-                      receiver_id: deposit.address,
-                      amount: nearToAtomic(input.amountNear),
-                      msg: null,
-                    },
-                  },
-                },
+                proposal: topUpProposal({
+                  daoAccountId: context.scope.agencyDao,
+                  depositAddress: deposit.address,
+                  memo: deposit.memo,
+                  amount: BigInt(nearToAtomic(input.amountNear)),
+                  amountNear: input.amountNear,
+                }),
               },
               deposit: await getProposalBond(context.scope.agencyDao),
               gas: "100000000000000",
