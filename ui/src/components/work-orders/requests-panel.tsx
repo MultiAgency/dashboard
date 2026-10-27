@@ -276,16 +276,16 @@ function RequestItem({
           <span className="text-sm text-muted-foreground">
             {request.agentPayout.status === "paid" ? "Paid " : "Paying "}
             {formatTokenAmount(request.agentPayout.amount, "near")} through the payout agent
-            {request.agentPayout.txUrl ? (
+            {request.agentPayout.txUrl || request.agentPayout.accountUrl ? (
               <>
                 {" · "}
                 <a
-                  href={request.agentPayout.txUrl}
+                  href={request.agentPayout.txUrl ?? request.agentPayout.accountUrl ?? undefined}
                   target="_blank"
                   rel="noreferrer"
                   className="underline underline-offset-4"
                 >
-                  transaction
+                  {request.agentPayout.txUrl ? "transaction" : "see it on NearBlocks"}
                 </a>
               </>
             ) : null}

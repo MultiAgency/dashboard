@@ -511,11 +511,7 @@ export function createPayoutAgents(deps: {
           status: "paid" as const,
           reason: null,
           txHash: txHash ?? intentHash,
-          txUrl: txHash
-            ? `https://nearblocks.io/txns/${txHash}`
-            : intentHash
-              ? `https://explorer.near-intents.org/transactions/${intentHash}`
-              : null,
+          txUrl: txHash ? `https://nearblocks.io/txns/${txHash}` : null,
         };
       }
       case "QUEUED":

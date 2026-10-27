@@ -206,9 +206,11 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
         ),
         action: e.payout?.txUrl
           ? { label: "View the transaction", url: e.payout.txUrl }
-          : view("contractor"),
+          : e.payout?.accountUrl
+            ? { label: "See it on NearBlocks", url: e.payout.accountUrl }
+            : view("contractor"),
         secondary:
-          e.payout?.txUrl && e.links.contractor
+          (e.payout?.txUrl || e.payout?.accountUrl) && e.links.contractor
             ? [{ label: "Open the work order", url: e.links.contractor }]
             : [],
       });

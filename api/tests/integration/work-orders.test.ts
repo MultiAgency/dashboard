@@ -1894,6 +1894,7 @@ describe("work orders", () => {
       expect(released?.payout).toEqual({
         near: CAROL,
         txUrl: "https://nearblocks.io/txns/TXHASH1",
+        accountUrl: `https://nearblocks.io/address/${CAROL}`,
       });
       expect((await service.get(await studio(), { id: wo.id })).paidAmount).toBe("600000000");
     });
@@ -1912,9 +1913,13 @@ describe("work orders", () => {
       const detail = await service.get(await studio(), { id: paying.workOrderId });
       const request = detail.requests.find((r) => r.id === draft.id);
       expect(request?.status).toBe("paid");
-      expect(request?.agentPayout?.txUrl).toBe(
-        "https://explorer.near-intents.org/transactions/IH1",
-      );
+      expect(request?.agentPayout?.txUrl).toBeNull();
+      expect(request?.agentPayout?.accountUrl).toBe(`https://nearblocks.io/address/${CAROL}`);
+      const released = events.find((e) => e.type === "request.payout_released");
+      const email = composeEmails(released!).find((m) => m.subject.startsWith("Payout sent"));
+      expect(email?.html).toContain(`https://nearblocks.io/address/${CAROL}`);
+      expect(email?.html).not.toContain("explorer.near-intents.org");
+      expect(email?.text).toContain("See it on NearBlocks");
     });
 
     test("a request can't be rejected while its payout is going out", async () => {

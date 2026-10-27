@@ -299,6 +299,7 @@ export const compensationRequest = z.object({
       ]),
       amount: z.string(),
       txUrl: z.string().nullable(),
+      accountUrl: z.string().nullable(),
       reason: z.string().nullable(),
     })
     .nullable(),

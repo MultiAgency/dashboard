@@ -65,7 +65,7 @@ export type WorkOrderEvent = {
     approved: string | null;
     note: string | null;
   };
-  payout: null | { txUrl: string | null; near: string };
+  payout: null | { txUrl: string | null; near: string; accountUrl?: string | null };
   links: {
     contractor: string | null;
     review: string | null;

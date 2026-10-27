@@ -239,6 +239,13 @@
       "when": 1793750400000,
       "tag": "0035_payout_hold_notified",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793836800000,
+      "tag": "0036_payout_explorer_links",
+      "breakpoints": true
     }
   ]
 }

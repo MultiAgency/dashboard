@@ -241,6 +241,9 @@ function payoutInFlight(last: AgentPayoutView | null | undefined): boolean {
 const NOT_PAYING_NOW = new Set(["unavailable", "no_agent"]);
 const NEEDS_REVIEW = "needs_review";
 
+const nearAccountUrl = (account: string) =>
+  `https://nearblocks.io/address/${encodeURIComponent(account)}`;
+
 type FundingCode = "insufficient_balance" | "over_monthly_budget" | "over_cap";
 
 function fundingCodeOf(text: string): FundingCode | null {
@@ -458,7 +461,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
   type Announcement = {
     request?: CompensationRequestRow | null;
-    payout?: { txUrl: string | null; near: string } | null;
+    payout?: { txUrl: string | null; near: string; accountUrl?: string | null } | null;
     reportMd?: string | null;
     mismatches?: string[] | null;
     renewal?: WorkOrderEvent["renewal"];
@@ -1653,6 +1656,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
                       status: p.status,
                       amount: p.amount,
                       txUrl: p.txUrl,
+                      accountUrl: nearAccountUrl(row.builderNearAccount),
                       reason: p.reason,
                     }
                   : null,
@@ -2401,7 +2405,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     await notifyManagers(row, "compensation_request_paid", payload);
     await announce(row, "request.payout_released", {
       request: paid,
-      payout: { near: row.builderNearAccount, txUrl: payout.txUrl },
+      payout: {
+        near: row.builderNearAccount,
+        txUrl: payout.txUrl,
+        accountUrl: nearAccountUrl(row.builderNearAccount),
+      },
       reportMd: (await requestView(paid, row)).reportMd,
     });
     return paid;
