@@ -47,7 +47,6 @@ const PROPOSAL_TERMINAL_FAIL = new Set<DaoProposalStatus>([
   "Removed",
   "Expired",
   "Moved",
-  "Failed",
 ]);
 
 type ResolvedListing = {
@@ -102,7 +101,7 @@ function rollupForToken(input: {
     tokenBills.filter(predicate).reduce((acc, b) => acc + BigInt(b.amount), 0n);
 
   const budget = input.budgetAmounts.reduce((acc, a) => acc + a, 0n);
-  const inProgressBillings = sumBills((b) => b.status === "InProgress");
+  const inProgressBillings = sumBills((b) => b.status === "InProgress" || b.status === "Failed");
   const paid = sumBills((b) => b.status === "Approved");
 
   let listingAllocated = 0n;

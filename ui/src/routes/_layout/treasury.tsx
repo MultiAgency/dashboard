@@ -74,7 +74,7 @@ import {
   treasuryPublicBalancesQueryOptions,
 } from "@/lib/queries";
 import { isDefaultOrganizationStaff } from "@/lib/treasury";
-import { trezuProposalUrl } from "@/lib/trezu";
+import { readableDescription, trezuProposalUrl } from "@/lib/trezu";
 
 const TREASURY_TABS = ["balances", "payouts"] as const;
 type TreasuryTab = (typeof TREASURY_TABS)[number];
@@ -1088,7 +1088,9 @@ function ProposalRow({
         </div>
       </TableCell>
       <TableCell className="hidden max-w-72 min-w-40 whitespace-normal md:table-cell">
-        <span className="line-clamp-2 break-words">{proposal.description || "—"}</span>
+        <span className="line-clamp-2 break-words whitespace-pre-line">
+          {readableDescription(proposal.description) || "—"}
+        </span>
       </TableCell>
       <TableCell className="text-right tabular-nums whitespace-nowrap">
         {formatTokenAmount(proposal.amount, proposal.tokenId)}
@@ -1145,7 +1147,7 @@ function ProposalDetailDialog({
                 <div className="flex flex-col gap-1 sm:col-span-2">
                   <dt className="text-xs text-muted-foreground">Description</dt>
                   <dd className="text-xs/relaxed break-words whitespace-pre-wrap">
-                    {proposal.description}
+                    {readableDescription(proposal.description)}
                   </dd>
                 </div>
               )}

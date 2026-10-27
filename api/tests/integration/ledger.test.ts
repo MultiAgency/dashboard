@@ -77,7 +77,7 @@ describe("project ledger", () => {
     projectId: string,
     tokenId: string,
     amount: string,
-    decided?: Exclude<DaoProposalStatus, "InProgress">,
+    decided?: Exclude<DaoProposalStatus, "InProgress" | "Failed">,
   ) {
     proposalCounter += 1;
     if (decided) {
@@ -225,9 +225,9 @@ describe("project ledger", () => {
     });
   });
 
-  test("rejected, removed, expired, moved and failed billings count for nothing", async () => {
+  test("rejected, removed, expired and moved billings count for nothing", async () => {
     await addBudget(PROJECT_A, "near", "200");
-    for (const status of ["Rejected", "Removed", "Expired", "Moved", "Failed"] as const) {
+    for (const status of ["Rejected", "Removed", "Expired", "Moved"] as const) {
       await addBilling(PROJECT_A, "near", "30", status);
     }
 
@@ -235,6 +235,39 @@ describe("project ledger", () => {
 
     expect(rollup).toMatchObject({ committed: "0", paid: "0", remaining: "200" });
     expectBalanced(rollup);
+  });
+
+  test("a billing whose proposal failed to execute stays committed while the DAO can still finalize it", async () => {
+    await addBudget(PROJECT_A, "near", "200");
+    await addBilling(PROJECT_A, "near", "30");
+    const disabled = globalThis.fetch;
+    const submitted = String(BigInt(Date.now()) * 1_000_000n);
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const { params } = JSON.parse(String(init.body));
+      const value =
+        params.method_name === "get_policy"
+          ? { roles: [], proposal_period: "604800000000000" }
+          : {
+              proposer: "admin.near",
+              description: "payout",
+              kind: { Transfer: { token_id: "", receiver_id: "dev.near", amount: "30" } },
+              status: "Failed",
+              submission_time: submitted,
+              votes: {},
+            };
+      return new Response(
+        JSON.stringify({
+          result: { result: [...new TextEncoder().encode(JSON.stringify(value))] },
+        }),
+      );
+    }) as typeof fetch;
+    try {
+      const [rollup] = (await ledgers().load(agencyScope(DAO), [PROJECT_A])).rollupsFor(PROJECT_A);
+      expect(rollup).toMatchObject({ committed: "30", paid: "0", remaining: "170" });
+      expectBalanced(rollup);
+    } finally {
+      globalThis.fetch = disabled;
+    }
   });
 
   test("spending past the budget leaves a negative remaining", async () => {

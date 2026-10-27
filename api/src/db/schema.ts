@@ -451,7 +451,7 @@ export const proposals = pgTable(
     proposer: text("proposer").notNull(),
     description: text("description").notNull(),
     status: text("status", {
-      enum: ["Approved", "Rejected", "Removed", "Expired", "Moved", "Failed"],
+      enum: ["Approved", "Rejected", "Removed", "Expired", "Moved"],
     }).notNull(),
     kindType: text("kind_type", { enum: ["Transfer", "Other"] }).notNull(),
     transferTokenId: text("transfer_token_id"),

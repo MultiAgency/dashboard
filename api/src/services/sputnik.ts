@@ -37,6 +37,21 @@ const FASTNEAR_HOSTS = new Set([
   "test.api.fastnear.com",
 ]);
 
+export function proposalDescription(fields: {
+  title: string;
+  notes?: string | null;
+  url?: string | null;
+}): string {
+  const entries: [string, string | null | undefined][] = [
+    ["Title", fields.title],
+    ["Notes", fields.notes],
+    ["Url", fields.url],
+  ];
+  return entries
+    .flatMap(([key, value]) => (value ? [`* ${key}: ${value.replace(/<br>/g, " ")}`] : []))
+    .join(" <br>");
+}
+
 export function fastnearAuthHeaders(url: string): Record<string, string> {
   let host: string;
   try {
@@ -58,6 +73,7 @@ interface SputnikRole {
 interface SputnikPolicy {
   roles: SputnikRole[];
   proposal_bond?: string;
+  proposal_period?: string;
 }
 
 const policyCache = new Map<string, { policy: SputnikPolicy; expiresAt: number }>();
@@ -152,7 +168,6 @@ const TERMINAL_STATUSES = new Set<DaoProposalStatus>([
   "Removed",
   "Expired",
   "Moved",
-  "Failed",
 ]);
 
 type ProposalRow = typeof proposalsTable.$inferSelect;
@@ -186,7 +201,7 @@ function daoProposalToRow(daoAccountId: string, p: DaoProposal): NewProposalRow 
     proposalId: p.id,
     proposer: p.proposer,
     description: p.description,
-    status: p.status as Exclude<DaoProposalStatus, "InProgress">,
+    status: p.status as Exclude<DaoProposalStatus, "InProgress" | "Failed">,
     kindType: p.kind.type,
     transferTokenId: p.kind.type === "Transfer" ? p.kind.tokenId : null,
     transferReceiverId: p.kind.type === "Transfer" ? p.kind.receiverId : null,
@@ -275,7 +290,38 @@ function parseProposal(raw: Record<string, unknown>, fallbackId: number): DaoPro
   };
 }
 
+const EXPIRABLE = new Set<DaoProposalStatus>(["InProgress", "Failed"]);
+const EXPIRY_MARGIN_NS = 600_000_000_000n;
+
+async function expireByPolicy(
+  daoAccountId: string,
+  proposals: DaoProposal[],
+): Promise<DaoProposal[]> {
+  if (!proposals.some((p) => EXPIRABLE.has(p.status))) return proposals;
+  const period = await fetchPolicy(daoAccountId).then(
+    (policy) => policy.proposal_period,
+    () => undefined,
+  );
+  if (!period) return proposals;
+  const nowNs = BigInt(Date.now()) * 1_000_000n;
+  return proposals.map((p) =>
+    EXPIRABLE.has(p.status) &&
+    p.submissionTime &&
+    BigInt(p.submissionTime) + BigInt(period) + EXPIRY_MARGIN_NS < nowNs
+      ? { ...p, status: "Expired" }
+      : p,
+  );
+}
+
 export async function getProposal(
+  db: Database,
+  daoAccountId: string,
+  proposalId: number,
+): Promise<DaoProposal | null> {
+  return findProposal(db, daoAccountId, proposalId).catch(() => null);
+}
+
+export async function findProposal(
   db: Database,
   daoAccountId: string,
   proposalId: number,
@@ -300,9 +346,9 @@ export async function getProposal(
         id: proposalId,
       },
     );
-    proposal = parseProposal(raw, proposalId);
-  } catch {
-    proposal = null;
+    [proposal = null] = await expireByPolicy(daoAccountId, [parseProposal(raw, proposalId)]);
+  } catch (err) {
+    if (!(err as Error).message.includes("ERR_NO_PROPOSAL")) throw err;
   }
   const isTerminal = proposal && TERMINAL_STATUSES.has(proposal.status);
   const expiresAt = isTerminal ? Number.POSITIVE_INFINITY : Date.now() + PROPOSAL_TTL_MS;
@@ -329,7 +375,10 @@ export async function getProposals(
     "get_proposals",
     { from_index: fromIndex, limit },
   );
-  const proposals = raw.map((r, idx) => parseProposal(r, fromIndex + idx));
+  const proposals = await expireByPolicy(
+    daoAccountId,
+    raw.map((r, idx) => parseProposal(r, fromIndex + idx)),
+  );
   // Warm the per-proposal cache so subsequent getProposal(id) calls hit cache.
   for (const p of proposals) {
     const cacheKey = `${daoAccountId}::${p.id}`;

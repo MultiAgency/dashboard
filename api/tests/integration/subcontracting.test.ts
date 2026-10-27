@@ -113,7 +113,7 @@ describe("subcontracting", () => {
     daoAccountId: string,
     proposalId: number,
     amount: string,
-    status: Exclude<DaoProposalStatus, "InProgress"> = "Approved",
+    status: Exclude<DaoProposalStatus, "InProgress" | "Failed"> = "Approved",
   ) {
     await database.db.insert(proposals).values({
       daoAccountId,

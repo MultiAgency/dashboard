@@ -31,3 +31,10 @@ export function trezuPaymentUrl(
   }
   return url.toString();
 }
+
+export function readableDescription(description: string): string {
+  return description
+    .split(/\s*<br\s*\/?>\s*/i)
+    .map((line) => line.replace(/^\*\s+/, ""))
+    .join("\n");
+}

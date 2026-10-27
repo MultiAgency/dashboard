@@ -24,7 +24,7 @@ import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
 import { payoutRetryable } from "../payouts/service";
 import type { Project, ProjectDirectory } from "../project-directory";
-import type { DaoProposal } from "../sputnik";
+import { type DaoProposal, proposalDescription } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
 import { createAutoApproval, trustViewOf } from "./auto-approval";
 import type { ConsistencyChecker } from "./consistency";
@@ -202,7 +202,7 @@ const OPEN_REQUEST: readonly RequestStatus[] = ["draft", "submitted"];
 const EDITABLE: readonly WorkOrderStatus[] = ["draft", "offered", "accepted"];
 const PAYABLE: readonly WorkOrderStatus[] = ["active", "ended", "exhausted"];
 const FINAL: readonly WorkOrderStatus[] = ["terminated"];
-const FAILED_PROPOSAL = new Set(["Rejected", "Removed", "Expired", "Moved", "Failed"]);
+const FAILED_PROPOSAL = new Set(["Rejected", "Removed", "Expired", "Moved"]);
 const RECENT_MS = 7 * 86_400_000;
 const ENDING_SOON_DAYS = 3;
 const LOCK_ID = "work-orders";
@@ -2443,17 +2443,21 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     payout: PayoutQuote,
   ) {
     const project = await projectOf(row);
-    const description = [
-      `${row.code}-R${request.seq}: ${row.title}`,
-      `Project: ${project?.title ?? row.projectId}`,
-      `Covers ${request.coversFrom} to ${request.coversTo}`,
-      payout.priceUsd
-        ? `${display(request.approvedAmount ?? "0", row.tokenId)} at ${payout.priceUsd} USD per ${symbolOf(payout.tokenId)}`
-        : null,
-      request.reportSha256 ? `Report SHA-256: ${request.reportSha256}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const link = absolute(adminLink(row.id));
+    const description = proposalDescription({
+      title: `${row.code}-R${request.seq}: ${row.title}`,
+      notes: [
+        `Project: ${project?.title ?? row.projectId}`,
+        `Covers ${request.coversFrom} to ${request.coversTo}`,
+        payout.priceUsd
+          ? `${display(request.approvedAmount ?? "0", row.tokenId)} at ${payout.priceUsd} USD per ${symbolOf(payout.tokenId)}`
+          : null,
+        request.reportSha256 ? `Report SHA-256: ${request.reportSha256}` : null,
+      ]
+        .filter(Boolean)
+        .join("; "),
+      url: link.startsWith("http") ? link : null,
+    });
     return {
       quote: {
         usd: row.tokenId === USD ? request.approvedAmount : null,
@@ -2487,16 +2491,20 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const row = await mustRow(request.workOrderId);
     const dao = await deps.agencyDaoOf(row.organizationId);
     if (!dao) return request;
-    const proposal = await deps.proposal(dao, Number(request.proposalId)).catch(() => null);
-    if (!proposal) return request;
+    let status: DaoProposal["status"];
+    try {
+      status = (await deps.proposal(dao, Number(request.proposalId)))?.status ?? "Removed";
+    } catch {
+      return request;
+    }
     const payload = await payloadOf(row, {
       requestCode: `${row.code}-R${request.seq}`,
       amount: display(request.approvedAmount ?? "0", row.tokenId),
       daoAccountId: dao,
       proposalId: request.proposalId,
-      status: proposal.status,
+      status,
     });
-    if (proposal.status === "Approved") {
+    if (status === "Approved") {
       const paid = await updateRequest(request.id, { status: "paid", paidAt: now() });
       const requests = await requestsOf(row.id);
       if (
@@ -2517,10 +2525,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       });
       return paid;
     }
-    if (FAILED_PROPOSAL.has(proposal.status)) {
+    if (FAILED_PROPOSAL.has(status)) {
       const failed = await updateRequest(request.id, {
         status: "failed",
-        note: `Proposal #${request.proposalId} ended as ${proposal.status}; nothing was paid.`,
+        note: `Proposal #${request.proposalId} ended as ${status}; nothing was paid.`,
       });
       await notifyBuilder(row, "compensation_request_failed", payload);
       await notifyManagers(row, "compensation_request_failed", payload);
@@ -3425,7 +3433,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           `Proposal ${id} of ${scope.agencyDao} is already recorded as a billing`,
         );
       }
-      const proposal = await deps.proposal(scope.agencyDao, id);
+      const proposal = await deps.proposal(scope.agencyDao, id).catch(() => {
+        throw badRequest(
+          "PROPOSAL_UNAVAILABLE",
+          `Couldn't read proposal ${id} of ${scope.agencyDao} from the chain; try again`,
+        );
+      });
       if (!proposal) throw notFound(`Proposal ${id} of ${scope.agencyDao}`);
       if (proposal.kind.type !== "Transfer") {
         throw badRequest("NOT_TRANSFER", `Proposal ${id} is not a transfer`);

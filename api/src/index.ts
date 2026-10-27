@@ -57,7 +57,7 @@ import {
   getResolvedPublicSettings,
   upsertSettings,
 } from "./services/settings-admin";
-import { fullAccessKeys, getProposal, getProposalBond, getRoles } from "./services/sputnik";
+import { findProposal, fullAccessKeys, getProposalBond, getRoles } from "./services/sputnik";
 import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
 import { createConsistencyChecker } from "./services/work-orders/consistency";
@@ -314,7 +314,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
         },
         github,
         ownership: cachedOwnership(github, 10 * 60_000),
-        proposal: (daoAccountId, proposalId) => getProposal(db, daoAccountId, proposalId),
+        proposal: (daoAccountId, proposalId) => findProposal(db, daoAccountId, proposalId),
         proposalBond: getProposalBond,
         prices: createPriceFeed(),
         esign: config.secrets.DOCUMENSO_API_KEY

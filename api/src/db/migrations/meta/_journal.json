@@ -204,6 +204,13 @@
       "when": 1793318400000,
       "tag": "0030_dao_payment_started",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793404800000,
+      "tag": "0031_failed_proposals_not_final",
+      "breakpoints": true
     }
   ]
 }

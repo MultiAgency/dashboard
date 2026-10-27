@@ -41,8 +41,8 @@ describe("payout agent top-up proposal", () => {
         deposit: 1n,
       },
     ]);
-    expect(proposal.description).toMatch(
-      /^Top up the MultiAgency payout agent with 1\.5 NEAR, wrapped as wNEAR/,
+    expect(proposal.description).toBe(
+      "* Title: Top up the MultiAgency payout agent with 1.5 NEAR <br>* Notes: Wrapped as wNEAR and sent to the agent's deposit address, plus up to 0.0025 NEAR of wNEAR storage, refunded where already registered",
     );
     const gas = proposal.kind.FunctionCall.actions.reduce((total, a) => total + BigInt(a.gas), 0n);
     expect(gas).toBeLessThanOrEqual(60_000_000_000_000n);

@@ -1,4 +1,5 @@
 import type { Policy } from "@near-intents-agent-api/sdk";
+import { proposalDescription } from "../sputnik";
 
 export const NEAR_ASSET = "nep141:wrap.near";
 export const NEAR_DECIMALS = 24;
@@ -41,7 +42,11 @@ export function topUpProposal(input: {
     gas: TOP_UP_ACTION_GAS,
   });
   return {
-    description: `Top up the MultiAgency payout agent with ${input.amountNear} NEAR, wrapped as wNEAR (plus up to 0.0025 NEAR of wNEAR storage, refunded where already registered)`,
+    description: proposalDescription({
+      title: `Top up the MultiAgency payout agent with ${input.amountNear} NEAR`,
+      notes:
+        "Wrapped as wNEAR and sent to the agent's deposit address, plus up to 0.0025 NEAR of wNEAR storage, refunded where already registered",
+    }),
     kind: {
       FunctionCall: {
         receiver_id: wnear,

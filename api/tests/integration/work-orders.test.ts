@@ -492,6 +492,63 @@ describe("work orders", () => {
       );
     });
 
+    test("a proposal that failed to execute keeps the request reserved until the chain settles it", async () => {
+      const { wo, request } = await submitted();
+      await service.approveRequest(await studio(), { requestId: request.id, amount: "600000000" });
+      transfer(14);
+      const treasury = requireTreasury(await studio());
+      await service.linkProposal(treasury, { requestId: request.id, proposalId: "14" });
+      transfer(14, { status: "Failed" });
+      const stuck = await service.refreshPayment(await studio(), { requestId: request.id });
+      expect(stuck.status).toBe("proposed");
+      expect((await service.get(await studio(), { id: wo.id })).remainingAmount).toBe("400000000");
+      expect((await notificationsOf("carol")).map((n) => n.kind)).not.toContain(
+        "compensation_request_failed",
+      );
+      await refused(service.payNow(await studio(), { requestId: request.id }), "NOT_APPROVED");
+      transfer(15);
+      await refused(
+        service.linkProposal(treasury, { requestId: request.id, proposalId: "15" }),
+        "NOT_APPROVED",
+      );
+      transfer(14, { status: "Approved" });
+      const paid = await service.refreshPayment(await studio(), { requestId: request.id });
+      expect(paid.status).toBe("paid");
+    });
+
+    test("a proposal removed from the DAO frees the budget; a lookup that fails changes nothing", async () => {
+      const { wo, request } = await submitted();
+      await service.approveRequest(await studio(), { requestId: request.id, amount: "600000000" });
+      transfer(16);
+      const lookup = serviceDeps.proposal;
+      serviceDeps.proposal = async () => {
+        throw new Error("RPC unavailable");
+      };
+      await refused(
+        service.linkProposal(requireTreasury(await studio()), {
+          requestId: request.id,
+          proposalId: "16",
+        }),
+        "PROPOSAL_UNAVAILABLE",
+      );
+      serviceDeps.proposal = lookup;
+      await service.linkProposal(requireTreasury(await studio()), {
+        requestId: request.id,
+        proposalId: "16",
+      });
+      serviceDeps.proposal = async () => {
+        throw new Error("RPC unavailable");
+      };
+      const unchanged = await service.refreshPayment(await studio(), { requestId: request.id });
+      expect(unchanged.status).toBe("proposed");
+      serviceDeps.proposal = lookup;
+      proposals.delete(`${DAO}#16`);
+      const failed = await service.refreshPayment(await studio(), { requestId: request.id });
+      expect(failed.status).toBe("failed");
+      expect(failed.note).toMatch(/Proposal #16 ended as Removed; nothing was paid/);
+      expect((await service.get(await studio(), { id: wo.id })).remainingAmount).toBe("1000000000");
+    });
+
     test("a rejected or expired proposal frees the budget", async () => {
       const { wo, request } = await submitted();
       await service.approveRequest(await studio(), { requestId: request.id, amount: "600000000" });
@@ -534,7 +591,11 @@ describe("work orders", () => {
         amount: "600000000",
         msg: null,
       });
-      expect(tx.args.proposal.description).toContain(`${request.code.split("-R")[0]}-R1`);
+      expect(tx.args.proposal.description).toMatch(
+        new RegExp(
+          `^\\* Title: ${request.code.split("-R")[0]}-R1: .+ <br>\\* Notes: Project: .+; Covers .+ to .+`,
+        ),
+      );
       const t = tx.args.proposal.kind.Transfer;
       transfer(13, { tokenId: t.token_id, receiverId: t.receiver_id, amount: t.amount });
       const linked = await service.linkProposal(requireTreasury(await studio()), {
