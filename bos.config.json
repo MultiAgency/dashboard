@@ -13,10 +13,10 @@
     "ui": {
       "name": "ui",
       "development": "local:ui",
-      "production": "https://multiagentic-336-ui-dashboard-multiagency-498b27296-ze.zephyrcloud.app",
-      "integrity": "sha384-nyU+atnTiDZer7WitEHaSFKO79SYaS52TBjH+7L5i1LTBOD75F75YJtBA4YzzySs",
-      "ssr": "https://multiagentic-340-ui-dashboard-multiagency-a21d7e75d-ze.zephyrcloud.app",
-      "ssrIntegrity": "sha384-oWffdDrHrjq/yZJMGM4Fqdt70oZjzwDXiyhU15OowjEb+RMyhtKdtzleZanyZ+/F"
+      "production": "https://multiagentic-341-ui-dashboard-multiagency-6f3fd32b9-ze.zephyrcloud.app",
+      "integrity": "sha384-UO2KSyS/E8UodipONm4sceyyM2NA4eK7m8HCUZ72k/sf7teEfJ4tM6LSbHB9/Cyw",
+      "ssr": "https://multiagentic-345-ui-dashboard-multiagency-dbd6341c2-ze.zephyrcloud.app",
+      "ssrIntegrity": "sha384-OPyAWw6Tyat9bTM5zyVDlOoMK6d9WXzCxDRnnwg3C0upkGhEOYYjM/cn8ZEnEsQG"
     },
     "api": {
       "name": "api",
@@ -52,8 +52,8 @@
         "DOCUMENSO_API_URL",
         "PAYOUTS_SECRET_KEY"
       ],
-      "production": "https://multiagentic-339-api-dashboard-multiagency-4a0045387-ze.zephyrcloud.app",
-      "integrity": "sha384-nkFjGlLr+f/VazvwY+2VsbzVlfGsr1/ETSIUH28Y4qG4VBOSZIGD8PQqIhZQjMfh"
+      "production": "https://multiagentic-344-api-dashboard-multiagency-850169acb-ze.zephyrcloud.app",
+      "integrity": "sha384-FOlepVx/FE8WVHFnqnObFqLfN2EyD7vu/YgtjqAOWX+CbKwb9Z5tZzfVwEVOB7+n"
     },
     "auth": {
       "extends": "bos://auth.everything.near/auth.everything.dev#app.auth",
@@ -80,8 +80,7 @@
       "secrets": [
         "PROJECTS_DATABASE_URL"
       ],
-      "production": "https://multiagentic-337-everything-dev-projects-plugin-d-3210c8b0d-ze.zephyrcloud.app",
-      "integrity": "sha384-qPOhAJTs/T7AsUmqhbdUnrcWJc4R5zW8DtsCJLScSOOyQS46quiS1qmJ/PfVmlH8"
+      "production": "https://multiagentic-342-everything-dev-projects-plugin-d-3a83a828e-ze.zephyrcloud.app"
     },
     "builders": {
       "development": "local:plugins/builders",
@@ -90,7 +89,7 @@
         "REGISTRY_TOKEN_TESTNET",
         "REGISTRY_TOKEN_MAINNET"
       ],
-      "production": "https://multiagentic-338-everything-dev-builders-plugin-d-583c5b63e-ze.zephyrcloud.app",
+      "production": "https://multiagentic-343-everything-dev-builders-plugin-d-488e30a2b-ze.zephyrcloud.app",
       "integrity": "sha384-HVd3JBtogajDWoxVKGoFBiF93pb1sojI3kwzQgyhXrqVfldRO/Ynj6u87XeCpPpA"
     }
   }
