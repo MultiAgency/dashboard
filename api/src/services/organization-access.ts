@@ -98,7 +98,7 @@ function networkOf(agencyDao: string): Network {
   return agencyDao.endsWith(".testnet") ? "testnet" : "mainnet";
 }
 
-function actorOf(context: PluginContext): string {
+export function actorOf(context: PluginContext): string {
   return context.near?.primaryAccountId ?? context.userId ?? "unknown";
 }
 

@@ -285,6 +285,25 @@ export function adminWorkOrdersQueryOptions(apiClient: ApiClient) {
   });
 }
 
+const NEEDS_YOU_POLL_MS = 60_000;
+
+export function adminWorkOrdersNeedsYouQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "needs-you", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.needsYouCount({}),
+    retry: false,
+    refetchInterval: NEEDS_YOU_POLL_MS,
+  });
+}
+
+export function workOrderNextCodeQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "next-code", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.nextCode({}),
+    retry: false,
+  });
+}
+
 export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
   return queryOptions({
     queryKey: [...adminWorkOrdersQueryKey, "detail", ...workspaceKey(), id] as const,
@@ -299,12 +318,30 @@ export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
   });
 }
 
+export function adminWorkOrderActivityQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "activity", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.workOrders.activity({ id }),
+    retry: false,
+  });
+}
+
 export const workOrderIntegrationQueryKey = ["admin", "work-order-integration"] as const;
 
 export function workOrderIntegrationQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...workOrderIntegrationQueryKey, ...workspaceKey()] as const,
     queryFn: () => apiClient.workOrders.integration({}),
+    retry: false,
+  });
+}
+
+export const workOrderRepresentativeQueryKey = ["admin", "work-order-representative"] as const;
+
+export function workOrderRepresentativeQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderRepresentativeQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.representativeDefaults({}),
     retry: false,
   });
 }
@@ -319,12 +356,49 @@ export function workOrderTrustQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const workOrderSetupQueryKey = ["admin", "work-order-setup"] as const;
+
+export function workOrderSetupQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderSetupQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.setupStatus({}),
+    retry: false,
+    staleTime: 30_000,
+  });
+}
+
 export const payoutAgentQueryKey = ["admin", "payout-agent"] as const;
 
 export function payoutAgentQueryOptions(apiClient: ApiClient) {
   return queryOptions({
     queryKey: [...payoutAgentQueryKey, ...workspaceKey()] as const,
     queryFn: () => apiClient.workOrders.payoutAgent({}),
+    retry: false,
+  });
+}
+
+export function payoutCoverageQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "payout-coverage", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.workOrders.payoutCoverage({ id }),
+    retry: false,
+  });
+}
+
+export function payoutReadinessQueryOptions(
+  apiClient: ApiClient,
+  requestId: string,
+  amount: string,
+) {
+  return queryOptions({
+    queryKey: [
+      ...adminWorkOrdersQueryKey,
+      "payout-readiness",
+      ...workspaceKey(),
+      requestId,
+      amount,
+    ] as const,
+    queryFn: () => apiClient.workOrders.payoutReadiness({ requestId, amount }),
     retry: false,
   });
 }

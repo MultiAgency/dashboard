@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Badge, Button } from "@/components";
 import { useApiClient } from "@/lib/api";
+import { relativeTime } from "@/lib/format-date";
 import { adminWorkOrdersQueryKey } from "@/lib/queries";
 import type { CompensationRequest } from "./work-order-status";
 
@@ -27,15 +28,6 @@ const SUGGESTIONS: Record<Trust["suggested"], string> = {
   veto_window: "it would be approved after a window you can stop",
   auto_pay: "it would be approved and paid right away",
 };
-
-function relative(iso: string, now = Date.now()): string {
-  const minutes = Math.round((Date.parse(iso) - now) / 60_000);
-  const format = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  if (Math.abs(minutes) < 60) return format.format(minutes, "minute");
-  const hours = Math.round(minutes / 60);
-  if (Math.abs(hours) < 48) return format.format(hours, "hour");
-  return format.format(Math.round(hours / 24), "day");
-}
 
 export function RequestTrust({
   request,
@@ -107,7 +99,7 @@ export function RequestTrust({
           <span className="font-medium">
             Approves automatically{" "}
             <time dateTime={trust.autoApproveAt} title={trust.autoApproveAt}>
-              {relative(trust.autoApproveAt)}
+              {relativeTime(trust.autoApproveAt)}
             </time>
           </span>
           {canManage && (

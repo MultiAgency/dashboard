@@ -197,6 +197,55 @@
       "when": 1793232000000,
       "tag": "0029_owner_signing",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793318400000,
+      "tag": "0030_organization_builder_logins",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793404800000,
+      "tag": "0031_work_order_representative",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793491200000,
+      "tag": "0032_work_order_payout_hold",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793577600000,
+      "tag": "0033_work_order_google_oauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793664000000,
+      "tag": "0034_work_order_esign_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793750400000,
+      "tag": "0035_payout_hold_notified",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793836800000,
+      "tag": "0036_payout_explorer_links",
+      "breakpoints": true
     }
   ]
 }

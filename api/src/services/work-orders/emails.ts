@@ -19,6 +19,33 @@ const COUNTING_RULES = [
   "At the end of the period, the report and compensation request are drafted automatically.",
 ];
 
+const HOLD_FIXES: Record<
+  string,
+  { subject: string; heading: string; why: string; next: string; action: string }
+> = {
+  insufficient_balance: {
+    subject: "fund the agent",
+    heading: "Fund the agent",
+    why: "it doesn't hold enough NEAR",
+    next: "Top up the payout agent from the treasury.",
+    action: "Fund the agent",
+  },
+  over_monthly_budget: {
+    subject: "raise the monthly budget",
+    heading: "Raise the monthly budget",
+    why: "it would go over this month's payout budget",
+    next: "Raise the monthly budget in the payout settings, or wait for it to reset.",
+    action: "Open the payout settings",
+  },
+  over_cap: {
+    subject: "raise the payout cap",
+    heading: "Raise the payout cap",
+    why: "it's more than the agent may send in one payout",
+    next: "Raise the maximum per payout in the payout settings.",
+    action: "Open the payout settings",
+  },
+};
+
 export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
   const out: WorkOrderEmail[] = [];
   const wo = e.workOrder;
@@ -55,11 +82,15 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
   switch (e.type) {
     case "work_order.offered":
       send("contractor", `${agency} sent you Work Order ${wo.id} to sign`, {
-        preheader: `${wo.title}: review the terms and sign to accept.`,
+        preheader: e.links.sign
+          ? `${agency} has signed ${wo.title}. Sign it to accept; it starts right away.`
+          : `${wo.title}: review the terms and sign to accept.`,
         eyebrow: "Work order sent",
         heading: `${agency} sent you a work order`,
         paragraphs: [
-          `You're offered "${wo.title}" on ${wo.project}. Review the terms and sign to accept. It only takes a minute.`,
+          e.links.sign
+            ? `You're offered "${wo.title}" on ${wo.project}, and ${agency} has already signed it. Review the terms and sign to accept. As soon as you sign, it's complete and starts right away.`
+            : `You're offered "${wo.title}" on ${wo.project}. Review the terms and sign to accept. It only takes a minute.`,
           `Each approved payout request is paid to ${e.contractor.nearAccount}.`,
         ],
         details: summary(["Budget", `up to ${wo.budget}`], ["Paid to", e.contractor.nearAccount]),
@@ -101,20 +132,31 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
       });
       break;
     case "work_order.renewed": {
-      const next = e.renewal?.renewedTo;
-      send("representative", `Work Order ${wo.id} is renewed`, {
-        preheader: next
-          ? `${builder}'s work order continues as ${next.id}.`
-          : "It continues next month.",
+      const unsent = e.renewal?.unsent ?? null;
+      const signLink = e.links.countersign ?? null;
+      send("representative", `Sign the renewal: Work Order ${wo.id}`, {
+        preheader: unsent
+          ? `${builder}'s renewal is saved as a draft: it wasn't sent for signature.`
+          : `${builder}'s work order continues for ${period}. Sign it to send it to ${builder}.`,
         eyebrow: "Work order renewed",
-        heading: `Work Order ${wo.id} is renewed`,
+        heading: `${builder}'s work order renews as ${wo.id}`,
         paragraphs: [
-          next
-            ? `${builder}'s work order continues next month as ${next.id}, ${next.periodStart} → ${next.periodEnd}, with the same terms.`
-            : `${builder}'s work order continues next month with the same terms.`,
+          `${builder}'s work order continues for ${period} with the same terms. A new work order with the new dates goes out for signature.`,
+          unsent
+            ? `It's saved as a draft because it couldn't be sent for signature: ${unsent}. Open it to fix this and send it.`
+            : signLink
+              ? `Sign it first; ${builder} gets their signing link as soon as you have. It becomes active once you've both signed, and the signed PDF is filed like any other work order.`
+              : `${builder} accepts it from their work orders. It becomes active once they have.`,
         ],
         details: summary(["Builder", builder], ["Budget", wo.budget]),
-        action: view("representative"),
+        action:
+          !unsent && signLink
+            ? { label: "Review and sign", url: signLink }
+            : view("representative", unsent ? "Open the renewal" : "Open the work order"),
+        secondary:
+          !unsent && signLink && e.links.review
+            ? [{ label: "Open it in MultiAgency", url: e.links.review }]
+            : [],
       });
       break;
     }
@@ -164,10 +206,42 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
         ),
         action: e.payout?.txUrl
           ? { label: "View the transaction", url: e.payout.txUrl }
-          : view("contractor"),
+          : e.payout?.accountUrl
+            ? { label: "See it on NearBlocks", url: e.payout.accountUrl }
+            : view("contractor"),
         secondary:
-          e.payout?.txUrl && e.links.contractor
+          (e.payout?.txUrl || e.payout?.accountUrl) && e.links.contractor
             ? [{ label: "Open the work order", url: e.links.contractor }]
+            : [],
+      });
+      break;
+    }
+    case "request.payout_blocked": {
+      const hold = e.hold;
+      if (!hold) break;
+      const amount = r?.approved ?? r?.requested ?? "";
+      const fix = HOLD_FIXES[hold.code] ?? HOLD_FIXES.insufficient_balance!;
+      const settings = e.links.settings ?? e.links.review;
+      send("representative", `Payout on hold: ${fix.subject} to pay ${builder} ${amount}`.trim(), {
+        preheader: `${r?.id ?? wo.id} for ${builder} is approved but can't be paid yet.`,
+        eyebrow: "Payout on hold",
+        heading: `${fix.heading} to pay ${builder}${amount ? ` ${amount}` : ""}`,
+        paragraphs: [
+          `Payout request ${r?.id ?? ""} is approved, but the payout agent can't send it yet: ${fix.why}.`,
+          `${hold.reason.replace(/\.$/, "")}.`,
+          `${fix.next} It's paid automatically once that's done: there's no need to approve it again.`,
+        ],
+        details: summary(
+          ["Request", r?.id ?? ""],
+          ["Amount", amount],
+          ["Paid to", e.contractor.nearAccount],
+          ["Agent holds", hold.balanceNear ? `${hold.balanceNear} NEAR` : ""],
+          ["Needs", hold.neededNear ? `${hold.neededNear} NEAR` : ""],
+        ),
+        action: settings ? { label: fix.action, url: settings } : null,
+        secondary:
+          e.links.review && settings !== e.links.review
+            ? [{ label: "Open the work order", url: e.links.review }]
             : [],
       });
       break;

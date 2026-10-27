@@ -1,7 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuthClient } from "@/app";
@@ -25,18 +25,18 @@ import {
 import { TreasurySettings } from "@/components/admin/treasury-settings";
 import { AdminError } from "@/components/admin-error";
 import { Loading } from "@/components/admin-form";
+import { AgencyNamePrompt, useActiveOrganization } from "@/components/agency-name-prompt";
 import { PageHeader } from "@/components/page-header";
 import { SettingsSection } from "@/components/settings-section";
 import { WorkOrderIntegrationSettings } from "@/components/work-orders/integration-settings";
 import { PayoutAgentSettings } from "@/components/work-orders/payout-agent-settings";
+import { WorkOrderRepresentativeSettings } from "@/components/work-orders/representative-settings";
+import { SetupChecklist } from "@/components/work-orders/setup-checklist";
 import { WorkOrderTrustSettings } from "@/components/work-orders/trust-settings";
+import { useMeRoles } from "@/hooks/use-me-roles";
+import { refreshAccountQueries } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
-import { sessionQueryOptions } from "@/lib/auth";
-import {
-  adminSettingsQueryOptions,
-  myOrganizationsQueryOptions,
-  refreshAfter,
-} from "@/lib/queries";
+import { adminSettingsQueryOptions, refreshAfter } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
   head: () => ({
@@ -62,6 +62,7 @@ function AdminSettingsPage() {
         title="Settings"
         description="Your Organization's identity, treasury and public Agency details."
       />
+      <SetupChecklist compact />
       <SettingsSection
         id="organization"
         title="Organization"
@@ -79,9 +80,12 @@ function AdminSettingsPage() {
       <SettingsSection
         id="work-orders"
         title="Work orders: documents and email"
-        description="Google Docs template, Drive folders, e-signature and emails."
+        description="Default representative, Google Docs template, Drive folders, e-signature and emails."
       >
-        <WorkOrderIntegrationSettings />
+        <div className="flex flex-col gap-4">
+          <WorkOrderRepresentativeSettings />
+          <WorkOrderIntegrationSettings />
+        </div>
       </SettingsSection>
       <SettingsSection
         id="work-order-approval"
@@ -106,35 +110,85 @@ function AdminSettingsPage() {
 
 function OrganizationIdentity() {
   const authClient = useAuthClient();
-  const apiClient = useApiClient();
-  const { data: session } = useQuery(sessionQueryOptions(authClient));
-  const organizations = useQuery(myOrganizationsQueryOptions(apiClient)).data?.data ?? [];
-  const active = organizations.find((o) => o.id === session?.session?.activeOrganizationId);
+  const queryClient = useQueryClient();
+  const { canAccessAdmin: canManage } = useMeRoles();
+  const active = useActiveOrganization();
+  const [name, setName] = useState<string | null>(null);
+  const rename = useMutation({
+    mutationFn: async (next: string) => {
+      if (!active) throw new Error("No active Organization");
+      const { error } = await authClient.organization.update({
+        organizationId: active.id,
+        data: { name: next },
+      });
+      if (error) throw new Error(error.message ?? "Could not rename the Organization");
+    },
+    onSuccess: async () => {
+      setName(null);
+      await refreshAccountQueries(queryClient);
+      toast.success("Organization renamed");
+    },
+    onError: (err: Error) => toast.error(err.message || "Could not rename the Organization"),
+  });
   if (!active) return null;
+  const draft = name ?? active.name;
+  const trimmed = draft.trim();
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h2>Organization</h2>
-        </CardTitle>
-        <CardDescription>
-          An Agency needs this slug and the exact name to propose an Engagement to your
-          Organization.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <dl className="grid gap-4 text-sm sm:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-1">
-            <dt className="text-xs text-muted-foreground">Name</dt>
-            <dd className="font-medium break-words">{active.name}</dd>
-          </div>
-          <div className="flex min-w-0 flex-col gap-1">
-            <dt className="text-xs text-muted-foreground">Slug</dt>
-            <dd className="font-medium break-all">{active.slug}</dd>
-          </div>
-        </dl>
-      </CardContent>
-    </Card>
+    <div className="flex flex-col gap-4">
+      <AgencyNamePrompt linkToSettings={false} />
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Organization</h2>
+          </CardTitle>
+          <CardDescription>
+            An Agency needs this slug and the exact name to propose an Engagement to your
+            Organization. Builders see the name in every work order email.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {canManage ? (
+            <form
+              className="flex flex-col gap-3 sm:flex-row sm:items-end"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (trimmed && trimmed !== active.name) rename.mutate(trimmed);
+              }}
+            >
+              <Field className="min-w-0 flex-1">
+                <FieldLabel htmlFor="organization-name">Name</FieldLabel>
+                <Input
+                  id="organization-name"
+                  value={draft}
+                  maxLength={100}
+                  onChange={(e) => setName(e.target.value)}
+                  disabled={rename.isPending}
+                />
+              </Field>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={rename.isPending || !trimmed || trimmed === active.name}
+              >
+                {rename.isPending ? "Renaming…" : "Rename"}
+              </Button>
+            </form>
+          ) : null}
+          <dl className="grid gap-4 text-sm sm:grid-cols-2">
+            {canManage ? null : (
+              <div className="flex min-w-0 flex-col gap-1">
+                <dt className="text-xs text-muted-foreground">Name</dt>
+                <dd className="font-medium break-words">{active.name}</dd>
+              </div>
+            )}
+            <div className="flex min-w-0 flex-col gap-1">
+              <dt className="text-xs text-muted-foreground">Slug</dt>
+              <dd className="font-medium break-all">{active.slug}</dd>
+            </div>
+          </dl>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

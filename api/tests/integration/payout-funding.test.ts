@@ -307,6 +307,7 @@ describe("payout funding and automatic payee rules", () => {
         neededNear: "25.005",
         shortfallNear: "15.01",
         monthlyBudgetUsd: "5000",
+        monthlyRemainingUsd: "5000.00",
         monthlyNeededUsd: "100.02",
         suggestedBudgetUsd: null,
         budgetTooLow: false,
@@ -324,9 +325,11 @@ describe("payout funding and automatic payee rules", () => {
         signedData: await agent.sign(sync.intent),
       });
       agent.balanceRaw = (30n * NEAR).toString();
+      agent.monthlySpentUsd = "20";
       expect(await payouts.fundingCheck(ORG, needs)).toMatchObject({
         shortfallNear: "0",
         monthlyBudgetUsd: "50",
+        monthlyRemainingUsd: "30.00",
         monthlyNeededUsd: "100.02",
         suggestedBudgetUsd: "101",
         budgetTooLow: true,

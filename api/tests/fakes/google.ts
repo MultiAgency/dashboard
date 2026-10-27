@@ -1,4 +1,6 @@
-import type { DriveFile, GooglePort } from "../../src/services/work-orders/google";
+import type { DriveFile, GoogleDoc, GooglePort } from "../../src/services/work-orders/google";
+
+type FakeDoc = { title: string; segments: { segmentId: string | null; text: string }[] };
 
 export function minimalPdf(lines: string[]): Uint8Array {
   const esc = (t: string) => t.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
@@ -31,7 +33,10 @@ export function minimalPdf(lines: string[]): Uint8Array {
 }
 
 export class FakeGoogle implements GooglePort {
+  kind: "service_account" | "oauth" = "service_account";
   email = "multiagency@project.iam.gserviceaccount.com";
+  docs = new Map<string, FakeDoc>();
+  edits: { documentId: string; requests: unknown[] }[] = [];
   copies: { templateId: string; name: string; parentId: string; id: string }[] = [];
   filled = new Map<string, Record<string, string>>();
   templateKeys = new Set<string>();
@@ -40,6 +45,74 @@ export class FakeGoogle implements GooglePort {
 
   constructor(templateKeys: string[]) {
     this.templateKeys = new Set(templateKeys);
+  }
+
+  setDoc(id: string, body: string, extra: { segmentId: string; text: string }[] = []) {
+    this.docs.set(id, {
+      title: id,
+      segments: [{ segmentId: null, text: body }, ...extra],
+    });
+    return this;
+  }
+
+  textOf(id: string): string {
+    return (this.docs.get(id)?.segments ?? []).map((s) => s.text).join("\n");
+  }
+
+  async read(documentId: string): Promise<GoogleDoc> {
+    const doc = this.docs.get(documentId);
+    return {
+      id: documentId,
+      title: doc?.title ?? documentId,
+      runs: (doc?.segments ?? []).map((s) => ({
+        segmentId: s.segmentId,
+        start: s.segmentId ? 0 : 1,
+        text: s.text,
+      })),
+    };
+  }
+
+  async edit(documentId: string, requests: unknown[]) {
+    this.edits.push({ documentId, requests });
+    const doc = this.docs.get(documentId);
+    if (!doc) return;
+    for (const raw of requests as Record<string, Record<string, never>>[]) {
+      const request = raw as {
+        deleteContentRange?: {
+          range: { startIndex: number; endIndex: number; segmentId?: string };
+        };
+        insertText?: { location: { index: number; segmentId?: string }; text: string };
+        replaceAllText?: { containsText: { text: string }; replaceText: string };
+      };
+      const segmentOf = (id?: string) => doc.segments.find((s) => s.segmentId === (id ?? null));
+      if (request.deleteContentRange) {
+        const { startIndex, endIndex, segmentId } = request.deleteContentRange.range;
+        const segment = segmentOf(segmentId);
+        const base = segmentId ? 0 : 1;
+        if (segment) {
+          segment.text =
+            segment.text.slice(0, startIndex - base) + segment.text.slice(endIndex - base);
+        }
+      }
+      if (request.insertText) {
+        const { index, segmentId } = request.insertText.location;
+        const segment = segmentOf(segmentId);
+        const base = segmentId ? 0 : 1;
+        if (segment) {
+          segment.text =
+            segment.text.slice(0, index - base) +
+            request.insertText.text +
+            segment.text.slice(index - base);
+        }
+      }
+      if (request.replaceAllText) {
+        for (const segment of doc.segments) {
+          segment.text = segment.text
+            .split(request.replaceAllText.containsText.text)
+            .join(request.replaceAllText.replaceText);
+        }
+      }
+    }
   }
 
   async file(id: string): Promise<DriveFile> {
@@ -56,6 +129,13 @@ export class FakeGoogle implements GooglePort {
   async copy(templateId: string, input: { name: string; parentId: string }): Promise<DriveFile> {
     const id = `doc-${this.copies.length + 1}`;
     this.copies.push({ templateId, ...input, id });
+    const source = this.docs.get(templateId);
+    if (source) {
+      this.docs.set(id, {
+        title: input.name,
+        segments: source.segments.map((segment) => ({ ...segment })),
+      });
+    }
     return {
       id,
       name: input.name,
@@ -68,9 +148,22 @@ export class FakeGoogle implements GooglePort {
 
   async fill(documentId: string, values: Record<string, string>) {
     this.filled.set(documentId, values);
-    return Object.fromEntries(
-      Object.keys(values).map((k) => [k, this.templateKeys.has(k) ? 1 : 0]),
-    );
+    const doc = this.docs.get(documentId);
+    if (!doc) {
+      return Object.fromEntries(
+        Object.keys(values).map((k) => [k, this.templateKeys.has(k) ? 1 : 0]),
+      );
+    }
+    const counts: Record<string, number> = {};
+    for (const [key, value] of Object.entries(values)) {
+      counts[key] = 0;
+      for (const segment of doc.segments) {
+        const parts = segment.text.split(`{{${key}}}`);
+        counts[key] += parts.length - 1;
+        segment.text = parts.join(value);
+      }
+    }
+    return counts;
   }
 
   addPdf(folderId: string, id: string, lines: string[], createdTime = "2026-08-30T10:00:00.000Z") {
@@ -105,7 +198,13 @@ export class FakeGoogle implements GooglePort {
     return pdf;
   }
 
-  async upload(input: { folderId: string; name: string; bytes: Uint8Array; mimeType: string }) {
+  async upload(input: {
+    folderId: string;
+    name: string;
+    bytes: Uint8Array;
+    mimeType: string;
+    convertTo?: string;
+  }) {
     const id = `upload-${this.uploads.length + 1}`;
     this.uploads.push({ ...input, id });
     this.pdfs.set(id, {
@@ -128,6 +227,16 @@ export class FakeGoogle implements GooglePort {
       createdTime: null,
       driveId: "shared",
     };
+  }
+
+  failUploads = 0;
+
+  async uploadPdf(folderId: string, name: string, bytes: Uint8Array) {
+    if (this.failUploads > 0) {
+      this.failUploads -= 1;
+      throw new Error("Drive upload failed");
+    }
+    return this.upload({ folderId, name, bytes, mimeType: "application/pdf" });
   }
 
   async download(id: string) {

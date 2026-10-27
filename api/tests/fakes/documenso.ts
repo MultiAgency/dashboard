@@ -29,8 +29,15 @@ export class FakeDocumenso implements EsignPort {
     return doc;
   }
 
+  builderFirst = false;
+
   sign(role: EsignRole, at: string) {
     const doc = this.last();
+    const second: EsignRole = this.builderFirst ? "representative" : "contractor";
+    const first: EsignRole = this.builderFirst ? "contractor" : "representative";
+    if (role === second && !doc.signedAt[first]) {
+      throw new Error(`fake documenso: the ${first} signs first`);
+    }
     doc.signedAt[role] = at;
     if (doc.signedAt.contractor && doc.signedAt.representative) doc.status = "completed";
   }
@@ -72,7 +79,7 @@ export class FakeDocumenso implements EsignPort {
     if (!doc) throw new Error(`fake documenso: no ${envelopeId}`);
     return {
       status: doc.status,
-      completedAt: doc.status === "completed" ? (doc.signedAt.representative ?? null) : null,
+      completedAt: doc.status === "completed" ? (doc.signedAt.contractor ?? null) : null,
       signers: doc.signers.map((s) => ({
         role: s.role,
         name: s.name,

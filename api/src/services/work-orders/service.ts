@@ -16,18 +16,22 @@ import {
   workOrderEvidence,
   workOrderIntegrations,
   workOrderJobLock,
+  workOrderOutbox,
   workOrderSignatures,
   workOrders,
 } from "../../db/schema";
 import { nearAccountsOf, type PluginContext } from "../../lib/organizations";
+import { rememberedLogin, rememberLogin } from "../builder-logins";
 import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
+import { atomicToNear } from "../payouts/policy";
+import type { FundingCheck } from "../payouts/service";
 import type { Project, ProjectDirectory } from "../project-directory";
 import type { DaoProposal } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
 import { createAutoApproval, trustViewOf } from "./auto-approval";
 import type { ConsistencyChecker } from "./consistency";
-import type { EsignPort } from "./documenso";
+import type { EsignPort, EsignRole } from "./documenso";
 import {
   codeIn,
   documentFields,
@@ -41,6 +45,7 @@ import { collectEvidence, summarizeActivity } from "./evidence";
 import type { GhRepoOwnership, GitHubPort } from "./github";
 import type { DriveFile, GooglePort } from "./google";
 import { type PriceFeed, type PriceQuote, USD, USD_DECIMALS, usdToTokens } from "./prices";
+import { type Progress, progressOf } from "./progress";
 import { assessRenewal, renewalCode } from "./renewal";
 import {
   buildContributions,
@@ -59,6 +64,7 @@ import {
   withSignaturePage,
 } from "./signing";
 import type { Summarizer } from "./summarizer";
+import { mappedValues, parseFieldMap, templateTags } from "./template-fields";
 import { addDays, dateOf, daysBetween, nextPeriod, startOfDay, UTC, windowOf } from "./time";
 import type {
   CollectedEvidence,
@@ -111,7 +117,13 @@ export type WorkOrderDeps = {
     readiness(
       organizationId: string,
       payee: string,
-    ): Promise<{ ready: boolean; reason: string | null }>;
+      amountAtomic?: string | bigint | null,
+      priceUsd?: string | null,
+    ): Promise<{ ready: boolean; code?: string | null; reason: string | null }>;
+    fundingCheck?(
+      organizationId: string,
+      needs: { near: bigint; priceUsd: string | null },
+    ): Promise<FundingCheck | null>;
     send(
       organizationId: string,
       input: { requestId: string; recipient: string; amount: string },
@@ -137,6 +149,7 @@ export type WorkOrderDeps = {
   summarizer?: Summarizer;
   consistency?: ConsistencyChecker | null;
   google?: GooglePort | null;
+  googleFor?: (organizationId: string) => Promise<GooglePort | null>;
   userEmail?: (userId: string) => Promise<string | null>;
   appOrigin?: string;
   timeZone?: string;
@@ -190,6 +203,7 @@ export type WorkOrderFields = {
   representativeName?: string | null;
   representativeEmail?: string | null;
   ipModel?: string | null;
+  customFields?: Record<string, string> | null;
 };
 
 type WorkOrderStatus = WorkOrderRow["status"];
@@ -222,6 +236,36 @@ const STUCK_PAYING_MS = 10 * 60_000;
 
 function payoutInFlight(last: AgentPayoutView | null | undefined): boolean {
   return !!last && IN_FLIGHT.includes(last.status);
+}
+
+const NOT_PAYING_NOW = new Set(["unavailable", "no_agent"]);
+const NEEDS_REVIEW = "needs_review";
+
+const nearAccountUrl = (account: string) =>
+  `https://nearblocks.io/address/${encodeURIComponent(account)}`;
+
+type FundingCode = "insufficient_balance" | "over_monthly_budget" | "over_cap";
+
+function fundingCodeOf(text: string): FundingCode | null {
+  if (/insufficient[_ ]balance/i.test(text)) return "insufficient_balance";
+  if (/over_monthly_budget|spend_budget_exceeded|month's budget/i.test(text))
+    return "over_monthly_budget";
+  if (/over_cap|cap per payout/i.test(text)) return "over_cap";
+  return null;
+}
+
+function emailHeaders(payload: string): { to: string | null; subject: string | null } {
+  try {
+    const parsed: unknown = JSON.parse(payload);
+    if (typeof parsed !== "object" || parsed === null) return { to: null, subject: null };
+    const { to, subject } = parsed as Record<string, unknown>;
+    return {
+      to: typeof to === "string" ? to : null,
+      subject: typeof subject === "string" ? subject : null,
+    };
+  } catch {
+    return { to: null, subject: null };
+  }
 }
 
 const REPO = /^[A-Za-z0-9-]{1,39}\/(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$/;
@@ -265,8 +309,9 @@ export function termsHash(
     | "contractorName"
     | "representativeName"
     | "ipModel"
-  >,
+  > & { customFields?: string | null },
 ): string {
+  const custom = customFieldsOf(row.customFields ?? null);
   const terms = {
     autoRenew: row.autoRenew,
     budgetAmount: row.budgetAmount,
@@ -285,6 +330,7 @@ export function termsHash(
     scope: row.scope ?? null,
     title: row.title,
     tokenId: row.tokenId,
+    ...(Object.keys(custom).length > 0 ? { customFields: custom } : {}),
   };
   return createHash("sha256").update(JSON.stringify(terms), "utf8").digest("hex");
 }
@@ -302,6 +348,27 @@ function parseList(raw: string): string[] {
   } catch {
     return [];
   }
+}
+
+export function customFieldsOf(raw: string | null): Record<string, string> {
+  const value = parseJson<unknown>(raw, {});
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => typeof v === "string" && v.trim() !== "")
+      .map(([k, v]): [string, string] => [k, String(v)])
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+}
+
+function customFieldsText(value: Record<string, string> | null | undefined): string | null {
+  const clean = Object.fromEntries(
+    Object.entries(value ?? {})
+      .map(([k, v]): [string, string] => [k.trim(), v.trim()])
+      .filter(([k, v]) => k && v)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+  return Object.keys(clean).length > 0 ? JSON.stringify(clean) : null;
 }
 
 function parseJson<T>(raw: string | null, fallback: T): T {
@@ -352,6 +419,17 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   const payoutTokenOf = (row: Pick<WorkOrderRow, "tokenId" | "payoutTokenId">) =>
     row.tokenId === USD ? NATIVE_TOKEN_ID : row.tokenId;
 
+  async function nearOf(
+    row: WorkOrderRow,
+    amount: bigint,
+  ): Promise<{ near: bigint; priceUsd: string | null }> {
+    if (row.tokenId !== USD) return { near: amount, priceUsd: null };
+    if (!deps.prices) throw badRequest("NO_PRICES", "USD prices aren't available on this server");
+    const decimals = getTokenMetadata(NATIVE_TOKEN_ID)?.decimals ?? 24;
+    const quote = await deps.prices.price(NATIVE_TOKEN_ID);
+    return { near: usdToTokens(amount, quote.priceUsd, decimals), priceUsd: quote.priceUsd };
+  }
+
   async function quotePayout(row: WorkOrderRow, request: CompensationRequestRow) {
     const tokenId = payoutTokenOf(row);
     if (row.tokenId !== USD) {
@@ -383,12 +461,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
   type Announcement = {
     request?: CompensationRequestRow | null;
-    payout?: { txUrl: string | null; near: string } | null;
+    payout?: { txUrl: string | null; near: string; accountUrl?: string | null } | null;
     reportMd?: string | null;
     mismatches?: string[] | null;
     renewal?: WorkOrderEvent["renewal"];
     note?: string | null;
     document?: string | null;
+    hold?: WorkOrderEvent["hold"];
   };
 
   async function contactsOf(row: WorkOrderRow, builder: BuilderProfile | null) {
@@ -460,6 +539,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           document: extra.document ?? row.documentUrl ?? row.preparedDocumentUrl ?? null,
           sign: row.esignBuilderUrl ?? null,
           countersign: row.esignRepresentativeUrl ?? null,
+          settings: absolute("/admin/settings#payouts"),
         },
         reportMd: extra.reportMd ?? null,
         terms:
@@ -482,6 +562,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         mismatches: extra.mismatches ?? null,
         note: extra.note ?? null,
         renewal: extra.renewal ?? null,
+        hold: extra.hold ?? null,
       };
       await deps.outbox.enqueue(row.organizationId, row.id, event);
     } catch (error) {
@@ -538,8 +619,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       ? ((error.data as { reason?: string } | undefined)?.reason ?? null)
       : null;
 
+  async function googleOf(organizationId: string): Promise<GooglePort | null> {
+    return (await deps.googleFor?.(organizationId)) ?? deps.google ?? null;
+  }
+
   async function fillGoogleDocument(row: WorkOrderRow): Promise<WorkOrderRow | null> {
-    const google = deps.google;
+    const google = await googleOf(row.organizationId);
     const settings = google ? await integrationOf(row.organizationId) : null;
     if (!google || !settings?.googleTemplateId || !settings.googleDocumentsFolderId) return null;
     const [project, agencyName, builder] = await Promise.all([
@@ -548,7 +633,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       deps.builders.get(row.builderNearAccount).catch(() => null),
     ]);
     const contacts = await contactsOf(row, builder);
-    const values = documentFields({
+    const fields = documentFields({
       code: row.code,
       project: project?.title ?? row.projectId,
       contractorName: row.contractorName ?? builder?.name ?? row.builderNearAccount,
@@ -566,16 +651,30 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       autoRenew: row.autoRenew,
       scope: row.scope,
     });
+    const { values, blank } = mappedValues({
+      fields,
+      map: parseFieldMap(settings.googleFieldMap),
+      custom: customFieldsOf(row.customFields),
+    });
     const copy = await google.copy(settings.googleTemplateId, {
       name: `Work Order ${row.code}: ${row.title}`,
       parentId: settings.googleDocumentsFolderId,
     });
     const occurrences = await google.fill(copy.id, values);
+    const leftover = await google
+      .read(copy.id)
+      .then((doc) => templateTags(doc).map((t) => t.tag))
+      .catch(() => [] as string[]);
+    const warnings = [
+      ...leftover.map((tag) => `Template tag {{${tag}}} wasn't filled`),
+      ...blank.map((label) => `"${label}" was left blank`),
+    ];
     const url = copy.webViewLink ?? `https://docs.google.com/document/d/${copy.id}/edit`;
     const updated = await update(row.id, {
       documentId: copy.id,
       preparedDocumentUrl: url,
       documentFields: JSON.stringify(requiredFields(values, occurrences)),
+      documentWarning: warnings.length > 0 ? warnings.join("; ") : null,
     });
     await recordGoogle(row.organizationId, null);
     return updated;
@@ -615,7 +714,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
   async function checkSignedDocuments(organizationId: string) {
     const counts = { checked: 0, attached: 0, mismatch: 0, unmatched: 0, error: 0 };
-    const google = deps.google;
+    const google = await googleOf(organizationId);
     const settings = google ? await integrationOf(organizationId) : null;
     if (!google || !settings?.googleSignedFolderId) return counts;
     let files: DriveFile[];
@@ -636,6 +735,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .filter((f) => f.outcome !== "error")
         .map((f) => f.fileId),
     );
+    for (const { fileId } of await db
+      .select({ fileId: workOrders.signedDriveFileId })
+      .from(workOrders)
+      .where(
+        and(eq(workOrders.organizationId, organizationId), isNotNull(workOrders.signedDriveFileId)),
+      )) {
+      if (fileId) done.add(fileId);
+    }
     let open = await db
       .select()
       .from(workOrders)
@@ -762,7 +869,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   async function prepareOfferDocument(row: WorkOrderRow) {
     let current = row;
     let pdf: Uint8Array;
-    const google = deps.google;
+    const google = await googleOf(row.organizationId);
     const settings = google ? await integrationOf(row.organizationId) : null;
     if (google && settings?.googleTemplateId && settings.googleDocumentsFolderId) {
       try {
@@ -832,37 +939,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const completedAt = now();
     const sha256 = sha256Bytes(final);
     const fileName = `Work Order ${row.code} (signed).pdf`;
-    let driveFileId: string | null = null;
-    let driveUrl: string | null = null;
-    const google = deps.google;
-    const settings = google ? await integrationOf(row.organizationId) : null;
-    if (google && settings?.googleSignedFolderId) {
-      try {
-        const uploaded = await google.upload({
-          folderId: settings.googleSignedFolderId,
-          name: fileName,
-          bytes: final,
-          mimeType: "application/pdf",
-        });
-        driveFileId = uploaded.id;
-        driveUrl = uploaded.webViewLink;
-        await recordDriveFile({
-          organizationId: row.organizationId,
-          fileId: uploaded.id,
-          name: fileName,
-          url: uploaded.webViewLink,
-          sha256,
-          workOrderId: row.id,
-          outcome: "attached",
-          note: method === "documenso" ? "Signed in Documenso" : "Signed in MultiAgency",
-        });
-      } catch (error) {
-        await recordGoogle(
-          row.organizationId,
-          `Couldn't save the signed PDF of ${row.code} to Drive: ${errorText(error)}`,
-        );
-      }
-    }
     await db.insert(workOrderDocuments).values({
       id: crypto.randomUUID(),
       workOrderId: row.id,
@@ -871,19 +947,24 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       pdf: toBase64(final),
       sha256,
       termsHash: offered.termsHash,
-      driveFileId,
-      driveUrl,
+      driveFileId: null,
+      driveUrl: null,
       createdAt: completedAt,
     });
-    const signed = await update(row.id, {
+    const stored = await update(row.id, {
       signatureMethod: method,
       signedAt: completedAt,
       signers: JSON.stringify(
         ordered.map((s) => ({ name: s.name, role: s.role, signedAt: s.signedAt.toISOString() })),
       ),
       documentSha256: sha256,
-      documentUrl: driveUrl,
+      documentUrl: null,
+      signedDriveFileId: null,
+      signedDriveUrl: null,
+      signedDriveError: null,
     });
+    const signed = await saveSignedToDrive(stored);
+    const driveUrl = signed.signedDriveUrl;
     const payload = await payloadOf(signed);
     await notifyManagers(signed, "work_order_signed", payload);
     await notifyBuilder(signed, "work_order_signed", payload);
@@ -891,6 +972,78 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       document: driveUrl ?? absolute(builderLink(row.id)),
     });
     return autoActivate(signed, true);
+  }
+
+  const driveAttempts = new Map<string, number>();
+  const DRIVE_RETRY_MS = 5 * 60_000;
+
+  async function saveSignedToDrive(row: WorkOrderRow): Promise<WorkOrderRow> {
+    if (row.signedDriveFileId || !row.signedAt) return row;
+    if (row.signatureMethod !== "in_app" && row.signatureMethod !== "documenso") return row;
+    const google = await googleOf(row.organizationId);
+    const settings = google ? await integrationOf(row.organizationId) : null;
+    const folderId = settings?.googleSignedFolderId ?? settings?.googleDocumentsFolderId ?? null;
+    if (!google || !folderId) return row;
+    const doc = await latestDocument(row.id, "signed");
+    if (!doc) return row;
+    if (doc.driveFileId) {
+      return update(row.id, {
+        signedDriveFileId: doc.driveFileId,
+        signedDriveUrl: doc.driveUrl ?? `https://drive.google.com/file/d/${doc.driveFileId}/view`,
+        signedDriveError: null,
+      });
+    }
+    driveAttempts.set(row.id, now().getTime());
+    const name = `Work Order ${row.code} - ${row.title} (signed).pdf`.replace(/[\\/]/g, "-");
+    try {
+      const uploaded = await google.uploadPdf(folderId, name, fromBase64(doc.pdf));
+      const url = uploaded.webViewLink ?? `https://drive.google.com/file/d/${uploaded.id}/view`;
+      await recordDriveFile({
+        organizationId: row.organizationId,
+        fileId: uploaded.id,
+        name,
+        url,
+        sha256: doc.sha256,
+        workOrderId: row.id,
+        outcome: "attached",
+        note: row.signatureMethod === "documenso" ? "Signed in Documenso" : "Signed in MultiAgency",
+      });
+      await db
+        .update(workOrderDocuments)
+        .set({ driveFileId: uploaded.id, driveUrl: url })
+        .where(eq(workOrderDocuments.id, doc.id));
+      driveAttempts.delete(row.id);
+      return update(row.id, {
+        signedDriveFileId: uploaded.id,
+        signedDriveUrl: url,
+        signedDriveError: null,
+        documentUrl: row.documentUrl ?? url,
+      });
+    } catch (error) {
+      const message = `Couldn't save the signed PDF of ${row.code} to Google Drive: ${errorText(error)}`;
+      await recordGoogle(row.organizationId, message);
+      return update(row.id, { signedDriveError: message });
+    }
+  }
+
+  async function retryDriveUploads(counts: Record<string, number>) {
+    const rows = await db
+      .select()
+      .from(workOrders)
+      .where(
+        and(
+          isNotNull(workOrders.signedAt),
+          isNull(workOrders.signedDriveFileId),
+          isNotNull(workOrders.signedDriveError),
+          inArray(workOrders.signatureMethod, ["in_app", "documenso"]),
+        ),
+      );
+    for (const row of rows) {
+      const last = driveAttempts.get(row.id);
+      if (last !== undefined && now().getTime() - last < DRIVE_RETRY_MS) continue;
+      const saved = await saveSignedToDrive(row).catch(() => row);
+      if (saved.signedDriveFileId) counts.driveUploads = (counts.driveUploads ?? 0) + 1;
+    }
   }
 
   function clientMeta(meta: { ip?: string | null; userAgent?: string | null } = {}) {
@@ -959,6 +1112,19 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const row = await mustRow(id);
     if (row.organizationId !== scope.organizationId) throw notFound();
     return row;
+  }
+
+  async function rememberBuilderLogin(
+    organizationId: string,
+    nearAccount: string,
+    login: string | null,
+    profile?: BuilderProfile | null,
+  ) {
+    if (!login) return;
+    const builder =
+      profile === undefined ? await deps.builders.get(nearAccount).catch(() => null) : profile;
+    if (!builder || builder.githubLogin) return;
+    await rememberLogin(db, organizationId, nearAccount, login, now());
   }
 
   async function mustRequest(id: string): Promise<CompensationRequestRow> {
@@ -1103,6 +1269,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         builder: null,
         representative: null,
         needsCountersign: false,
+        awaitingRepresentative: false,
         esign,
       };
     }
@@ -1118,6 +1285,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       builder,
       representative,
       needsCountersign: builder !== null && representative === null,
+      awaitingRepresentative:
+        !!esign?.sent &&
+        row.esignRepresentativeFirst &&
+        row.status === "offered" &&
+        representative === null,
       esign,
     };
   }
@@ -1156,14 +1328,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       .catch(() => row.organizationId);
     const signers = [
       {
-        role: "contractor" as const,
-        name: row.contractorName ?? builder?.name ?? row.builderNearAccount,
-        email: contacts.contractorEmail ?? "",
-      },
-      {
         role: "representative" as const,
         name: row.representativeName ?? agencyName,
         email: contacts.representativeEmail ?? "",
+      },
+      {
+        role: "contractor" as const,
+        name: row.contractorName ?? builder?.name ?? row.builderNearAccount,
+        email: contacts.contractorEmail ?? "",
       },
     ];
     const title = `Work Order ${row.code}: ${row.title}`;
@@ -1180,7 +1352,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         fileName: offered.fileName,
         pdf,
         subject: `Please sign Work Order ${row.code}`,
-        message: `${agencyName} sent you Work Order ${row.code} (${row.title}) to review and sign.`,
+        message: `${agencyName} signed Work Order ${row.code} (${row.title}) and sent it to you to review and sign.`,
         redirectUrl: absolute(builderLink(row.id)),
         signers: signers.map((signer) => ({ ...signer, ...boxes[signer.role] })),
       });
@@ -1190,6 +1362,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .where(eq(workOrderDocuments.id, offered.id));
       return await update(row.id, {
         esignEnvelopeId: sent.envelopeId,
+        esignRepresentativeFirst: true,
         esignBuilderUrl: sent.signingUrls.contractor ?? null,
         esignRepresentativeUrl: sent.signingUrls.representative ?? null,
         esignError: null,
@@ -1246,7 +1419,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (row.status !== "offered" && row.status !== "accepted") return row;
     let state: Awaited<ReturnType<EsignPort["status"]>>;
     try {
-      state = await esign.status(row.esignEnvelopeId);
+      state = await esign.status(row.esignEnvelopeId, {
+        representativeFirst: row.esignRepresentativeFirst,
+      });
     } catch (error) {
       return update(row.id, { esignError: `Couldn't check Documenso: ${errorText(error)}` });
     }
@@ -1272,23 +1447,38 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       return declined;
     }
     const existing = await signaturesOf(row.id, offered.sha256);
+    const recorded: EsignRole[] = [];
     for (const signer of state.signers) {
       if (!signer.signedAt || existing.some((s) => s.role === signer.role)) continue;
-      await db.insert(workOrderSignatures).values({
-        id: crypto.randomUUID(),
-        workOrderId: row.id,
-        documentSha256: offered.sha256,
-        role: signer.role,
-        name: signer.name,
-        email: signer.email,
-        userId: null,
-        nearAccount: signer.role === "contractor" ? row.builderNearAccount : null,
-        ip: null,
-        userAgent: null,
-        signedAt: new Date(signer.signedAt),
-      });
+      const inserted = await db
+        .insert(workOrderSignatures)
+        .values({
+          id: crypto.randomUUID(),
+          workOrderId: row.id,
+          documentSha256: offered.sha256,
+          role: signer.role,
+          name: signer.name,
+          email: signer.email,
+          userId: null,
+          nearAccount: signer.role === "contractor" ? row.builderNearAccount : null,
+          ip: null,
+          userAgent: null,
+          signedAt: new Date(signer.signedAt),
+        })
+        .onConflictDoNothing()
+        .returning({ id: workOrderSignatures.id });
+      if (inserted.length > 0) recorded.push(signer.role);
     }
     const contractor = state.signers.find((s) => s.role === "contractor");
+    if (
+      recorded.includes("representative") &&
+      current.status === "offered" &&
+      !contractor?.signedAt &&
+      state.status !== "completed"
+    ) {
+      await notifyBuilder(current, "work_order_offered", await payloadOf(current));
+      await announce(current, "work_order.offered");
+    }
     if (current.status === "offered" && contractor?.signedAt) {
       current = await update(row.id, {
         status: "accepted",
@@ -1343,13 +1533,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     builder: BuilderProfile | null,
     payeeNeedsConfirmation: boolean,
     needsCountersign = false,
+    awaitingRepresentative = false,
   ): string[] {
     if (row.status !== "draft" && row.status !== "offered" && row.status !== "accepted") return [];
     const out: string[] = [];
     if (row.status === "draft") {
       out.push("Offer it to the builder, or have the work order document e-signed");
     }
-    if (row.status === "offered") {
+    if (row.status === "offered" && awaitingRepresentative) {
+      out.push("Sign it in Documenso to send it to the builder");
+    } else if (row.status === "offered") {
       out.push("Waiting for the builder to accept the terms or sign the document");
     }
     if (row.status === "accepted" && row.acceptedTermsHash !== termsHash(row)) {
@@ -1463,6 +1656,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
                       status: p.status,
                       amount: p.amount,
                       txUrl: p.txUrl,
+                      accountUrl: nearAccountUrl(row.builderNearAccount),
                       reason: p.reason,
                     }
                   : null,
@@ -1495,11 +1689,29 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       : value;
   }
 
-  function builderView<T extends { signing: { esign: ReturnType<typeof esignOf> } }>(value: T): T {
+  function builderView<
+    T extends {
+      signing: { esign: ReturnType<typeof esignOf>; awaitingRepresentative: boolean };
+    },
+  >(value: T): T {
     const esign = value.signing.esign;
-    return esign
-      ? { ...value, signing: { ...value.signing, esign: { ...esign, representativeUrl: null } } }
-      : value;
+    const builderUrl = value.signing.awaitingRepresentative ? null : (esign?.builderUrl ?? null);
+    const progress =
+      "progress" in value && value.progress
+        ? { progress: { ...(value.progress as Progress), next: null, attention: [] } }
+        : {};
+    return {
+      ...value,
+      ...progress,
+      ...(esign
+        ? {
+            signing: {
+              ...value.signing,
+              esign: { ...esign, builderUrl, representativeUrl: null },
+            },
+          }
+        : {}),
+    };
   }
 
   async function view(row: WorkOrderRow, cache?: { projects?: Map<string, Project> }) {
@@ -1512,6 +1724,55 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const signing = await signingOf(row);
     const { committed, paid, remaining } = amountsOf(row, requests);
     const renewal = parseJson<RenewalAssessment | null>(row.renewalAssessment, null);
+    const blockers = activationBlockers(
+      row,
+      builder,
+      payee.needsConfirmation,
+      signing.needsCountersign,
+      signing.awaitingRepresentative,
+    );
+    const progress = progressOf({
+      status: row.status,
+      builderName: row.contractorName ?? builder?.name ?? row.builderNearAccount,
+      representativeName: row.representativeName,
+      createdAt: row.createdAt.toISOString(),
+      offeredAt: row.offeredAt?.toISOString() ?? null,
+      acceptedAt: row.acceptedAt?.toISOString() ?? null,
+      activatedAt: row.activatedAt?.toISOString() ?? null,
+      updatedAt: row.updatedAt.toISOString(),
+      periodStart: row.periodStart,
+      periodEnd: row.periodEnd,
+      today: today(),
+      signFirst:
+        row.esignEnvelopeId !== null
+          ? row.esignRepresentativeFirst
+          : row.status === "draft" && !!deps.esign,
+      builderSignedAt: signing.builder?.signedAt ?? null,
+      representativeSignedAt: signing.representative?.signedAt ?? null,
+      awaitingRepresentative: signing.awaitingRepresentative,
+      needsCountersign: signing.needsCountersign,
+      representativeUrl: signing.esign?.representativeUrl ?? null,
+      esignError: signing.esign?.error ?? null,
+      blockers,
+      payeeNeedsConfirmation: payee.needsConfirmation,
+      documentWarning: row.documentWarning,
+      driveError: row.signedDriveFileId ? null : row.signedDriveError,
+      renewalStatus: row.renewalStatus,
+      requests: requests.map((r) => ({
+        id: r.id,
+        code: `${row.code}-R${r.seq}`,
+        status: r.status,
+        requested: display(r.requestedAmount, row.tokenId),
+        approved: r.approvedAmount ? display(r.approvedAmount, row.tokenId) : null,
+        note: r.note,
+        submittedAt: r.submittedAt?.toISOString() ?? null,
+        decidedAt: r.decidedAt?.toISOString() ?? null,
+        paidAt: r.paidAt?.toISOString() ?? null,
+        blockedReason: r.autoPayBlockedReason,
+        blockedCode: r.autoPayBlockedCode,
+        createdAt: r.createdAt.toISOString(),
+      })),
+    });
     return {
       id: row.id,
       code: row.code,
@@ -1536,7 +1797,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         signedAt: row.signedAt?.toISOString() ?? null,
         signers: parseJson<Signer[]>(row.signers, []),
         preparedDocumentUrl: row.preparedDocumentUrl,
+        documentWarning: row.documentWarning,
+        driveUrl: row.signedDriveUrl,
+        driveError: row.signedDriveFileId ? null : row.signedDriveError,
       },
+      customFields: customFieldsOf(row.customFields),
       title: row.title,
       scope: row.scope,
       repos: parseList(row.repos),
@@ -1558,12 +1823,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       documentSha256: row.documentSha256,
       documentUrl: row.documentUrl,
       activatedAt: row.activatedAt?.toISOString() ?? null,
-      activationBlockers: activationBlockers(
-        row,
-        builder,
-        payee.needsConfirmation,
-        signing.needsCountersign,
-      ),
+      activationBlockers: blockers,
+      progress,
       signing,
       lastCollectedAt: row.lastCollectedAt?.toISOString() ?? null,
       waiting: requests.filter((r) => r.status === "submitted" || r.status === "approved").length,
@@ -1763,7 +2024,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const builder = await deps.builders.get(row.builderNearAccount).catch(() => null);
     const payee = await payeeOf(row);
     const signing = await signingOf(row);
-    return activationBlockers(row, builder, payee.needsConfirmation, signing.needsCountersign);
+    return activationBlockers(
+      row,
+      builder,
+      payee.needsConfirmation,
+      signing.needsCountersign,
+      signing.awaitingRepresentative,
+    );
   }
 
   async function autoActivate(row: WorkOrderRow, tellBlockers = false): Promise<WorkOrderRow> {
@@ -2112,6 +2379,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           payoutTokenId: NATIVE_TOKEN_ID,
           payoutAmount: payout.amount,
           autoPayBlockedReason: null,
+          autoPayBlockedCode: null,
           autoPayBlockedAt: null,
           updatedAt: now(),
         })
@@ -2137,10 +2405,57 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     await notifyManagers(row, "compensation_request_paid", payload);
     await announce(row, "request.payout_released", {
       request: paid,
-      payout: { near: row.builderNearAccount, txUrl: payout.txUrl },
+      payout: {
+        near: row.builderNearAccount,
+        txUrl: payout.txUrl,
+        accountUrl: nearAccountUrl(row.builderNearAccount),
+      },
       reportMd: (await requestView(paid, row)).reportMd,
     });
     return paid;
+  }
+
+  async function fundingHoldOf(
+    request: CompensationRequestRow,
+    row: WorkOrderRow,
+    reason: string,
+  ): Promise<WorkOrderEvent["hold"]> {
+    const payouts = deps.payouts;
+    let code = fundingCodeOf(reason);
+    let plain = reason;
+    if (payouts && request.payoutAmount) {
+      const check = await payouts
+        .readiness(
+          row.organizationId,
+          row.builderNearAccount,
+          request.payoutAmount,
+          request.priceUsd,
+        )
+        .catch(() => null);
+      const checked = check && !check.ready ? fundingCodeOf(check.code ?? "") : null;
+      if (check && checked) {
+        code = checked;
+        plain = check.reason ?? reason;
+      }
+    }
+    if (!code) return null;
+    const funding =
+      payouts?.fundingCheck && request.payoutAmount
+        ? await payouts
+            .fundingCheck(row.organizationId, {
+              near: BigInt(request.payoutAmount),
+              priceUsd: request.priceUsd,
+            })
+            .catch(() => null)
+        : null;
+    return {
+      code,
+      reason: plain,
+      balanceNear: funding?.balanceNear ?? null,
+      neededNear:
+        funding?.neededNear ??
+        (request.payoutAmount ? atomicToNear(BigInt(request.payoutAmount)) : null),
+    };
   }
 
   async function blockPayout(
@@ -2149,13 +2464,19 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     reason: string,
     note: string,
   ): Promise<CompensationRequestRow> {
+    const hold = await fundingHoldOf(await mustRequest(request.id), row, reason);
     const blocked = await updateUnpaid(request.id, {
       status: "approved",
       note,
       autoPayBlockedReason: reason,
+      autoPayBlockedCode: hold?.code ?? null,
       autoPayBlockedAt: request.autoPayBlockedAt ?? now(),
       autoPayTriedAt: now(),
     });
+    if (blocked.status === "approved" && hold && hold.code !== request.autoPayHoldNotified) {
+      await announce(row, "request.payout_blocked", { request: blocked, hold });
+      await updateUnpaid(request.id, { autoPayHoldNotified: hold.code });
+    }
     if (blocked.status === "approved" && !request.autoPayBlockedAt) {
       await notifyManagers(
         row,
@@ -2190,7 +2511,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       const review = await updateUnpaid(request.id, {
         status: "approved",
         note: `The automatic payout needs a person to check it: ${reason}. Check the payout agent's history before paying it again, or pay it through a DAO proposal.`,
-        autoPayBlockedReason: null,
+        autoPayBlockedReason: reason,
+        autoPayBlockedCode: NEEDS_REVIEW,
         autoPayBlockedAt: null,
       });
       await notifyManagers(
@@ -2209,6 +2531,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       status: "paying",
       note: null,
       autoPayBlockedReason: null,
+      autoPayBlockedCode: null,
       autoPayBlockedAt: null,
     });
   }
@@ -2352,7 +2675,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       try {
         const row = await mustRow(request.workOrderId);
         if (FINAL.includes(row.status)) {
-          await updateRequest(request.id, { autoPayBlockedReason: null, autoPayBlockedAt: null });
+          await updateRequest(request.id, {
+            autoPayBlockedReason: null,
+            autoPayBlockedCode: null,
+            autoPayBlockedAt: null,
+          });
           continue;
         }
         const [claimed] = await db
@@ -2429,6 +2756,35 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return request;
   }
 
+  async function offerRow(row: WorkOrderRow): Promise<WorkOrderRow> {
+    if (row.status !== "draft") {
+      throw badRequest(
+        "NOT_DRAFT",
+        `Work order ${row.code} is ${row.status}: only a draft can be offered`,
+      );
+    }
+    if (parseList(row.repos).length === 0) {
+      throw badRequest("NO_REPOS", "Add at least one GitHub repository before offering it");
+    }
+    if (!row.githubLogin) {
+      throw badRequest("NO_GITHUB_LOGIN", "Add the builder's GitHub login before offering it");
+    }
+    if (deps.esign) {
+      const contacts = await contactsOf(
+        row,
+        await deps.builders.get(row.builderNearAccount).catch(() => null),
+      );
+      if (!contacts.contractorEmail || !contacts.representativeEmail) {
+        throw badRequest(
+          "NO_EMAILS",
+          "Add the builder's and the representative's email: the signing request goes to both",
+        );
+      }
+    }
+    const prepared = await sendForSignature(await prepareOfferDocument(row));
+    return update(prepared.id, { status: "offered", offeredAt: now() });
+  }
+
   async function renew(
     parent: WorkOrderRow,
     assessment: RenewalAssessment,
@@ -2446,17 +2802,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .where(and(eq(workOrders.organizationId, parent.organizationId), eq(workOrders.code, code)))
         .limit(1);
       if (taken) throw badRequest("CODE_TAKEN", `Work order ${code} already exists`);
-      const base = {
-        ...parent,
-        id: crypto.randomUUID(),
-        code,
-        periodStart: period.periodStart,
-        periodEnd: period.periodEnd,
-      };
+      const id = crypto.randomUUID();
       const [inserted] = await tx
         .insert(workOrders)
         .values({
-          id: base.id,
+          id,
           code,
           organizationId: parent.organizationId,
           projectId: parent.projectId,
@@ -2477,20 +2827,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           representativeName: parent.representativeName,
           representativeEmail: parent.representativeEmail,
           ipModel: parent.ipModel,
-          signatureMethod: parent.signatureMethod,
-          signers: parent.signers,
-          signedAt: parent.signedAt,
+          customFields: parent.customFields,
           payeeConfirmedAt: parent.payeeConfirmedAt,
           payeeConfirmedBy: parent.payeeConfirmedBy,
-          status: "active",
-          offeredAt: parent.offeredAt,
-          acceptedAt: parent.acceptedAt,
-          acceptedByUserId: parent.acceptedByUserId,
-          acceptedTermsHash: termsHash(base),
-          documentSha256: parent.documentSha256,
-          documentUrl: parent.documentUrl,
-          activatedAt: new Date(startOfDay(period.periodStart, timeZone)),
-          activatedBy: decidedBy === "auto" ? "renewal" : parent.activatedBy,
+          status: "draft",
           renewedFrom: parent.id,
           renewalRoot: root,
           renewalSeq: seq,
@@ -2512,19 +2852,32 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .where(eq(workOrders.id, parent.id));
       return inserted!;
     });
+    const sent = await withSignatureLock(child.id, async () =>
+      offerRow(await draftDocument(child)),
+    ).catch(async (error: unknown) => {
+      const drafted = await mustRow(child.id);
+      return update(drafted.id, {
+        esignError: `The renewal wasn't sent for signature: ${errorText(error)}`,
+      });
+    });
     const payload = await payloadOf(parent, {
       nextCode: code,
       period: `${period.periodStart} → ${period.periodEnd}`,
     });
-    await notifyBuilder(child, "work_order_renewed", payload);
-    await notifyManagers(child, "work_order_renewed", payload);
-    await announce(parent, "work_order.renewed", {
+    await notifyBuilder(sent, "work_order_renewed", payload);
+    await notifyManagers(sent, "work_order_renewed", payload);
+    if (sent.status === "offered" && !sent.esignEnvelopeId) {
+      await notifyBuilder(sent, "work_order_offered", await payloadOf(sent));
+      await announce(sent, "work_order.offered");
+    }
+    await announce(sent, "work_order.renewed", {
       renewal: {
         assessment,
         renewedTo: { id: code, periodStart: period.periodStart, periodEnd: period.periodEnd },
+        unsent: sent.status === "draft" ? sent.esignError : null,
       },
     });
-    return child;
+    return sent;
   }
 
   async function assessIfDue(initial: WorkOrderRow): Promise<void> {
@@ -2676,6 +3029,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           decidedAt: now(),
           note: null,
           autoPayBlockedReason: null,
+          autoPayBlockedCode: null,
           autoPayBlockedAt: null,
           autoPayTriedAt: null,
           updatedAt: now(),
@@ -2747,36 +3101,91 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       .catch((error: unknown) => console.warn("[API] work order deliveries failed", error));
   }
 
-  return {
-    list: async (
-      scope: OrganizationScope,
-      input: { status?: WorkOrderStatus; projectId?: string; builderNearAccount?: string } = {},
-    ) => {
-      const conditions = [eq(workOrders.organizationId, scope.organizationId)];
-      if (input.status) conditions.push(eq(workOrders.status, input.status));
-      if (input.projectId) conditions.push(eq(workOrders.projectId, input.projectId));
-      if (input.builderNearAccount)
-        conditions.push(eq(workOrders.builderNearAccount, input.builderNearAccount));
-      const rows = await db
-        .select()
-        .from(workOrders)
-        .where(and(...conditions))
-        .orderBy(desc(workOrders.periodStart), desc(workOrders.createdAt));
-      const projects = new Map(
-        (
-          await directory
-            .forAgency(scope)
-            .list()
-            .catch(() => [])
-        ).map((p) => [p.id, p]),
+  async function list(
+    scope: OrganizationScope,
+    input: {
+      status?: WorkOrderStatus;
+      projectId?: string;
+      builderNearAccount?: string;
+      mayNeedAgency?: boolean;
+    } = {},
+  ) {
+    const conditions = [eq(workOrders.organizationId, scope.organizationId)];
+    if (input.status) conditions.push(eq(workOrders.status, input.status));
+    if (input.projectId) conditions.push(eq(workOrders.projectId, input.projectId));
+    if (input.builderNearAccount)
+      conditions.push(eq(workOrders.builderNearAccount, input.builderNearAccount));
+    if (input.mayNeedAgency) {
+      const open = db
+        .select({ id: compensationRequests.workOrderId })
+        .from(compensationRequests)
+        .where(inArray(compensationRequests.status, ["submitted", "approved"]));
+      conditions.push(
+        or(
+          inArray(workOrders.status, ["draft", "offered", "accepted", "active"]),
+          eq(workOrders.renewalStatus, "needs_approval"),
+          inArray(workOrders.id, open),
+        )!,
       );
-      return {
-        data: await Promise.all(rows.map(async (row) => adminView(await view(row, { projects })))),
-      };
+    }
+    const rows = await db
+      .select()
+      .from(workOrders)
+      .where(and(...conditions))
+      .orderBy(desc(workOrders.periodStart), desc(workOrders.createdAt));
+    const projects = new Map(
+      (
+        await directory
+          .forAgency(scope)
+          .list()
+          .catch(() => [])
+      ).map((p) => [p.id, p]),
+    );
+    return {
+      data: await Promise.all(rows.map(async (row) => adminView(await view(row, { projects })))),
+    };
+  }
+
+  return {
+    list,
+
+    needsYouCount: async (scope: OrganizationScope) => {
+      const { data } = await list(scope, { mayNeedAgency: true });
+      return { count: data.filter((workOrder) => workOrder.progress.needsYou).length };
     },
 
     get: async (scope: OrganizationScope, input: { id: string }) =>
       adminView(await detail(await syncSignatures(await ownRow(scope, input.id)))),
+
+    activity: async (scope: OrganizationScope, input: { id: string }) => {
+      const row = await ownRow(scope, input.id);
+      const rows = await db
+        .select()
+        .from(workOrderOutbox)
+        .where(
+          and(
+            eq(workOrderOutbox.organizationId, row.organizationId),
+            eq(workOrderOutbox.workOrderId, row.id),
+          ),
+        )
+        .orderBy(asc(workOrderOutbox.createdAt));
+      return {
+        emails: rows.map((r) => {
+          const email = emailHeaders(r.payload);
+          return {
+            id: r.id,
+            eventType: r.eventType,
+            to: email.to,
+            subject: email.subject,
+            createdAt: r.createdAt.toISOString(),
+            deliveredAt: r.deliveredAt?.toISOString() ?? null,
+            lastError: r.lastError,
+          };
+        }),
+      };
+    },
+
+    nextCode: async (scope: OrganizationScope) => ({ code: await nextCode(scope.organizationId) }),
 
     create: async (scope: OrganizationScope, input: WorkOrderFields) => {
       const code = input.code?.trim() || (await nextCode(scope.organizationId));
@@ -2794,7 +3203,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         githubLogin:
           optionalText(input.githubLogin)?.replace(/^@/, "").toLowerCase() ??
           builder.githubLogin?.toLowerCase() ??
-          null,
+          (await rememberedLogin(db, scope.organizationId, input.builderNearAccount)),
         contractorEmail: optionalText(input.contractorEmail)?.toLowerCase() ?? null,
         representativeEmail: optionalText(input.representativeEmail)?.toLowerCase() ?? null,
       };
@@ -2826,10 +3235,17 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           representativeName: optionalText(fields.representativeName),
           representativeEmail: fields.representativeEmail,
           ipModel: optionalText(fields.ipModel),
+          customFields: customFieldsText(fields.customFields),
           status: "draft",
           createdBy: scope.actorId,
         })
         .returning();
+      await rememberBuilderLogin(
+        scope.organizationId,
+        fields.builderNearAccount,
+        fields.githubLogin,
+        builder,
+      );
       return adminView(await view(await draftDocument(row!)));
     },
 
@@ -2893,6 +3309,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         }
         const patch = {
           ...next,
+          customFields:
+            input.customFields === undefined
+              ? row.customFields
+              : customFieldsText(input.customFields),
           repos: JSON.stringify(next.repos),
           projectTitle: project.title,
           projectSlug: project.slug,
@@ -2921,10 +3341,18 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
                 documentUrl: null,
                 documentId: null,
                 documentFields: null,
+                documentWarning: null,
               }
             : {}),
           ...(payeeChanged ? { payeeConfirmedAt: null, payeeConfirmedBy: null } : {}),
         });
+        if (next.githubLogin && next.githubLogin !== row.githubLogin) {
+          await rememberBuilderLogin(
+            scope.organizationId,
+            next.builderNearAccount,
+            next.githubLogin,
+          );
+        }
         return adminView(await view(changed ? await draftDocument(updated) : updated));
       });
     },
@@ -2948,16 +3376,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       }
       const keepsAcceptance = row.status === "accepted" && row.acceptedTermsHash === termsHash(row);
       const next = { ...row, githubLogin: login };
-      return adminView(
-        await view(
-          await autoActivate(
-            await update(row.id, {
-              githubLogin: login,
-              ...(keepsAcceptance ? { acceptedTermsHash: termsHash(next) } : {}),
-            }),
-          ),
-        ),
-      );
+      const updated = await update(row.id, {
+        githubLogin: login,
+        ...(keepsAcceptance ? { acceptedTermsHash: termsHash(next) } : {}),
+      });
+      await rememberBuilderLogin(scope.organizationId, row.builderNearAccount, login);
+      return adminView(await view(await autoActivate(updated)));
     },
 
     prepareDocument: async (scope: OrganizationScope, input: { id: string }) => {
@@ -2972,6 +3396,19 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     },
 
     checkDrive: async (scope: OrganizationScope) => checkSignedDocuments(scope.organizationId),
+
+    saveSignedToDrive: async (scope: OrganizationScope, input: { id: string }) => {
+      const row = await ownRow(scope, input.id);
+      if (!row.signedAt || row.signedDriveFileId) return adminView(await view(row));
+      if (!(await googleOf(row.organizationId))) {
+        throw badRequest("GOOGLE_FAILED", "Connect Google Drive first");
+      }
+      const saved = await saveSignedToDrive(row);
+      if (!saved.signedDriveFileId && saved.signedDriveError) {
+        throw badRequest("GOOGLE_FAILED", saved.signedDriveError);
+      }
+      return adminView(await view(saved));
+    },
 
     requestPayeeConfirmation: async (scope: OrganizationScope, input: { id: string }) => {
       const row = await ownRow(scope, input.id);
@@ -2992,35 +3429,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     offer: async (scope: OrganizationScope, input: { id: string }) => {
       await ownRow(scope, input.id);
       return withSignatureLock(input.id, async () => {
-        const row = await ownRow(scope, input.id);
-        if (row.status !== "draft") {
-          throw badRequest(
-            "NOT_DRAFT",
-            `Work order ${row.code} is ${row.status}: only a draft can be offered`,
-          );
+        const offered = await offerRow(await ownRow(scope, input.id));
+        if (!offered.esignEnvelopeId) {
+          await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
+          await announce(offered, "work_order.offered");
         }
-        if (parseList(row.repos).length === 0) {
-          throw badRequest("NO_REPOS", "Add at least one GitHub repository before offering it");
-        }
-        if (!row.githubLogin) {
-          throw badRequest("NO_GITHUB_LOGIN", "Add the builder's GitHub login before offering it");
-        }
-        if (deps.esign) {
-          const contacts = await contactsOf(
-            row,
-            await deps.builders.get(row.builderNearAccount).catch(() => null),
-          );
-          if (!contacts.contractorEmail || !contacts.representativeEmail) {
-            throw badRequest(
-              "NO_EMAILS",
-              "Add the builder's and the representative's email: the signing request goes to both",
-            );
-          }
-        }
-        const prepared = await sendForSignature(await prepareOfferDocument(row));
-        const offered = await update(prepared.id, { status: "offered", offeredAt: now() });
-        await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
-        await announce(offered, "work_order.offered");
         return adminView(await view(offered));
       });
     },
@@ -3185,6 +3598,93 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         input.confirmEvidenceIds,
       );
       return requestView(approved, row);
+    },
+
+    payoutReadiness: async (
+      scope: OrganizationScope,
+      input: { requestId: string; amount: string },
+    ) => {
+      const request = await mustRequest(input.requestId);
+      const row = await ownRow(scope, request.workOrderId);
+      const payouts = deps.payouts;
+      const result = (
+        code: string | null,
+        reason: string | null,
+        extra: { near?: string; balanceNear?: string | null; priceUsd?: string | null } = {},
+      ) => ({
+        ready: code === null,
+        code,
+        reason,
+        near: extra.near ?? null,
+        balanceNear: extra.balanceNear ?? null,
+        priceUsd: extra.priceUsd ?? null,
+      });
+      if (!payouts) return result("unavailable", "Automatic payouts aren't set up");
+      if (payoutTokenOf(row) !== NATIVE_TOKEN_ID) {
+        return result(
+          "unavailable",
+          "Automatic payouts pay in NEAR; this work order pays in another token",
+        );
+      }
+      let priced: { near: bigint; priceUsd: string | null };
+      try {
+        priced = await nearOf(row, BigInt(input.amount));
+      } catch (error) {
+        return result("unreachable", `Couldn't get the NEAR price: ${errorText(error)}`);
+      }
+      const near = atomicToNear(priced.near);
+      const check = await payouts.readiness(
+        row.organizationId,
+        row.builderNearAccount,
+        priced.near,
+        priced.priceUsd,
+      );
+      if (check.ready) return result(null, null, { near, priceUsd: priced.priceUsd });
+      const code = check.code ?? (check.reason === NO_AGENT ? "no_agent" : "unreachable");
+      const funding =
+        !NOT_PAYING_NOW.has(code) && payouts.fundingCheck
+          ? await payouts
+              .fundingCheck(row.organizationId, { near: priced.near, priceUsd: priced.priceUsd })
+              .catch(() => null)
+          : null;
+      return result(code, check.reason ?? "The payout agent isn't ready", {
+        near,
+        balanceNear: funding?.balanceNear ?? null,
+        priceUsd: priced.priceUsd,
+      });
+    },
+
+    payoutCoverage: async (scope: OrganizationScope, input: { id: string }) => {
+      const row = await ownRow(scope, input.id);
+      const payouts = deps.payouts;
+      if (!payouts?.fundingCheck || FINAL.includes(row.status)) return null;
+      if (payoutTokenOf(row) !== NATIVE_TOKEN_ID) return null;
+      const { paid } = amountsOf(row, await requestsOf(row.id));
+      const budget = BigInt(row.budgetAmount);
+      const unpaid = budget > paid ? budget - paid : 0n;
+      if (unpaid <= 0n) return null;
+      const priced = await nearOf(row, unpaid).catch(() => null);
+      if (!priced) return null;
+      const check = await payouts
+        .fundingCheck(row.organizationId, { near: priced.near, priceUsd: priced.priceUsd })
+        .catch(() => null);
+      if (!check) return null;
+      const overMonthly =
+        check.monthlyNeededUsd !== null &&
+        check.monthlyRemainingUsd !== null &&
+        Number(check.monthlyNeededUsd) > Number(check.monthlyRemainingUsd);
+      return {
+        covered: !check.lowBalance && !overMonthly,
+        unpaid: display(unpaid, row.tokenId),
+        balanceNear: check.balanceNear,
+        neededNear: check.neededNear,
+        shortfallNear: check.shortfallNear,
+        lowBalance: check.lowBalance,
+        neededUsd: check.monthlyNeededUsd,
+        monthlyBudgetUsd: check.monthlyBudgetUsd,
+        monthlyRemainingUsd: check.monthlyRemainingUsd,
+        overMonthly,
+      };
     },
 
     fundingNeeds: async (scope: OrganizationScope) => {
@@ -3504,16 +4004,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .where(inArray(workOrders.builderNearAccount, accounts))
         .orderBy(desc(workOrders.periodStart));
       const visible = rows.filter((r) => r.status !== "draft");
-      return {
-        data: await Promise.all(
-          visible.map(async (row) => ({
-            ...builderView(await view(row)),
-            agencyName: await deps
-              .organizationName(row.organizationId)
-              .catch(() => row.organizationId),
-          })),
-        ),
-      };
+      const data = await Promise.all(
+        visible.map(async (row) => ({
+          ...builderView(await view(row)),
+          agencyName: await deps
+            .organizationName(row.organizationId)
+            .catch(() => row.organizationId),
+        })),
+      );
+      return { data: data.filter((wo) => !wo.signing.awaitingRepresentative) };
     },
 
     mineGet: async (context: PluginContext, input: { id: string }) => {
@@ -3544,6 +4043,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       requireBuilder(context, row);
       if (row.status !== "offered")
         throw badRequest("NOT_OFFERED", `Work order ${row.code} isn't waiting for your signature`);
+      if (row.esignEnvelopeId) {
+        throw badRequest(
+          "SIGN_IN_DOCUMENSO",
+          (await signingOf(row)).awaitingRepresentative
+            ? `Work order ${row.code} isn't ready for your signature yet: ${row.representativeName ?? "the agency"} signs it first`
+            : `Sign work order ${row.code} with the Documenso link in your email or on the work order page`,
+        );
+      }
       const name = input.name.trim();
       if (name.length < 2) throw badRequest("NAME_REQUIRED", "Type your full name to sign");
       const offered = await latestDocument(row.id, "offered");
@@ -3764,6 +4271,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         counts.autoManual = auto.manual;
         await followUpPayouts(counts);
         await retryBlockedPayouts(counts);
+        await retryDriveUploads(counts);
         await deliverOutbox();
       } finally {
         await releaseLock(holder, TICK_LOCK_ID);

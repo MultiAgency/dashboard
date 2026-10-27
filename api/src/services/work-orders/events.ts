@@ -18,6 +18,7 @@ export const WORK_ORDER_EVENT_TYPES = [
   "request.awaiting_approval",
   "request.approved",
   "request.payout_released",
+  "request.payout_blocked",
   "request.needs_review",
 ] as const;
 
@@ -64,7 +65,7 @@ export type WorkOrderEvent = {
     approved: string | null;
     note: string | null;
   };
-  payout: null | { txUrl: string | null; near: string };
+  payout: null | { txUrl: string | null; near: string; accountUrl?: string | null };
   links: {
     contractor: string | null;
     review: string | null;
@@ -73,6 +74,7 @@ export type WorkOrderEvent = {
     document: string | null;
     sign?: string | null;
     countersign?: string | null;
+    settings?: string | null;
   };
   reportMd: string | null;
   terms: WorkOrderEventTerms | null;
@@ -81,6 +83,13 @@ export type WorkOrderEvent = {
   renewal: null | {
     assessment: RenewalAssessment;
     renewedTo: { id: string; periodStart: string; periodEnd: string } | null;
+    unsent?: string | null;
+  };
+  hold?: null | {
+    code: string;
+    reason: string;
+    balanceNear: string | null;
+    neededNear: string | null;
   };
 };
 

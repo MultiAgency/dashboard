@@ -1,7 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
   Button,
   Card,
   CardAction,
@@ -35,6 +39,7 @@ import {
   adminWorkOrdersQueryKey,
   payoutAgentQueryKey,
   payoutAgentQueryOptions,
+  payoutReadinessQueryOptions,
 } from "@/lib/queries";
 import { ReportMarkdown } from "./report-markdown";
 import { RequestTrust } from "./request-trust";
@@ -44,14 +49,20 @@ import {
   type WorkOrderDetail,
 } from "./work-order-status";
 
+const QUIET_READINESS = ["unavailable", "no_agent"];
+
 export function RequestsPanel({
   workOrder,
   canManage,
   hasTreasury,
+  approveRequestId = null,
+  onApproveOpened,
 }: {
   workOrder: WorkOrderDetail;
   canManage: boolean;
   hasTreasury: boolean;
+  approveRequestId?: string | null;
+  onApproveOpened?: () => void;
 }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
@@ -111,6 +122,8 @@ export function RequestsPanel({
                 workOrder={workOrder}
                 canManage={canManage}
                 hasTreasury={hasTreasury}
+                approve={approveRequestId === request.id}
+                onApproveOpened={onApproveOpened}
               />
             ))
         )}
@@ -124,15 +137,26 @@ function RequestItem({
   workOrder,
   canManage,
   hasTreasury,
+  approve = false,
+  onApproveOpened,
 }: {
   request: CompensationRequest;
   workOrder: WorkOrderDetail;
   canManage: boolean;
   hasTreasury: boolean;
+  approve?: boolean;
+  onApproveOpened?: () => void;
 }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState<null | "approve" | "reject" | "proposal">(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!approve) return;
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (canManage && request.status === "submitted") setOpen("approve");
+    onApproveOpened?.();
+  }, [approve, canManage, request.status, onApproveOpened]);
   const payoutAgent = useQuery({ ...payoutAgentQueryOptions(apiClient), enabled: canManage }).data;
   const autoPays =
     !!payoutAgent?.ready && (workOrder.tokenId === "usd" || workOrder.tokenId === "near");
@@ -164,7 +188,11 @@ function RequestItem({
   });
 
   return (
-    <section className="flex flex-col gap-3 border p-4" aria-label={request.code}>
+    <section
+      ref={sectionRef}
+      className="flex scroll-mt-4 flex-col gap-3 border p-4"
+      aria-label={request.code}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium tabular-nums">{request.code}</span>
         <RequestStatusBadge status={request.status} />
@@ -248,16 +276,16 @@ function RequestItem({
           <span className="text-sm text-muted-foreground">
             {request.agentPayout.status === "paid" ? "Paid " : "Paying "}
             {formatTokenAmount(request.agentPayout.amount, "near")} through the payout agent
-            {request.agentPayout.txUrl ? (
+            {request.agentPayout.txUrl || request.agentPayout.accountUrl ? (
               <>
                 {" · "}
                 <a
-                  href={request.agentPayout.txUrl}
+                  href={request.agentPayout.txUrl ?? request.agentPayout.accountUrl ?? undefined}
                   target="_blank"
                   rel="noreferrer"
                   className="underline underline-offset-4"
                 >
-                  transaction
+                  {request.agentPayout.txUrl ? "transaction" : "see it on NearBlocks"}
                 </a>
               </>
             ) : null}
@@ -326,6 +354,20 @@ function ApproveForm({
   }
   const over = base && BigInt(base) > BigInt(workOrder.remainingAmount);
   const blocked = needsEvidenceConfirm && !withoutEvidence;
+  const quotable = base && !error && !over && BigInt(base) > 0n ? base : "";
+  const [quoted, setQuoted] = useState(quotable);
+  useEffect(() => {
+    const timer = setTimeout(() => setQuoted(quotable), 400);
+    return () => clearTimeout(timer);
+  }, [quotable]);
+  const readiness = useQuery({
+    ...payoutReadinessQueryOptions(apiClient, request.id, quoted),
+    enabled: !!quoted && (workOrder.tokenId === "usd" || workOrder.tokenId === "near"),
+  }).data;
+  const hold =
+    readiness && !readiness.ready && readiness.code && !QUIET_READINESS.includes(readiness.code)
+      ? readiness
+      : null;
   const approve = useMutation({
     mutationFn: () =>
       apiClient.workOrders.approveRequest({
@@ -365,7 +407,9 @@ function ApproveForm({
         <DialogDescription>
           Up to {formatTokenAmount(workOrder.remainingAmount, workOrder.tokenId)} remains.{" "}
           {autoPays
-            ? "Approving pays it right away in NEAR through your payout agent."
+            ? hold
+              ? "Approving queues it for your payout agent, which pays it in NEAR."
+              : "Approving pays it right away in NEAR through your payout agent."
             : "Approving reserves it; the money moves once the DAO approves the transfer proposal."}
         </DialogDescription>
       </DialogHeader>
@@ -382,6 +426,29 @@ function ApproveForm({
           <p className="text-sm text-destructive">
             {error || "That's more than the remaining budget."}
           </p>
+        )}
+        {hold && quoted === quotable && (
+          <Alert>
+            <AlertTitle>Approving won't pay right away</AlertTitle>
+            <AlertDescription className="flex flex-col gap-3">
+              <span>
+                {hold.code === "insufficient_balance" && hold.balanceNear && hold.near
+                  ? `The agent holds ${hold.balanceNear} NEAR and this needs ${hold.near} NEAR.`
+                  : `${(hold.reason ?? "The payout agent isn't ready").replace(/\.$/, "")}.`}{" "}
+                You can still approve: it's queued and paid automatically once the agent can cover
+                it.
+              </span>
+              <span className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/admin/settings" hash="payouts">
+                    {hold.code === "insufficient_balance"
+                      ? "Fund the agent"
+                      : "Open the payout settings"}
+                  </Link>
+                </Button>
+              </span>
+            </AlertDescription>
+          </Alert>
         )}
         {pending.length > 0 && (
           <fieldset className="flex flex-col gap-2">

@@ -1,6 +1,7 @@
 import { Link, useMatchRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { WorkOrdersNeedsYouBadge } from "@/components/work-orders/needs-you-badge";
 import { useWorkspaceView } from "@/hooks/use-workspace-view";
 import {
   type NavItem,
@@ -9,6 +10,8 @@ import {
   type WorkspaceView,
   workspaceNavigation,
 } from "@/lib/navigation";
+
+const WORK_ORDERS = "/admin/work-orders";
 
 const VIEW_LABELS: Record<WorkspaceView, string> = { agency: "Agency", client: "Client" };
 
@@ -86,6 +89,7 @@ export function AdminSidebar() {
                 >
                   <Link to={item.to} aria-current={active ? "page" : undefined}>
                     {item.label}
+                    {item.to === WORK_ORDERS && <WorkOrdersNeedsYouBadge />}
                   </Link>
                 </Button>
               );
