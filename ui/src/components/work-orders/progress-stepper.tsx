@@ -1,6 +1,6 @@
 import { CheckIcon, CircleIcon, WarningIcon } from "@phosphor-icons/react";
 import { cn } from "cn";
-import { shortDate } from "@/lib/format-date";
+import { periodRange, shortDate } from "@/lib/format-date";
 import type { WorkOrderDetail } from "./work-order-status";
 
 export type WorkOrderProgress = WorkOrderDetail["progress"];
@@ -38,10 +38,13 @@ function StepIcon({ state }: { state: Step["state"] }) {
   return <span className="size-6 shrink-0 rounded-full border-2 border-border bg-background" />;
 }
 
+const PERIOD = /^(\d{4}-\d{2}-\d{2}) → (\d{4}-\d{2}-\d{2})$/;
+
 function caption(step: Step): string | null {
   if (step.at) return shortDate(step.at);
-  if (step.state === "current" || step.state === "blocked") return step.detail;
-  return null;
+  if (step.state !== "current" && step.state !== "blocked") return null;
+  const period = step.detail?.match(PERIOD);
+  return period?.[1] && period[2] ? periodRange(period[1], period[2]) : step.detail;
 }
 
 export function ProgressStepper({ progress }: { progress: WorkOrderProgress }) {
@@ -70,10 +73,10 @@ export function ProgressStepper({ progress }: { progress: WorkOrderProgress }) {
               <span className="relative z-10 md:flex md:justify-center">
                 <StepIcon state={step.state} />
               </span>
-              <span className="flex min-w-0 flex-col md:items-center md:px-1">
+              <span className="flex min-w-0 flex-col md:w-full md:items-center md:px-1">
                 <span
                   className={cn(
-                    "text-sm leading-6 md:text-xs md:leading-4",
+                    "text-sm leading-6 md:text-balance md:text-xs md:leading-4",
                     active ? "font-medium text-foreground" : "text-muted-foreground",
                     step.state === "blocked" && "text-destructive",
                   )}
@@ -82,7 +85,10 @@ export function ProgressStepper({ progress }: { progress: WorkOrderProgress }) {
                   <span className="sr-only"> ({STATE_LABEL[step.state]})</span>
                 </span>
                 {text && (
-                  <span className="truncate text-xs text-muted-foreground tabular-nums md:max-w-full">
+                  <span
+                    title={step.detail ?? undefined}
+                    className="truncate text-xs text-muted-foreground tabular-nums md:w-full"
+                  >
                     {text}
                   </span>
                 )}
