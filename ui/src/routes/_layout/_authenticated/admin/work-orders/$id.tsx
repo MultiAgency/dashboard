@@ -55,11 +55,8 @@ import {
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
-import {
-  adminWorkOrderQueryOptions,
-  adminWorkOrdersQueryKey,
-  payoutCoverageQueryOptions,
-} from "@/lib/queries";
+import { warnIfPayoutsUncovered } from "@/lib/payout-coverage";
+import { adminWorkOrderQueryOptions, adminWorkOrdersQueryKey } from "@/lib/queries";
 
 const WORK_ORDER_TABS = ["overview", "documents", "payouts", "evidence", "activity"] as const;
 type WorkOrderTab = (typeof WORK_ORDER_TABS)[number];
@@ -131,18 +128,7 @@ function WorkOrderPage() {
         collect: "Evidence collected from GitHub",
       };
       toast.success(done[action]);
-      if (action === "offer") {
-        const coverage = await queryClient
-          .fetchQuery(payoutCoverageQueryOptions(apiClient, id))
-          .catch(() => null);
-        if (coverage && !coverage.covered) {
-          toast.warning(
-            coverage.lowBalance
-              ? `The payout agent can't cover this work order yet: it holds ${coverage.balanceNear ?? "too little"} NEAR and the budget needs ≈${coverage.neededNear} NEAR. Fund the agent before payouts are due.`
-              : `This work order's budget is more than the $${coverage.monthlyRemainingUsd} left in this month's payout budget.`,
-          );
-        }
-      }
+      if (action === "offer") await warnIfPayoutsUncovered(queryClient, apiClient, id);
     },
     onError: (err: Error) => toast.error(err.message || "Something went wrong"),
   });

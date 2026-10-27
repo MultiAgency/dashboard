@@ -21,6 +21,7 @@ import { type ApiClient, useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import { nextCycle } from "@/lib/budget-periods";
 import { baseToDecimal, tokenSymbol } from "@/lib/format-amount";
+import { warnIfPayoutsUncovered } from "@/lib/payout-coverage";
 import { openPendingTab, type PendingTab } from "@/lib/pending-tab";
 import {
   adminContributorsListQueryOptions,
@@ -308,6 +309,7 @@ function WorkOrderFields({
           tab?.close();
           toast.success(`${offered.code} created and offered to the builder`);
         }
+        await warnIfPayoutsUncovered(queryClient, apiClient, offered.id);
         return offered;
       } catch (err) {
         tab?.close();
