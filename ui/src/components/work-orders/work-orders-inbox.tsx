@@ -45,7 +45,7 @@ import {
   inboxCounts,
   isInboxView,
   relativeSince,
-  waitingLabel,
+  waitingPhrase,
 } from "@/lib/work-orders-inbox";
 
 const WAITING_DOT: Record<NonNullable<InboxWaiting> | "none", string> = {
@@ -129,11 +129,7 @@ function NextAction({ workOrder }: { workOrder: WorkOrder }) {
 }
 
 function waitingText(workOrder: WorkOrder): string {
-  const { waitingOn } = workOrder.progress;
-  if (waitingOn === "you") return "Your turn";
-  if (waitingOn === null) return "Done";
-  if (waitingOn === "system") return "Automatic";
-  return `Waiting on ${waitingLabel(waitingOn, builderName(workOrder))}`;
+  return waitingPhrase(workOrder.progress.waitingOn, builderName(workOrder)) ?? "Done";
 }
 
 function NextStep({ workOrder }: { workOrder: WorkOrder }) {

@@ -1,13 +1,8 @@
-export type SetupState = "ok" | "missing" | "warning" | "optional";
+import type { ApiClient } from "./api";
 
-export type SetupCheck = {
-  key: string;
-  label: string;
-  state: SetupState;
-  detail: string | null;
-  fixHref: string | null;
-  required: boolean;
-};
+export type SetupCheck = Awaited<ReturnType<ApiClient["workOrders"]["setupStatus"]>>[number];
+
+export type SetupState = SetupCheck["state"];
 
 export function setupSummary(checks: SetupCheck[]) {
   const counted = checks.filter((c) => c.required || c.state !== "optional");

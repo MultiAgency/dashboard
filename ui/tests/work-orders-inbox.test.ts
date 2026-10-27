@@ -9,7 +9,7 @@ import {
   isInboxView,
   relativeSince,
   sortInbox,
-  waitingLabel,
+  waitingPhrase,
 } from "@/lib/work-orders-inbox";
 
 function item(
@@ -118,14 +118,14 @@ describe("filterInbox", () => {
   });
 });
 
-describe("waitingLabel", () => {
+describe("waitingPhrase", () => {
   test("names who the next step waits on", () => {
-    expect(waitingLabel("you", "Carol")).toBe("You");
-    expect(waitingLabel("builder", "Carol")).toBe("Carol");
-    expect(waitingLabel("builder", null)).toBe("Builder");
-    expect(waitingLabel("system", "Carol")).toBe("Automatic");
-    expect(waitingLabel("dao", "Carol")).toBe("DAO");
-    expect(waitingLabel(null, "Carol")).toBe("—");
+    expect(waitingPhrase("you", "Carol")).toBe("Waiting on you");
+    expect(waitingPhrase("builder", "Carol")).toBe("Waiting on Carol");
+    expect(waitingPhrase("builder", null)).toBe("Waiting on the builder");
+    expect(waitingPhrase("system", "Carol")).toBe("Automatic");
+    expect(waitingPhrase("dao", "Carol")).toBe("Waiting on the DAO");
+    expect(waitingPhrase(null, "Carol")).toBeNull();
   });
 });
 

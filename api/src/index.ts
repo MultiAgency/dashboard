@@ -173,7 +173,10 @@ export default createPlugin.withPlugins<PluginsClient>()({
       const organizationDirectory = authPool
         ? authDatabaseDirectory(authPool)
         : unconfiguredDirectory();
-      const appOrigin = config.secrets.APP_ORIGIN ?? config.variables.appOrigin;
+      const appOrigin = (config.secrets.APP_ORIGIN ?? config.variables.appOrigin).replace(
+        /\/+$/,
+        "",
+      );
       const sendEmail = resendEmailSender({
         resendApiKey: config.secrets.RESEND_API_KEY,
         fromEmail: config.secrets.NOTIFY_FROM_EMAIL,
@@ -283,7 +286,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
             ? {
                 clientId: googleClientId,
                 clientSecret: googleClientSecret,
-                redirectUri: `${appOrigin.replace(/\/+$/, "")}/api/work-orders/google/callback`,
+                redirectUri: `${appOrigin}/api/work-orders/google/callback`,
                 secretKey:
                   config.secrets.GOOGLE_TOKENS_SECRET_KEY ??
                   config.secrets.PAYOUTS_SECRET_KEY ??
@@ -1517,7 +1520,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
 
         googleCallback: builder.workOrders.googleCallback.handler(async ({ context, input }) => {
           const back = (params: Record<string, string>) =>
-            `${appOrigin.replace(/\/+$/, "")}/admin/settings?${new URLSearchParams(params)}#work-orders`;
+            `${appOrigin}/admin/settings?${new URLSearchParams(params)}#work-orders`;
           try {
             await googleConnections.finish(input, context.userId ?? null);
             return { headers: { location: back({ google: "connected" }) } };

@@ -4,25 +4,17 @@ import { cn } from "cn";
 import type { ReactNode } from "react";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components";
 import { relativeTime } from "@/lib/format-date";
+import { waitingPhrase } from "@/lib/work-orders-inbox";
 import type { WorkOrderProgress } from "./progress-stepper";
 
 export type ProgressAction = NonNullable<WorkOrderProgress["next"]>;
 export type InPageAction = Exclude<ProgressAction, { kind: "link" }>;
 
 function waitingLine(progress: WorkOrderProgress, builderName: string): string | null {
-  const since = progress.since ? ` · since ${relativeTime(progress.since)}` : "";
-  switch (progress.waitingOn) {
-    case "you":
-      return `Waiting on you${since}`;
-    case "builder":
-      return `Waiting on ${builderName}${since}`;
-    case "system":
-      return `Automatic${since}`;
-    case "dao":
-      return `Waiting on the DAO${since}`;
-    default:
-      return progress.since ? `Since ${relativeTime(progress.since)}` : null;
-  }
+  const since = progress.since ? relativeTime(progress.since) : null;
+  const who = waitingPhrase(progress.waitingOn, builderName);
+  if (who) return since ? `${who} · since ${since}` : who;
+  return since ? `Since ${since}` : null;
 }
 
 export function ActionButton({

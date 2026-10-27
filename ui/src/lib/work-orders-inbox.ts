@@ -1,10 +1,12 @@
+import type { WorkOrder } from "@/components/work-orders/work-order-status";
+
 export const INBOX_VIEWS = ["needs-you", "builder", "in-progress", "done", "all"] as const;
 
 export type InboxView = (typeof INBOX_VIEWS)[number];
 
 export type InboxCategory = Exclude<InboxView, "all">;
 
-export type InboxWaiting = "you" | "builder" | "system" | "dao" | null;
+export type InboxWaiting = WorkOrder["progress"]["waitingOn"];
 
 export type InboxItem = {
   code: string;
@@ -120,18 +122,18 @@ export function filterInbox<T extends InboxItem>(items: T[], view: InboxView, qu
   );
 }
 
-export function waitingLabel(waitingOn: InboxWaiting, builderName: string | null): string {
+export function waitingPhrase(waitingOn: InboxWaiting, builderName: string | null): string | null {
   switch (waitingOn) {
     case "you":
-      return "You";
+      return "Waiting on you";
     case "builder":
-      return builderName ?? "Builder";
+      return `Waiting on ${builderName ?? "the builder"}`;
     case "system":
       return "Automatic";
     case "dao":
-      return "DAO";
+      return "Waiting on the DAO";
     default:
-      return "—";
+      return null;
   }
 }
 
