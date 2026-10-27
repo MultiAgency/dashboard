@@ -10,7 +10,20 @@ import {
   type PolicyView,
   type StatusResponse,
 } from "@near-intents-agent-api/sdk";
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+import {
+  type AnyColumn,
+  and,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../../db";
 import {
@@ -145,6 +158,10 @@ const errorText = (error: unknown) => {
 
 export function payoutRetryable(payout: { status: string; provenUnsent: boolean }): boolean {
   return payout.status === "refused" || (payout.status === "failed" && payout.provenUnsent);
+}
+
+export function noUnsettledPayout(requestId: AnyColumn) {
+  return sql`not exists (select 1 from ${agentPayouts} where ${agentPayouts.requestId} = ${requestId} and not (${agentPayouts.status} = 'refused' or (${agentPayouts.status} = 'failed' and ${agentPayouts.provenUnsent})))`;
 }
 
 function isRetryable(error: unknown): boolean {

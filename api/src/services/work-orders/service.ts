@@ -25,7 +25,7 @@ import { rememberedLogin, rememberLogin } from "../builder-logins";
 import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
 import { atomicToNear } from "../payouts/policy";
-import { type FundingCheck, payoutRetryable } from "../payouts/service";
+import { type FundingCheck, noUnsettledPayout, payoutRetryable } from "../payouts/service";
 import type { Project, ProjectDirectory } from "../project-directory";
 import { type DaoProposal, proposalDescription } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
@@ -1202,6 +1202,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         and(
           eq(compensationRequests.id, id),
           inArray(compensationRequests.status, ["approved", "paying"]),
+          isNull(compensationRequests.daoPaymentStartedAt),
         ),
       )
       .returning();
@@ -2755,11 +2756,20 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (request.status !== "approved" || !approvedAmount) {
       throw badRequest("NOT_APPROVED", "Approve the request before paying it through the DAO");
     }
-    const unsettled = await deps.payouts?.latest(request.id);
+    await requireSettledPayout(request.id);
+    return { request: { ...request, approvedAmount }, row };
+  }
+
+  async function requireSettledPayout(requestId: string) {
+    const unsettled = await deps.payouts?.latest(requestId);
     if (unsettled && !payoutRetryable(unsettled)) {
       throw badRequest("AGENT_PAYOUT_UNSETTLED", unsettledPayoutReason(unsettled));
     }
-    return { request: { ...request, approvedAmount }, row };
+  }
+
+  async function refuseChangedRequest(requestId: string): Promise<never> {
+    await requireSettledPayout(requestId);
+    throw badRequest("NOT_APPROVED", "The request changed meanwhile; reload it and try again");
   }
 
   async function daoPaymentTransaction(
@@ -3974,40 +3984,47 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             : `Proposal ${id} pays ${display(kind.amount, tokenId)}, not the approved ${display(request.approvedAmount, row.tokenId)}`,
         );
       }
-      const linked = await db.transaction(async (tx) => {
-        const [billing] = await tx
-          .insert(billings)
-          .values({
-            id: crypto.randomUUID(),
-            projectId: row.projectId,
-            nearAccount: row.builderNearAccount,
-            tokenId,
-            amount: kind.amount,
-            proposalId: String(id),
-            payingDaoAccountId: scope.agencyDao,
-            note: `Work order ${row.code}, request ${row.code}-R${request.seq}`,
-            createdAt: now(),
-          })
-          .returning();
-        const [updated] = await tx
-          .update(compensationRequests)
-          .set({
-            status: "proposed",
-            proposalId: String(id),
-            billingId: billing!.id,
-            note: null,
-            updatedAt: now(),
-          })
-          .where(
-            and(
-              eq(compensationRequests.id, request.id),
-              eq(compensationRequests.status, "approved"),
-            ),
-          )
-          .returning();
-        if (!updated) throw badRequest("NOT_APPROVED", "The request changed meanwhile");
-        return updated;
-      });
+      const linked = await db
+        .transaction(async (tx) => {
+          const [billing] = await tx
+            .insert(billings)
+            .values({
+              id: crypto.randomUUID(),
+              projectId: row.projectId,
+              nearAccount: row.builderNearAccount,
+              tokenId,
+              amount: kind.amount,
+              proposalId: String(id),
+              payingDaoAccountId: scope.agencyDao,
+              note: `Work order ${row.code}, request ${row.code}-R${request.seq}`,
+              createdAt: now(),
+            })
+            .returning();
+          const [updated] = await tx
+            .update(compensationRequests)
+            .set({
+              status: "proposed",
+              proposalId: String(id),
+              billingId: billing!.id,
+              note: null,
+              updatedAt: now(),
+            })
+            .where(
+              and(
+                eq(compensationRequests.id, request.id),
+                eq(compensationRequests.status, "approved"),
+                noUnsettledPayout(compensationRequests.id),
+              ),
+            )
+            .returning();
+          if (!updated) throw badRequest("REQUEST_CHANGED", "The request changed meanwhile");
+          return updated;
+        })
+        .catch((error: unknown) =>
+          reasonOf(error) === "REQUEST_CHANGED"
+            ? refuseChangedRequest(request.id)
+            : Promise.reject(error),
+        );
       return requestView(await syncPayment(linked), row);
     },
 
@@ -4044,12 +4061,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             eq(compensationRequests.id, request.id),
             eq(compensationRequests.status, "approved"),
             isNull(compensationRequests.daoPaymentStartedAt),
+            noUnsettledPayout(compensationRequests.id),
           ),
         )
         .returning();
-      if (!started) {
-        throw badRequest("NOT_APPROVED", "The request changed meanwhile; reload it and try again");
-      }
+      if (!started) return refuseChangedRequest(request.id);
       return daoPaymentTransaction(scope, row, started, payout);
     },
 

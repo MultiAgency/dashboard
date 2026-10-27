@@ -2297,6 +2297,117 @@ describe("work orders", () => {
       expect(linked.note).toBeNull();
     });
 
+    test("a DAO payment can't start while an automatic payout that may have gone out is settling", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      let raced = false;
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        payouts,
+        prices: {
+          price: async () => {
+            if (!raced) {
+              raced = true;
+              agent.nextWithdraw = { status: "FAILED", details: {} };
+              await service.payNow(await studio(), { requestId: draft.id }).catch(() => null);
+            }
+            return { priceUsd, at: "2026-09-20T12:00:00.000Z" };
+          },
+        },
+      });
+      await refused(
+        service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id }),
+        "AGENT_PAYOUT_UNSETTLED",
+      );
+      const [after] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, draft.id));
+      expect(after?.status).toBe("approved");
+      expect(after?.daoPaymentStartedAt).toBeNull();
+      expect(agent.withdrawals).toHaveLength(2);
+    });
+
+    test("a proposal can't be linked while an automatic payout that may have gone out is settling", async () => {
+      strongEvidence();
+      const amount = "100000000000000000000000";
+      const wo = await active({ tokenId: "near", budgetAmount: "1000000000000000000000000" });
+      await service.collect(await studio(), { id: wo.id });
+      const draft = await service.mineDraftRequest(carol(), { id: wo.id });
+      await service.editRequest(carol(), { requestId: draft.id, requestedAmount: amount });
+      await service.submitRequest(carol(), { requestId: draft.id });
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount });
+      transfer(35, { tokenId: "", amount });
+      let raced = false;
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        payouts,
+        proposal: async (dao, id) => {
+          if (!raced) {
+            raced = true;
+            agent.nextWithdraw = { status: "FAILED", details: {} };
+            await service.payNow(await studio(), { requestId: draft.id }).catch(() => null);
+          }
+          return serviceDeps.proposal(dao, id);
+        },
+      });
+      await refused(
+        service.linkProposal(requireTreasury(await studio()), {
+          requestId: draft.id,
+          proposalId: "35",
+        }),
+        "AGENT_PAYOUT_UNSETTLED",
+      );
+      const [after] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, draft.id));
+      expect(after?.status).toBe("approved");
+      expect(after?.proposalId).toBeNull();
+      expect(await db.select().from(billings).where(eq(billings.proposalId, "35"))).toHaveLength(0);
+      expect(agent.withdrawals).toHaveLength(2);
+    });
+
+    test("a scheduled retry that fails after a DAO payment started leaves the DAO payment alone", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      const held = events.filter((e) => e.type === "request.payout_blocked").length;
+      let raced = false;
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        payouts,
+        prices: {
+          price: async () => {
+            if (!raced) {
+              raced = true;
+              await service.startDaoPayment(requireTreasury(await studio()), {
+                requestId: draft.id,
+              });
+              throw new Error("price feed down");
+            }
+            return { priceUsd, at: "2026-09-20T12:00:00.000Z" };
+          },
+        },
+      });
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("retry");
+      const [after] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, draft.id));
+      expect(after?.daoPaymentStartedAt).not.toBeNull();
+      expect(after?.autoPayBlockedAt).toBeNull();
+      expect(after?.autoPayBlockedCode).toBeNull();
+      expect(after?.note).toMatch(/Being paid through a DAO proposal/);
+      expect(events.filter((e) => e.type === "request.payout_blocked")).toHaveLength(held);
+    });
+
     test("a price left by a refused automatic payout isn't enough to link a proposal", async () => {
       const { draft } = await approvedRequest();
       await setUpAgent();
