@@ -1573,6 +1573,43 @@ describe("work orders", () => {
       expect(email?.text).not.toContain("Review and sign");
     });
 
+    test("builders never get the agency's signing link or actions, and can't sign around Documenso", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T12:30:00.000Z");
+      await service.get(await studio(), { id: created.id });
+
+      const second = await service.create(
+        await studio(),
+        fields({
+          code: "WO-0002",
+          representativeName: "Rita Rep",
+          representativeEmail: "rita@example.com",
+        }),
+      );
+      await service.offer(await studio(), { id: second.id });
+      expect((await service.get(await studio(), { id: second.id })).progress.next).toMatchObject({
+        href: "https://sign.example/envelope_2/representative",
+      });
+      for (const view of [
+        await service.mineGet(carol(), { id: second.id }),
+        await service.mineGet(carol(), { id: created.id }),
+        ...(await service.mine(carol())).data,
+      ]) {
+        expect(JSON.stringify(view)).not.toMatch(/envelope_\d\/representative/);
+        expect(view.progress.next).toBeNull();
+        expect(view.progress.attention).toEqual([]);
+      }
+
+      for (const id of [second.id, created.id]) {
+        const doc = await service.myDocument(carol(), { id });
+        await refused(
+          service.sign(carol(), { id, documentSha256: doc.sha256, name: "Carol" }),
+          "SIGN_IN_DOCUMENSO",
+        );
+      }
+      expect((await service.get(await studio(), { id: second.id })).status).toBe("offered");
+    });
+
     test("an envelope sent before the agency signed first keeps the builder-first flow", async () => {
       const created = await offered();
       await db
@@ -2171,6 +2208,54 @@ describe("work orders", () => {
         "insufficient_balance",
         "over_monthly_budget",
       ]);
+    });
+
+    test("an agent outage between funding holds doesn't email the same hold again", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      const held = () => events.filter((e) => e.type === "request.payout_blocked").length;
+      expect(held()).toBe(1);
+
+      const readiness = payouts.readiness;
+      payouts.readiness = async () => {
+        throw new Error("The payout agent API is unreachable");
+      };
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("outage");
+      const during = await service.get(await studio(), { id: draft.workOrderId });
+      expect(during.requests.find((r) => r.id === draft.id)?.autoPayBlocked?.reason).toMatch(
+        /unreachable/,
+      );
+
+      payouts.readiness = readiness;
+      clock = new Date(clock.getTime() + 6 * 60_000);
+      await service.tick("back");
+      expect(agent.withdrawals.length).toBeGreaterThan(1);
+      expect(held()).toBe(1);
+    });
+
+    test("a payout the agent can't confirm asks for a check instead of showing it as sending", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { status: "FAILED", details: { reason: "unknown outcome" } };
+      const approved = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      const detail = await service.get(await studio(), { id: approved.workOrderId });
+      const request = detail.requests.find((r) => r.id === draft.id);
+      expect(request?.status).toBe("approved");
+      expect(detail.progress).toMatchObject({
+        waitingOn: "you",
+        headline: expect.stringMatching(/needs a check before it's paid again/),
+      });
+      expect(detail.progress.headline).not.toMatch(/^Sending/);
+      const tries = agent.withdrawals.length;
+      clock = new Date(clock.getTime() + 30 * 60_000);
+      await service.tick("later");
+      expect(agent.withdrawals).toHaveLength(tries);
     });
 
     test("a builder the rules don't allow yet is paid by the scheduler once the update is signed", async () => {

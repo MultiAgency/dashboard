@@ -45,7 +45,7 @@ import { collectEvidence, summarizeActivity } from "./evidence";
 import type { GhRepoOwnership, GitHubPort } from "./github";
 import type { DriveFile, GooglePort } from "./google";
 import { type PriceFeed, type PriceQuote, USD, USD_DECIMALS, usdToTokens } from "./prices";
-import { progressOf } from "./progress";
+import { type Progress, progressOf } from "./progress";
 import { assessRenewal, renewalCode } from "./renewal";
 import {
   buildContributions,
@@ -239,6 +239,7 @@ function payoutInFlight(last: AgentPayoutView | null | undefined): boolean {
 }
 
 const NOT_PAYING_NOW = new Set(["unavailable", "no_agent"]);
+const NEEDS_REVIEW = "needs_review";
 
 type FundingCode = "insufficient_balance" | "over_monthly_budget" | "over_cap";
 
@@ -1691,12 +1692,22 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   >(value: T): T {
     const esign = value.signing.esign;
     const builderUrl = value.signing.awaitingRepresentative ? null : (esign?.builderUrl ?? null);
-    return esign
-      ? {
-          ...value,
-          signing: { ...value.signing, esign: { ...esign, builderUrl, representativeUrl: null } },
-        }
-      : value;
+    const progress =
+      "progress" in value && value.progress
+        ? { progress: { ...(value.progress as Progress), next: null, attention: [] } }
+        : {};
+    return {
+      ...value,
+      ...progress,
+      ...(esign
+        ? {
+            signing: {
+              ...value.signing,
+              esign: { ...esign, builderUrl, representativeUrl: null },
+            },
+          }
+        : {}),
+    };
   }
 
   async function view(row: WorkOrderRow, cache?: { projects?: Map<string, Project> }) {
@@ -2454,8 +2465,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       autoPayBlockedAt: request.autoPayBlockedAt ?? now(),
       autoPayTriedAt: now(),
     });
-    if (blocked.status === "approved" && hold && hold.code !== request.autoPayBlockedCode) {
+    if (blocked.status === "approved" && hold && hold.code !== request.autoPayHoldNotified) {
       await announce(row, "request.payout_blocked", { request: blocked, hold });
+      await updateUnpaid(request.id, { autoPayHoldNotified: hold.code });
     }
     if (blocked.status === "approved" && !request.autoPayBlockedAt) {
       await notifyManagers(
@@ -2491,8 +2503,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       const review = await updateUnpaid(request.id, {
         status: "approved",
         note: `The automatic payout needs a person to check it: ${reason}. Check the payout agent's history before paying it again, or pay it through a DAO proposal.`,
-        autoPayBlockedReason: null,
-        autoPayBlockedCode: null,
+        autoPayBlockedReason: reason,
+        autoPayBlockedCode: NEEDS_REVIEW,
         autoPayBlockedAt: null,
       });
       await notifyManagers(
@@ -4023,6 +4035,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       requireBuilder(context, row);
       if (row.status !== "offered")
         throw badRequest("NOT_OFFERED", `Work order ${row.code} isn't waiting for your signature`);
+      if (row.esignEnvelopeId) {
+        throw badRequest(
+          "SIGN_IN_DOCUMENSO",
+          (await signingOf(row)).awaitingRepresentative
+            ? `Work order ${row.code} isn't ready for your signature yet: ${row.representativeName ?? "the agency"} signs it first`
+            : `Sign work order ${row.code} with the Documenso link in your email or on the work order page`,
+        );
+      }
       const name = input.name.trim();
       if (name.length < 2) throw badRequest("NAME_REQUIRED", "Type your full name to sign");
       const offered = await latestDocument(row.id, "offered");

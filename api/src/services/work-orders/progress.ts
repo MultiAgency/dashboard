@@ -195,6 +195,17 @@ export function progressOf(input: ProgressInput): Progress {
     headline = `Approve ${request.requested} for ${builder}`;
     since = request.submittedAt;
     next = { kind: "approve", label: "Review and approve", requestId: request.id };
+  } else if (request && request.status === "approved" && request.blockedCode === "needs_review") {
+    stage = "paid";
+    waitingOn = "you";
+    headline = `Payout of ${request.approved ?? request.requested} needs a check before it's paid again`;
+    since = request.decidedAt;
+    next = {
+      kind: "link",
+      label: "Check the payout agent's history",
+      href: SETTINGS_PAYOUTS,
+      external: false,
+    };
   } else if (request && request.status === "approved" && request.blockedReason) {
     stage = "paid";
     waitingOn = "you";
