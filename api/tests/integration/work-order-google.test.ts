@@ -122,6 +122,18 @@ describe("Google Drive connection per organization", () => {
     expect((await google.status("studio")).connected).toBe(false);
   });
 
+  test("the callback finishes for the NEAR account that started it, not its separate user id", async () => {
+    const google = connections(tokenEndpoint(() => granted).fetcher);
+    const state = stateOf(await google.start("studio", "alice.near"));
+    await expect(google.finish({ code: "c", state }, "user-1")).rejects.toThrow(
+      /person who started it/,
+    );
+    const again = stateOf(await google.start("studio", "alice.near"));
+    expect(await google.finish({ code: "c", state: again }, "alice.near")).toMatchObject({
+      organizationId: "studio",
+    });
+  });
+
   test("the callback stores the refresh token encrypted with the account email, once", async () => {
     const endpoint = tokenEndpoint(() => granted);
     const google = connections(endpoint.fetcher);

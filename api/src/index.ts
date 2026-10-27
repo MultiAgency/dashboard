@@ -40,6 +40,7 @@ import { createNearnService } from "./services/nearn";
 import { createNotifications } from "./services/notifications";
 import { resendEmailSender } from "./services/notify";
 import {
+  actorOf,
   agencyDaoOf,
   createOrganizationAccess,
   hasRole,
@@ -1522,7 +1523,7 @@ export default createPlugin.withPlugins<PluginsClient>()({
           const back = (params: Record<string, string>) =>
             `${appOrigin}/admin/settings?${new URLSearchParams(params)}#work-orders`;
           try {
-            await googleConnections.finish(input, context.userId ?? null);
+            await googleConnections.finish(input, context.userId ? actorOf(context) : null);
             return { headers: { location: back({ google: "connected" }) } };
           } catch (error) {
             const message =
