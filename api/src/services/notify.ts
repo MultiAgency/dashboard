@@ -62,12 +62,15 @@ async function sendWebhook(url: string, app: ApplicationNotification): Promise<v
   }
 }
 
+export type InlineImage = { contentId: string; filename: string; content: string };
+
 export type EmailMessage = {
   to: string;
   subject: string;
   html: string;
   text?: string;
   fromName?: string;
+  inlineImages?: InlineImage[];
 };
 
 function sender(fromEmail: string, fromName: string | undefined): string {
@@ -96,6 +99,15 @@ export function resendEmailSender(config: {
         subject: message.subject,
         html: message.html,
         ...(message.text ? { text: message.text } : {}),
+        ...(message.inlineImages?.length
+          ? {
+              attachments: message.inlineImages.map((image) => ({
+                content: image.content,
+                filename: image.filename,
+                content_id: image.contentId,
+              })),
+            }
+          : {}),
       }),
     });
     if (!res.ok) {

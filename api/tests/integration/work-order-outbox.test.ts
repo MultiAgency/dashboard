@@ -164,6 +164,15 @@ describe("work order emails", () => {
     expect(sent[0]?.text).toContain("Download the signed PDF");
     expect(sent[0]?.html).toContain('href="https://drive.example/signed?id=1&amp;v=2"');
     expect(sent[0]?.subject).toBe("Work Order SI-004 is signed");
+    expect(sent[0]?.html).toContain('src="cid:multiagency-logo"');
+    expect(sent[0]?.inlineImages).toEqual([
+      expect.objectContaining({ contentId: "multiagency-logo", filename: "multiagency.png" }),
+    ]);
+    expect(
+      Buffer.from(sent[0]?.inlineImages?.[0]?.content ?? "", "base64")
+        .subarray(1, 4)
+        .toString(),
+    ).toBe("PNG");
     expect(await outbox.deliver()).toEqual({ delivered: 0, failed: 0 });
   });
 

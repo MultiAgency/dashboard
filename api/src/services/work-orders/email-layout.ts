@@ -1,3 +1,5 @@
+import { EMAIL_LOGO } from "./email-logo";
+
 export const BRAND = {
   name: "MultiAgency",
   site: "https://multiagency.ai",
@@ -7,7 +9,7 @@ export const BRAND = {
   page: "#fafafa",
   panel: "#f5f5f5",
   primary: "#fdc700",
-  onPrimary: "#733e0a",
+  onPrimary: "#0a0a0a",
 };
 
 const REPORT_LIMIT = 6000;
@@ -137,7 +139,7 @@ export function renderEmail(content: EmailContent, agency: string): { html: stri
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid ${BRAND.line}">
 <tr><td style="padding:16px 28px;border-bottom:1px solid ${BRAND.line}">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-<td style="vertical-align:middle"><a href="${BRAND.site}" style="font-family:${HEADING};font-size:15px;font-weight:600;letter-spacing:-0.2px;color:${BRAND.ink};text-decoration:none">${BRAND.name}</a></td>
+<td style="vertical-align:middle"><a href="${BRAND.site}" style="font-family:${HEADING};font-size:15px;font-weight:600;letter-spacing:-0.2px;color:${BRAND.ink};text-decoration:none"><img src="cid:${EMAIL_LOGO.contentId}" width="22" height="22" alt="" style="display:inline-block;vertical-align:middle;border:0;margin-right:8px"><span style="vertical-align:middle">${BRAND.name}</span></a></td>
 <td align="right" style="vertical-align:middle;font-size:12px;color:${BRAND.muted}">${escapeHtml(agency)}</td>
 </tr></table>
 </td></tr>

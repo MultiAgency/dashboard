@@ -8,6 +8,7 @@ import {
   workOrderOutbox,
 } from "../../db/schema";
 import type { EmailSender } from "../notify";
+import { EMAIL_LOGO } from "./email-logo";
 import { composeEmails, emailHtml, type WorkOrderEmail } from "./emails";
 import type { WorkOrderEvent } from "./events";
 
@@ -163,12 +164,14 @@ export function createWorkOrderOutbox(deps: {
     try {
       if (!sendEmail) return retry("email is not configured (RESEND_API_KEY, NOTIFY_FROM_EMAIL)");
       const email = JSON.parse(row.payload) as WorkOrderEmail;
+      const html = email.html ?? emailHtml(email.text);
       await sendEmail({
         to: email.to,
         subject: email.subject,
-        html: email.html ?? emailHtml(email.text),
+        html,
         text: email.text,
         fromName: email.fromName,
+        ...(html.includes(`cid:${EMAIL_LOGO.contentId}`) ? { inlineImages: [EMAIL_LOGO] } : {}),
       });
       await db
         .update(workOrderOutbox)
