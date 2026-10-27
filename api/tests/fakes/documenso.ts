@@ -29,10 +29,14 @@ export class FakeDocumenso implements EsignPort {
     return doc;
   }
 
+  builderFirst = false;
+
   sign(role: EsignRole, at: string) {
     const doc = this.last();
-    if (role === "contractor" && !doc.signedAt.representative) {
-      throw new Error("fake documenso: the representative signs first");
+    const second: EsignRole = this.builderFirst ? "representative" : "contractor";
+    const first: EsignRole = this.builderFirst ? "contractor" : "representative";
+    if (role === second && !doc.signedAt[first]) {
+      throw new Error(`fake documenso: the ${first} signs first`);
     }
     doc.signedAt[role] = at;
     if (doc.signedAt.contractor && doc.signedAt.representative) doc.status = "completed";

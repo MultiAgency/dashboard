@@ -225,6 +225,13 @@
       "when": 1793577600000,
       "tag": "0033_work_order_google_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793664000000,
+      "tag": "0034_work_order_esign_order",
+      "breakpoints": true
     }
   ]
 }

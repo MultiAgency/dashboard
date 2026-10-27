@@ -982,6 +982,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (!google || !folderId) return row;
     const doc = await latestDocument(row.id, "signed");
     if (!doc) return row;
+    if (doc.driveFileId) {
+      return update(row.id, {
+        signedDriveFileId: doc.driveFileId,
+        signedDriveUrl: doc.driveUrl ?? `https://drive.google.com/file/d/${doc.driveFileId}/view`,
+        signedDriveError: null,
+      });
+    }
     driveAttempts.set(row.id, now().getTime());
     const name = `Work Order ${row.code} - ${row.title} (signed).pdf`.replace(/[\\/]/g, "-");
     try {
@@ -1023,6 +1030,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         and(
           isNotNull(workOrders.signedAt),
           isNull(workOrders.signedDriveFileId),
+          isNotNull(workOrders.signedDriveError),
           inArray(workOrders.signatureMethod, ["in_app", "documenso"]),
         ),
       );
@@ -1273,7 +1281,11 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       builder,
       representative,
       needsCountersign: builder !== null && representative === null,
-      awaitingRepresentative: !!esign?.sent && row.status === "offered" && representative === null,
+      awaitingRepresentative:
+        !!esign?.sent &&
+        row.esignRepresentativeFirst &&
+        row.status === "offered" &&
+        representative === null,
       esign,
     };
   }
@@ -1346,6 +1358,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         .where(eq(workOrderDocuments.id, offered.id));
       return await update(row.id, {
         esignEnvelopeId: sent.envelopeId,
+        esignRepresentativeFirst: true,
         esignBuilderUrl: sent.signingUrls.contractor ?? null,
         esignRepresentativeUrl: sent.signingUrls.representative ?? null,
         esignError: null,
@@ -1402,7 +1415,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (row.status !== "offered" && row.status !== "accepted") return row;
     let state: Awaited<ReturnType<EsignPort["status"]>>;
     try {
-      state = await esign.status(row.esignEnvelopeId);
+      state = await esign.status(row.esignEnvelopeId, {
+        representativeFirst: row.esignRepresentativeFirst,
+      });
     } catch (error) {
       return update(row.id, { esignError: `Couldn't check Documenso: ${errorText(error)}` });
     }
@@ -1713,7 +1728,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       periodStart: row.periodStart,
       periodEnd: row.periodEnd,
       today: today(),
-      signFirst: row.esignEnvelopeId !== null || (row.status === "draft" && !!deps.esign),
+      signFirst:
+        row.esignEnvelopeId !== null
+          ? row.esignRepresentativeFirst
+          : row.status === "draft" && !!deps.esign,
       builderSignedAt: signing.builder?.signedAt ?? null,
       representativeSignedAt: signing.representative?.signedAt ?? null,
       awaitingRepresentative: signing.awaitingRepresentative,
@@ -3040,13 +3058,31 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
   async function list(
     scope: OrganizationScope,
-    input: { status?: WorkOrderStatus; projectId?: string; builderNearAccount?: string } = {},
+    input: {
+      status?: WorkOrderStatus;
+      projectId?: string;
+      builderNearAccount?: string;
+      mayNeedAgency?: boolean;
+    } = {},
   ) {
     const conditions = [eq(workOrders.organizationId, scope.organizationId)];
     if (input.status) conditions.push(eq(workOrders.status, input.status));
     if (input.projectId) conditions.push(eq(workOrders.projectId, input.projectId));
     if (input.builderNearAccount)
       conditions.push(eq(workOrders.builderNearAccount, input.builderNearAccount));
+    if (input.mayNeedAgency) {
+      const open = db
+        .select({ id: compensationRequests.workOrderId })
+        .from(compensationRequests)
+        .where(inArray(compensationRequests.status, ["submitted", "approved"]));
+      conditions.push(
+        or(
+          inArray(workOrders.status, ["draft", "offered", "accepted", "active"]),
+          eq(workOrders.renewalStatus, "needs_approval"),
+          inArray(workOrders.id, open),
+        )!,
+      );
+    }
     const rows = await db
       .select()
       .from(workOrders)
@@ -3069,7 +3105,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     list,
 
     needsYouCount: async (scope: OrganizationScope) => {
-      const { data } = await list(scope);
+      const { data } = await list(scope, { mayNeedAgency: true });
       return { count: data.filter((workOrder) => workOrder.progress.needsYou).length };
     },
 

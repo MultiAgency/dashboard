@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib/dist/pdf-lib.esm.js";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Database } from "../../src/db";
@@ -7,6 +7,7 @@ import {
   billings,
   compensationRequests,
   notifications,
+  workOrderDocuments,
   workOrderDriveFiles,
   workOrderIntegrations,
   workOrderOutbox,
@@ -1455,6 +1456,58 @@ describe("work orders", () => {
       expect(signed.signature.driveUrl).toBeNull();
       expect(signed.signature.driveError).toBeNull();
       expect(google.uploads).toHaveLength(0);
+    });
+
+    test("a signed PDF already filed in Drive isn't uploaded again, and rows that never failed aren't retried", async () => {
+      await driveFolders("signed");
+      const live = service;
+      service = createWorkOrdersService({ ...serviceDeps, google: null, esign: documenso });
+      const filed = await completed();
+      expect(google.uploads).toHaveLength(0);
+      await db
+        .update(workOrderDocuments)
+        .set({ driveFileId: "legacy-1", driveUrl: "https://drive.google.com/file/d/legacy-1/view" })
+        .where(
+          and(eq(workOrderDocuments.workOrderId, filed.id), eq(workOrderDocuments.kind, "signed")),
+        );
+      service = live;
+      clock = new Date(clock.getTime() + 3_600_000);
+      await service.tick("t1");
+      expect(google.uploads).toHaveLength(0);
+      const saved = await service.saveSignedToDrive(await studio(), { id: filed.id });
+      expect(saved.signature.driveUrl).toBe("https://drive.google.com/file/d/legacy-1/view");
+      expect(google.uploads).toHaveLength(0);
+    });
+
+    test("an envelope sent before the agency signed first keeps the builder-first flow", async () => {
+      const created = await offered();
+      await db
+        .update(workOrders)
+        .set({ esignRepresentativeFirst: false })
+        .where(eq(workOrders.id, created.id));
+      documenso.builderFirst = true;
+
+      const before = await service.get(await studio(), { id: created.id });
+      expect(before.signing.awaitingRepresentative).toBe(false);
+      expect(before.progress.waitingOn).toBe("builder");
+      expect((await service.mine(carol())).data.map((w) => w.id)).toEqual([created.id]);
+      const mine = await service.mineGet(carol(), { id: created.id });
+      expect(mine.signing.esign?.builderUrl).toBe("https://sign.example/envelope_1/contractor");
+
+      documenso.sign("contractor", "2026-09-20T13:00:00.000Z");
+      const accepted = await service.get(await studio(), { id: created.id });
+      expect(accepted.status).toBe("accepted");
+      expect(accepted.signing.builder?.name).toBe("Carol");
+      expect(accepted.signing.representative).toBeNull();
+      expect(accepted.signing.needsCountersign).toBe(true);
+      expect(accepted.progress).toMatchObject({ stage: "agency_signs", waitingOn: "you" });
+      expect(events.filter((e) => e.type === "work_order.offered")).toHaveLength(0);
+
+      documenso.sign("representative", "2026-09-20T14:00:00.000Z");
+      await service.run();
+      const signed = await service.get(await studio(), { id: created.id });
+      expect(signed.status).toBe("active");
+      expect(signed.signing.representative?.name).toBe("Rita Rep");
     });
 
     test("the background check picks up both signatures without anyone opening the page", async () => {

@@ -646,6 +646,7 @@ export const workOrders = pgTable(
     documentSha256: text("document_sha256"),
     documentUrl: text("document_url"),
     esignEnvelopeId: text("esign_envelope_id"),
+    esignRepresentativeFirst: boolean("esign_representative_first").notNull().default(false),
     esignBuilderUrl: text("esign_builder_url"),
     esignRepresentativeUrl: text("esign_representative_url"),
     esignError: text("esign_error"),

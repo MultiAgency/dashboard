@@ -34,7 +34,7 @@ export type EsignPort = {
     redirectUrl: string | null;
     signers: EsignSigner[];
   }): Promise<{ envelopeId: string; signingUrls: Partial<Record<EsignRole, string>> }>;
-  status(envelopeId: string): Promise<EsignStatus>;
+  status(envelopeId: string, sent?: { representativeFirst: boolean }): Promise<EsignStatus>;
   downloadSigned(envelopeId: string): Promise<Uint8Array>;
   cancel(envelopeId: string, reason: string): Promise<void>;
 };
@@ -68,8 +68,10 @@ export class DocumensoError extends Error {
 
 const ORDER: Record<EsignRole, number> = { representative: 1, contractor: 2 };
 
-function roleOf(signingOrder: number | null, index: number): EsignRole {
-  return (signingOrder ?? index + 1) <= ORDER.representative ? "representative" : "contractor";
+function roleOf(signingOrder: number | null, index: number, representativeFirst = true): EsignRole {
+  const first: EsignRole = representativeFirst ? "representative" : "contractor";
+  const second: EsignRole = representativeFirst ? "contractor" : "representative";
+  return (signingOrder ?? index + 1) <= 1 ? first : second;
 }
 
 export function createDocumenso(
@@ -177,7 +179,7 @@ export function createDocumenso(
       return { envelopeId: String(created.id), signingUrls };
     },
 
-    async status(envelopeId) {
+    async status(envelopeId, sent) {
       const doc = await envelope(envelopeId);
       const signers = doc.recipients
         .filter((r) => r.role === "SIGNER")
@@ -191,7 +193,7 @@ export function createDocumenso(
               : "pending",
         completedAt: doc.completedAt,
         signers: signers.map((r, index) => ({
-          role: roleOf(r.signingOrder, index),
+          role: roleOf(r.signingOrder, index, sent?.representativeFirst ?? true),
           name: r.name,
           email: r.email,
           signedAt: r.signingStatus === "SIGNED" ? (r.signedAt ?? doc.completedAt) : null,
