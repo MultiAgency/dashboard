@@ -190,11 +190,14 @@ export function createGoogleConnections(deps: {
       return `${AUTH_URL}?${params}`;
     },
 
-    finish: async (input: {
-      code?: string | null;
-      state?: string | null;
-      error?: string | null;
-    }): Promise<{ organizationId: string; email: string | null }> => {
+    finish: async (
+      input: {
+        code?: string | null;
+        state?: string | null;
+        error?: string | null;
+      },
+      userId: string | null,
+    ): Promise<{ organizationId: string; email: string | null }> => {
       const settings = ready();
       if (!input.state) throw new GoogleConnectError("The Google sign-in link is incomplete");
       const [pending] = await db
@@ -208,6 +211,11 @@ export function createGoogleConnections(deps: {
         .returning();
       if (!pending) {
         throw new GoogleConnectError("The Google sign-in link expired. Start again from Settings");
+      }
+      if (!userId || pending.userId !== userId) {
+        throw new GoogleConnectError(
+          "Finish connecting Google Drive in the browser where you're signed in to MultiAgency as the person who started it",
+        );
       }
       if (input.error) {
         throw new GoogleConnectError(

@@ -98,17 +98,35 @@ describe("Google Drive connection per organization", () => {
 
   test("the callback refuses unknown and expired states", async () => {
     const google = connections(tokenEndpoint(() => granted).fetcher);
-    await expect(google.finish({ code: "c", state: "forged" })).rejects.toThrow(/expired/);
+    await expect(google.finish({ code: "c", state: "forged" }, "admin-1")).rejects.toThrow(
+      /expired/,
+    );
     const state = stateOf(await google.start("studio", "admin-1"));
     clock = new Date(clock.getTime() + 11 * 60_000);
-    await expect(google.finish({ code: "c", state })).rejects.toThrow(/expired/);
+    await expect(google.finish({ code: "c", state }, "admin-1")).rejects.toThrow(/expired/);
+  });
+
+  test("the callback refuses a browser signed in as someone else, or signed out", async () => {
+    const endpoint = tokenEndpoint(() => granted);
+    const google = connections(endpoint.fetcher);
+    const state = stateOf(await google.start("studio", "admin-1"));
+    await expect(google.finish({ code: "c", state }, "someone-else")).rejects.toThrow(
+      /signed in to MultiAgency as the person who started it/,
+    );
+    await expect(google.finish({ code: "c", state }, "admin-1")).rejects.toThrow(/expired/);
+    const again = stateOf(await google.start("studio", "admin-1"));
+    await expect(google.finish({ code: "c", state: again }, null)).rejects.toThrow(
+      /signed in to MultiAgency/,
+    );
+    expect(endpoint.calls).toHaveLength(0);
+    expect((await google.status("studio")).connected).toBe(false);
   });
 
   test("the callback stores the refresh token encrypted with the account email, once", async () => {
     const endpoint = tokenEndpoint(() => granted);
     const google = connections(endpoint.fetcher);
     const state = stateOf(await google.start("studio", "admin-1"));
-    expect(await google.finish({ code: "code-1", state })).toEqual({
+    expect(await google.finish({ code: "code-1", state }, "admin-1")).toEqual({
       organizationId: "studio",
       email: "ops@studio.example",
     });
@@ -132,7 +150,7 @@ describe("Google Drive connection per organization", () => {
       email: "ops@studio.example",
       error: null,
     });
-    await expect(google.finish({ code: "code-1", state })).rejects.toThrow(/expired/);
+    await expect(google.finish({ code: "code-1", state }, "admin-1")).rejects.toThrow(/expired/);
   });
 
   test("it refuses to connect without Drive access or without an encryption key", async () => {
@@ -140,7 +158,9 @@ describe("Google Drive connection per organization", () => {
       tokenEndpoint(() => ({ body: { ...granted.body, scope: "openid email" } })).fetcher,
     );
     const state = stateOf(await narrow.start("studio", "admin-1"));
-    await expect(narrow.finish({ code: "c", state })).rejects.toThrow(/see and edit the Drive/);
+    await expect(narrow.finish({ code: "c", state }, "admin-1")).rejects.toThrow(
+      /see and edit the Drive/,
+    );
     const keyless = connections(tokenEndpoint(() => granted).fetcher, { secretKey: null });
     await expect(keyless.start("studio", "admin-1")).rejects.toThrow(/PAYOUTS_SECRET_KEY/);
   });
@@ -156,7 +176,10 @@ describe("Google Drive connection per organization", () => {
         : { body: { access_token: `access-r${refreshes}`, expires_in: 3600 } };
     });
     const google = connections(endpoint.fetcher);
-    await google.finish({ code: "c", state: stateOf(await google.start("studio", "admin-1")) });
+    await google.finish(
+      { code: "c", state: stateOf(await google.start("studio", "admin-1")) },
+      "admin-1",
+    );
     expect((await google.accessToken("studio")).token).toBe("access-1");
     clock = new Date(clock.getTime() + 2 * 3_600_000);
     expect((await google.accessToken("studio")).token).toBe("access-r1");
@@ -177,7 +200,10 @@ describe("Google Drive connection per organization", () => {
   test("disconnecting revokes the token at Google and forgets it", async () => {
     const endpoint = tokenEndpoint(() => granted);
     const google = connections(endpoint.fetcher);
-    await google.finish({ code: "c", state: stateOf(await google.start("studio", "admin-1")) });
+    await google.finish(
+      { code: "c", state: stateOf(await google.start("studio", "admin-1")) },
+      "admin-1",
+    );
     await google.disconnect("studio");
     expect(endpoint.revoked).toEqual(["refresh-1"]);
     expect(await google.status("studio")).toMatchObject({ connected: false, email: null });

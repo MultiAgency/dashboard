@@ -1515,11 +1515,11 @@ export default createPlugin.withPlugins<PluginsClient>()({
             return { ...(await integrationView(context.scope.organizationId)), url };
           }),
 
-        googleCallback: builder.workOrders.googleCallback.handler(async ({ input }) => {
+        googleCallback: builder.workOrders.googleCallback.handler(async ({ context, input }) => {
           const back = (params: Record<string, string>) =>
             `${appOrigin.replace(/\/+$/, "")}/admin/settings?${new URLSearchParams(params)}#work-orders`;
           try {
-            await googleConnections.finish(input);
+            await googleConnections.finish(input, context.userId ?? null);
             return { headers: { location: back({ google: "connected" }) } };
           } catch (error) {
             const message =
