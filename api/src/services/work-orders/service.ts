@@ -1377,7 +1377,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         pdf,
         subject: `Please sign Work Order ${row.code}`,
         message: `${agencyName} signed Work Order ${row.code} (${row.title}) and sent it to you to review and sign.`,
-        redirectUrl: absolute(builderLink(row.id)),
         signers: signers.map((signer) => ({ ...signer, ...boxes[signer.role] })),
       });
       await db

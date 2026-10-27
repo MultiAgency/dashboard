@@ -31,7 +31,6 @@ export type EsignPort = {
     pdf: Uint8Array;
     subject: string;
     message: string;
-    redirectUrl: string | null;
     signers: EsignSigner[];
   }): Promise<{ envelopeId: string; signingUrls: Partial<Record<EsignRole, string>> }>;
   status(envelopeId: string, sent?: { representativeFirst: boolean }): Promise<EsignStatus>;
@@ -150,7 +149,6 @@ export function createDocumenso(
             message: input.message,
             signingOrder: "SEQUENTIAL",
             distributionMethod: "NONE",
-            ...(input.redirectUrl ? { redirectUrl: input.redirectUrl } : {}),
           },
         }),
       );
