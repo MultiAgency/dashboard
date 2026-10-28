@@ -1,6 +1,6 @@
 import type { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { Effect } from "every-plugin/effect";
+import { Effect } from "effect";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
@@ -37,11 +37,13 @@ describe("agency projects", () => {
   function agencyWith(projects: ReturnType<typeof project>[]) {
     const { client } = inMemoryProjects(projects);
     const plugins = {
-      projects: () => ({
-        ...client,
-        updateProject: async ({ id }: { id: string }) => projects.find((p) => p.id === id)!,
-      }),
-      builders: () => ({ listBuilders: async () => ({ data: [] }) }),
+      projects: {
+        client: () => ({
+          ...client,
+          updateProject: async ({ id }: { id: string }) => projects.find((p) => p.id === id)!,
+        }),
+      },
+      builders: { client: () => ({ listBuilders: async () => ({ data: [] }) }) },
     } as unknown as PluginsClient;
     const directory = createProjectDirectory(() => client);
     const listingsService = createListingsService(db, directory);
@@ -67,13 +69,13 @@ describe("agency projects", () => {
     });
 
     const outcome = await Effect.runPromise(
-      Effect.either(
+      Effect.result(
         agency.updateProject(agencyScope(AGENCY), { id: "app", nearnListingId: "build-a-site" }),
       ),
     );
 
-    expect(outcome._tag).toBe("Left");
-    expect(outcome._tag === "Left" && outcome.left).toMatchObject({
+    expect(outcome._tag).toBe("Failure");
+    expect(outcome._tag === "Failure" && outcome.failure).toMatchObject({
       code: "BAD_REQUEST",
       message:
         'NEARN listing "build-a-site" is already attached to Website (@slug-site); detach there first.',
@@ -91,8 +93,8 @@ describe("agency projects", () => {
       [visitor, "slug-site"],
       [agencyScope(AGENCY), "slug-other"],
     ] as const) {
-      const outcome = await Effect.runPromise(Effect.either(agency.getProject(scope, slug)));
-      expect(outcome._tag === "Left" && outcome.left).toMatchObject({ code: "NOT_FOUND" });
+      const outcome = await Effect.runPromise(Effect.result(agency.getProject(scope, slug)));
+      expect(outcome._tag === "Failure" && outcome.failure).toMatchObject({ code: "NOT_FOUND" });
     }
   });
 
@@ -120,9 +122,9 @@ describe("agency projects", () => {
     const agency = agencyWith([project("site", AGENCY)]);
 
     const outcome = await Effect.runPromise(
-      Effect.either(agency.setPublicTeam(agencyScope("beta.sputnik-dao.near"), "site", true)),
+      Effect.result(agency.setPublicTeam(agencyScope("beta.sputnik-dao.near"), "site", true)),
     );
 
-    expect(outcome._tag === "Left" && outcome.left).toMatchObject({ code: "NOT_FOUND" });
+    expect(outcome._tag === "Failure" && outcome.failure).toMatchObject({ code: "NOT_FOUND" });
   });
 });

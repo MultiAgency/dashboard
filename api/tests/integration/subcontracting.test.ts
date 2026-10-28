@@ -37,7 +37,7 @@ describe("subcontracting", () => {
   function buildServices() {
     const { db } = database;
     const plugins = {
-      builders: () => ({ listBuilders: async () => ({ data: [] }) }),
+      builders: { client: () => ({ listBuilders: async () => ({ data: [] }) }) },
     } as unknown as PluginsClient;
     const listings = createListingsService(db, world.directory);
     const ledgers = createProjectLedgers(db, listings);

@@ -46,7 +46,9 @@ export function SignInMethods() {
         authClient.near.listAccounts(),
       ]);
       return {
-        hasPassword: (accounts.data ?? []).some((a) => a.providerId === "credential"),
+        hasPassword: (accounts.data ?? []).some(
+          (a: { providerId: string }) => a.providerId === "credential",
+        ),
         nearAccountId: near.data?.accounts[0]?.accountId ?? null,
       };
     },

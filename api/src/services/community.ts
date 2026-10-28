@@ -1,8 +1,10 @@
+import "@orpc/openapi/extensions/route";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
-import { ORPCError, oc } from "every-plugin/orpc";
-import { z } from "every-plugin/zod";
+import { oc } from "@orpc/contract";
+import { ORPCError } from "@orpc/server";
+import { z } from "zod";
 
 export const communityContract = oc.router({
   listProjects: oc
@@ -97,8 +99,9 @@ export function createCommunityService(apiUrl: string) {
   const origin = new URL(base).origin;
   const client: ContractRouterClient<typeof communityContract> = createORPCClient(
     new RPCLink({
-      url: `${base}/rpc`,
-      fetch: (request, init) => fetch(request, { ...init, signal: AbortSignal.timeout(10_000) }),
+      origin,
+      url: `/${[...new URL(base).pathname.split("/").filter(Boolean), "rpc"].join("/")}`,
+      fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(10_000) }),
     }),
   );
 

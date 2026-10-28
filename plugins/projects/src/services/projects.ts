@@ -1,6 +1,6 @@
+import { ORPCError } from "@orpc/server";
 import { and, count, desc, eq, inArray, or } from "drizzle-orm";
-import { Context, Effect, Layer } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Context, Effect, Layer } from "effect";
 import { DatabaseTag } from "../db/layer";
 import { projectApps, projectMentions, projects } from "../db/schema";
 import { type Caller, canDelete, canManage, canPublish, canView, isMemberOf } from "../lib/caller";
@@ -101,7 +101,7 @@ function generateProjectAppId(): string {
   return `pa_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
-export class ProjectService extends Context.Tag("projects/ProjectService")<
+export class ProjectService extends Context.Service<
   ProjectService,
   {
     listProjects: (
@@ -203,7 +203,7 @@ export class ProjectService extends Context.Tag("projects/ProjectService")<
       caller: Caller,
     ) => Effect.Effect<Project[], ORPCError<string, unknown>>;
   }
->() {}
+>()("projects/ProjectService") {}
 
 const forbidden = (message: string) => new ORPCError("FORBIDDEN", { message });
 

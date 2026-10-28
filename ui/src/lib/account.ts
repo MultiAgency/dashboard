@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "./api";
-import { type AuthClient, sessionQueryKey, sessionQueryOptions } from "./auth";
+import { type AuthClient, type Organization, sessionQueryKey, sessionQueryOptions } from "./auth";
 import { pendingInvitations } from "./invitations";
 import { type OrganizationHome, organizationHome, organizationToActivate } from "./landing";
 import {
@@ -42,10 +42,15 @@ export function userInvitationsQueryOptions(authClient: AuthClient, enabled: boo
 
 export const organizationsQueryKey = ["organizations", "list"] as const;
 
+export type AuthOrganization = Organization & {
+  status?: "active" | "pending" | "rejected";
+  rejectionReason?: string | null;
+};
+
 export function organizationsQueryOptions(authClient: AuthClient) {
   return queryOptions({
     queryKey: organizationsQueryKey,
-    queryFn: async () => {
+    queryFn: async (): Promise<AuthOrganization[]> => {
       const res = await authClient.organization.list();
       return res.data ?? [];
     },
@@ -70,9 +75,7 @@ export async function refreshAccountQueries(queryClient: QueryClient) {
 
 export async function refreshAfterAccountChange(queryClient: QueryClient, authClient: AuthClient) {
   queryClient.clear();
-  return queryClient.fetchQuery(
-    sessionQueryOptions(authClient, undefined, { disableCookieCache: true }),
-  );
+  return queryClient.fetchQuery(sessionQueryOptions(authClient));
 }
 
 type AccountDeps = {

@@ -8,7 +8,6 @@ const source = readFileSync(
     "..",
     "src",
     "routes",
-    "_layout",
     "_authenticated",
     "admin",
     "projects",

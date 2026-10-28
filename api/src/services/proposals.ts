@@ -1,6 +1,6 @@
 import { and, inArray } from "drizzle-orm";
-import { Effect, Either } from "every-plugin/effect";
-import type { z } from "every-plugin/zod";
+import { Effect, Result } from "effect";
+import type { z } from "zod";
 import type { proposalPublicItem } from "../contract";
 import type { Database } from "../db";
 import { billings } from "../db/schema";
@@ -71,16 +71,16 @@ export function createProposalsService(db: Database, directory: ProjectDirectory
       Effect.gen(function* () {
         const isContributor = scope.canSeePrivate;
 
-        const fetched = yield* Effect.either(
+        const fetched = yield* Effect.result(
           Effect.tryPromise(() =>
             fetchTransferProposals(db, scope.agencyDao, input.fromIndex, input.limit),
           ),
         );
-        if (Either.isLeft(fetched)) {
-          if (isContributor) return yield* Effect.die(fetched.left.error);
+        if (Result.isFailure(fetched)) {
+          if (isContributor) return yield* Effect.die(fetched.failure.cause);
           return { data: [], lastProposalId: 0, nextFromIndex: null };
         }
-        const { transfers, lastProposalId, nextFromIndex } = fetched.right;
+        const { transfers, lastProposalId, nextFromIndex } = fetched.success;
 
         if (!isContributor) {
           return {

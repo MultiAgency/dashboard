@@ -1,5 +1,5 @@
-import { Effect } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { ORPCError } from "@orpc/server";
+import { Effect } from "effect";
 import type { Network } from "../lib/network";
 import { fetchWithTimeout } from "./fetch";
 import type { AgencyScope } from "./organization-access";
@@ -332,7 +332,7 @@ export async function getNearnListingSubmissions(slug: string): Promise<NearnSub
 
 const fromNearn = <A>(request: () => Promise<A>) =>
   Effect.tryPromise({ try: request, catch: (err) => err }).pipe(
-    Effect.catchAll((err) =>
+    Effect.catch((err) =>
       err instanceof NearnNotFoundError
         ? Effect.fail(new ORPCError("NOT_FOUND", { message: err.message }))
         : Effect.die(err),

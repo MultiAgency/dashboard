@@ -1,3 +1,4 @@
+import type { TransactionBuilder } from "near-kit";
 import type { AuthClient } from "@/lib/auth";
 
 type Nep413 = {
@@ -58,7 +59,7 @@ export async function signAgentIntent(
     const { payload } = intent as unknown as Nep366;
     const signedDelegate = await authClient.near.buildSignedDelegateAction(
       payload.receiverId,
-      (builder, receiverId) =>
+      (builder: TransactionBuilder, receiverId: string) =>
         payload.actions.reduce(
           (tx, { params }) =>
             tx.functionCall(receiverId, params.methodName, params.args, {

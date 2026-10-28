@@ -200,7 +200,7 @@ export function displayToBaseUnits(decimalString: string, decimals: number): big
   return BigInt(intPart + paddedFrac);
 }
 
-import { Effect } from "every-plugin/effect";
+import { Effect } from "effect";
 import type { Database } from "../db";
 import type { TreasuryScope } from "./organization-access";
 import { getDaoTokenIds, getFtMetadata, getStorageBalance } from "./sputnik";

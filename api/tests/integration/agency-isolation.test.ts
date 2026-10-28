@@ -76,8 +76,8 @@ describe("agency isolation", () => {
     await pg.close();
   });
 
-  const run = <A>(effect: import("every-plugin/effect").Effect.Effect<A, unknown>) =>
-    import("every-plugin/effect").then(({ Effect }) => Effect.runPromise(effect as never) as A);
+  const run = <A>(effect: import("effect").Effect.Effect<A, unknown>) =>
+    import("effect").then(({ Effect }) => Effect.runPromise(effect as never) as A);
 
   async function betaEngagement() {
     await db.insert(engagements).values({

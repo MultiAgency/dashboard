@@ -1,7 +1,7 @@
 import type { PGlite } from "@electric-sql/pglite";
+import { ORPCError } from "@orpc/server";
 import { drizzle } from "drizzle-orm/pglite";
-import { Effect } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { billings, budgets, engagementProjects, engagements, proposals } from "../../src/db/schema";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
@@ -57,25 +57,29 @@ function createFakePlugins(
   builders: Array<{ nearAccount: string; name: string | null }> = [],
 ): PluginsClient {
   return {
-    projects: () =>
-      ({
-        listProjects: async ({ organizationId }: { organizationId: string }) => ({
-          data: projects.filter((p) => p.organizationId === organizationId),
-          meta: { nextCursor: null },
-        }),
-        getProject: async ({ id }: { id: string }) => {
-          const project = projects.find((p) => p.id === id);
-          if (!project) {
-            throw new ORPCError("NOT_FOUND", { message: "Project not found" });
-          }
-          return { data: project };
-        },
-      }) as never,
-    builders: () =>
-      ({
-        listBuilders: async () => ({ data: builders }),
-      }) as never,
-    auth: () => ({}) as never,
+    projects: {
+      client: () =>
+        ({
+          listProjects: async ({ organizationId }: { organizationId: string }) => ({
+            data: projects.filter((p) => p.organizationId === organizationId),
+            meta: { nextCursor: null },
+          }),
+          getProject: async ({ id }: { id: string }) => {
+            const project = projects.find((p) => p.id === id);
+            if (!project) {
+              throw new ORPCError("NOT_FOUND", { message: "Project not found" });
+            }
+            return { data: project };
+          },
+        }) as never,
+    },
+    builders: {
+      client: () =>
+        ({
+          listBuilders: async () => ({ data: builders }),
+        }) as never,
+    },
+    auth: { client: () => ({}) as never },
   } as PluginsClient;
 }
 
@@ -95,7 +99,7 @@ describe("reports.generate", () => {
   });
 
   function buildReports(plugins: PluginsClient) {
-    const directory = createProjectDirectory(() => plugins.projects() as ProjectsClient);
+    const directory = createProjectDirectory(() => plugins.projects.client() as ProjectsClient);
     return createReportsService(db as never, directory, plugins, organizations);
   }
 

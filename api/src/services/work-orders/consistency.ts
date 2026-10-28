@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { z } from "every-plugin/zod";
+import { z } from "zod";
 import type { CollectedEvidence, EvidenceKind } from "./types";
 
 const MODEL = "claude-opus-5-5";

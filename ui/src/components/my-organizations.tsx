@@ -17,12 +17,13 @@ import { ItemGroup } from "@/components/ui/item";
 import { useLeaveOrganization } from "@/hooks/use-leave-organization";
 import { organizationsQueryOptions } from "@/lib/account";
 import { sessionQueryOptions } from "@/lib/auth";
-import { nonPersonalOrganizations } from "@/lib/landing";
+import { isActiveOrganization, nonPersonalOrganizations } from "@/lib/landing";
 import { isLastOwner } from "@/lib/membership";
 
 type MyMembership = {
   organizationId: string;
   name: string;
+  status: string | null;
   role: string | null;
   lastOwner: boolean;
 };
@@ -43,10 +44,17 @@ export function MyOrganizations({ emptyAction }: { emptyAction?: ReactNode }) {
             query: { organizationId: organization.id },
           });
           const members = data?.members ?? [];
-          const mine = members.find((m) => m.userId === userId);
+          const mine = members.find(
+            (m: { id: string; userId: string; role: string }) => m.userId === userId,
+          );
           return {
             organizationId: organization.id,
             name: organization.name,
+            status: isActiveOrganization(organization)
+              ? null
+              : organization.status === "rejected"
+                ? `Not approved${organization.rejectionReason ? `: ${organization.rejectionReason}` : ""}`
+                : "Waiting for approval",
             role: mine?.role ?? null,
             lastOwner: mine ? isLastOwner(members, mine.id) : false,
           };
@@ -89,7 +97,9 @@ export function MyOrganizations({ emptyAction }: { emptyAction?: ReactNode }) {
             name={membership.name}
             role={membership.role}
             details={
-              membership.lastOwner ? (
+              membership.status ? (
+                <span>{membership.status}</span>
+              ) : membership.lastOwner ? (
                 <span>Only owner. Make someone else owner to leave.</span>
               ) : undefined
             }

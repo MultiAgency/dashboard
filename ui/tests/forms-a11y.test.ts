@@ -28,7 +28,7 @@ describe("shared inquiry field a11y surface", () => {
 
 describe("intake form a11y surface", () => {
   for (const file of FORM_FILES) {
-    const source = read("routes", "_layout", file);
+    const source = read("routes", "_public", file);
 
     test(`${file} renders its text fields through the shared inquiry field`, () => {
       expect(source).toMatch(/<InquiryTextField/);

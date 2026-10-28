@@ -51,6 +51,15 @@ export function adminSettingsQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const organizationRequestsQueryKey = ["platform", "organization-requests"] as const;
+
+export function organizationRequestsQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: organizationRequestsQueryKey,
+    queryFn: () => apiClient.organizationRequests.list(),
+  });
+}
+
 export const agencyDaoQueryKey = ["admin", "agency-dao"] as const;
 
 export function agencyDaoQueryOptions(apiClient: ApiClient) {

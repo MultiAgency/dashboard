@@ -11,16 +11,24 @@ import {
   TableIcon,
 } from "@phosphor-icons/react";
 import {
-  type ColumnDef,
   type ColumnFiltersState,
+  type ColumnVisibilityState,
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  createFilteredRowModel,
+  createPaginatedRowModel,
+  createSortedRowModel,
+  filterFns,
   flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
+  globalFilteringFeature,
+  type RowData,
+  rowPaginationFeature,
+  rowSortingFeature,
   type SortingState,
-  useReactTable,
-  type VisibilityState,
+  sortFns,
+  type ColumnDef as TableColumnDef,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table";
 import { useEffect, useState } from "react";
 import { LoadError } from "@/components/load-error";
@@ -60,9 +68,26 @@ import {
 } from "@/components/ui/table";
 import { type CsvColumn, csvTimestamp, downloadCsv } from "@/lib/csv";
 
-export type { ColumnDef };
+const dataTableFeatures = tableFeatures({
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  globalFilteringFeature,
+  rowPaginationFeature,
+  rowSortingFeature,
+  filteredRowModel: createFilteredRowModel(),
+  paginatedRowModel: createPaginatedRowModel(),
+  sortedRowModel: createSortedRowModel(),
+  filterFns,
+  sortFns,
+});
 
-export type DataTableProps<TData, TValue> = {
+export type ColumnDef<TData extends RowData, TValue = unknown> = TableColumnDef<
+  typeof dataTableFeatures,
+  TData,
+  TValue
+>;
+
+export type DataTableProps<TData extends RowData, TValue> = {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   isLoading?: boolean;
@@ -83,7 +108,10 @@ type ExportMeta<TData> = {
   exportValue?: (row: TData) => string;
 };
 
-function columnExportValue<TData>(col: ColumnDef<TData, unknown>, row: TData): string {
+function columnExportValue<TData extends RowData>(
+  col: ColumnDef<TData, unknown>,
+  row: TData,
+): string {
   const meta = col.meta as ExportMeta<TData> | undefined;
   if (meta?.exportValue) return meta.exportValue(row);
 
@@ -140,17 +168,17 @@ function SortHeader({
   );
 }
 
-function loadVisibility(viewId: string | undefined): VisibilityState {
+function loadVisibility(viewId: string | undefined): ColumnVisibilityState {
   if (!viewId || typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(`datatable-cols-${viewId}`);
-    return raw ? (JSON.parse(raw) as VisibilityState) : {};
+    return raw ? (JSON.parse(raw) as ColumnVisibilityState) : {};
   } catch {
     return {};
   }
 }
 
-export function DataTable<TData, TValue>({
+export function DataTable<TData extends RowData, TValue>({
   columns,
   data,
   isLoading,
@@ -168,7 +196,7 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
+  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>(() =>
     loadVisibility(viewId),
   );
 
@@ -179,22 +207,22 @@ export function DataTable<TData, TValue>({
     } catch {}
   }, [columnVisibility, viewId]);
 
-  const table = useReactTable({
-    data,
-    columns,
-    state: { sorting, columnFilters, globalFilter, columnVisibility },
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    onGlobalFilterChange: setGlobalFilter,
-    onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: {
-      pagination: { pageSize: pageSizeOptions[0] ?? 10 },
+  const table = useTable(
+    {
+      features: dataTableFeatures,
+      data,
+      columns: columns as unknown as ColumnDef<TData>[],
+      state: { sorting, columnFilters, globalFilter, columnVisibility },
+      onSortingChange: setSorting,
+      onColumnFiltersChange: setColumnFilters,
+      onGlobalFilterChange: setGlobalFilter,
+      onColumnVisibilityChange: setColumnVisibility,
+      initialState: {
+        pagination: { pageIndex: 0, pageSize: pageSizeOptions[0] ?? 10 },
+      },
     },
-  });
+    (state) => state,
+  );
 
   if (error) {
     return (
@@ -245,7 +273,7 @@ export function DataTable<TData, TValue>({
   const showToolbar = enableSearch || showColumns || showExport;
   const pageCount = table.getPageCount() || 1;
   const showPagination =
-    pageCount > 1 || table.getPrePaginationRowModel().rows.length > (pageSizeOptions[0] ?? 10);
+    pageCount > 1 || table.getPrePaginatedRowModel().rows.length > (pageSizeOptions[0] ?? 10);
 
   return (
     <div data-slot="data-table" className="flex min-w-0 flex-col gap-3">
@@ -382,10 +410,10 @@ export function DataTable<TData, TValue>({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>
-                  Page {table.getState().pagination.pageIndex + 1} of {pageCount}
+                  Page {table.state.pagination.pageIndex + 1} of {pageCount}
                 </span>
                 <Select
-                  value={String(table.getState().pagination.pageSize)}
+                  value={String(table.state.pagination.pageSize)}
                   onValueChange={(value) => table.setPageSize(Number(value))}
                 >
                   <SelectTrigger size="sm" aria-label="Rows per page">

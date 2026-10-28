@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { z } from "every-plugin/zod";
+import { z } from "zod";
 import type { DocRun, GoogleDoc } from "./google";
 
 export const KNOWN_FIELDS: Record<string, string> = {

@@ -41,7 +41,7 @@ Deploy the app, then make yourself a super admin to set up the initial agency.
 1. Sign in with your NEAR wallet at the deployed URL.
 2. Open the auth database and set your user role to `admin`:
    ```bash
-   bun bos db studio auth
+   pnpm bos db studio auth
    ```
    In the Drizzle Studio UI, navigate to the `user` table and set the `role` column to `admin` for your user row.
 3. Visit `/platform` and create your agency organization (`type: "agency"`) with an optional `daoAccountId` if you have a Sputnik DAO.
@@ -50,13 +50,13 @@ Deploy the app, then make yourself a super admin to set up the initial agency.
 ## Quick Start
 
 ```bash
-bun install             # Install dependencies
-bun run dev:postgres    # Boot docker compose Postgres + start dev (persistent local dev)
+pnpm install             # Install dependencies
+pnpm run dev:postgres    # Boot docker compose Postgres + start dev (persistent local dev)
 # or:
-bun run db:migrate && bun run dev   # Use the configured API_DATABASE_URL, or in-memory pglite by default
+pnpm run db:migrate && pnpm run dev   # Use the configured API_DATABASE_URL, or in-memory pglite by default
 ```
 
-The API plugin uses PostgreSQL via Drizzle. Without `API_DATABASE_URL` set, it boots against an in-memory `pglite` database — fine for quick exploration but state resets on every restart. For persistent local dev, `bun run dev:postgres` boots PostgreSQL instances via `docker-compose.yml` (api/auth/builders/projects on 5432/5433/5434/5435) and starts the dev server. Migrations run automatically on startup; `bun run db:migrate` applies them manually against the configured database.
+The API plugin uses PostgreSQL via Drizzle. Without `API_DATABASE_URL` set, it boots against an in-memory `pglite` database — fine for quick exploration but state resets on every restart. For persistent local dev, `pnpm run dev:postgres` boots PostgreSQL instances via `docker-compose.yml` (api/auth/builders/projects on 5432/5433/5434/5435) and starts the dev server. Migrations run automatically on startup; `pnpm run db:migrate` applies them manually against the configured database.
 
 To inspect databases locally:
 ```bash
@@ -66,7 +66,7 @@ bos db studio projects  # Projects plugin database
 bos db studio <plugin>  # Any registered plugin database
 ```
 
-This serves the UI and API locally and mounts them on a remote host (loaded via `bos.config.json`'s `extends`). See [AGENTS.md](./AGENTS.md#environment) for the full port table. UI defaults to `http://localhost:3003` (rsbuild auto-bumps if occupied — check the dev server output).
+This serves the UI and API locally and mounts them on a remote host (loaded via `bos.app.ts`'s `extends`). See [AGENTS.md](./AGENTS.md#environment) for the full port table. UI defaults to `http://localhost:3003` (rsbuild auto-bumps if occupied — check the dev server output).
 
 ## CLI Commands
 
@@ -94,10 +94,10 @@ everything-dev start --no-interactive   # All remotes, production URLs
 ### Build & Publish
 
 ```bash
-bos build               # Build all packages (updates bos.config.json)
-bos publish             # Publish config to the FastKV registry under `account`
-bos publish --deploy    # Build/deploy all workspaces, then publish
-bun run publish         # Same publish command via root script
+bos build               # Build all packages
+bos publish             # Publish config only to the FastKV registry under `account`
+bos deploy              # Build, upload bundles to the CDN, publish config, redeploy the runtime
+bos deploy --env staging  # The same for staging (CI runs this on push to `staging`)
 ```
 
 ### Project Management
@@ -112,18 +112,18 @@ bos clean                   # Clean build artifacts
 
 ### Making Changes
 
-- **UI Changes**: Edit `ui/src/` → hot reload automatically → publish with `bos publish --deploy`
-- **API Changes**: Edit `api/src/` → hot reload automatically → publish with `bos publish --deploy`
-- **Runtime Config**: Edit `bos.config.json` → publish with `bos publish --deploy` (the host is remote — see Architecture)
+- **UI Changes**: Edit `ui/src/` → hot reload automatically → ship with `bos deploy`
+- **API Changes**: Edit `api/src/` → hot reload automatically → ship with `bos deploy`
+- **Runtime Config**: Edit `bos.app.ts` → deploy with `bos deploy` (the host is remote — see Architecture)
 
 ### Before Committing
 
 Always run these commands before committing:
 
 ```bash
-bun test        # Run all tests
-bun typecheck   # Type check all packages
-bun lint        # Run linting (see lint setup below)
+pnpm test        # Run all tests
+pnpm typecheck   # Type check all packages
+pnpm lint        # Run linting (see lint setup below)
 ```
 
 ### Git Workflow
@@ -143,12 +143,12 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines in
 
 ## Architecture
 
-**Module Federation monorepo** with runtime-loaded configuration. The host is **remote** (loaded via `bos.config.json`'s `extends`); this repo owns `ui/` and `api/` only.
+**Module Federation monorepo** with runtime-loaded configuration. The host is **remote** (loaded via `bos.app.ts`'s `extends`); this repo owns `ui/` and `api/` only.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │              Host (Remote — not in this repo)           │
-│  Hono.js + oRPC + bos.config.json loader                │
+│  Hono.js + oRPC + bos.app.ts loader                │
 │  ┌──────────────────┐      ┌──────────────────┐         │
 │  │ Module Federation│      │ every-plugin     │         │
 │  │ Runtime          │      │ Runtime          │         │
@@ -166,17 +166,17 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed contribution guidelines in
 
 **Key Features:**
 
-- ✅ **Runtime Configuration** - All URLs from `bos.config.json` (no rebuild needed)
+- ✅ **Runtime Configuration** - All URLs from the published config (no rebuild needed)
 - ✅ **Independent Deployment** - UI and API deploy separately
 - ✅ **Type Safety** - End-to-end with oRPC contracts
 - ✅ **UI Runtime Boundary** - `everything-dev/ui/client` and `/server` own router/runtime glue
-- ✅ **CDN-Ready** - Module Federation with [Zephyr Cloud](https://zephyr-cloud.io/)
+- ✅ **CDN-Ready** - Module Federation bundles served from the everything.dev CDN
 
 ## Configuration
 
-All runtime configuration lives in [`bos.config.json`](./bos.config.json). The agency surface lives in `api/`, which proxies the upstream `projects` plugin via `pluginsClient.projects(proxyCtx(orgAccountId))` for project CRUD (list/get/create/update). See [AGENTS.md](./AGENTS.md) for the plugin model and proxy-as-org rule.
+All runtime configuration lives in [`bos.app.ts`](./bos.app.ts). The agency surface lives in `api/`, which proxies the upstream `projects` plugin via `pluginsClient.projects(proxyCtx(orgAccountId))` for project CRUD (list/get/create/update). See [AGENTS.md](./AGENTS.md) for the plugin model and proxy-as-org rule.
 
-`bos publish --deploy` is the release path when you want Zephyr URLs refreshed before publishing the config.
+`bos deploy` is the release path: it uploads the bundles, publishes the config to FastKV and redeploys the runtime image.
 
 ## Lint Setup
 
@@ -184,13 +184,13 @@ This project uses [Biome](https://biomejs.dev/) for linting and formatting:
 
 ```bash
 # Check linting
-bun lint
+pnpm lint
 
 # Fix auto-fixable issues
-bun lint:fix
+pnpm lint:fix
 
 # Format code
-bun format
+pnpm format
 ```
 
 Biome is configured in `biome.json` at the project root. Generated files (like `routeTree.gen.ts`) are automatically excluded.

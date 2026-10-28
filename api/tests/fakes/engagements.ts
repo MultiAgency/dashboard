@@ -211,9 +211,11 @@ export function clientWorkWorld() {
 
 export function clientPortalOf(db: Database, world: Awaited<ReturnType<typeof engagementWorld>>) {
   const plugins = {
-    builders: () => ({
-      listBuilders: async () => ({ data: [{ nearAccount: "builder.near", name: "Builder" }] }),
-    }),
+    builders: {
+      client: () => ({
+        listBuilders: async () => ({ data: [{ nearAccount: "builder.near", name: "Builder" }] }),
+      }),
+    },
   } as unknown as PluginsClient;
   const listings = createListingsService(db, world.directory);
   const ledgers = createProjectLedgers(db, listings);

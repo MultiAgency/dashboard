@@ -1,6 +1,6 @@
+import { ORPCError } from "@orpc/server";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { Context, Effect, Layer } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Context, Effect, Layer } from "effect";
 import type { Database } from "../db";
 import { DatabaseTag } from "../db/layer";
 import { builderAccounts, builderAdmissions, builderAgreements, builders } from "../db/schema";
@@ -459,7 +459,7 @@ async function recordAgreement(
   };
 }
 
-export class MemberService extends Context.Tag("builders/MemberService")<
+export class MemberService extends Context.Service<
   MemberService,
   {
     putMember: (
@@ -476,7 +476,7 @@ export class MemberService extends Context.Tag("builders/MemberService")<
       caller: BuilderCaller,
     ) => Effect.Effect<RecordedAgreement, ORPCError<string, unknown>>;
   }
->() {}
+>()("builders/MemberService") {}
 
 export const MemberServiceLive = Layer.effect(
   MemberService,

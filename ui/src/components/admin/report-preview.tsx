@@ -1,4 +1,3 @@
-import type { ColumnDef } from "@tanstack/react-table";
 import { type ReactNode, useMemo } from "react";
 import {
   Card,
@@ -12,6 +11,7 @@ import {
 import { ClientBreakdownSection } from "@/components/admin/client-breakdown-section";
 import { StatCard } from "@/components/budget";
 import { TokenAmountCell } from "@/components/token-amounts";
+import type { ColumnDef } from "@/components/ui/data-table";
 import {
   type DeliveredWork,
   DeliveredWorkSection,
