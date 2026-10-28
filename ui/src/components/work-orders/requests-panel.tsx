@@ -200,7 +200,7 @@ function RequestItem({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium tabular-nums">{request.code}</span>
-        <RequestStatusBadge status={request.status} />
+        <RequestStatusBadge status={request.status} closed={terminated} />
         <span className="text-sm text-muted-foreground tabular-nums">
           {request.coversFrom} → {request.coversTo}
         </span>

@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
-import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   Button,
   DialogDescription,
@@ -16,7 +15,9 @@ import {
 import { deriveBaseAmount, type KnownToken } from "@/components/admin/token-amount-fields";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Empty, Field, Loading } from "@/components/admin-form";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { FieldLabel, Field as ShadcnField } from "@/components/ui/field";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
@@ -337,6 +338,10 @@ function WorkOrderFields({
   const badEmail = [draft.contractorEmail, draft.representativeEmail]
     .map((e) => e.trim())
     .find((e) => e !== "" && !EMAIL.test(e));
+  const badRepresentativeEmail =
+    draft.representativeEmail.trim() !== "" && !EMAIL.test(draft.representativeEmail.trim());
+  const [moreShown, setMoreOpen] = useState(!!editing || !!template);
+  const moreOpen = moreShown || badRepresentativeEmail;
   const reason = !draft.projectId
     ? "Choose a project."
     : !draft.builderNearAccount
@@ -580,39 +585,7 @@ function WorkOrderFields({
               onChange={(e) => set("contractorEmail", e.target.value)}
             />
           </Field>
-          <Field
-            label="Representative"
-            htmlFor="wo-rep-name"
-            helper="Signs for the Agency; printed on the document."
-          >
-            <Input
-              id="wo-rep-name"
-              value={draft.representativeName}
-              onChange={(e) => set("representativeName", e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Representative's email"
-            htmlFor="wo-rep-email"
-            helper="Agency emails (payout requested, signed, renewed) go only to this address."
-          >
-            <Input
-              id="wo-rep-email"
-              type="email"
-              value={draft.representativeEmail}
-              onChange={(e) => set("representativeEmail", e.target.value)}
-            />
-          </Field>
         </div>
-        <Field label="IP model" htmlFor="wo-ip" helper="Printed on the document.">
-          <ChoiceSelect
-            id="wo-ip"
-            value={draft.ipModel}
-            emptyLabel="Not specified"
-            onValueChange={(value) => set("ipModel", value)}
-            options={IP_MODELS}
-          />
-        </Field>
         {askFields.map((field) => (
           <Field
             key={field.tag}
@@ -629,20 +602,63 @@ function WorkOrderFields({
             />
           </Field>
         ))}
-        <ShadcnField orientation="horizontal">
-          <Checkbox
-            id="wo-renew"
-            checked={draft.autoRenew}
-            onCheckedChange={(checked) => set("autoRenew", checked === true)}
-          />
-          <FieldLabel htmlFor="wo-renew" className="flex flex-col items-start gap-0.5">
-            <span>Renew monthly when the base metrics are met</span>
-            <span className="text-xs font-normal text-muted-foreground">
-              At the end of each period the work is measured. All met: next month's work order
-              starts by itself. Any missed: Manual Approval Needed. Part of the accepted terms.
-            </span>
-          </FieldLabel>
-        </ShadcnField>
+        <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
+          <CollapsibleTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" className="self-start px-0">
+              {moreOpen ? "Hide options" : "More options: representative, IP model, renewal"}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="flex flex-col gap-4 pt-2">
+            <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+              <Field
+                label="Representative"
+                htmlFor="wo-rep-name"
+                helper="Signs for the Agency; printed on the document."
+              >
+                <Input
+                  id="wo-rep-name"
+                  value={draft.representativeName}
+                  onChange={(e) => set("representativeName", e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Representative's email"
+                htmlFor="wo-rep-email"
+                helper="Agency emails (payout requested, signed, renewed) go only to this address."
+              >
+                <Input
+                  id="wo-rep-email"
+                  type="email"
+                  value={draft.representativeEmail}
+                  onChange={(e) => set("representativeEmail", e.target.value)}
+                />
+              </Field>
+            </div>
+            <Field label="IP model" htmlFor="wo-ip" helper="Printed on the document.">
+              <ChoiceSelect
+                id="wo-ip"
+                value={draft.ipModel}
+                emptyLabel="Not specified"
+                onValueChange={(value) => set("ipModel", value)}
+                options={IP_MODELS}
+              />
+            </Field>
+            <ShadcnField orientation="horizontal">
+              <Checkbox
+                id="wo-renew"
+                checked={draft.autoRenew}
+                onCheckedChange={(checked) => set("autoRenew", checked === true)}
+              />
+              <FieldLabel htmlFor="wo-renew" className="flex flex-col items-start gap-0.5">
+                <span>Renew monthly when the base metrics are met</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  At the end of each period the work is measured. All met: next month's work order
+                  starts by itself. Any missed: Manual Approval Needed. Part of the accepted terms.
+                </span>
+              </FieldLabel>
+            </ShadcnField>
+          </CollapsibleContent>
+        </Collapsible>
       </FieldGroup>
       <DialogFooter className="flex-wrap items-center gap-3">
         {reason && <p className="mr-auto text-xs text-muted-foreground">{reason}</p>}

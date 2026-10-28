@@ -169,7 +169,7 @@ function WorkOrderPage() {
     if (action.kind === "offer") act.mutate("offer");
     else if (action.kind === "activate") act.mutate("activate");
     else if (action.kind === "edit") setEditing(true);
-    else if (action.kind === "approve") {
+    else if (action.kind === "approve" || action.kind === "pay") {
       selectTab("payouts");
       setApproveRequestId(action.requestId);
     } else if (action.kind === "renewal") {

@@ -21,6 +21,7 @@ import { Loading } from "@/components/admin-form";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { workOrderIntegrationQueryOptions } from "@/lib/queries";
 import { GoogleDriveSettings } from "./google-settings";
+import { OperatorHint } from "./operator-hint";
 
 type Integration = Awaited<ReturnType<ApiClient["workOrders"]["integration"]>>;
 
@@ -66,8 +67,10 @@ export function WorkOrderIntegrationSettings() {
           <Alert>
             <AlertTitle>Emails are off on this server</AlertTitle>
             <AlertDescription>
-              Set RESEND_API_KEY and NOTIFY_FROM_EMAIL. Until then people get in-app notifications
-              only.
+              <OperatorHint>
+                Set RESEND_API_KEY and NOTIFY_FROM_EMAIL. Until then people get in-app notifications
+                only.
+              </OperatorHint>
             </AlertDescription>
           </Alert>
         )}

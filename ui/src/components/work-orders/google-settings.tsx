@@ -7,6 +7,7 @@ import { Field } from "@/components/admin-form";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { pickFromDrive } from "@/lib/google-picker";
+import { OperatorHint } from "./operator-hint";
 import { TemplateFields } from "./template-fields";
 
 type Integration = Awaited<ReturnType<ApiClient["workOrders"]["integration"]>>;
@@ -123,8 +124,10 @@ export function GoogleDriveSettings({
       <Alert>
         <AlertTitle>Google Docs isn't set up on this server</AlertTitle>
         <AlertDescription>
-          Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET so each Agency can connect its
-          own Google Drive, or put a service account's JSON key in GOOGLE_SERVICE_ACCOUNT_JSON.
+          <OperatorHint>
+            Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET so each Agency can connect its
+            own Google Drive, or put a service account's JSON key in GOOGLE_SERVICE_ACCOUNT_JSON.
+          </OperatorHint>
         </AlertDescription>
       </Alert>
     );
@@ -196,8 +199,10 @@ export function GoogleDriveSettings({
           )}
           {!oauth.canConnect && (
             <p className="text-sm text-muted-foreground">
-              Set PAYOUTS_SECRET_KEY or GOOGLE_TOKENS_SECRET_KEY on the server so the connection can
-              be stored encrypted.
+              <OperatorHint>
+                Set PAYOUTS_SECRET_KEY or GOOGLE_TOKENS_SECRET_KEY on the server so the connection
+                can be stored encrypted.
+              </OperatorHint>
             </p>
           )}
           {!oauth.connected && google.serviceAccountEmail && (
@@ -253,8 +258,10 @@ export function GoogleDriveSettings({
       )}
       {connected && !oauth.picker && (
         <p className="text-sm text-muted-foreground">
-          Set GOOGLE_PICKER_API_KEY to choose files from Drive here. Until then, paste the links
-          under Advanced.
+          <OperatorHint>
+            Set GOOGLE_PICKER_API_KEY to choose files from Drive here. Until then, paste the links
+            under Advanced.
+          </OperatorHint>
         </p>
       )}
 

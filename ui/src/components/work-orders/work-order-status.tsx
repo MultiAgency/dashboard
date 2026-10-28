@@ -7,13 +7,13 @@ export type CompensationRequest = WorkOrderDetail["requests"][number];
 export type Evidence = WorkOrderDetail["evidence"][number];
 export type Renewal = NonNullable<WorkOrder["renewal"]>;
 
-type BadgeVariant = "default" | "outline" | "secondary" | "destructive";
+type BadgeVariant = "default" | "outline" | "secondary" | "destructive" | "success" | "warning";
 
 const WORK_ORDER_STATUS: Record<WorkOrder["status"], { label: string; variant: BadgeVariant }> = {
   draft: { label: "Draft", variant: "secondary" },
   offered: { label: "Offered", variant: "default" },
   accepted: { label: "Accepted", variant: "default" },
-  active: { label: "Active", variant: "outline" },
+  active: { label: "Active", variant: "success" },
   ended: { label: "Ended", variant: "secondary" },
   exhausted: { label: "Budget used", variant: "secondary" },
   terminated: { label: "Terminated", variant: "destructive" },
@@ -28,14 +28,14 @@ const REQUEST_STATUS: Record<
   approved: { label: "Approved, ready to pay", variant: "default" },
   paying: { label: "Paying", variant: "outline" },
   proposed: { label: "Proposal in the DAO", variant: "outline" },
-  paid: { label: "Paid", variant: "outline" },
+  paid: { label: "Paid", variant: "success" },
   rejected: { label: "Rejected", variant: "destructive" },
   failed: { label: "Payment failed", variant: "destructive" },
 };
 
 const RENEWAL_STATUS: Record<Renewal["status"], { label: string; variant: BadgeVariant }> = {
-  renewed: { label: "Renewed", variant: "outline" },
-  needs_approval: { label: "Manual Approval Needed", variant: "default" },
+  renewed: { label: "Renewed", variant: "success" },
+  needs_approval: { label: "Manual Approval Needed", variant: "warning" },
   declined: { label: "Not renewed", variant: "secondary" },
 };
 
@@ -44,7 +44,14 @@ export function WorkOrderStatusBadge({ status }: { status: WorkOrder["status"] }
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-export function RequestStatusBadge({ status }: { status: CompensationRequest["status"] }) {
+export function RequestStatusBadge({
+  status,
+  closed = false,
+}: {
+  status: CompensationRequest["status"];
+  closed?: boolean;
+}) {
+  if (closed && status === "approved") return <Badge variant="secondary">Approved, not paid</Badge>;
   const { label, variant } = REQUEST_STATUS[status];
   return <Badge variant={variant}>{label}</Badge>;
 }

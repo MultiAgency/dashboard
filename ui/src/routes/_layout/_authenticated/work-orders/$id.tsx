@@ -88,7 +88,7 @@ function MyWorkOrderPage() {
   const amount = (value: string) => formatTokenAmount(value, wo.tokenId);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 [&_[data-slot=card-description]]:text-sm [&_[data-slot=card]]:text-sm">
       <Link
         to="/dashboard"
         className="text-sm text-muted-foreground underline-offset-4 hover:underline"
@@ -263,7 +263,12 @@ function MyWorkOrderPage() {
                   request.status === "draft" ? (
                     <DraftEditor key={request.id} request={request} workOrder={wo} />
                   ) : (
-                    <SubmittedRequest key={request.id} request={request} tokenId={wo.tokenId} />
+                    <SubmittedRequest
+                      key={request.id}
+                      request={request}
+                      tokenId={wo.tokenId}
+                      closed={wo.status === "terminated"}
+                    />
                   ),
                 )
             )}
@@ -302,13 +307,21 @@ function MyWorkOrderPage() {
   );
 }
 
-function SubmittedRequest({ request, tokenId }: { request: CompensationRequest; tokenId: string }) {
+function SubmittedRequest({
+  request,
+  tokenId,
+  closed,
+}: {
+  request: CompensationRequest;
+  tokenId: string;
+  closed: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <section className="flex flex-col gap-3 border p-4" aria-label={request.code}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium tabular-nums">{request.code}</span>
-        <RequestStatusBadge status={request.status} />
+        <RequestStatusBadge status={request.status} closed={closed} />
         <span className="text-sm text-muted-foreground tabular-nums">
           {request.coversFrom} → {request.coversTo}
         </span>

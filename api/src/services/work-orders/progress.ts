@@ -17,6 +17,7 @@ export type ProgressAction =
   | { kind: "activate"; label: string }
   | { kind: "link"; label: string; href: string; external: boolean }
   | { kind: "approve"; label: string; requestId: string }
+  | { kind: "pay"; label: string; requestId: string }
   | { kind: "renewal"; label: string }
   | { kind: "edit"; label: string };
 
@@ -220,11 +221,13 @@ export function progressOf(input: ProgressInput): Progress {
     waitingOn = "you";
     headline = `Create or link the DAO proposal paying ${request.approved ?? request.requested}`;
     since = request.decidedAt;
+    next = { kind: "pay", label: "Link the proposal", requestId: request.id };
   } else if (request && request.status === "approved") {
     stage = "paid";
     waitingOn = "you";
     headline = `Pay ${request.approved ?? request.requested} to ${builder} through a DAO proposal`;
     since = request.decidedAt;
+    next = { kind: "pay", label: "Pay it", requestId: request.id };
   } else if (request && request.status === "paying") {
     stage = "paid";
     waitingOn = "system";

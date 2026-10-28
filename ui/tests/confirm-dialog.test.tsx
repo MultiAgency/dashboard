@@ -18,8 +18,8 @@ describe("ConfirmDialog — destructive confirm flow", () => {
     expect(screen.getByText("Delete this thing?")).toBeDefined();
     expect(screen.getByText("It can be re-created afterwards.")).toBeDefined();
     // Default labels
-    expect(screen.getByRole("button", { name: "cancel" })).toBeDefined();
-    expect(screen.getByRole("button", { name: "confirm" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeDefined();
   });
 
   test("clicking confirm fires onConfirm and closes via onOpenChange(false)", async () => {
@@ -53,7 +53,7 @@ describe("ConfirmDialog — destructive confirm flow", () => {
         onConfirm={onConfirm}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onConfirm).not.toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
