@@ -133,9 +133,7 @@ describe("work order setup status", () => {
       detail: "Add the default representative's name and email",
       fixHref: "/admin/settings#work-orders",
     });
-    expect(check.signing.detail).toBe(
-      "No e-signature: builders accept the terms in MultiAgency",
-    );
+    expect(check.signing.detail).toBe("No e-signature: builders accept the terms in MultiAgency");
     expect(check.google.fixHref).toBe("/admin/settings#work-orders");
     expect(check.payouts_agent.fixHref).toBe("/admin/settings#payouts");
   });

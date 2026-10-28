@@ -247,9 +247,11 @@ function RequestItem({
         )}
         {canManage && request.status === "submitted" && (
           <>
-            <Button size="sm" onClick={() => setOpen("approve")}>
-              Review and approve
-            </Button>
+            {!terminated && (
+              <Button size="sm" onClick={() => setOpen("approve")}>
+                Review and approve
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => setOpen("reject")}>
               Reject
             </Button>
@@ -617,6 +619,7 @@ function ProposalForm({
     retry: false,
   });
   const started = !!request.daoPaymentStartedAt;
+  const terminated = workOrder.status === "terminated";
   const startDaoPayment = async () => {
     const tx = await apiClient.workOrders.startDaoPayment({ requestId: request.id });
     queryClient.setQueryData(quoteKey, tx);
@@ -702,18 +705,28 @@ function ProposalForm({
           </Button>
         )}
       </div>
-      <div className="flex flex-col gap-2">
-        <Button type="button" disabled={busy || !q} onClick={() => create.mutate()}>
-          {create.isPending ? "Waiting for the wallet…" : "Create the proposal with my wallet"}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Your wallet signs add_proposal on the DAO with its proposal bond as the deposit. Your
-          account needs permission to add transfer proposals.
+      {terminated ? (
+        <p className="text-sm text-muted-foreground">
+          This work order is terminated, so no new proposal can be made. Link the proposal you
+          already created for this amount.
         </p>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <Button type="button" disabled={busy || !q} onClick={() => create.mutate()}>
+            {create.isPending ? "Waiting for the wallet…" : "Create the proposal with my wallet"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Your wallet signs add_proposal on the DAO with its proposal bond as the deposit. Your
+            account needs permission to add transfer proposals.
+          </p>
+        </div>
+      )}
       {started ? (
         <>
-          <Field label="Or link one made elsewhere (e.g. Trezu)" htmlFor="proposal-id">
+          <Field
+            label={terminated ? "Proposal number" : "Or link one made elsewhere (e.g. Trezu)"}
+            htmlFor="proposal-id"
+          >
             <Input
               id="proposal-id"
               inputMode="numeric"

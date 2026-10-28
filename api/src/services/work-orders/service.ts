@@ -4059,7 +4059,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       scope: TreasuryScope & OrganizationScope,
       input: { requestId: string },
     ) => {
-      const { request, row } = await daoPayable(scope, input.requestId);
+      const { request, row } = await daoPayable(scope, input.requestId, { linking: true });
       return daoPaymentTransaction(scope, row, request, await priceOf(row, request));
     },
 

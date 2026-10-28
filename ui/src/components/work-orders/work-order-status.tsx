@@ -52,6 +52,7 @@ export function RequestStatusBadge({
   closed?: boolean;
 }) {
   if (closed && status === "approved") return <Badge variant="secondary">Approved, not paid</Badge>;
+  if (closed && status === "draft") return <Badge variant="secondary">Not submitted</Badge>;
   const { label, variant } = REQUEST_STATUS[status];
   return <Badge variant={variant}>{label}</Badge>;
 }

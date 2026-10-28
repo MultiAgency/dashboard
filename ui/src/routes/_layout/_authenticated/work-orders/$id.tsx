@@ -260,7 +260,7 @@ function MyWorkOrderPage() {
                 .slice()
                 .reverse()
                 .map((request) =>
-                  request.status === "draft" ? (
+                  request.status === "draft" && wo.status !== "terminated" ? (
                     <DraftEditor key={request.id} request={request} workOrder={wo} />
                   ) : (
                     <SubmittedRequest
