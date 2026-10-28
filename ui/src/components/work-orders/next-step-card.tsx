@@ -50,7 +50,11 @@ export function ActionButton({
   }
   return (
     <Button size="sm" variant={variant} disabled={busy} onClick={() => onAction(action)}>
-      {action.label}
+      {busy && action.kind === "offer"
+        ? "Preparing the offer…"
+        : busy && action.kind === "activate"
+          ? "Activating…"
+          : action.label}
     </Button>
   );
 }

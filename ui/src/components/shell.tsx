@@ -73,7 +73,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const linkActive = (to: string) => Boolean(matchRoute({ to, fuzzy: true }));
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-pattern text-foreground">
+    <div className="flex min-h-screen w-full flex-col bg-page text-foreground">
       <AuthHashToasts />
       <a
         href="#main"

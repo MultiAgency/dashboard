@@ -65,6 +65,7 @@ const progressAction = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("activate"), label: z.string() }),
   z.object({ kind: z.literal("link"), label: z.string(), href: z.string(), external: z.boolean() }),
   z.object({ kind: z.literal("approve"), label: z.string(), requestId: z.string() }),
+  z.object({ kind: z.literal("pay"), label: z.string(), requestId: z.string() }),
   z.object({ kind: z.literal("renewal"), label: z.string() }),
   z.object({ kind: z.literal("edit"), label: z.string() }),
 ]);

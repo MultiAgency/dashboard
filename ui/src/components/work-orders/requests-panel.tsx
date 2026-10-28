@@ -24,6 +24,7 @@ import {
   Textarea,
 } from "@/components";
 import { Empty, Field } from "@/components/admin-form";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useApiClient } from "@/lib/api";
 import { useAuthClient } from "@/lib/auth";
@@ -34,6 +35,7 @@ import {
   tokenDecimals,
   tokenSymbol,
 } from "@/lib/format-amount";
+import { dateTime } from "@/lib/format-date";
 import { proposalIdOf } from "@/lib/proposal-id";
 import {
   adminWorkOrdersQueryKey,
@@ -88,9 +90,8 @@ export function RequestsPanel({
           <h2>Compensation requests</h2>
         </CardTitle>
         <CardDescription>
-          The builder submits a report for a period; you approve an amount up to the remaining
-          budget. When the payout agent is ready it pays the builder right away; otherwise pay it
-          through a transfer proposal of the Agency DAO.
+          Each period the builder sends a report and you approve an amount within the budget. Your
+          payout agent pays it right away, or you pay it through an Agency DAO proposal.
         </CardDescription>
         {canDraft && (
           <CardAction>
@@ -150,6 +151,7 @@ function RequestItem({
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState<null | "approve" | "reject" | "proposal">(null);
+  const [confirmingPay, setConfirmingPay] = useState(false);
   const sectionRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!approve) return;
@@ -174,6 +176,7 @@ function RequestItem({
     onError: (err: Error) => toast.error(err.message || "Couldn't pay it"),
   });
   const daoPaymentStarted = !!request.daoPaymentStartedAt;
+  const terminated = workOrder.status === "terminated";
   const [showReport, setShowReport] = useState(request.status === "submitted");
   const amount = (value: string | null) =>
     value ? formatTokenAmount(value, workOrder.tokenId) : "—";
@@ -196,7 +199,7 @@ function RequestItem({
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium tabular-nums">{request.code}</span>
-        <RequestStatusBadge status={request.status} />
+        <RequestStatusBadge status={request.status} closed={terminated} />
         <span className="text-sm text-muted-foreground tabular-nums">
           {request.coversFrom} → {request.coversTo}
         </span>
@@ -208,10 +211,9 @@ function RequestItem({
       {request.note && <p className="text-sm text-muted-foreground">{request.note}</p>}
       {request.autoPayBlocked && (
         <p className="text-sm text-muted-foreground">
-          Waiting to be paid automatically since{" "}
-          {request.autoPayBlocked.since.slice(0, 16).replace("T", " ")} UTC
+          Waiting to be paid automatically since {dateTime(request.autoPayBlocked.since)}
           {request.autoPayBlocked.triedAt
-            ? `, last tried ${request.autoPayBlocked.triedAt.slice(11, 16)} UTC`
+            ? `, last tried ${dateTime(request.autoPayBlocked.triedAt)}`
             : ""}
           .
         </p>
@@ -233,8 +235,8 @@ function RequestItem({
       {request.proposalId && request.payout?.priceUsd && (
         <p className="text-sm text-muted-foreground">
           {formatTokenAmount(request.payout.amount, request.payout.tokenId)} at $
-          {request.payout.priceUsd} per {tokenSymbol(request.payout.tokenId)}, priced{" "}
-          {request.payout.pricedAt?.slice(0, 16).replace("T", " ")} UTC.
+          {request.payout.priceUsd} per {tokenSymbol(request.payout.tokenId)}
+          {request.payout.pricedAt ? `, priced ${dateTime(request.payout.pricedAt)}` : ""}.
         </p>
       )}
       <div className="flex flex-wrap gap-2">
@@ -245,9 +247,11 @@ function RequestItem({
         )}
         {canManage && request.status === "submitted" && (
           <>
-            <Button size="sm" onClick={() => setOpen("approve")}>
-              Approve an amount
-            </Button>
+            {!terminated && (
+              <Button size="sm" onClick={() => setOpen("approve")}>
+                Review and approve
+              </Button>
+            )}
             <Button size="sm" variant="outline" onClick={() => setOpen("reject")}>
               Reject
             </Button>
@@ -255,21 +259,41 @@ function RequestItem({
         )}
         {canManage && request.status === "approved" && (
           <>
-            {autoPays && !daoPaymentStarted && (request.agentPayout?.canRetry ?? true) && (
-              <Button size="sm" disabled={payNow.isPending} onClick={() => payNow.mutate()}>
-                {payNow.isPending ? "Paying…" : "Pay now (NEAR Intents)"}
-              </Button>
-            )}
-            {(request.agentPayout?.canRetry ?? true) && (
-              <Button
-                size="sm"
-                variant={autoPays ? "outline" : "default"}
-                disabled={!hasTreasury}
-                onClick={() => setOpen("proposal")}
-              >
-                Pay through a DAO proposal
-              </Button>
-            )}
+            {autoPays &&
+              !terminated &&
+              !daoPaymentStarted &&
+              (request.agentPayout?.canRetry ?? true) && (
+                <Button
+                  size="sm"
+                  disabled={payNow.isPending}
+                  onClick={() => setConfirmingPay(true)}
+                >
+                  {payNow.isPending ? "Paying…" : "Pay now (NEAR Intents)"}
+                </Button>
+              )}
+            {(request.agentPayout?.canRetry ?? true) &&
+              (!terminated || daoPaymentStarted) &&
+              (hasTreasury ? (
+                <Button
+                  size="sm"
+                  variant={autoPays ? "outline" : "default"}
+                  onClick={() => setOpen("proposal")}
+                >
+                  {daoPaymentStarted ? "Link the DAO proposal" : "Pay through a DAO proposal"}
+                </Button>
+              ) : (
+                <span className="text-sm text-muted-foreground">
+                  To pay through a proposal,{" "}
+                  <Link
+                    to="/admin/settings"
+                    hash="treasury"
+                    className="underline underline-offset-4"
+                  >
+                    connect your Agency DAO
+                  </Link>
+                  .
+                </span>
+              ))}
             <Button size="sm" variant="outline" onClick={() => setOpen("reject")}>
               Reject
             </Button>
@@ -322,6 +346,14 @@ function RequestItem({
           )}
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={confirmingPay}
+        onOpenChange={setConfirmingPay}
+        title={`Pay ${amount(request.approvedAmount)} to ${workOrder.builder.nearAccount}?`}
+        description="Your payout agent sends it in NEAR now. A payment that went out can't be taken back."
+        confirmLabel="Pay now"
+        onConfirm={() => payNow.mutateAsync().then(() => undefined)}
+      />
     </section>
   );
 }
@@ -417,10 +449,11 @@ function ApproveForm({
         </DialogDescription>
       </DialogHeader>
       <FieldGroup>
-        <Field label="Amount" htmlFor="approve-amount">
+        <Field label={`Amount (${tokenSymbol(workOrder.tokenId)})`} htmlFor="approve-amount">
           <Input
             id="approve-amount"
             inputMode="decimal"
+            aria-invalid={!!error || !!over}
             value={value}
             onChange={(e) => setValue(e.target.value)}
           />
@@ -496,7 +529,7 @@ function ApproveForm({
       </FieldGroup>
       <DialogFooter>
         <Button type="submit" disabled={!base || !!error || !!over || blocked || approve.isPending}>
-          {approve.isPending ? "Approving…" : "Approve"}
+          {approve.isPending ? "Approving…" : autoPays && !hold ? "Approve and pay" : "Approve"}
         </Button>
       </DialogFooter>
     </form>
@@ -586,6 +619,7 @@ function ProposalForm({
     retry: false,
   });
   const started = !!request.daoPaymentStartedAt;
+  const terminated = workOrder.status === "terminated";
   const startDaoPayment = async () => {
     const tx = await apiClient.workOrders.startDaoPayment({ requestId: request.id });
     queryClient.setQueryData(quoteKey, tx);
@@ -652,7 +686,8 @@ function ProposalForm({
             {q.priceUsd && q.usd && (
               <span className="text-xs text-muted-foreground">
                 {formatTokenAmount(q.usd, "usd")} at ${q.priceUsd} per {tokenSymbol(q.tokenId)},
-                quoted {q.pricedAt?.slice(11, 16)} UTC. The proposal must pay exactly this amount.
+                {q.pricedAt ? `quoted ${dateTime(q.pricedAt)}. ` : ""}The proposal must pay exactly
+                this amount.
               </span>
             )}
           </>
@@ -670,18 +705,28 @@ function ProposalForm({
           </Button>
         )}
       </div>
-      <div className="flex flex-col gap-2">
-        <Button type="button" disabled={busy || !q} onClick={() => create.mutate()}>
-          {create.isPending ? "Waiting for the wallet…" : "Create the proposal with my wallet"}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Your wallet signs add_proposal on the DAO with its proposal bond as the deposit. Your
-          account needs permission to add transfer proposals.
+      {terminated ? (
+        <p className="text-sm text-muted-foreground">
+          This work order is terminated, so no new proposal can be made. Link the proposal you
+          already created for this amount.
         </p>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <Button type="button" disabled={busy || !q} onClick={() => create.mutate()}>
+            {create.isPending ? "Waiting for the wallet…" : "Create the proposal with my wallet"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Your wallet signs add_proposal on the DAO with its proposal bond as the deposit. Your
+            account needs permission to add transfer proposals.
+          </p>
+        </div>
+      )}
       {started ? (
         <>
-          <Field label="Or link one made elsewhere (e.g. Trezu)" htmlFor="proposal-id">
+          <Field
+            label={terminated ? "Proposal number" : "Or link one made elsewhere (e.g. Trezu)"}
+            htmlFor="proposal-id"
+          >
             <Input
               id="proposal-id"
               inputMode="numeric"

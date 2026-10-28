@@ -83,7 +83,22 @@ export function BuilderSigning({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {document.isError ? (
-          <p className="text-sm text-muted-foreground">The document isn't available yet.</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm text-muted-foreground">The document isn't available yet.</p>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={document.isFetching}
+              onClick={() => document.refetch()}
+            >
+              {document.isFetching ? "Trying…" : "Try again"}
+            </Button>
+            {waiting && !esign && (
+              <Button size="sm" variant="ghost" onClick={onDecline}>
+                Decline
+              </Button>
+            )}
+          </div>
         ) : (
           <OpenDocumentButton
             pdf={document.data}
@@ -101,7 +116,13 @@ export function BuilderSigning({
             )}
             <Button
               variant="outline"
-              onClick={() => queryClient.invalidateQueries({ queryKey: myWorkOrdersQueryKey })}
+              onClick={() =>
+                toast.promise(queryClient.invalidateQueries({ queryKey: myWorkOrdersQueryKey }), {
+                  loading: "Checking your signature…",
+                  success: "Updated",
+                  error: "Couldn't check it. Try again",
+                })
+              }
             >
               I've signed: refresh
             </Button>

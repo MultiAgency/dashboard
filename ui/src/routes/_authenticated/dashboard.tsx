@@ -70,6 +70,8 @@ const workOrderColumns: ColumnDef<MyWorkOrder>[] = [
       <div className="flex flex-wrap gap-1">
         <WorkOrderStatusBadge status={row.original.status} />
         {row.original.status === "offered" && <Badge>Your answer needed</Badge>}
+        {row.original.progress?.stage === "request" &&
+          row.original.progress.waitingOn === "builder" && <Badge>Submit your request</Badge>}
       </div>
     ),
   },

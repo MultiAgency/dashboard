@@ -166,6 +166,9 @@ export function PayoutAgentSettings() {
     budget: data.settings?.monthlyBudgetUsd ?? "",
     cap: data.settings?.maxPayoutNear ?? "",
   };
+  const decimal = /^\d+(\.\d+)?$/;
+  const badBudget = values.budget.trim() !== "" && !decimal.test(values.budget.trim());
+  const badCap = values.cap.trim() !== "" && !decimal.test(values.cap.trim());
   const busy =
     act.isPending || save.isPending || fund.isPending || sync.isPending || raiseBudget.isPending;
   const cooldownUntil =
@@ -257,7 +260,7 @@ export function PayoutAgentSettings() {
               className="flex flex-col gap-4"
               onSubmit={(e) => {
                 e.preventDefault();
-                save.mutate(values);
+                if (!badBudget && !badCap) save.mutate(values);
               }}
             >
               <FieldGroup>
@@ -274,26 +277,41 @@ export function PayoutAgentSettings() {
                       onChange={(e) => setForm({ ...values, owner: e.target.value })}
                     />
                   </Field>
-                  <Field label="Monthly budget (USD)" htmlFor="payout-budget">
+                  <Field
+                    label="Monthly budget (USD)"
+                    htmlFor="payout-budget"
+                    helper={badBudget ? "Numbers only, e.g. 500" : undefined}
+                  >
                     <Input
                       id="payout-budget"
                       inputMode="decimal"
+                      aria-invalid={badBudget}
                       value={values.budget}
                       onChange={(e) => setForm({ ...values, budget: e.target.value })}
                     />
                   </Field>
-                  <Field label="Max per payout (NEAR)" htmlFor="payout-cap">
+                  <Field
+                    label="Max per payout (NEAR)"
+                    htmlFor="payout-cap"
+                    helper={badCap ? "Numbers only, e.g. 50" : undefined}
+                  >
                     <Input
                       id="payout-cap"
                       inputMode="decimal"
+                      aria-invalid={badCap}
                       value={values.cap}
                       onChange={(e) => setForm({ ...values, cap: e.target.value })}
                     />
                   </Field>
                 </div>
               </FieldGroup>
-              <Button type="submit" size="sm" className="self-start" disabled={busy}>
-                Save
+              <Button
+                type="submit"
+                size="sm"
+                className="self-start"
+                disabled={busy || badBudget || badCap}
+              >
+                {save.isPending ? "Saving…" : "Save"}
               </Button>
             </form>
 

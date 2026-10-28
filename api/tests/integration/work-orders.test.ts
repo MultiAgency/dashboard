@@ -2101,6 +2101,44 @@ describe("work orders", () => {
       expect((await service.payNow(await studio(), { requestId: draft.id })).status).toBe("paid");
     });
 
+    test("an approved request of a terminated work order can't be paid any more", async () => {
+      const { wo, draft } = await approvedRequest();
+      const approved = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(approved.status).toBe("approved");
+      await service.terminate(await studio(), { id: wo.id });
+      await setUpAgent();
+      await refused(service.payNow(await studio(), { requestId: draft.id }), "CLOSED");
+      await refused(
+        service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id }),
+        "CLOSED",
+      );
+      await refused(
+        service.paymentProposal(requireTreasury(await studio()), { requestId: draft.id }),
+        "CLOSED",
+      );
+      expect(agent.withdrawals).toEqual([]);
+    });
+
+    test("a DAO payment started before termination can still be quoted and linked, not re-proposed", async () => {
+      const { wo, draft } = await approvedRequest();
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      const started = await service.startDaoPayment(requireTreasury(await studio()), {
+        requestId: draft.id,
+      });
+      await service.terminate(await studio(), { id: wo.id });
+      const quote = await service.paymentProposal(requireTreasury(await studio()), {
+        requestId: draft.id,
+      });
+      expect(quote.quote).toEqual(started.quote);
+      await refused(
+        service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id }),
+        "CLOSED",
+      );
+    });
+
     test("a payout that ends failed goes back to approved and the managers are told", async () => {
       const { draft } = await approvedRequest();
       await setUpAgent();

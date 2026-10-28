@@ -20,6 +20,7 @@ import {
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Loading } from "@/components/admin-form";
 import { type ApiClient, useApiClient } from "@/lib/api";
+import { openPendingTab, type PendingTab } from "@/lib/pending-tab";
 import { TemplateSetup } from "./template-setup";
 
 type Integration = Awaited<ReturnType<ApiClient["workOrders"]["integration"]>>;
@@ -89,12 +90,15 @@ export function TemplateFields({
     onError: (err: Error) => toast.error(err.message || "Couldn't save the fields"),
   });
   const preview = useMutation({
-    mutationFn: () => apiClient.workOrders.previewTemplate({}),
-    onSuccess: ({ url }) => {
-      window.open(url, "_blank", "noopener");
+    mutationFn: (_tab: PendingTab) => apiClient.workOrders.previewTemplate({}),
+    onSuccess: ({ url }, tab) => {
+      tab.go(url);
       toast.success("A preview with sample data is in your documents folder");
     },
-    onError: (err: Error) => toast.error(err.message || "Couldn't make a preview"),
+    onError: (err: Error, tab) => {
+      tab.close();
+      toast.error(err.message || "Couldn't make a preview");
+    },
   });
 
   const labelOf = (key: string) => google.knownFields.find((f) => f.key === key)?.label ?? key;
@@ -118,7 +122,7 @@ export function TemplateFields({
             size="sm"
             variant="outline"
             disabled={!google.documentsFolderUrl || preview.isPending}
-            onClick={() => preview.mutate()}
+            onClick={() => preview.mutate(openPendingTab("Making a preview…"))}
           >
             {preview.isPending ? "Making a preview…" : "Preview"}
           </Button>
