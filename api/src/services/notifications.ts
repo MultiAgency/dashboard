@@ -195,7 +195,7 @@ export const NOTIFICATION_KINDS = {
     body: `Work Order ${p.code} on ${p.projectTitle} continues as ${p.nextCode} for ${p.period}, with the same terms.`,
   }),
   work_order_renewal_needs_approval: (p) => ({
-    title: `Manual Approval Needed: renewal of ${p.code}`,
+    title: `Renewal of ${p.code} needs your decision`,
     body: `Work Order ${p.code} on ${p.projectTitle} missed ${p.missed} for renewal. Renew it anyway or let it end on MultiAgency.`,
   }),
   work_order_not_renewed: (p) => ({

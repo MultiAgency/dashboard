@@ -105,7 +105,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
   async function email(organizationId: string): Promise<Outcome> {
     if (!deps.emailEnabled) {
       return missing(
-        "Email isn't set up on this server, so builders and your representative get no emails",
+        "Emails are off, so builders and your representative only get notifications in MultiAgency",
       );
     }
     const { email } = await deps.representative(organizationId);
@@ -119,7 +119,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
   async function signing(): Promise<Outcome> {
     return deps.esignEnabled
       ? ok("Builders sign the work order document")
-      : warning("Builders accept in MultiAgency instead of signing a document");
+      : warning("No e-signature: builders accept the terms in MultiAgency");
   }
 
   async function google(organizationId: string): Promise<Outcome> {
@@ -163,7 +163,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
       const current = await viewOnce();
       if (!current.available) {
         return optional(
-          `Builders are paid through DAO proposals${current.unavailableReason ? `: ${current.unavailableReason}` : ""}`,
+          "Not available on this server: approved requests are paid through DAO proposals",
         );
       }
       if (!current.agentId) {
@@ -177,7 +177,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
     const funding = async (): Promise<Outcome> => {
       const current = await viewOnce();
       if (!current.available || !current.agentId) {
-        return optional("No payout agent to fund");
+        return optional("Set up a payout agent first");
       }
       const needs = await deps.fundingNeeds(scope);
       const bufferPercent = needs.priceUsd ? 2n : 0n;
@@ -186,7 +186,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
         near: needed,
         priceUsd: needs.priceUsd,
       });
-      if (!check) return optional("No payout agent to fund");
+      if (!check) return optional("Set up a payout agent first");
       if (check.balanceNear === null) return warning("Couldn't read the agent's balance");
       const problems: string[] = [];
       if (check.lowBalance) {

@@ -48,7 +48,7 @@ function WorkOrdersPage() {
     <div className="flex flex-col gap-8">
       <PageHeader
         title="Work orders"
-        description="Each builder works under a work order: a period, a budget cap and the repositories in scope. Work counts once the repository owner approves or merges it on GitHub; approved requests are paid automatically by your payout agent once it's set up, otherwise through your Agency DAO."
+        description="A work order sets what a builder works on, for how long and up to what budget. Work counts once it's approved or merged on GitHub, and approved requests are paid by your payout agent or through your Agency DAO."
         actions={newWorkOrder}
       />
       {canManage && <SetupChecklist />}

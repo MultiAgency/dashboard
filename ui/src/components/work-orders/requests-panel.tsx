@@ -90,9 +90,8 @@ export function RequestsPanel({
           <h2>Compensation requests</h2>
         </CardTitle>
         <CardDescription>
-          The builder submits a report for a period; you approve an amount up to the remaining
-          budget. When the payout agent is ready it pays the builder right away; otherwise pay it
-          through a transfer proposal of the Agency DAO.
+          Each period the builder sends a report and you approve an amount within the budget. Your
+          payout agent pays it right away, or you pay it through an Agency DAO proposal.
         </CardDescription>
         {canDraft && (
           <CardAction>
@@ -249,7 +248,7 @@ function RequestItem({
         {canManage && request.status === "submitted" && (
           <>
             <Button size="sm" onClick={() => setOpen("approve")}>
-              Approve an amount
+              Review and approve
             </Button>
             <Button size="sm" variant="outline" onClick={() => setOpen("reject")}>
               Reject

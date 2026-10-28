@@ -27,7 +27,7 @@ const REQUEST_STATUS: Record<
   submitted: { label: "Waiting for approval", variant: "default" },
   approved: { label: "Approved, ready to pay", variant: "default" },
   paying: { label: "Paying", variant: "outline" },
-  proposed: { label: "Proposal in the DAO", variant: "outline" },
+  proposed: { label: "Waiting for the DAO vote", variant: "outline" },
   paid: { label: "Paid", variant: "success" },
   rejected: { label: "Rejected", variant: "destructive" },
   failed: { label: "Payment failed", variant: "destructive" },
@@ -35,7 +35,7 @@ const REQUEST_STATUS: Record<
 
 const RENEWAL_STATUS: Record<Renewal["status"], { label: string; variant: BadgeVariant }> = {
   renewed: { label: "Renewed", variant: "success" },
-  needs_approval: { label: "Manual Approval Needed", variant: "warning" },
+  needs_approval: { label: "Renewal: your decision", variant: "warning" },
   declined: { label: "Not renewed", variant: "secondary" },
 };
 

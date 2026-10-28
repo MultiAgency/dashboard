@@ -134,7 +134,7 @@ describe("work order setup status", () => {
       fixHref: "/admin/settings#work-orders",
     });
     expect(check.signing.detail).toBe(
-      "Builders accept in MultiAgency instead of signing a document",
+      "No e-signature: builders accept the terms in MultiAgency",
     );
     expect(check.google.fixHref).toBe("/admin/settings#work-orders");
     expect(check.payouts_agent.fixHref).toBe("/admin/settings#payouts");

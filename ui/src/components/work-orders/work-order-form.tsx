@@ -653,7 +653,8 @@ function WorkOrderFields({
                 <span>Renew monthly when the base metrics are met</span>
                 <span className="text-xs font-normal text-muted-foreground">
                   At the end of each period the work is measured. All met: next month's work order
-                  starts by itself. Any missed: Manual Approval Needed. Part of the accepted terms.
+                  starts by itself. Any missed: you decide whether it renews. Part of the accepted
+                  terms.
                 </span>
               </FieldLabel>
             </ShadcnField>
