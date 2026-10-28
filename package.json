@@ -31,7 +31,7 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "echo 'Packages versioned - app release handled by workflow'",
-    "test": "pnpm --dir api --if-present run test && pnpm --dir ui --if-present run test && for d in plugins/*; do if [ -f \"$d/package.json\" ]; then pnpm --dir \"$d\" --if-present run test || exit 1; fi; done",
+    "test": "pnpm run types:gen && pnpm --dir api --if-present run test && pnpm --dir ui --if-present run test && for d in plugins/*; do if [ -f \"$d/package.json\" ]; then pnpm --dir \"$d\" --if-present run test || exit 1; fi; done",
     "test:api": "pnpm --dir api test",
     "test:integration": "pnpm --dir api test tests/integration/",
     "test:ui": "cd ui && pnpm run test",
