@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   Button,
   DialogDescription,
@@ -358,8 +359,14 @@ function WorkOrderFields({
                       ? `${badEmail} isn't an email address.`
                       : null;
   const primary: Intent = editing ? "draft" : "sign";
-  const submit = (intent: Intent) => {
+  const [confirmingResign, setConfirmingResign] = useState(false);
+  const resigns = !!editing && editing.status !== "draft";
+  const submit = (intent: Intent, confirmed = false) => {
     if (reason || save.isPending) return;
+    if (resigns && !confirmed) {
+      setConfirmingResign(true);
+      return;
+    }
     const tab = intent === "sign" ? openPendingTab("Preparing the document to sign…") : null;
     save.mutate({ intent, tab });
   };
@@ -640,9 +647,19 @@ function WorkOrderFields({
       <DialogFooter className="flex-wrap items-center gap-3">
         {reason && <p className="mr-auto text-xs text-muted-foreground">{reason}</p>}
         {editing ? (
-          <Button type="submit" value="draft" disabled={reason !== null || save.isPending}>
-            {save.isPending ? "Saving…" : "Save changes"}
-          </Button>
+          <>
+            <Button type="submit" value="draft" disabled={reason !== null || save.isPending}>
+              {save.isPending ? "Saving…" : "Save changes"}
+            </Button>
+            <ConfirmDialog
+              open={confirmingResign}
+              onOpenChange={setConfirmingResign}
+              title="Save and send it for signature again?"
+              description={`Changing a term cancels the signatures so far: ${editing.builder.name ?? editing.builder.nearAccount} has to sign it again. Edits that don't touch the terms keep the signatures.`}
+              confirmLabel="Save changes"
+              onConfirm={() => submit("draft", true)}
+            />
+          </>
         ) : (
           <>
             <Button

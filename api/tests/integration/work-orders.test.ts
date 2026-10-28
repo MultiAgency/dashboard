@@ -2101,6 +2101,23 @@ describe("work orders", () => {
       expect((await service.payNow(await studio(), { requestId: draft.id })).status).toBe("paid");
     });
 
+    test("an approved request of a terminated work order can't be paid any more", async () => {
+      const { wo, draft } = await approvedRequest();
+      const approved = await service.approveRequest(await studio(), {
+        requestId: draft.id,
+        amount: "600000000",
+      });
+      expect(approved.status).toBe("approved");
+      await service.terminate(await studio(), { id: wo.id });
+      await setUpAgent();
+      await refused(service.payNow(await studio(), { requestId: draft.id }), "CLOSED");
+      await refused(
+        service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id }),
+        "CLOSED",
+      );
+      expect(agent.withdrawals).toEqual([]);
+    });
+
     test("a payout that ends failed goes back to approved and the managers are told", async () => {
       const { draft } = await approvedRequest();
       await setUpAgent();

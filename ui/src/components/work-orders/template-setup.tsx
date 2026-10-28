@@ -15,6 +15,7 @@ import {
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Loading } from "@/components/admin-form";
 import { type ApiClient, useApiClient } from "@/lib/api";
+import { openPendingTab, type PendingTab } from "@/lib/pending-tab";
 
 type Integration = Awaited<ReturnType<ApiClient["workOrders"]["integration"]>>;
 type Scan = Awaited<ReturnType<ApiClient["workOrders"]["scanTemplate"]>>;
@@ -103,7 +104,7 @@ export function TemplateSetup({
   }, [scan.data]);
 
   const apply = useMutation({
-    mutationFn: () =>
+    mutationFn: (_tab: PendingTab) =>
       apiClient.workOrders.applyTemplateFields({
         spots: rows.map((row) => ({
           text: row.text,
@@ -118,12 +119,15 @@ export function TemplateSetup({
                 : { kind: "ignore" as const },
         })),
       }),
-    onSuccess: (next) => {
+    onSuccess: (next, tab) => {
       toast.success("A tagged copy of your template is ready and selected");
-      window.open(next.url, "_blank", "noopener");
+      tab.go(next.url);
       onDone(next);
     },
-    onError: (err: Error) => toast.error(err.message || "Couldn't set up the fields"),
+    onError: (err: Error, tab) => {
+      tab.close();
+      toast.error(err.message || "Couldn't set up the fields");
+    },
   });
 
   const text = scan.data?.text ?? "";
@@ -271,7 +275,7 @@ export function TemplateSetup({
       <DialogFooter>
         <Button
           disabled={!scan.data || active.length === 0 || apply.isPending}
-          onClick={() => apply.mutate()}
+          onClick={() => apply.mutate(openPendingTab("Making the tagged copy…"))}
         >
           {apply.isPending ? "Making the tagged copy…" : "Apply to a copy"}
         </Button>

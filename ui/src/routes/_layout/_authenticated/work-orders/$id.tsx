@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -36,6 +36,7 @@ import {
   parseDecimalToBase,
   tokenDecimals,
 } from "@/lib/format-amount";
+import { dateTime } from "@/lib/format-date";
 import { myWorkOrderQueryOptions, myWorkOrdersQueryKey } from "@/lib/queries";
 
 export const Route = createFileRoute("/_layout/_authenticated/work-orders/$id")({
@@ -225,7 +226,7 @@ function MyWorkOrderPage() {
         </CardContent>
       </Card>
 
-      {payable && (
+      {(payable || wo.requests.length > 0) && (
         <Card>
           <CardHeader>
             <CardTitle>
@@ -235,18 +236,21 @@ function MyWorkOrderPage() {
               At the end of each period a request is drafted from your GitHub work. Write your
               assessment, add work GitHub can't see, set the amount and submit it.
             </CardDescription>
-            {!openDraft && BigInt(wo.remainingAmount) > 0n && wo.status !== "exhausted" && (
-              <CardAction>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={draft.isPending}
-                  onClick={() => draft.mutate()}
-                >
-                  Draft a request now
-                </Button>
-              </CardAction>
-            )}
+            {payable &&
+              !openDraft &&
+              BigInt(wo.remainingAmount) > 0n &&
+              wo.status !== "exhausted" && (
+                <CardAction>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={draft.isPending}
+                    onClick={() => draft.mutate()}
+                  >
+                    Draft a request now
+                  </Button>
+                </CardAction>
+              )}
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {wo.requests.length === 0 ? (
@@ -267,7 +271,7 @@ function MyWorkOrderPage() {
         </Card>
       )}
 
-      {payable && (
+      {(payable || wo.evidence.length > 0) && (
         <Card>
           <CardHeader>
             <CardTitle>
@@ -275,7 +279,7 @@ function MyWorkOrderPage() {
             </CardTitle>
             <CardDescription>
               {wo.lastCollectedAt
-                ? `Last collected ${wo.lastCollectedAt.slice(0, 16).replace("T", " ")}.`
+                ? `Last collected ${dateTime(wo.lastCollectedAt)}.`
                 : "Collected every 6 hours."}
             </CardDescription>
           </CardHeader>
@@ -309,10 +313,32 @@ function SubmittedRequest({ request, tokenId }: { request: CompensationRequest; 
           {request.coversFrom} → {request.coversTo}
         </span>
         <span className="ml-auto text-sm tabular-nums">
-          {formatTokenAmount(request.approvedAmount ?? request.requestedAmount, tokenId)}
+          Requested {formatTokenAmount(request.requestedAmount, tokenId)}
+          {request.approvedAmount
+            ? ` · approved ${formatTokenAmount(request.approvedAmount, tokenId)}`
+            : ""}
         </span>
       </div>
       {request.note && <p className="text-sm text-muted-foreground">{request.note}</p>}
+      {request.agentPayout?.status === "paid" && (
+        <p className="text-sm text-muted-foreground">
+          Paid {formatTokenAmount(request.agentPayout.amount, "near")} to your NEAR account
+          {request.agentPayout.txUrl ? (
+            <>
+              {" · "}
+              <a
+                href={request.agentPayout.txUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-4"
+              >
+                transaction
+              </a>
+            </>
+          ) : null}
+          .
+        </p>
+      )}
       {request.reportMd && (
         <>
           <Button
@@ -392,6 +418,11 @@ function DraftEditor({
     onError: (err: Error) => toast.error(err.message || "Couldn't submit the request"),
   });
   const urlOk = /^https?:\/\/\S+$/.test(newItem.url.trim());
+  const leaving = useBlocker({
+    shouldBlockFn: () => dirty && !save.isPending && !submit.isPending,
+    enableBeforeUnload: () => dirty,
+    withResolver: true,
+  });
 
   return (
     <section className="flex flex-col gap-4 border p-4" aria-label={request.code}>
@@ -516,6 +547,18 @@ function DraftEditor({
         description="The report is frozen and sent to the Agency. You can't edit it after this."
         confirmLabel="Submit"
         onConfirm={() => submit.mutateAsync().then(() => undefined)}
+      />
+      <ConfirmDialog
+        open={leaving.status === "blocked"}
+        onOpenChange={(open) => !open && leaving.status === "blocked" && leaving.reset()}
+        title="Leave without saving?"
+        description={`Your changes to ${request.code} aren't saved yet.`}
+        confirmLabel="Leave"
+        cancelLabel="Keep editing"
+        destructive
+        onConfirm={() => {
+          if (leaving.status === "blocked") leaving.proceed();
+        }}
       />
     </section>
   );

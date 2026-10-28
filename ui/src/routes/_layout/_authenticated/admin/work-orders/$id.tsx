@@ -55,6 +55,7 @@ import {
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
+import { dateTime } from "@/lib/format-date";
 import { warnIfPayoutsUncovered } from "@/lib/payout-coverage";
 import { adminWorkOrderQueryOptions, adminWorkOrdersQueryKey } from "@/lib/queries";
 
@@ -307,7 +308,7 @@ function WorkOrderPage() {
         </TabsContent>
 
         <TabsContent value="payouts" className="flex flex-col gap-6">
-          {payable ? (
+          {payable || wo.requests.length > 0 ? (
             <RequestsPanel
               workOrder={wo}
               canManage={canManage}
@@ -335,7 +336,7 @@ function WorkOrderPage() {
               </CardTitle>
               <CardDescription>
                 {wo.lastCollectedAt
-                  ? `Collected from GitHub on ${wo.lastCollectedAt.slice(0, 16).replace("T", " ")}. It's collected again every 6 hours.`
+                  ? `Collected from GitHub on ${dateTime(wo.lastCollectedAt)}. It's collected again every 6 hours.`
                   : "Collected from GitHub once the work order is active."}
               </CardDescription>
               {canManage && payable && (
@@ -363,7 +364,10 @@ function WorkOrderPage() {
       </Tabs>
 
       <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent
+          className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+          onInteractOutside={(event) => event.preventDefault()}
+        >
           {editing && <WorkOrderForm editing={wo} onDone={() => setEditing(false)} />}
         </DialogContent>
       </Dialog>
@@ -378,7 +382,9 @@ function WorkOrderPage() {
         title={confirming === "delete" ? `Delete ${wo.code}?` : `Terminate ${wo.code}?`}
         description={
           confirming === "delete"
-            ? "The draft is removed. The builder hasn't started work under it."
+            ? wo.status === "offered"
+              ? `It was already sent to ${wo.builder.name ?? wo.builder.nearAccount}; their signing link stops working.`
+              : "The draft is removed. The builder hasn't started work under it."
             : "Nothing more can be approved or paid under it. Requests already linked to a DAO proposal keep their billing."
         }
         confirmLabel={confirming === "delete" ? "Delete" : "Terminate"}

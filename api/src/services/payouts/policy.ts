@@ -5,7 +5,9 @@ export const NEAR_ASSET = "nep141:wrap.near";
 export const NEAR_DECIMALS = 24;
 
 export function nearToAtomic(near: string): string {
-  const [whole = "0", fraction = ""] = near.trim().split(".");
+  const [whole = "", fraction = ""] = near.trim().split(".");
+  if (whole === "" && fraction === "") throw new Error(`${near} isn't a NEAR amount`);
+  if (whole === "") return nearToAtomic(`0.${fraction}`);
   if (!/^\d+$/.test(whole) || !/^\d*$/.test(fraction) || fraction.length > NEAR_DECIMALS) {
     throw new Error(`${near} isn't a NEAR amount`);
   }

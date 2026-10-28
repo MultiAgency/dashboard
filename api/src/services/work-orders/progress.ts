@@ -220,7 +220,12 @@ export function progressOf(input: ProgressInput): Progress {
     waitingOn = "you";
     headline = `Create or link the DAO proposal paying ${request.approved ?? request.requested}`;
     since = request.decidedAt;
-  } else if (request && (request.status === "approved" || request.status === "paying")) {
+  } else if (request && request.status === "approved") {
+    stage = "paid";
+    waitingOn = "you";
+    headline = `Pay ${request.approved ?? request.requested} to ${builder} through a DAO proposal`;
+    since = request.decidedAt;
+  } else if (request && request.status === "paying") {
     stage = "paid";
     waitingOn = "system";
     headline = `Sending ${request.approved ?? request.requested} to ${builder}`;

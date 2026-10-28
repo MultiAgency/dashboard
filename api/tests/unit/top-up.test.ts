@@ -63,3 +63,14 @@ describe("payout agent top-up proposal", () => {
     });
   });
 });
+
+describe("NEAR amounts", () => {
+  test("a leading dot reads as a fraction of one NEAR", () => {
+    expect(nearToAtomic(".5")).toBe(nearToAtomic("0.5"));
+  });
+
+  test("an empty amount is refused", () => {
+    expect(() => nearToAtomic("")).toThrow();
+    expect(() => nearToAtomic(".")).toThrow();
+  });
+});

@@ -2749,13 +2749,24 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     }
   }
 
-  async function daoPayable(scope: TreasuryScope & OrganizationScope, requestId: string) {
+  function refuseTerminated(row: WorkOrderRow) {
+    if (FINAL.includes(row.status)) {
+      throw badRequest("CLOSED", `Work order ${row.code} is terminated: nothing more can be paid`);
+    }
+  }
+
+  async function daoPayable(
+    scope: TreasuryScope & OrganizationScope,
+    requestId: string,
+    { linking = false } = {},
+  ) {
     const request = await mustRequest(requestId);
     const row = await ownRow(scope, request.workOrderId);
     const { approvedAmount } = request;
     if (request.status !== "approved" || !approvedAmount) {
       throw badRequest("NOT_APPROVED", "Approve the request before paying it through the DAO");
     }
+    if (!(linking && request.daoPaymentStartedAt)) refuseTerminated(row);
     await requireSettledPayout(request.id);
     return { request: { ...request, approvedAmount }, row };
   }
@@ -2841,7 +2852,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       status,
     });
     if (status === "Approved") {
-      const paid = await updateRequest(request.id, { status: "paid", paidAt: now() });
+      const [paid] = await db
+        .update(compensationRequests)
+        .set({ status: "paid", paidAt: now(), updatedAt: now() })
+        .where(
+          and(eq(compensationRequests.id, request.id), eq(compensationRequests.status, "proposed")),
+        )
+        .returning();
+      if (!paid) return mustRequest(request.id);
       const requests = await requestsOf(row.id);
       if (
         amountsOf(row, requests).remaining === 0n &&
@@ -2862,10 +2880,18 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       return paid;
     }
     if (FAILED_PROPOSAL.has(status)) {
-      const failed = await updateRequest(request.id, {
-        status: "failed",
-        note: `Proposal #${request.proposalId} ended as ${status}; nothing was paid.`,
-      });
+      const [failed] = await db
+        .update(compensationRequests)
+        .set({
+          status: "failed",
+          note: `Proposal #${request.proposalId} ended as ${status}; nothing was paid.`,
+          updatedAt: now(),
+        })
+        .where(
+          and(eq(compensationRequests.id, request.id), eq(compensationRequests.status, "proposed")),
+        )
+        .returning();
+      if (!failed) return mustRequest(request.id);
       await notifyBuilder(row, "compensation_request_failed", payload);
       await notifyManagers(row, "compensation_request_failed", payload);
       await announce(row, "request.needs_review", { request: failed });
@@ -3874,6 +3900,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (request.status !== "approved" || !request.approvedAmount) {
         throw badRequest("NOT_APPROVED", "Only an approved request can be paid");
       }
+      refuseTerminated(row);
       const result = await autoPay(request, row);
       if (result.request.status !== "paid" && result.request.status !== "paying") {
         throw badRequest("PAYOUTS_NOT_READY", result.reason ?? "It wasn't paid");
@@ -3922,7 +3949,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       scope: TreasuryScope & OrganizationScope,
       input: { requestId: string; proposalId: string },
     ) => {
-      const { request, row } = await daoPayable(scope, input.requestId);
+      const { request, row } = await daoPayable(scope, input.requestId, { linking: true });
       const id = Number.parseInt(input.proposalId, 10);
       if (!Number.isInteger(id) || id < 0)
         throw badRequest("INVALID_PROPOSAL", "Invalid proposal id");
@@ -4188,26 +4215,46 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         row,
         await deps.builders.get(row.builderNearAccount).catch(() => null),
       );
-      await db.insert(workOrderSignatures).values({
-        id: crypto.randomUUID(),
-        workOrderId: row.id,
-        documentSha256: offered.sha256,
-        role: "contractor",
-        name,
-        email: contacts.contractorEmail,
-        userId: context.userId ?? null,
-        nearAccount: row.builderNearAccount,
-        ...clientMeta(meta),
-        signedAt: now(),
-      });
-      const accepted = await update(row.id, {
-        status: "accepted",
-        acceptedAt: now(),
-        acceptedByUserId: context.userId ?? null,
-        acceptedTermsHash: termsHash(row),
-        signatureMethod: "in_app",
-        payeeConfirmedAt: row.payeeConfirmedAt ?? now(),
-        payeeConfirmedBy: row.payeeConfirmedBy ?? context.userId ?? row.builderNearAccount,
+      const accepted = await db.transaction(async (tx) => {
+        const [claimed] = await tx
+          .update(workOrders)
+          .set({
+            status: "accepted",
+            acceptedAt: now(),
+            acceptedByUserId: context.userId ?? null,
+            acceptedTermsHash: termsHash(row),
+            signatureMethod: "in_app",
+            payeeConfirmedAt: row.payeeConfirmedAt ?? now(),
+            payeeConfirmedBy: row.payeeConfirmedBy ?? context.userId ?? row.builderNearAccount,
+            updatedAt: now(),
+          })
+          .where(
+            and(
+              eq(workOrders.id, row.id),
+              eq(workOrders.status, "offered"),
+              isNull(workOrders.esignEnvelopeId),
+            ),
+          )
+          .returning();
+        if (!claimed) {
+          throw badRequest(
+            "NOT_OFFERED",
+            `Work order ${row.code} isn't waiting for your signature`,
+          );
+        }
+        await tx.insert(workOrderSignatures).values({
+          id: crypto.randomUUID(),
+          workOrderId: row.id,
+          documentSha256: offered.sha256,
+          role: "contractor",
+          name,
+          email: contacts.contractorEmail,
+          userId: context.userId ?? null,
+          nearAccount: row.builderNearAccount,
+          ...clientMeta(meta),
+          signedAt: now(),
+        });
+        return claimed;
       });
       await notifyManagers(accepted, "work_order_accepted", await payloadOf(accepted));
       await announce(accepted, "work_order.builder_signed", { note: name });
@@ -4353,14 +4400,22 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         assessmentMd: request.assessmentMd,
         collectedAt: row.lastCollectedAt?.toISOString() ?? null,
       });
-      const submitted = await updateRequest(request.id, {
-        status: "submitted",
-        contributionsMd,
-        evidenceIds: JSON.stringify(evidence.map((e) => e.id)),
-        reportMd: frozen,
-        reportSha256: sha256Hex(frozen),
-        submittedAt: now(),
-      });
+      const [submitted] = await db
+        .update(compensationRequests)
+        .set({
+          status: "submitted",
+          contributionsMd,
+          evidenceIds: JSON.stringify(evidence.map((e) => e.id)),
+          reportMd: frozen,
+          reportSha256: sha256Hex(frozen),
+          submittedAt: now(),
+          updatedAt: now(),
+        })
+        .where(
+          and(eq(compensationRequests.id, request.id), eq(compensationRequests.status, "draft")),
+        )
+        .returning();
+      if (!submitted) throw badRequest("SUBMITTED", "This request was already submitted");
       const submittedPayload = await payloadOf(row, {
         requestCode: `${row.code}-R${request.seq}`,
         requested: display(request.requestedAmount, row.tokenId),
