@@ -143,6 +143,7 @@ const secrets = z.object({
   DOCUMENSO_API_KEY: z.string().optional(),
   DOCUMENSO_API_URL: z.string().optional(),
   PAYOUTS_SECRET_KEY: z.string().optional(),
+  BETTER_AUTH_SECRET: z.string().default(""),
 });
 
 const initializeServices = (

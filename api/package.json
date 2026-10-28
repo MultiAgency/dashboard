@@ -32,7 +32,8 @@
     "pdf-lib": "^1.17.1",
     "pg": "catalog:",
     "unpdf": "^1.9.1",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "aws4fetch": "catalog:"
   },
   "devDependencies": {
     "@effect/language-service": "^0.85.1",
@@ -45,7 +46,8 @@
     "dotenv": "^17.2.3",
     "everything-dev": "catalog:",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@module-federation/runtime-tools": "catalog:"
   },
   "scripts": {
     "build": "every-plugin build",

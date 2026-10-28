@@ -16,10 +16,10 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "start": "bos start",
-    "db:push": "pnpm --dir api drizzle-kit push",
+    "db:push": "pnpm --dir api exec drizzle-kit push",
     "db:studio": "bos db:studio",
-    "db:generate": "pnpm --dir api drizzle-kit generate",
-    "db:migrate": "pnpm --dir api drizzle-kit migrate",
+    "db:generate": "pnpm --dir api exec drizzle-kit generate",
+    "db:migrate": "pnpm --dir api exec drizzle-kit migrate",
     "db:migrate:contributors": "tsx scripts/migrate-contributors-to-builders.ts",
     "db:cleanup:organizations": "tsx scripts/cleanup-organizations.ts",
     "db:assign-owner": "tsx scripts/assign-organization-owner.ts",
@@ -32,8 +32,8 @@
     "version": "changeset version",
     "release": "echo 'Packages versioned - app release handled by workflow'",
     "test": "pnpm run types:gen && pnpm --dir api --if-present run test && pnpm --dir ui --if-present run test && for d in plugins/*; do if [ -f \"$d/package.json\" ]; then pnpm --dir \"$d\" --if-present run test || exit 1; fi; done",
-    "test:api": "pnpm --dir api test",
-    "test:integration": "pnpm --dir api test tests/integration/",
+    "test:api": "pnpm --dir api --if-present run test",
+    "test:integration": "pnpm --dir api --if-present run test tests/integration/",
     "test:ui": "cd ui && pnpm run test",
     "dev:postgres": "docker compose up -d --wait && pnpm run dev",
     "dev:postgres:down": "docker compose down",
@@ -42,25 +42,28 @@
     "db:doctor": "bos db:doctor",
     "db:repair": "bos db:repair"
   },
-  "packageManager": "pnpm@12.10.1",
+  "packageManager": "pnpm@12.10.1+sha512.ba40a37eb1a370d60fea8c4cf1d364c13bcccef518e98ad2bcee954f539d38da37458e58261a3fa55e06523450ea0ffff9f497b135be41f2c15c1642bacace6c",
   "type": "module",
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
-    "@types/bun": "latest",
     "dotenv": "^17.3.1",
     "tsx": "^4.21.0",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "catalog:",
     "@changesets/cli": "^2.29.8",
     "@types/pg": "catalog:",
-    "@playwright/test": "^1.58.1"
+    "@playwright/test": "^1.58.1",
+    "@effect/tsgo": "^0.45.0",
+    "@shadcn/lint": "^0.2.0",
+    "oxlint": "1.82.0",
+    "oxlint-tsgolint": "7.0.2001"
   },
   "dependencies": {
     "@better-auth/api-key": "catalog:",
     "@better-auth/core": "catalog:",
     "@better-auth/passkey": "catalog:",
     "@electric-sql/pglite": "catalog:",
-    "@hot-labs/near-connect": "0.11.2",
+    "@hot-labs/near-connect": "catalog:",
     "@libsql/client": "catalog:",
     "@opentelemetry/api": "catalog:",
     "@orpc/contract": "catalog:",
@@ -77,5 +80,8 @@
   },
   "engines": {
     "node": ">=20.11"
+  },
+  "peerDependencies": {
+    "typescript": "catalog:"
   }
 }
