@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Badge,
@@ -218,76 +218,83 @@ function RecordAgreementForm({
 
   const canSubmit = Boolean(version.trim() && attestedOn && proof.trim());
   const isPending = recordMutation.isPending;
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    sectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    sectionRef.current?.querySelector("input")?.focus({ preventScroll: true });
+  }, []);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h2>Services agreement for @{githubLogin}</h2>
-        </CardTitle>
-        <CardDescription>
-          Recording an agreement makes this member internal. The proof stays private: it's never
-          shown again, including here.
-        </CardDescription>
-      </CardHeader>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (canSubmit && !isPending) recordMutation.mutate();
-        }}
-      >
-        <CardContent>
-          <FieldGroup>
-            <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+    <section ref={sectionRef} className="scroll-mt-4" aria-label={`Agreement for @${githubLogin}`}>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Services agreement for @{githubLogin}</h2>
+          </CardTitle>
+          <CardDescription>
+            Recording an agreement makes this member internal. The proof stays private: it's never
+            shown again, including here.
+          </CardDescription>
+        </CardHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (canSubmit && !isPending) recordMutation.mutate();
+          }}
+        >
+          <CardContent>
+            <FieldGroup>
+              <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
+                <Field>
+                  <FieldLabel htmlFor="agreement-version">Agreement version</FieldLabel>
+                  <Input
+                    id="agreement-version"
+                    name="agreement-version"
+                    autoComplete="off"
+                    value={version}
+                    onChange={(e) => setVersion(e.target.value)}
+                    placeholder="e.g. 2026-09"
+                    disabled={isPending}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="agreement-date">Signed on</FieldLabel>
+                  <Input
+                    id="agreement-date"
+                    name="agreement-date"
+                    type="date"
+                    value={attestedOn}
+                    onChange={(e) => setAttestedOn(e.target.value)}
+                    disabled={isPending}
+                  />
+                </Field>
+              </div>
               <Field>
-                <FieldLabel htmlFor="agreement-version">Agreement version</FieldLabel>
-                <Input
-                  id="agreement-version"
-                  name="agreement-version"
-                  autoComplete="off"
-                  value={version}
-                  onChange={(e) => setVersion(e.target.value)}
-                  placeholder="e.g. 2026-09"
+                <FieldLabel htmlFor="agreement-proof">Proof</FieldLabel>
+                <Textarea
+                  id="agreement-proof"
+                  name="agreement-proof"
+                  value={proof}
+                  onChange={(e) => setProof(e.target.value)}
+                  placeholder="Where the signed agreement lives, or its signature"
                   disabled={isPending}
                 />
+                <FieldDescription>
+                  Stored privately. Recording again replaces the previous agreement.
+                </FieldDescription>
               </Field>
-              <Field>
-                <FieldLabel htmlFor="agreement-date">Signed on</FieldLabel>
-                <Input
-                  id="agreement-date"
-                  name="agreement-date"
-                  type="date"
-                  value={attestedOn}
-                  onChange={(e) => setAttestedOn(e.target.value)}
-                  disabled={isPending}
-                />
-              </Field>
-            </div>
-            <Field>
-              <FieldLabel htmlFor="agreement-proof">Proof</FieldLabel>
-              <Textarea
-                id="agreement-proof"
-                name="agreement-proof"
-                value={proof}
-                onChange={(e) => setProof(e.target.value)}
-                placeholder="Where the signed agreement lives, or its signature"
-                disabled={isPending}
-              />
-              <FieldDescription>
-                Stored privately. Recording again replaces the previous agreement.
-              </FieldDescription>
-            </Field>
-          </FieldGroup>
-        </CardContent>
-        <CardFooter className="justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onDone} disabled={isPending}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={!canSubmit || isPending}>
-            {isPending ? "Recording…" : "Record agreement"}
-          </Button>
-        </CardFooter>
-      </form>
-    </Card>
+            </FieldGroup>
+          </CardContent>
+          <CardFooter className="justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={onDone} disabled={isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!canSubmit || isPending}>
+              {isPending ? "Recording…" : "Record agreement"}
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
+    </section>
   );
 }

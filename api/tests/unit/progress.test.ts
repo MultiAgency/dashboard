@@ -234,11 +234,22 @@ describe("work order progress", () => {
 
   test("payouts in flight wait on the system or the DAO", () => {
     const approved = request({ status: "approved", approved: "$1", decidedAt: "d" });
-    expect(progressOf({ ...base, ...signedActive, requests: [approved] }).waitingOn).toBe("system");
+    expect(
+      progressOf({ ...base, ...signedActive, requests: [{ ...approved, status: "paying" }] })
+        .waitingOn,
+    ).toBe("system");
     expect(
       progressOf({ ...base, ...signedActive, requests: [{ ...approved, status: "proposed" }] })
         .waitingOn,
     ).toBe("dao");
+  });
+
+  test("an approved request nothing pays automatically waits on the agency", () => {
+    const approved = request({ status: "approved", approved: "$1", decidedAt: "d" });
+    expect(progressOf({ ...base, ...signedActive, requests: [approved] })).toMatchObject({
+      stage: "paid",
+      waitingOn: "you",
+    });
   });
 
   test("a paid, ended work order is finished; a renewal decision waits on the agency", () => {

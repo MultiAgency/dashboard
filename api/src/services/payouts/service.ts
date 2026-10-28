@@ -190,7 +190,7 @@ export function createPayoutAgents(deps: {
   const now = () => deps.now?.() ?? new Date();
   const available = deps.api !== null && !!deps.secretKey;
   const unavailableReason =
-    "Automatic payouts aren't set up on this server: set NEAR_INTENTS_AGENT_API_KEY and PAYOUTS_SECRET_KEY.";
+    "Automatic payouts aren't turned on for this server. Ask your MultiAgency operator to turn them on.";
 
   function api(): AgentApiPort {
     if (!deps.api || !deps.secretKey) throw badRequest("PAYOUTS_UNAVAILABLE", unavailableReason);

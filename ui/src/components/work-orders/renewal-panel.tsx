@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useApiClient } from "@/lib/api";
 import { adminWorkOrdersQueryKey } from "@/lib/queries";
 import { RenewalBadge, type WorkOrder } from "./work-order-status";
@@ -46,7 +47,7 @@ export function RenewalPanel({
           <CardDescription>
             After {workOrder.periodEnd} and {workOrder.graceDays} grace days, this period's work is
             measured against the base metrics. All met: next month's work order starts by itself.
-            Any missed: Manual Approval Needed.
+            Any missed: you decide whether it renews.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -135,6 +136,7 @@ function DecideRenewal({ workOrder }: { workOrder: WorkOrder }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
+  const [declining, setDeclining] = useState(false);
   const decide = useMutation({
     mutationFn: (decision: "approve" | "decline") =>
       apiClient.workOrders.decideRenewal({ id: workOrder.id, decision, note: note.trim() || null }),
@@ -148,7 +150,7 @@ function DecideRenewal({ workOrder }: { workOrder: WorkOrder }) {
   });
   return (
     <Alert>
-      <AlertTitle>Manual Approval Needed</AlertTitle>
+      <AlertTitle>Renewal needs your decision</AlertTitle>
       <AlertDescription className="flex flex-col gap-3">
         <span>
           Renew anyway to start next month's work order with the same terms, or let {workOrder.code}{" "}
@@ -169,11 +171,20 @@ function DecideRenewal({ workOrder }: { workOrder: WorkOrder }) {
             size="sm"
             variant="outline"
             disabled={decide.isPending}
-            onClick={() => decide.mutate("decline")}
+            onClick={() => setDeclining(true)}
           >
             Don't renew
           </Button>
         </div>
+        <ConfirmDialog
+          open={declining}
+          onOpenChange={setDeclining}
+          title={`Let ${workOrder.code} end without renewing?`}
+          description="No work order starts next month and the builder is told. This can't be undone here."
+          confirmLabel="Don't renew"
+          destructive
+          onConfirm={() => decide.mutateAsync("decline").then(() => undefined)}
+        />
       </AlertDescription>
     </Alert>
   );
