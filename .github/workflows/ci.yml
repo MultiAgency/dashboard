@@ -27,10 +27,9 @@ permissions:
 jobs:
   ci:
     name: CI
-    uses: NEARBuilders/everything-dev/.github/workflows/consumer-ci.yml@v2.0.0-rc.25
+    uses: NEARBuilders/everything-dev/.github/workflows/consumer-ci.yml@b86f6407cdb75441c7176065a157c4d832f42562 # v2.0.0-rc.27
     with:
       working_directory: .
-    secrets: inherit
 
   # Child-owned CI entry point (#538): the reusable call covers lint,
   # typecheck, and test; everything else lives in
