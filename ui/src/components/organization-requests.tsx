@@ -25,7 +25,6 @@ import {
 } from "@/components";
 import { LoadError } from "@/components/load-error";
 import { useApiClient } from "@/lib/api";
-import { useAuthClient } from "@/lib/auth";
 import { organizationRequestsQueryKey, organizationRequestsQueryOptions } from "@/lib/queries";
 
 type OrganizationRequest = {
@@ -118,7 +117,6 @@ function ApproveDialog({
   onReviewed: () => void;
 }) {
   const apiClient = useApiClient();
-  const authClient = useAuthClient();
   const [daoAccountId, setDaoAccountId] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
 
@@ -130,9 +128,11 @@ function ApproveDialog({
 
   const approve = useMutation({
     mutationFn: async (organization: OrganizationRequest) => {
-      await apiClient.organizationRequests.review({
+      const email = adminEmail.trim();
+      const { adminInvite } = await apiClient.organizationRequests.review({
         organizationId: organization.id,
         decision: "approve",
+        ...(email ? { adminEmail: email } : {}),
       });
       const dao = daoAccountId.trim();
       const daoError = dao
@@ -141,16 +141,7 @@ function ApproveDialog({
             .then(() => null)
             .catch((e: Error) => e.message || "Failed to connect the Agency DAO")
         : null;
-      const email = adminEmail.trim();
-      const inviteError = email
-        ? ((
-            await authClient.organization.inviteMember({
-              email,
-              role: "admin",
-              organizationId: organization.id,
-            })
-          ).error?.message ?? null)
-        : null;
+      const inviteError = adminInvite?.status === "failed" ? adminInvite.message : null;
       return { organization, daoError, inviteError };
     },
     onSuccess: ({ organization, daoError, inviteError }) => {

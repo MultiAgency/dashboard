@@ -47,6 +47,7 @@ import {
   type OrganizationScope,
   ROLE_MATRIX,
 } from "./services/organization-access";
+import { createOrganizationRequestsService } from "./services/organization-requests";
 import { atomicToNear, nearToAtomic, topUpFor, topUpProposal } from "./services/payouts/policy";
 import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
 import { createPrepaymentsService } from "./services/prepayments";
@@ -218,6 +219,11 @@ const initializeServices = (
       appOrigin,
       subcontracted: access.subcontractedProjects,
       onEnded: changeOrders.withdrawPending,
+    });
+    const organizationRequests = createOrganizationRequestsService({
+      organizations: organizationDirectory,
+      sendEmail,
+      appOrigin,
     });
     const prepayments = createPrepaymentsService({
       db,
@@ -405,6 +411,7 @@ const initializeServices = (
       listings,
       contributors,
       engagements,
+      organizationRequests,
       prepayments,
       changeOrders,
       ideas,
@@ -1263,8 +1270,22 @@ export default createPlugin.withPlugins<PluginsClient>()({
         review: builder.organizationRequests.review
           .use(auth.requireAdmin)
           .handler(async ({ context, input }) => {
-            const reviewed = await asAdmin(context.reqHeaders).reviewOrganization(input);
-            return { id: reviewed.id, status: reviewed.status };
+            const { organizationRequests } = Context.get(context["effect/context"], ApiServices);
+            const adminEmail = input.decision === "approve" ? input.adminEmail : undefined;
+            const reviewed = await asAdmin(context.reqHeaders).reviewOrganization(
+              input.decision === "approve"
+                ? { organizationId: input.organizationId, decision: "approve" }
+                : input,
+            );
+            const adminInvite =
+              adminEmail && reviewed.status === "active"
+                ? await organizationRequests.inviteAdmin({
+                    organizationId: reviewed.id,
+                    email: adminEmail,
+                    inviterId: context.userId,
+                  })
+                : null;
+            return { id: reviewed.id, status: reviewed.status, adminInvite };
           }),
       },
 

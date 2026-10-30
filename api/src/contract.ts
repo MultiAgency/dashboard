@@ -1526,7 +1526,11 @@ export const contract = oc.router({
       .route({ method: "POST", path: "/platform/organization-requests/{organizationId}/review" })
       .input(
         z.discriminatedUnion("decision", [
-          z.object({ organizationId: z.string().min(1), decision: z.literal("approve") }),
+          z.object({
+            organizationId: z.string().min(1),
+            decision: z.literal("approve"),
+            adminEmail: z.string().trim().email().max(320).optional(),
+          }),
           z.object({
             organizationId: z.string().min(1),
             decision: z.literal("reject"),
@@ -1534,7 +1538,18 @@ export const contract = oc.router({
           }),
         ]),
       )
-      .output(z.object({ id: z.string(), status: z.enum(["active", "pending", "rejected"]) }))
+      .output(
+        z.object({
+          id: z.string(),
+          status: z.enum(["active", "pending", "rejected"]),
+          adminInvite: z
+            .discriminatedUnion("status", [
+              z.object({ status: z.literal("invited"), email: z.string() }),
+              z.object({ status: z.literal("failed"), message: z.string() }),
+            ])
+            .nullable(),
+        }),
+      )
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
