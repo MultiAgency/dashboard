@@ -31,7 +31,7 @@ export function WorkOrderRepresentativeSettings() {
     onSuccess: (data) => {
       queryClient.setQueryData(workOrderRepresentativeQueryOptions(apiClient).queryKey, data);
       setForm(null);
-      toast.success("Default representative saved");
+      toast.success("Representative saved");
     },
     onError: (err: Error) => toast.error(err.message || "Couldn't save"),
   });
@@ -50,8 +50,7 @@ export function WorkOrderRepresentativeSettings() {
           <h2>Default representative</h2>
         </CardTitle>
         <CardDescription>
-          Who signs work orders for your Agency. New work orders start with these; you can change
-          them on each one.
+          Signs first and gets agency emails. You can change it per work order.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -66,11 +65,7 @@ export function WorkOrderRepresentativeSettings() {
         >
           <FieldGroup>
             <div className="grid gap-6 sm:grid-cols-2 sm:items-start">
-              <Field
-                label="Default representative name"
-                htmlFor="rep-default-name"
-                helper="Printed on the document."
-              >
+              <Field label="Name" htmlFor="rep-default-name" helper="Printed on the document.">
                 <Input
                   id="rep-default-name"
                   value={values.name}
@@ -79,12 +74,12 @@ export function WorkOrderRepresentativeSettings() {
                 />
               </Field>
               <Field
-                label="Default representative email"
+                label="Email"
                 htmlFor="rep-default-email"
                 helper={
                   placeholder
                     ? "This looks like a wallet placeholder address: emails sent to it are lost."
-                    : "Agency emails (payout requested, signed, renewed) go only to this address."
+                    : "Agency emails go only here."
                 }
               >
                 <Input

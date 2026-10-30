@@ -63,7 +63,7 @@ import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
 import { createConsistencyChecker } from "./services/work-orders/consistency";
 import { createDocumenso } from "./services/work-orders/documenso";
-import { cachedOwnership, createGitHub } from "./services/work-orders/github";
+import { cachedByName, createGitHub } from "./services/work-orders/github";
 import {
   createGoogle,
   GoogleError,
@@ -351,7 +351,8 @@ const initializeServices = (
         },
       },
       github,
-      ownership: cachedOwnership(github, 10 * 60_000),
+      ownership: cachedByName((repo) => github.getRepoOwnership(repo), 10 * 60_000),
+      orgRepos: cachedByName((org) => github.listOrgRepos(org), 10 * 60_000),
       proposal: (daoAccountId, proposalId) => findProposal(db, daoAccountId, proposalId),
       proposalBond: getProposalBond,
       prices: createPriceFeed(),
@@ -1333,6 +1334,20 @@ export default createPlugin.withPlugins<PluginsClient>()({
           const { workOrders } = Context.get(context["effect/context"], ApiServices);
           return workOrders.nextCode(context.scope);
         }),
+
+        githubRepos: builder.workOrders.githubRepos
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { workOrders } = Context.get(context["effect/context"], ApiServices);
+            return workOrders.githubRepos(context.scope, input);
+          }),
+
+        builderDefaults: builder.workOrders.builderDefaults
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { workOrders } = Context.get(context["effect/context"], ApiServices);
+            return workOrders.builderDefaults(context.scope, input);
+          }),
 
         offer: builder.workOrders.offer.use(agencyManager).handler(async ({ context, input }) => {
           const { workOrders } = Context.get(context["effect/context"], ApiServices);

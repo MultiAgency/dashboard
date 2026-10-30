@@ -4,6 +4,8 @@ import {
   defaultPeriod,
   duplicateTitle,
   recentBudgets,
+  repoFromProject,
+  sendBlocker,
   todayIn,
 } from "../src/lib/work-order-defaults";
 
@@ -97,5 +99,53 @@ describe("recentBudgets", () => {
 
   test("is empty without work orders", () => {
     expect(recentBudgets([])).toEqual([]);
+  });
+});
+
+describe("repoFromProject", () => {
+  test("reads owner/name from a GitHub URL", () => {
+    expect(repoFromProject("https://github.com/near/multiagency")).toBe("near/multiagency");
+    expect(repoFromProject("https://github.com/near/multiagency.git")).toBe("near/multiagency");
+    expect(repoFromProject("https://www.github.com/near/app/tree/main")).toBe("near/app");
+  });
+
+  test("is empty for anything that isn't a GitHub repository", () => {
+    expect(repoFromProject(null)).toBe("");
+    expect(repoFromProject("https://gitlab.com/near/app")).toBe("");
+    expect(repoFromProject("https://github.com/near")).toBe("");
+    expect(repoFromProject("not a url")).toBe("");
+  });
+});
+
+describe("sendBlocker", () => {
+  const ready = {
+    githubLogin: "octocat",
+    contractorEmail: "b@example.com",
+    representativeEmail: "r@example.com",
+    needsEmails: true,
+    accountEmail: false,
+  };
+
+  test("lets a complete work order through", () => {
+    expect(sendBlocker(ready)).toBeNull();
+  });
+
+  test("needs a GitHub login", () => {
+    expect(sendBlocker({ ...ready, githubLogin: " " })?.reason).toMatch(/GitHub login/);
+  });
+
+  test("needs the builder's email only with e-signature and no account email", () => {
+    expect(sendBlocker({ ...ready, contractorEmail: "" })?.reason).toMatch(/builder's email/);
+    expect(sendBlocker({ ...ready, contractorEmail: "", accountEmail: true })).toBeNull();
+    expect(
+      sendBlocker({ ...ready, contractorEmail: "", representativeEmail: "", needsEmails: false }),
+    ).toBeNull();
+  });
+
+  test("points to Details for the representative's email", () => {
+    expect(sendBlocker({ ...ready, representativeEmail: "" })).toEqual({
+      reason: expect.stringMatching(/representative's email/),
+      inDetails: true,
+    });
   });
 });

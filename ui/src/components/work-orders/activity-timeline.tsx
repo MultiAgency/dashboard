@@ -34,11 +34,7 @@ export function ActivityTimeline({ workOrder }: { workOrder: WorkOrderDetail }) 
         <CardTitle>
           <h2>Activity</h2>
         </CardTitle>
-        <CardDescription>
-          {activity.isError
-            ? "Everything that happened to this work order. The emails couldn't be loaded."
-            : "Everything that happened to this work order, newest first, with the emails it sent."}
-        </CardDescription>
+        {activity.isError && <CardDescription>The emails couldn't be loaded.</CardDescription>}
       </CardHeader>
       <CardContent>
         {events.length === 0 ? (

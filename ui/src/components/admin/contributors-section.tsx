@@ -175,9 +175,7 @@ export function ContributorsAdminSection() {
           <CardTitle>
             <h2>Builder directory</h2>
           </CardTitle>
-          <CardDescription>
-            Profiles are shared across Agencies and keyed by NEAR account.
-          </CardDescription>
+          <CardDescription>Shared across Agencies.</CardDescription>
           {!creating && (
             <CardAction className="flex flex-wrap gap-2">
               {!importing && (
@@ -237,7 +235,7 @@ function ContributorCreateForm({ onDone }: { onDone: () => void }) {
       toast.success("Builder created");
       onDone();
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to create builder"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't create the builder"),
   });
 
   const isPending = createMutation.isPending;
@@ -380,7 +378,7 @@ export function ContributorProfileForm({
       await refreshAfter(queryClient, { type: "builders" });
       toast.success("Profile saved");
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to save profile"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't save"),
   });
 
   const isPending = saveMutation.isPending;
@@ -502,7 +500,7 @@ export function RemoveBuilderButton({
         open={confirming}
         onOpenChange={setConfirming}
         title={`Remove ${name}?`}
-        description="Their profile is deleted from the builder directory. Billings already recorded for them are kept."
+        description="Their profile leaves the directory. Recorded billings are kept."
         confirmLabel="Remove builder"
         destructive
         onConfirm={async () => {

@@ -10,6 +10,7 @@ import {
   myOrganizationsQueryKey,
   setActiveOrganizationKey,
 } from "./queries";
+import { clearAllWorkOrderDrafts } from "./work-order-draft";
 import { announceWorkspace, switchWorkspace } from "./workspace";
 
 export const WELCOME_PATH = "/welcome";
@@ -71,6 +72,13 @@ export async function refreshAccountQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: ["members"] }),
     queryClient.invalidateQueries({ queryKey: userInvitationsQueryKey }),
   ]);
+}
+
+export async function signOut(authClient: AuthClient) {
+  const { error } = await authClient.signOut();
+  if (error) throw new Error(error.message || "Failed to sign out");
+  await authClient.near.disconnect().catch(() => {});
+  clearAllWorkOrderDrafts();
 }
 
 export async function refreshAfterAccountChange(queryClient: QueryClient, authClient: AuthClient) {

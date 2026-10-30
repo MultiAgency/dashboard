@@ -6,7 +6,6 @@ import {
   Badge,
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   Table,
@@ -49,10 +48,6 @@ export function WorkOrderIntegrationSettings() {
         <CardTitle>
           <h2>Work orders: documents and email</h2>
         </CardTitle>
-        <CardDescription>
-          MultiAgency fills your Google Docs template for each work order, collects both signatures
-          in the dashboard and emails the builder and your representative at each step.
-        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-wrap gap-2">
@@ -67,10 +62,8 @@ export function WorkOrderIntegrationSettings() {
           <Alert>
             <AlertTitle>Emails are off on this server</AlertTitle>
             <AlertDescription>
-              <OperatorHint>
-                Set RESEND_API_KEY and NOTIFY_FROM_EMAIL. Until then people get in-app notifications
-                only.
-              </OperatorHint>
+              <OperatorHint>Set RESEND_API_KEY and NOTIFY_FROM_EMAIL.</OperatorHint> Until then,
+              notifications are in-app only.
             </AlertDescription>
           </Alert>
         )}

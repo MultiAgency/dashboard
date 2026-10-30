@@ -31,10 +31,7 @@ function AdminContributorsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Builders"
-        description="People who do project work. Assign them from a project page; manage profiles and applications here."
-      />
+      <PageHeader title="Builders" description="People who do project work." />
 
       <Tabs
         value={activeTab}

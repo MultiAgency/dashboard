@@ -6,13 +6,21 @@ export type SetupState = SetupCheck["state"];
 
 export function setupSummary(checks: SetupCheck[]) {
   const counted = checks.filter((c) => c.required || c.state !== "optional");
-  const blocking = checks.filter((c) => c.required && c.state === "missing");
+  const blocking = checks.filter((c) => c.required && c.state === "missing" && c.fixHref !== null);
   return {
     done: counted.filter((c) => c.state === "ok").length,
     total: counted.length,
     blocking,
     attention: checks.filter((c) => c.state === "missing" || c.state === "warning"),
     ready: blocking.length === 0,
+  };
+}
+
+export function splitOptional(checks: SetupCheck[]) {
+  const quiet = (c: SetupCheck) => !c.required && (c.state === "ok" || c.state === "optional");
+  return {
+    main: checks.filter((c) => !quiet(c)),
+    optional: checks.filter(quiet),
   };
 }
 

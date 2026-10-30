@@ -10,7 +10,6 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   Dialog,
@@ -89,10 +88,6 @@ export function RequestsPanel({
         <CardTitle>
           <h2>Compensation requests</h2>
         </CardTitle>
-        <CardDescription>
-          Each period the builder sends a report and you approve an amount within the budget. Your
-          payout agent pays it right away, or you pay it through an Agency DAO proposal.
-        </CardDescription>
         {canDraft && (
           <CardAction>
             <Button
@@ -108,10 +103,7 @@ export function RequestsPanel({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {workOrder.requests.length === 0 ? (
-          <Empty
-            label="No requests yet."
-            description="A request is drafted automatically when the period ends."
-          />
+          <Empty label="No requests yet." description="One is drafted when the period ends." />
         ) : (
           workOrder.requests
             .slice()

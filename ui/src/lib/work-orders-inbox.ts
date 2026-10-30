@@ -19,7 +19,7 @@ export type InboxItem = {
 
 export const INBOX_VIEW_LABELS: Record<InboxView, string> = {
   "needs-you": "Needs you",
-  builder: "Waiting on builder",
+  builder: "With builder",
   "in-progress": "In progress",
   done: "Done",
   all: "All",

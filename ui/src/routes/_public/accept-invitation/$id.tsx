@@ -25,7 +25,7 @@ import { AuthCardHeader } from "@/components/auth-card-header";
 import { roleLabel } from "@/components/organization-row-card";
 import { useInvitationActions } from "@/components/pending-invitations";
 import { ResendVerificationButton } from "@/components/resend-verification-button";
-import { refreshAfterAccountChange } from "@/lib/account";
+import { refreshAfterAccountChange, signOut } from "@/lib/account";
 import { sessionQueryOptions } from "@/lib/auth";
 import { classifyInvitation, type InvitationState } from "@/lib/invitations";
 import { realEmail } from "@/lib/membership";
@@ -293,11 +293,7 @@ function WrongEmail({ email, redirect }: { email: string | null; redirect: strin
   const shownEmail = realEmail(email);
 
   const switchAccount = useMutation({
-    mutationFn: async () => {
-      const { error } = await authClient.signOut();
-      if (error) throw new Error(error.message ?? "Failed to sign out");
-      await authClient.near.disconnect().catch(() => {});
-    },
+    mutationFn: () => signOut(authClient),
     onSuccess: async () => {
       await refreshAfterAccountChange(queryClient, authClient);
       navigate({ to: "/sign-in", search: { redirect }, replace: true });

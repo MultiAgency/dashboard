@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fixTarget, type SetupCheck, setupDismissKey, setupSummary } from "@/lib/setup-status";
+import {
+  fixTarget,
+  type SetupCheck,
+  setupDismissKey,
+  setupSummary,
+  splitOptional,
+} from "@/lib/setup-status";
 
 const check = (over: Partial<SetupCheck>): SetupCheck => ({
   key: "k",
@@ -15,7 +21,11 @@ describe("setupSummary", () => {
   it("counts required checks and optional ones that are set up", () => {
     const summary = setupSummary([
       check({ key: "agency_name" }),
-      check({ key: "representative", state: "missing" }),
+      check({
+        key: "representative",
+        state: "missing",
+        fixHref: "/admin/settings#work-orders",
+      }),
       check({ key: "signing", state: "warning" }),
       check({ key: "google", state: "optional", required: false }),
       check({ key: "payouts_agent", required: false }),
@@ -37,6 +47,29 @@ describe("setupSummary", () => {
       check({ key: "payouts_funding", state: "missing", required: false }),
     ]);
     expect(summary.ready).toBe(true);
+  });
+
+  it("flags server settings an agency can't fix without blocking", () => {
+    const summary = setupSummary([
+      check({ key: "agency_name", fixHref: null }),
+      check({ key: "email", state: "missing", fixHref: null }),
+    ]);
+    expect(summary.ready).toBe(true);
+    expect(summary.blocking).toEqual([]);
+    expect(summary.attention.map((c) => c.key)).toEqual(["email"]);
+  });
+});
+
+describe("splitOptional", () => {
+  it("tucks away optional checks unless they need attention", () => {
+    const { main, optional } = splitOptional([
+      check({ key: "agency_name" }),
+      check({ key: "google", state: "optional", required: false }),
+      check({ key: "payouts_agent", required: false }),
+      check({ key: "payouts_funding", state: "warning", required: false }),
+    ]);
+    expect(main.map((c) => c.key)).toEqual(["agency_name", "payouts_funding"]);
+    expect(optional.map((c) => c.key)).toEqual(["google", "payouts_agent"]);
   });
 });
 

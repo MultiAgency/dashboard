@@ -114,7 +114,7 @@ export function GoogleDriveSettings({
     mutationFn: () => apiClient.workOrders.copyStarterTemplate({}),
     onSuccess: (next) => {
       onUpdate(next);
-      toast.success("The starter template was copied to your folder and selected");
+      toast.success("Starter template copied");
     },
     onError: (err: Error) => toast.error(err.message || "Couldn't copy the starter template"),
   });
@@ -148,8 +148,7 @@ export function GoogleDriveSettings({
           Google Docs and Drive
         </h3>
         <p className="text-sm text-muted-foreground">
-          MultiAgency fills your template in your Drive when you create a work order, and saves the
-          signed PDF, with its signature certificate, to the Signed folder.
+          Each work order is filled from your template. Signed PDFs go to the Signed folder.
         </p>
       </div>
 

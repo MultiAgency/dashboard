@@ -172,7 +172,6 @@ function AdminProjectDetail() {
                 <CardTitle>
                   <h2>Overview</h2>
                 </CardTitle>
-                <CardDescription>Key facts about this project.</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <dl className="grid gap-4 text-sm sm:grid-cols-3">
@@ -234,10 +233,7 @@ function AdminProjectDetail() {
           ) : agencyDao ? (
             <div className="flex flex-col gap-6">
               <ProjectBudgetPanel projectId={project.id} showAgencyBudgetLink />
-              <WorkOrdersCard
-                filter={{ projectId: project.id }}
-                description="Builders contracted on this project: each work order's budget cap and what's committed under it."
-              />
+              <WorkOrdersCard filter={{ projectId: project.id }} />
             </div>
           ) : null}
         </TabsContent>
@@ -250,7 +246,6 @@ function AdminProjectDetail() {
                   <CardTitle>
                     <h2>NEARN listing</h2>
                   </CardTitle>
-                  <CardDescription>The public bounty this project tracks on NEARN.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <NearnSnapshot slug={project.nearnListingId} nearnSponsor={nearnSponsor} />
@@ -507,7 +502,7 @@ function DeleteProjectSection({
       toast.success(`Project @${projectSlug} deleted`);
       navigate({ to: "/work" });
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to delete project"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't delete the project"),
   });
 
   return (
@@ -517,9 +512,8 @@ function DeleteProjectSection({
           <h2>Delete this project</h2>
         </CardTitle>
         <CardDescription>
-          Removes the project with its builder assignments and listings. A project shared with a
-          Client, or with budget entries or billings, keeps its history: archive it instead. This
-          cannot be undone.
+          This cannot be undone. Projects with money history or shared with a Client can only be
+          archived.
         </CardDescription>
       </CardHeader>
       <CardFooter className="justify-end">

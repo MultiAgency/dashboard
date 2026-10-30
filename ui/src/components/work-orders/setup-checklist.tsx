@@ -1,4 +1,5 @@
 import {
+  CaretRightIcon,
   CheckCircleIcon,
   CircleIcon,
   WarningIcon,
@@ -20,6 +21,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useApiClient } from "@/lib/api";
 import { activeOrganizationKey, workOrderSetupQueryOptions } from "@/lib/queries";
 import {
@@ -28,6 +30,7 @@ import {
   type SetupState,
   setupDismissKey,
   setupSummary,
+  splitOptional,
 } from "@/lib/setup-status";
 import { cn } from "@/lib/utils";
 
@@ -99,7 +102,7 @@ function FixLink({
   );
 }
 
-function CheckRow({ check }: { check: SetupCheck }) {
+function CheckRow({ check, tagged = true }: { check: SetupCheck; tagged?: boolean }) {
   const { icon: Icon, className, label } = ICONS[check.state];
   return (
     <li className="flex items-start gap-3 py-2">
@@ -107,7 +110,7 @@ function CheckRow({ check }: { check: SetupCheck }) {
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="text-sm font-medium">
           {check.label}
-          {!check.required && (
+          {tagged && !check.required && (
             <span className="ml-2 text-xs font-normal text-muted-foreground">optional</span>
           )}
         </span>
@@ -140,6 +143,7 @@ export function SetupChecklist({ compact = false }: { compact?: boolean }) {
   const summary = setupSummary(query.data);
   if (summary.ready && dismissed) return null;
   const open = expanded ?? (!compact && !summary.ready);
+  const groups = splitOptional(query.data);
 
   if (!open) {
     return (
@@ -152,17 +156,17 @@ export function SetupChecklist({ compact = false }: { compact?: boolean }) {
         <span className="flex-1">
           {summary.ready
             ? "All set to send work orders"
-            : `Ready to send work orders: ${summary.done} of ${summary.total} done`}
+            : `Setup: ${summary.done} of ${summary.total} done`}
           {summary.attention.length > 0 && (
             <span className="ml-2 text-xs text-muted-foreground">
               {summary.attention.length === 1
-                ? "1 item needs attention"
-                : `${summary.attention.length} items need attention`}
+                ? "1 needs attention"
+                : `${summary.attention.length} need attention`}
             </span>
           )}
         </span>
         <Button size="xs" variant="ghost" onClick={() => setExpanded(true)}>
-          Show checklist
+          Show
         </Button>
         {dismissible && summary.ready && (
           <Button
@@ -189,23 +193,42 @@ export function SetupChecklist({ compact = false }: { compact?: boolean }) {
         </CardTitle>
         <CardDescription>
           {summary.done} of {summary.total} done
-          {summary.blocking.length > 0 &&
-            `. Fix ${summary.blocking.length === 1 ? "the missing item" : `the ${summary.blocking.length} missing items`} before sending work orders.`}
         </CardDescription>
         {(summary.ready || compact) && (
           <CardAction>
             <Button size="xs" variant="ghost" onClick={() => setExpanded(false)}>
-              Hide checklist
+              Hide
             </Button>
           </CardAction>
         )}
       </CardHeader>
       <CardContent>
         <ul className="flex flex-col divide-y">
-          {query.data.map((check) => (
+          {groups.main.map((check) => (
             <CheckRow key={check.key} check={check} />
           ))}
         </ul>
+        {groups.optional.length > 0 && (
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+              <Button type="button" variant="ghost" size="xs" className="group/optional mt-2">
+                <CaretRightIcon
+                  data-icon="inline-start"
+                  aria-hidden
+                  className="transition-transform group-data-[state=open]/optional:rotate-90"
+                />
+                Optional
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <ul className="flex flex-col divide-y">
+                {groups.optional.map((check) => (
+                  <CheckRow key={check.key} check={check} tagged={false} />
+                ))}
+              </ul>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </CardContent>
     </Card>
   );
@@ -240,10 +263,7 @@ export function SetupPreflight() {
             </li>
           ))}
         </ul>
-        <span>
-          Fix links open in a new tab, so this draft stays open. You can still save it and fix these
-          before you send it.
-        </span>
+        <span>Fix links open in a new tab. You can still save this draft.</span>
       </AlertDescription>
     </Alert>
   );

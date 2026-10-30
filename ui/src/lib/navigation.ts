@@ -3,7 +3,7 @@ import { prepaymentsEnabled } from "@/lib/prepayments";
 
 export type WorkspaceRole = "owner" | "admin" | "member";
 
-export type NavItem = { to: string; label: string; match?: string };
+export type NavItem = { to: string; label: string; match?: string; exact?: boolean };
 
 export type NavGroup = { title: string; items: NavItem[] };
 
@@ -37,7 +37,7 @@ export function resolveView(
 }
 
 export function viewHome(view: WorkspaceView): string {
-  return view === "client" ? "/client/projects" : "/admin/projects";
+  return view === "client" ? "/client/projects" : "/admin";
 }
 
 export const CLIENT_ADMIN_PATHS = ["/admin/members"];
@@ -69,6 +69,7 @@ export function workspaceNavigation(
     {
       title: "Work",
       items: [
+        { to: "/admin", label: "Home", exact: true },
         { to: "/admin/projects", label: "Projects" },
         { to: "/admin/reports", label: "Reports" },
       ],
