@@ -1,4 +1,4 @@
-import { Effect } from "every-plugin/effect";
+import { Effect } from "effect";
 import { beforeEach, describe, expect, test } from "vitest";
 import { budgets } from "../../src/db/schema";
 import {

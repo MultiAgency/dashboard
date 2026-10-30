@@ -15,7 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="/">{children}</a>,
 }));
 
-const { Route } = await import("../src/routes/_layout/_authenticated/platform/members");
+const { Route } = await import("../src/routes/_authenticated/platform/members");
 const PlatformMembers = (Route as unknown as { options: { component: () => ReactNode } }).options
   .component;
 

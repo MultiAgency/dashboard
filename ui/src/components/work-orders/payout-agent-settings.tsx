@@ -369,6 +369,14 @@ export function PayoutAgentSettings() {
                     {data.policy.payees.length ? data.policy.payees.join(", ") : "none yet"}.
                   </p>
                 )}
+                {data.policy && (
+                  <p className="text-sm text-muted-foreground">
+                    Owner approval:{" "}
+                    {data.policy.ownerApproval
+                      ? "on. Each payout waits for the owner's vote."
+                      : "off. Approved payouts are sent without another signature."}
+                  </p>
+                )}
               </div>
             )}
 

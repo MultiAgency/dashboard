@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Migration } from "virtual:drizzle-migrations.sql";
 import { sql } from "drizzle-orm";
-import { Effect } from "every-plugin/effect";
+import { Effect } from "effect";
 import {
   extractExpectedTables,
   getMigrationStorage,
@@ -59,7 +59,7 @@ function getExistingTables(
       );
       return existing;
     }),
-    Effect.catchAll(() => Effect.succeed(new Set<string>())),
+    Effect.catch(() => Effect.succeed(new Set<string>())),
   );
 }
 
@@ -81,7 +81,7 @@ function readAppliedHashes(
       const hashes = normalizeRows<{ hash: string }>(result).map((r) => r.hash);
       return new Set(hashes);
     }),
-    Effect.catchAll(() => Effect.succeed(new Set<string>())),
+    Effect.catch(() => Effect.succeed(new Set<string>())),
   );
 }
 
@@ -90,10 +90,10 @@ export function loadMigrations(): Effect.Effect<LoadedMigrations, DatabaseError>
     const result = yield* Effect.tryPromise({
       try: () => import("virtual:drizzle-migrations.sql") as Promise<{ default?: Migration[] }>,
       catch: (cause) => new DatabaseError({ stage: "load", cause }),
-    }).pipe(Effect.either);
+    }).pipe(Effect.result);
 
-    if (result._tag === "Right" && result.right?.default?.length) {
-      const migrations = result.right.default;
+    if (result._tag === "Success" && result.success?.default?.length) {
+      const migrations = result.success.default;
       yield* Effect.logInfo(
         `[Database] Loaded ${migrations.length} migration(s) from virtual module`,
       );
@@ -101,9 +101,9 @@ export function loadMigrations(): Effect.Effect<LoadedMigrations, DatabaseError>
     }
 
     const reason =
-      result._tag === "Left" ? String(result.left.cause) : "no migrations in virtual module";
+      result._tag === "Failure" ? String(result.failure.cause) : "no migrations in virtual module";
 
-    if (result._tag === "Left") {
+    if (result._tag === "Failure") {
       yield* Effect.logDebug(
         `[Database] Virtual migrations unavailable (${reason}), loading from disk`,
       );
@@ -111,16 +111,16 @@ export function loadMigrations(): Effect.Effect<LoadedMigrations, DatabaseError>
       yield* Effect.logInfo("[Database] Virtual migrations empty, loading from disk");
     }
 
-    const diskResult = yield* loadMigrationsFromDisk().pipe(Effect.either);
+    const diskResult = yield* loadMigrationsFromDisk().pipe(Effect.result);
 
-    if (diskResult._tag === "Right") {
-      const migrations = diskResult.right;
+    if (diskResult._tag === "Success") {
+      const migrations = diskResult.success;
       yield* Effect.logInfo(`[Database] Loaded ${migrations.length} migration(s) from disk`);
       return { migrations, source: "disk" as const };
     }
 
     yield* Effect.logWarning(
-      `[Database] No migrations found from virtual or disk: ${diskResult.left.message}`,
+      `[Database] No migrations found from virtual or disk: ${diskResult.failure.message}`,
     );
     return { migrations: [], source: "disk" as const };
   });

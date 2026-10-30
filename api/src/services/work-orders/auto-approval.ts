@@ -1,5 +1,5 @@
+import { ORPCError } from "@orpc/server";
 import { and, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
-import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../../db";
 import {
   type AUTO_DECISIONS,

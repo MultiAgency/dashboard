@@ -28,8 +28,8 @@ describe("deleting a Project", () => {
     db = database.db;
     world = inMemoryProjectsPlugin([project("plain", AGENCY_ORG), project("used", AGENCY_ORG)]);
     deleted = [];
-    const projects = world.plugins.projects;
-    world.plugins.projects = ((context: { trusted?: boolean }) => ({
+    const projects = world.plugins.projects.client;
+    world.plugins.projects.client = ((context: { trusted?: boolean }) => ({
       ...projects(context as never),
       deleteProject: async ({ id }: { id: string }) => {
         if (!context.trusted) throw new Error("FORBIDDEN");

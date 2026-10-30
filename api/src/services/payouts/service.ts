@@ -10,6 +10,7 @@ import {
   type PolicyView,
   type StatusResponse,
 } from "@near-intents-agent-api/sdk";
+import { ORPCError } from "@orpc/server";
 import {
   type AnyColumn,
   and,
@@ -24,7 +25,6 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../../db";
 import {
   type AgentPayoutRow,

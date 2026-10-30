@@ -1,6 +1,6 @@
+import { ORPCError } from "@orpc/server";
 import { desc, eq } from "drizzle-orm";
-import { Effect, Either } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Effect, Result } from "effect";
 import type { Database } from "../db";
 import { type Listing, projectContributors, projectPublicSettings } from "../db/schema";
 import type { PluginsClient } from "../lib/plugins-types.gen";
@@ -70,10 +70,10 @@ export function createAgencyService(
 
     getPublicProject: (scope: AgencyScope, slug: string) =>
       Effect.gen(function* () {
-        const found = yield* Effect.either(
+        const found = yield* Effect.result(
           Effect.tryPromise(() => directory.forAgency(scope).requireBySlug(slug)),
         );
-        const candidate = Either.isRight(found) ? found.right : null;
+        const candidate = Result.isSuccess(found) ? found.success : null;
         const [match] = candidate
           ? yield* Effect.promise(() => withoutClientIdeas(db, [candidate]))
           : [];
@@ -96,7 +96,7 @@ export function createAgencyService(
                   .from(projectContributors)
                   .where(eq(projectContributors.projectId, match.id))
                   .orderBy(desc(projectContributors.createdAt)),
-                plugins.builders(scope.pluginContext).listBuilders({ limit: 100 }),
+                plugins.builders.client(scope.pluginContext).listBuilders({ limit: 100 }),
               ]),
             )
           : [[], { data: [] }];
@@ -146,10 +146,10 @@ export function createAgencyService(
 
     getProject: (scope: AgencyScope, slug: string) =>
       Effect.gen(function* () {
-        const found = yield* Effect.either(
+        const found = yield* Effect.result(
           Effect.tryPromise(() => directory.forAgency(scope).requireBySlug(slug)),
         );
-        const match = Either.isRight(found) ? found.right : null;
+        const match = Result.isSuccess(found) ? found.success : null;
         if (!match || !(scope.canSeePrivate || isPublicActive(match))) {
           return yield* Effect.fail(new ORPCError("NOT_FOUND", { message: "Project not found" }));
         }
@@ -172,7 +172,7 @@ export function createAgencyService(
               .from(projectContributors)
               .where(eq(projectContributors.projectId, match.id))
               .orderBy(desc(projectContributors.createdAt)),
-            plugins.builders(scope.pluginContext).listBuilders({ limit: 100 }),
+            plugins.builders.client(scope.pluginContext).listBuilders({ limit: 100 }),
           ]),
         );
         const builderByNear = new Map(
@@ -224,15 +224,15 @@ export function createAgencyService(
               new ORPCError("BAD_REQUEST", { message: "parentSlug is required for scope/result" }),
             );
           }
-          const found = yield* Effect.either(
+          const found = yield* Effect.result(
             Effect.tryPromise(() => directory.forAgency(scope).requireBySlug(parentSlug)),
           );
-          if (Either.isLeft(found)) {
+          if (Result.isFailure(found)) {
             return yield* Effect.fail(
               new ORPCError("BAD_REQUEST", { message: "Parent project not found in this agency" }),
             );
           }
-          const parent = found.right;
+          const parent = found.success;
           if (input.kind === "scope" && parent.kind !== "project") {
             return yield* Effect.fail(
               new ORPCError("BAD_REQUEST", { message: "Scope must mention a parent project" }),
@@ -249,7 +249,7 @@ export function createAgencyService(
             : mention;
         }
 
-        const projectsPlugin = plugins.projects(scope.pluginContext);
+        const projectsPlugin = plugins.projects.client(scope.pluginContext);
         const created = yield* Effect.promise(() =>
           projectsPlugin.createProject({
             kind: input.kind ?? "project",
@@ -303,7 +303,7 @@ export function createAgencyService(
         const updated = hasProjectChanges
           ? toProject(
               yield* Effect.promise(() =>
-                plugins.projects(scope.pluginContext).updateProject({
+                plugins.projects.client(scope.pluginContext).updateProject({
                   id,
                   title: projectPatch.title,
                   description: projectPatch.description === null ? "" : projectPatch.description,
@@ -346,8 +346,8 @@ export function createAgencyService(
         }
         yield* Effect.promise(() => deleteProjectCascade(db, input.id));
         yield* Effect.promise(() =>
-          plugins
-            .projects({ ...scope.pluginContext, trusted: true })
+          plugins.projects
+            .client({ ...scope.pluginContext, trusted: true })
             .deleteProject({ id: input.id }),
         );
         return { deleted: true as const };

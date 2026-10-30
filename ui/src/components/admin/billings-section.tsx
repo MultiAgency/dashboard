@@ -1,6 +1,5 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import {
   Badge,
@@ -14,6 +13,7 @@ import {
 } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect } from "@/components/admin-form";
+import type { ColumnDef } from "@/components/ui/data-table";
 import {
   buildBillingFilterGraph,
   reconcileBillingFilters,

@@ -1,14 +1,6 @@
-/**
- * Client router factory — creates a TanStack Router with browser history.
- *
- * BE CAREFUL MODIFYING THIS FILE — changes will be overwritten by `bos sync` / `bos upgrade`.
- * Prefer upstream changes at https://github.com/nearbuilders/everything-dev
- */
-
-import { dehydrate, hydrate } from "@tanstack/react-query";
-import { createBrowserHistory, createRouter as createTanStackRouter } from "@tanstack/react-router";
-import type { CreateRouterOptions } from "./app";
-import { createAuthClient } from "./app";
+import { createRouter as createCoreRouter } from "everything-dev/ui/router-client";
+import { defaultQueryClient } from "everything-dev/ui/router-defaults";
+import type { ApiClient, CreateRouterOptions, SessionData } from "./app";
 import { routeTree } from "./routeTree.gen";
 
 export type {
@@ -52,51 +44,21 @@ function defaultPendingComponent() {
   );
 }
 
-export function createRouter(opts: CreateRouterOptions) {
-  const queryClient = opts.context.queryClient;
-  const history = opts.history ?? createBrowserHistory();
-  const cspNonce = opts.context.cspNonce;
+export function createQueryClient() {
+  return defaultQueryClient();
+}
 
-  const router = createTanStackRouter({
-    routeTree,
-    history,
-    basepath: opts.basepath ?? opts.context.runtimeConfig?.runtime?.runtimeBasePath ?? "/",
-    context: {
-      queryClient,
-      runtimeConfig: opts.context.runtimeConfig,
-      cspNonce: opts.context.cspNonce,
-      apiClient: opts.context.apiClient,
-      authClient:
-        opts.context.authClient ??
-        createAuthClient({
-          runtimeConfig: opts.context.runtimeConfig,
-          cspNonce: opts.context.cspNonce,
-        }),
-      session: opts.context.session,
-    },
-    ...(cspNonce ? { ssr: { nonce: cspNonce } } : {}),
-    defaultPreload: "intent",
-    scrollRestoration: true,
-    defaultStructuralSharing: true,
-    defaultPreloadStaleTime: 0,
-    defaultPendingMinMs: 0,
+export function createRouter(opts: CreateRouterOptions) {
+  const { router, queryClient } = createCoreRouter<ApiClient, SessionData, typeof routeTree>({
+    ...opts,
+    defaultRouteTree: routeTree,
+  });
+  router.update({
+    context: router.options.context,
     defaultErrorComponent,
     defaultNotFoundComponent,
     defaultPendingComponent,
-    dehydrate: () => {
-      if (typeof window === "undefined") {
-        return { queryClientState: dehydrate(queryClient) };
-      }
-
-      return { queryClientState: {} };
-    },
-    hydrate: (dehydrated: { queryClientState?: unknown }) => {
-      if (typeof window !== "undefined" && dehydrated?.queryClientState) {
-        hydrate(queryClient, dehydrated.queryClientState);
-      }
-    },
   });
-
   return { router, queryClient };
 }
 

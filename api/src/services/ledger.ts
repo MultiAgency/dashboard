@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { Effect } from "every-plugin/effect";
+import { Effect } from "effect";
 import type { Database } from "../db";
 import { billings, budgets, type Listing } from "../db/schema";
 import { paidBy } from "./billings";

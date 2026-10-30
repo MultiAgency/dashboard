@@ -1,6 +1,5 @@
 import { TrayIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -16,6 +15,7 @@ import {
 } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Empty } from "@/components/admin-form";
+import type { ColumnDef } from "@/components/ui/data-table";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { adminApplicationsListQueryKey, refreshAfter } from "@/lib/queries";

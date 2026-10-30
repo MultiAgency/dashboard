@@ -1,6 +1,6 @@
+import { ORPCError } from "@orpc/server";
 import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
-import { Effect } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Effect } from "effect";
 import type { Database } from "../db";
 import {
   billings,
@@ -265,7 +265,7 @@ export function createReportsService(
       );
 
       const buildersResult = yield* Effect.promise(() =>
-        plugins.builders(scope.pluginContext).listBuilders({ limit: 100 }),
+        plugins.builders.client(scope.pluginContext).listBuilders({ limit: 100 }),
       );
       const builderByNear = new Map(
         buildersResult.data.map((b) => [b.nearAccount, b.name ?? b.nearAccount]),
@@ -464,7 +464,7 @@ export function createReportsService(
       };
     });
 
-  type Report = Effect.Effect.Success<ReturnType<typeof generate>>;
+  type Report = Effect.Success<ReturnType<typeof generate>>;
 
   const clientVisible = (
     engagement: { id: string; agencyOrganizationId: string },

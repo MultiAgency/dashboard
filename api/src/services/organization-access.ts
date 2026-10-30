@@ -1,7 +1,7 @@
+import type { DecoratedMiddleware } from "@orpc/server";
+import { ORPCError } from "@orpc/server";
 import { and, asc, eq, inArray, ne, or } from "drizzle-orm";
-import { Effect } from "every-plugin/effect";
-import type { DecoratedMiddleware } from "every-plugin/orpc";
-import { ORPCError } from "every-plugin/orpc";
+import { Effect } from "effect";
 import type { Database } from "../db";
 import {
   type EngagementRow,
@@ -451,7 +451,6 @@ export function createOrganizationAccess(deps: {
   type AccessMiddleware<TScope extends AgencyScope> = DecoratedMiddleware<
     AuthContext,
     { scope: TScope },
-    any,
     any,
     any,
     any

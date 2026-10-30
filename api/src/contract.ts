@@ -1,3 +1,5 @@
+import "@orpc/openapi/extensions/route";
+import { oc } from "@orpc/contract";
 import {
   BAD_REQUEST,
   FORBIDDEN,
@@ -5,8 +7,7 @@ import {
   SERVICE_UNAVAILABLE,
   UNAUTHORIZED,
 } from "every-plugin/errors";
-import { oc } from "every-plugin/orpc";
-import { z } from "every-plugin/zod";
+import { z } from "zod";
 import { myWorkOrdersContract, workOrdersContract } from "./work-orders-contract";
 
 const tokenList = z.object({
@@ -1500,6 +1501,56 @@ export const contract = oc.router({
       )
       .output(z.object({ recorded: z.boolean() }))
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+  },
+
+  organizationRequests: {
+    list: oc
+      .route({ method: "GET", path: "/platform/organization-requests" })
+      .output(
+        z.object({
+          data: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              slug: z.string(),
+              requestedBy: z.string().nullable(),
+              requestedByEmail: z.string().nullable(),
+              requestedAt: z.iso.datetime(),
+            }),
+          ),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    review: oc
+      .route({ method: "POST", path: "/platform/organization-requests/{organizationId}/review" })
+      .input(
+        z.discriminatedUnion("decision", [
+          z.object({
+            organizationId: z.string().min(1),
+            decision: z.literal("approve"),
+            adminEmail: z.string().trim().email().max(320).optional(),
+          }),
+          z.object({
+            organizationId: z.string().min(1),
+            decision: z.literal("reject"),
+            reason: z.string().trim().min(1).max(2000),
+          }),
+        ]),
+      )
+      .output(
+        z.object({
+          id: z.string(),
+          status: z.enum(["active", "pending", "rejected"]),
+          adminInvite: z
+            .discriminatedUnion("status", [
+              z.object({ status: z.literal("invited"), email: z.string() }),
+              z.object({ status: z.literal("failed"), message: z.string() }),
+            ])
+            .nullable(),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 
   assignments: {

@@ -1,6 +1,6 @@
 import { parseOrgMetadata } from "@/lib/org-metadata";
 
-type OrganizationLike = { id: string; metadata?: unknown };
+type OrganizationLike = { id: string; metadata?: unknown; status?: unknown };
 
 type Capabilities = {
   canManageMembers: boolean;
@@ -14,11 +14,15 @@ export function nonPersonalOrganizations<T extends OrganizationLike>(organizatio
   return organizations.filter((o) => !parseOrgMetadata(o.metadata).isPersonal);
 }
 
+export function isActiveOrganization(organization: { status?: unknown }): boolean {
+  return organization.status === undefined || organization.status === "active";
+}
+
 export function organizationToActivate(
   activeOrganizationId: string | null,
   organizations: OrganizationLike[],
 ): string | null {
-  const candidates = nonPersonalOrganizations(organizations);
+  const candidates = nonPersonalOrganizations(organizations).filter(isActiveOrganization);
   return (candidates.find((o) => o.id === activeOrganizationId) ?? candidates[0])?.id ?? null;
 }
 

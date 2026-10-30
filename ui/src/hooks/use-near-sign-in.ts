@@ -48,7 +48,7 @@ export function useNearSignIn(onSignedIn: () => void | Promise<void>) {
             }
             resolve();
           },
-          onError: (error) => {
+          onError: (error: unknown) => {
             reject(error);
           },
         });

@@ -103,27 +103,35 @@ function snakeCase(camel: string): string {
 
 function columnResolver(sql: SqlClient) {
   const cache = new Map<string, Promise<Set<string>>>();
-  const columnsOf = (table: string) => {
-    let found = cache.get(table);
-    if (!found) {
-      found = sql
-        .query<{ column_name: string }>(
-          "SELECT column_name FROM information_schema.columns WHERE table_name = $1",
-          [table],
-        )
-        .then(({ rows }) => new Set(rows.map((r) => r.column_name)));
-      cache.set(table, found);
-    }
+  const read = (table: string) => {
+    const found = sql
+      .query<{ column_name: string }>(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = $1",
+        [table],
+      )
+      .then(({ rows }) => new Set(rows.map((r) => r.column_name)))
+      .catch((error) => {
+        cache.delete(table);
+        throw error;
+      });
+    cache.set(table, found);
     return found;
   };
-  return async (table: string): Promise<TableColumns & { has(camel: string): boolean }> => {
+  const columnsOf = (table: string) => cache.get(table) ?? read(table);
+  const contains = (columns: Set<string>, camel: string) =>
+    columns.has(camel) || columns.has(snakeCase(camel));
+  const resolve = async (
+    table: string,
+  ): Promise<TableColumns & { has(camel: string): boolean }> => {
     const columns = await columnsOf(table);
     const name = (camel: string) =>
       quote(columns.has(camel) || !columns.has(snakeCase(camel)) ? camel : snakeCase(camel));
-    return Object.assign(name, {
-      has: (camel: string) => columns.has(camel) || columns.has(snakeCase(camel)),
-    });
+    return Object.assign(name, { has: (camel: string) => contains(columns, camel) });
   };
+  return Object.assign(resolve, {
+    present: async (table: string, camel: string) =>
+      contains(await columnsOf(table), camel) || contains(await read(table), camel),
+  });
 }
 
 export type AuthDirectoryTables = AuthTableNames & { invitation: string };
@@ -221,8 +229,11 @@ export function authDatabaseDirectory(
 
     memberships: async (userId) => {
       const m = await columns(tables.member);
+      const activeOnly = (await columns.present(tables.organization, "status"))
+        ? ` AND o.status = 'active'`
+        : "";
       const { rows } = await sql.query<OrganizationRowShape & { role: string }>(
-        `SELECT ${await organizationSelect("o")}, m.role FROM ${member} m JOIN ${organization} o ON o.id = m.${m("organizationId")} WHERE m.${m("userId")} = $1`,
+        `SELECT ${await organizationSelect("o")}, m.role FROM ${member} m JOIN ${organization} o ON o.id = m.${m("organizationId")} WHERE m.${m("userId")} = $1${activeOnly}`,
         [userId],
       );
       return rows.map((row) => ({

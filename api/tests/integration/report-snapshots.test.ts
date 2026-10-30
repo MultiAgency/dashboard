@@ -1,4 +1,4 @@
-import type { Effect } from "every-plugin/effect";
+import type { Effect } from "effect";
 import { beforeEach, describe, expect, test } from "vitest";
 import { budgets, compensationRequests, reportSnapshots, workOrders } from "../../src/db/schema";
 import { runEffect } from "../../src/lib/context";

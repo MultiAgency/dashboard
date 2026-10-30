@@ -1,7 +1,6 @@
 import { PaperPlaneTiltIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import type { ColumnDef } from "@tanstack/react-table";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -20,6 +19,7 @@ import {
 } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect } from "@/components/admin-form";
+import type { ColumnDef } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { useLeaveOrganization } from "@/hooks/use-leave-organization";
 import { type AuthClient, useAuthClient } from "@/lib/auth";

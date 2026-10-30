@@ -6,7 +6,6 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import type { ColumnDef } from "@tanstack/react-table";
 import { useState } from "react";
 import {
   Alert,
@@ -32,6 +31,7 @@ import {
 import { CommunityImportPanel } from "@/components/admin/community-import-panel";
 import { ProjectForm, type ProjectFormValues } from "@/components/admin/project-form";
 import { AdminError } from "@/components/admin-error";
+import type { ColumnDef } from "@/components/ui/data-table";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";

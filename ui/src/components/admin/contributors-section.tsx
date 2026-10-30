@@ -7,7 +7,6 @@ import {
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import type { ColumnDef } from "@tanstack/react-table";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -30,6 +29,7 @@ import { CommunityBuildersImportPanel } from "@/components/admin/community-build
 import { AdminError } from "@/components/admin-error";
 import { Field } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import type { ColumnDef } from "@/components/ui/data-table";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import {
