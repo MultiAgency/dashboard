@@ -506,20 +506,18 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   async function contactsOf(row: WorkOrderRow, builder: BuilderProfile | null) {
     const lookup = async (userId: string | null | undefined) =>
       userId && deps.userEmail ? await deps.userEmail(userId).catch(() => null) : null;
-    const fallback =
-      row.representativeEmail && row.representativeName
-        ? null
-        : await integrationOf(row.organizationId).catch(() => null);
-    const representativeEmail =
-      row.representativeEmail ?? fallback?.defaultRepresentativeEmail ?? null;
+    const fallback = row.representativeEmail
+      ? null
+      : await integrationOf(row.organizationId).catch(() => null);
+    const useDefault = !!fallback?.defaultRepresentativeEmail;
     return {
       contractorEmail: row.contractorEmail ?? (await lookup(builder?.userId)),
-      representativeEmail,
-      representativeName:
-        row.representativeName ??
-        (representativeEmail === fallback?.defaultRepresentativeEmail
-          ? (fallback?.defaultRepresentativeName ?? null)
-          : null),
+      representativeEmail: useDefault
+        ? (fallback?.defaultRepresentativeEmail ?? null)
+        : row.representativeEmail,
+      representativeName: useDefault
+        ? (fallback?.defaultRepresentativeName ?? null)
+        : row.representativeName,
     };
   }
 
@@ -1392,10 +1390,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     };
   }
 
-  async function sentToBuilder(row: WorkOrderRow): Promise<boolean> {
+  async function sentToBuilder(row: WorkOrderRow, state?: EsignStatus | null): Promise<boolean> {
     if (row.status === "draft") return false;
     if (row.status !== "offered") return true;
-    return !(await signingOf(row)).awaitingRepresentative;
+    if (!(await signingOf(row)).awaitingRepresentative) return true;
+    const current =
+      state === undefined ? (await checkEnvelope(row).catch(() => null))?.state : state;
+    return !!current?.signers.some((s) => s.role === "representative" && s.signedAt);
   }
 
   async function syncPendingSignatures(): Promise<number> {
@@ -3875,7 +3876,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (signatures.some((s) => s.role === "representative")) {
         throw badRequest("ALREADY_SIGNED", "You've already countersigned it");
       }
-      const contacts = await contactsOf(row, null);
       await db.insert(workOrderSignatures).values({
         id: crypto.randomUUID(),
         workOrderId: row.id,
@@ -3883,7 +3883,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         role: "representative",
         name,
         email:
-          contacts.representativeEmail ??
+          row.representativeEmail ??
           (deps.userEmail ? await deps.userEmail(scope.actorId).catch(() => null) : null),
         userId: scope.actorId,
         nearAccount: null,
@@ -3989,8 +3989,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         const builderWasSent =
           row.status === "offered" &&
           checked?.state.status !== "rejected" &&
-          ((await sentToBuilder(row)) ||
-            !!checked?.state.signers.some((s) => s.role === "representative" && s.signedAt));
+          (await sentToBuilder(row, checked?.state ?? null));
         const payload = builderWasSent ? await payloadOf(row) : null;
         await db.delete(workOrders).where(eq(workOrders.id, row.id));
         if (payload) {

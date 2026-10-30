@@ -12,6 +12,7 @@ import {
   workOrderDriveFiles,
   workOrderIntegrations,
   workOrderOutbox,
+  workOrderSignatures,
   workOrders,
 } from "../../src/db/schema";
 import { rememberedLogin } from "../../src/services/builder-logins";
@@ -985,6 +986,31 @@ describe("work orders", () => {
         name: "Rita Rep",
         email: "rita@example.com",
       });
+
+      events.length = 0;
+      await service.create(await studio(), fields({ representativeName: "Rita Rep" }));
+      expect(events.find((e) => e.type === "work_order.created")?.representative).toEqual({
+        name: "Dana Default",
+        email: "dana@example.com",
+      });
+    });
+
+    test("a countersignature records the signer's own email, not the default representative's", async () => {
+      await createWorkOrderIntegrations({ db }).saveRepresentative("studio", "studio-admin", {
+        name: "Dana Default",
+        email: "dana@example.com",
+      });
+      const wo = await active();
+      const [signature] = await db
+        .select()
+        .from(workOrderSignatures)
+        .where(
+          and(
+            eq(workOrderSignatures.workOrderId, wo.id),
+            eq(workOrderSignatures.role, "representative"),
+          ),
+        );
+      expect(signature?.email).toBe("studio-admin@example.com");
     });
 
     test("terminating tells the builder; a draft they never saw stays quiet", async () => {
@@ -1946,6 +1972,21 @@ describe("work orders", () => {
       expect(declined.signing.esign?.error).toBe("Declined in Documenso: Wrong budget");
       const email = events.find((e) => e.type === "work_order.declined");
       expect(email?.note).toBe("Wrong budget");
+    });
+
+    test("terminating tells the builder once the representative signed in Documenso, even before it's recorded", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      events.length = 0;
+      await service.terminate(await studio(), { id: created.id });
+      expect(events.map((e) => e.type)).toEqual(["work_order.terminated"]);
+    });
+
+    test("terminating before the representative signed in Documenso doesn't tell the builder", async () => {
+      const created = await offered();
+      events.length = 0;
+      await service.terminate(await studio(), { id: created.id });
+      expect(events).toEqual([]);
     });
 
     test("withdrawing before the representative signed doesn't tell the builder", async () => {
