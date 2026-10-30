@@ -171,9 +171,6 @@ export function ProjectsAdminSection() {
           <CardTitle>
             <h2>Your projects</h2>
           </CardTitle>
-          <CardDescription>
-            Open a project to manage its builders, budget and billings.
-          </CardDescription>
           {!creating && (
             <CardAction className="flex flex-wrap gap-2">
               {!importing && (
@@ -302,9 +299,7 @@ function NearnSponsorBountiesPanel({
         <CardTitle>
           <h2>Unlinked NEARN bounties</h2>
         </CardTitle>
-        <CardDescription>
-          Bounties from your NEARN sponsor account that no project tracks yet.
-        </CardDescription>
+        <CardDescription>No project tracks these yet.</CardDescription>
       </CardHeader>
       <CardContent>
         <ItemGroup>

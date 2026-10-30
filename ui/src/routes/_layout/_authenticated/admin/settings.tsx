@@ -58,29 +58,26 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/settings")({
 function AdminSettingsPage() {
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Settings"
-        description="Your Organization's identity, treasury and public Agency details."
-      />
+      <PageHeader title="Settings" />
       <SetupChecklist compact />
       <SettingsSection
         id="organization"
         title="Organization"
-        description="The name and slug an Agency uses to propose an Engagement to you."
+        description="Name and slug Agencies use to reach you."
       >
         <OrganizationIdentity />
       </SettingsSection>
       <SettingsSection
         id="treasury"
         title="Treasury"
-        description="The Agency DAO that funds your Projects' budgets and billings."
+        description="The DAO that funds your Projects."
       >
         <TreasurySettings />
       </SettingsSection>
       <SettingsSection
         id="work-orders"
         title="Work orders: documents and email"
-        description="Default representative, Google Docs template, Drive folders, e-signature and emails."
+        description="Representative, template, Drive and emails."
       >
         <div className="flex flex-col gap-4">
           <WorkOrderRepresentativeSettings />
@@ -90,18 +87,18 @@ function AdminSettingsPage() {
       <SettingsSection
         id="work-order-approval"
         title="Automatic approval"
-        description="How much builders' trust lets compensation requests skip your approval."
+        description="When requests skip your approval."
       >
         <WorkOrderTrustSettings />
       </SettingsSection>
       <SettingsSection
         id="payouts"
         title="Automatic payouts (NEAR Intents)"
-        description="The payout agent: rules, monthly budget, balance and top-ups."
+        description="Rules, monthly budget, balance and top-ups."
       >
         <PayoutAgentSettings />
       </SettingsSection>
-      <SettingsSection id="agency" title="Agency details" description="Your public Agency profile.">
+      <SettingsSection id="agency" title="Agency details" description="Your public profile.">
         <AdminSettings />
       </SettingsSection>
     </div>
@@ -141,10 +138,7 @@ function OrganizationIdentity() {
           <CardTitle>
             <h2>Organization</h2>
           </CardTitle>
-          <CardDescription>
-            An Agency needs this slug and the exact name to propose an Engagement to your
-            Organization. Builders see the name in every work order email.
-          </CardDescription>
+          <CardDescription>Builders see this name in every work order email.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {canManage ? (
@@ -288,7 +282,7 @@ function SettingsForm({
       toast.success("Settings updated");
       void refreshAfter(queryClient, { type: "settings" });
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to update settings"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't save"),
   });
 
   const form = useForm({
@@ -330,9 +324,7 @@ function SettingsForm({
         <CardTitle>
           <h2>Agency details</h2>
         </CardTitle>
-        <CardDescription>
-          Public details for the {data.network} deployment, saved to this workspace's settings.
-        </CardDescription>
+        <CardDescription>Public details for {data.network}.</CardDescription>
       </CardHeader>
       <form
         className="flex flex-col gap-4"

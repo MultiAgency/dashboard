@@ -17,12 +17,7 @@ const STATE_LABEL: Record<string, string> = {
 
 export function EvidenceList({ evidence }: { evidence: Evidence[] }) {
   if (evidence.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Nothing collected yet. Evidence comes from GitHub: issues assigned to the builder, pull
-        requests the repository owner approved or merged, and reviews.
-      </p>
-    );
+    return <p className="text-sm text-muted-foreground">Nothing collected from GitHub yet.</p>;
   }
   return (
     <div className="flex flex-col gap-5">

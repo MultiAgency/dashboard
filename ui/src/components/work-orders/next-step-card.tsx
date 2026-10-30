@@ -10,11 +10,15 @@ import type { WorkOrderProgress } from "./progress-stepper";
 export type ProgressAction = NonNullable<WorkOrderProgress["next"]>;
 export type InPageAction = Exclude<ProgressAction, { kind: "link" }>;
 
-function waitingLine(progress: WorkOrderProgress, builderName: string): string | null {
-  const since = progress.since ? relativeTime(progress.since) : null;
-  const who = waitingPhrase(progress.waitingOn, builderName);
-  if (who) return since ? `${who} · since ${since}` : who;
-  return since ? `Since ${since}` : null;
+function metaLine(progress: WorkOrderProgress, builderName: string): string | null {
+  const since = progress.since ? `since ${relativeTime(progress.since)}` : null;
+  const who =
+    progress.waitingOn === "builder" && !progress.headline.includes(builderName)
+      ? waitingPhrase(progress.waitingOn, builderName)
+      : null;
+  if (who && since) return `${who} · ${since}`;
+  if (who) return who;
+  return since ? since.charAt(0).toUpperCase() + since.slice(1) : null;
 }
 
 export function ActionButton({
@@ -75,40 +79,37 @@ export function NextStepCard({
   children?: ReactNode;
 }) {
   const needsYou = progress.waitingOn === "you";
-  const waiting = waitingLine(progress, builderName);
+  const meta = metaLine(progress, builderName);
   return (
-    <Card
-      variant={needsYou ? "highlight" : "default"}
-      className={cn(needsYou ? "ring-primary/40" : "bg-muted/30")}
-      aria-label="Next step"
-    >
+    <Card variant={needsYou ? "highlight" : "default"} aria-label="Next step">
       <CardHeader>
-        <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          Next step
+        <span
+          className={cn(
+            "text-xs font-medium tracking-wide uppercase",
+            needsYou ? "text-primary" : "text-muted-foreground",
+          )}
+        >
+          {needsYou ? "Your turn" : "Next step"}
         </span>
         <CardTitle>
           <h2 className="text-base">{progress.headline}</h2>
         </CardTitle>
-        {waiting && (
-          <CardDescription className={cn(needsYou && "font-medium text-primary")}>
-            {waiting}
-          </CardDescription>
-        )}
+        {meta && <CardDescription>{meta}</CardDescription>}
       </CardHeader>
-      <CardContent className="flex flex-col gap-4 empty:hidden">
+      <CardContent className="flex flex-col gap-3 empty:hidden">
         {canManage && progress.next && (
           <div className="flex flex-wrap gap-2">
             <ActionButton action={progress.next} onAction={onAction} busy={busy} />
           </div>
         )}
         {progress.attention.length > 0 && (
-          <section aria-label="Needs attention" className="flex flex-col gap-2 border-t pt-3">
+          <section aria-label="Needs attention" className="flex flex-col gap-1.5">
             <h3 className="text-xs font-medium text-muted-foreground">Needs attention</h3>
-            <ul className="flex flex-col gap-2">
+            <ul className="flex flex-col gap-1.5">
               {progress.attention.map((item) => (
                 <li
                   key={item.key}
-                  className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-1.5 text-sm sm:flex-row sm:items-center sm:justify-between"
                 >
                   <span className="flex min-w-0 items-start gap-2">
                     <WarningCircleIcon

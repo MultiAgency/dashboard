@@ -1,21 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Input,
-} from "@/components";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input } from "@/components";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useApiClient } from "@/lib/api";
 import { adminWorkOrdersQueryKey } from "@/lib/queries";
 import { OpenDocumentButton } from "./open-document-button";
-import type { WorkOrderDetail } from "./work-order-status";
+import { payeeConfirmedBySigning, type WorkOrderDetail } from "./work-order-status";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -35,6 +26,7 @@ export function SigningPanel({
   canManage: boolean;
   onAttach: () => void;
 }) {
+  const confirmsOnSigning = payeeConfirmedBySigning(wo);
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
   const [github, setGithub] = useState("");
@@ -66,11 +58,6 @@ export function SigningPanel({
         <CardTitle>
           <h2>Signature and payout account</h2>
         </CardTitle>
-        <CardDescription>
-          Offering the work order sends it for e-signature: the representative signs first, then the
-          builder, and it starts as soon as the builder signs. A payout account this Agency hasn't
-          paid before is confirmed by its wallet.
-        </CardDescription>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-[10rem_1fr]">
@@ -88,27 +75,31 @@ export function SigningPanel({
                   <Badge variant="outline">Confirmed {date(wo.payee.confirmedAt)}</Badge>
                 ) : wo.payee.paidBefore ? (
                   <Badge variant="outline">Paid by this Agency before</Badge>
+                ) : confirmsOnSigning ? (
+                  <span className="text-muted-foreground">Confirmed when they sign</span>
                 ) : wo.payee.needsConfirmation ? (
                   <Badge>Needs the builder's confirmation</Badge>
                 ) : null}
               </span>
-              {wo.payee.needsConfirmation && (
+              {wo.payee.needsConfirmation && !confirmsOnSigning && (
                 <span className="text-muted-foreground">
-                  This Agency hasn't paid this account before, so the builder confirms it by signing
-                  in with that NEAR wallet. Accepting in MultiAgency confirms it too.
+                  New account: the builder confirms it by signing in with that NEAR wallet.
                 </span>
               )}
-              {canManage && wo.payee.needsConfirmation && wo.status !== "draft" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="self-start"
-                  disabled={askPayee.isPending}
-                  onClick={() => askPayee.mutate()}
-                >
-                  Ask the builder to confirm
-                </Button>
-              )}
+              {canManage &&
+                wo.payee.needsConfirmation &&
+                !confirmsOnSigning &&
+                wo.status !== "draft" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="self-start"
+                    disabled={askPayee.isPending}
+                    onClick={() => askPayee.mutate()}
+                  >
+                    Ask the builder to confirm
+                  </Button>
+                )}
             </div>
           </Row>
           <Row label="GitHub login">
@@ -154,7 +145,6 @@ export function SigningPanel({
               <span className="text-muted-foreground"> · {wo.representativeEmail}</span>
             ) : null}
           </Row>
-          {wo.ipModel && <Row label="IP model">{wo.ipModel.replace("_", " ")}</Row>}
         </dl>
       </CardContent>
     </Card>
@@ -267,8 +257,8 @@ function SignatureStatus({
       <div className="flex flex-col gap-3">
         <span>
           {canManage
-            ? "Sign it in Documenso to send it to the builder. They're emailed a link to sign as soon as you've signed."
-            : `Waiting for ${wo.representativeName ?? "the representative"} to sign it in Documenso; then it's sent to the builder.`}
+            ? "Sign it in Documenso to send it to the builder."
+            : `Waiting for ${wo.representativeName ?? "the representative"} to sign it in Documenso.`}
         </span>
         {esignError}
         <div className="flex flex-wrap gap-2">
@@ -294,8 +284,7 @@ function SignatureStatus({
       <div className="flex flex-col gap-3">
         <span className="text-muted-foreground">
           {representative ? `Signed by ${representative.name}. ` : ""}Sent to {builderName} on{" "}
-          {day(representative?.signedAt ?? wo.offeredAt)}; waiting for their signature. It becomes
-          active as soon as they sign.
+          {day(representative?.signedAt ?? wo.offeredAt)}; waiting for their signature.
         </span>
         {esignError}
         <Button size="sm" variant="outline" className="self-start" onClick={check}>
@@ -317,8 +306,7 @@ function SignatureStatus({
   return (
     <div className="flex flex-col gap-1">
       <span className="text-muted-foreground">
-        Not sent yet. Offering it prepares the document for signature: the representative signs
-        first, then the builder is sent a signing request.
+        Not sent yet. When offered, the representative signs first, then the builder.
       </span>
       {esignError}
     </div>

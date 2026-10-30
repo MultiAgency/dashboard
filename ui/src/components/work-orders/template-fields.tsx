@@ -93,7 +93,7 @@ export function TemplateFields({
     mutationFn: (_tab: PendingTab) => apiClient.workOrders.previewTemplate({}),
     onSuccess: ({ url }, tab) => {
       tab.go(url);
-      toast.success("A preview with sample data is in your documents folder");
+      toast.success("Preview saved to your documents folder");
     },
     onError: (err: Error, tab) => {
       tab.close();

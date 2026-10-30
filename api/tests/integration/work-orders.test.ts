@@ -7,6 +7,7 @@ import {
   billings,
   compensationRequests,
   notifications,
+  organizationBuilderLogins,
   workOrderDocuments,
   workOrderDriveFiles,
   workOrderIntegrations,
@@ -110,6 +111,7 @@ describe("work orders", () => {
       builders: { get: async (nearAccount) => builders.get(nearAccount) ?? null },
       github,
       ownership: (repo) => github.getRepoOwnership(repo),
+      orgRepos: (org) => github.listOrgRepos(org),
       proposal: async (dao, id) => proposals.get(`${dao}#${id}`) ?? null,
       proposalBond: async () => "100000000000000000000000",
       prices: { price: async () => ({ priceUsd, at: "2026-09-20T12:00:00.000Z" }) },
@@ -226,6 +228,23 @@ describe("work orders", () => {
       await service.create(await studio(), fields({ code: "SI-004" }));
       expect(await service.nextCode(await studio())).toEqual({ code: "WO-0002" });
       expect((await service.create(await studio(), fields())).code).toBe("WO-0002");
+    });
+
+    test("timestamps follow the service clock, so a new draft is waiting since now", async () => {
+      const created = await service.create(await studio(), fields());
+      expect(created.createdAt).toBe("2026-09-20T12:00:00.000Z");
+      expect(created.progress.since).toBe("2026-09-20T12:00:00.000Z");
+    });
+
+    test("a project that can't be found shows as unknown, never as its id", async () => {
+      const created = await service.create(await studio(), fields());
+      await db
+        .update(workOrders)
+        .set({ projectId: "proj_gone", projectTitle: null, projectSlug: null })
+        .where(eq(workOrders.id, created.id));
+      const view = await service.get(await studio(), { id: created.id });
+      expect(view.projectId).toBe("proj_gone");
+      expect(view.projectTitle).toBe("Unknown project");
     });
 
     test("draft → offered → accepted by the builder's own account → active", async () => {
@@ -801,6 +820,8 @@ describe("work orders", () => {
         signature: { method: null },
       });
       expect(child.signing.builder).toBeNull();
+      const [childRow] = await db.select().from(workOrders).where(eq(workOrders.id, child.id));
+      expect(childRow?.projectTitle).toBe(parent.projectTitle);
       expect(
         (await service.get(await studio(), { id: parent.id })).requests.map((r) => r.status),
       ).toEqual(["draft"]);
@@ -1015,6 +1036,25 @@ describe("work orders", () => {
         "Signed by Carol and Rita Rep with Google eSignature",
       ];
     };
+
+    test("a work order whose project is gone is refused without blaming Google", async () => {
+      const created = await service.create(await studio(), fields());
+      await db
+        .update(workOrders)
+        .set({ projectId: "deleted-project", projectTitle: null })
+        .where(eq(workOrders.id, created.id));
+      const copies = google.copies.length;
+      await refused(
+        service.prepareDocument(await studio(), { id: created.id }),
+        "PROJECT_UNAVAILABLE",
+      );
+      expect(google.copies).toHaveLength(copies);
+      const [integration] = await db
+        .select()
+        .from(workOrderIntegrations)
+        .where(eq(workOrderIntegrations.organizationId, "studio"));
+      expect(integration?.googleLastError).toBeNull();
+    });
 
     test("a new work order gets its filled Google Doc and the representative is told", async () => {
       const created = await service.create(
@@ -1504,6 +1544,89 @@ describe("work orders", () => {
       await service.offer(await studio(), { id: first.id });
       await service.remove(await studio(), { id: first.id });
       expect(documenso.cancelled.at(-1)?.envelopeId).toBe("envelope_3");
+    });
+
+    test("an offered work order the builder already signed in Documenso can't be deleted", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
+      await refused(service.remove(await studio(), { id: created.id }), "ALREADY_SIGNED");
+      expect(documenso.cancelled).toEqual([]);
+      expect((await service.get(await studio(), { id: created.id })).status).not.toBe("offered");
+    });
+
+    test("deleting stops when Documenso can't be checked or the envelope can't be cancelled", async () => {
+      const created = await offered();
+      const status = documenso.status.bind(documenso);
+      documenso.status = async () => {
+        throw new Error("Documenso is down");
+      };
+      await refused(service.remove(await studio(), { id: created.id }), "ESIGN_UNCHECKED");
+      documenso.status = status;
+      const cancel = documenso.cancel.bind(documenso);
+      documenso.cancel = async () => {
+        throw new Error("timeout");
+      };
+      await refused(service.remove(await studio(), { id: created.id }), "ESIGN_CANCEL_FAILED");
+      documenso.cancel = cancel;
+      expect((await service.get(await studio(), { id: created.id })).status).toBe("offered");
+      await service.remove(await studio(), { id: created.id });
+    });
+
+    test("deleting after the representative signed doesn't send the builder the offer", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.remove(await studio(), { id: created.id });
+      expect(events.map((e) => e.type)).not.toContain("work_order.offered");
+      expect((await notificationsOf("carol")).map((n) => n.kind)).not.toContain(
+        "work_order_offered",
+      );
+      expect(documenso.cancelled.at(-1)?.reason).toBe("The work order was withdrawn");
+    });
+
+    test("deleting a work order the builder declined in Documenso tells no one", async () => {
+      const created = await offered();
+      documenso.reject("contractor");
+      await service.remove(await studio(), { id: created.id });
+      expect((await notificationsOf("studio-admin")).map((n) => n.kind)).not.toContain(
+        "work_order_declined",
+      );
+      expect(documenso.cancelled).toEqual([]);
+    });
+
+    test("terminating goes through when Documenso can't withdraw the envelope, and says so", async () => {
+      const created = await offered();
+      documenso.status = async () => {
+        throw new Error("Documenso is down");
+      };
+      documenso.cancel = async () => {
+        throw new Error("timeout");
+      };
+      const terminated = await service.terminate(await studio(), { id: created.id });
+      expect(terminated.status).toBe("terminated");
+      expect(terminated.signing.esign?.error).toBe(
+        "Couldn't withdraw it in Documenso, so the builder may still be able to sign there: timeout",
+      );
+      expect(terminated.progress.attention.map((a) => a.key)).toContain("esign");
+    });
+
+    test("terminating doesn't warn about an envelope that was already rejected in Documenso", async () => {
+      const created = await offered();
+      documenso.reject("contractor");
+      const terminated = await service.terminate(await studio(), { id: created.id });
+      expect(terminated.status).toBe("terminated");
+      expect(terminated.signing.esign?.error ?? null).toBeNull();
+      expect(documenso.cancelled).toEqual([]);
+    });
+
+    test("terminating withdraws the envelope without recording signatures first", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      const terminated = await service.terminate(await studio(), { id: created.id });
+      expect(terminated.status).toBe("terminated");
+      expect(terminated.signing.esign?.error ?? null).toBeNull();
+      expect(documenso.cancelled.at(-1)?.reason).toBe("The work order was terminated");
+      expect(events.map((e) => e.type)).not.toContain("work_order.offered");
     });
 
     async function completed() {
@@ -2994,6 +3117,124 @@ describe("work orders", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe("importing repositories from GitHub", () => {
+    test("lists an organization's public repositories", async () => {
+      github.orgs.set("nearbuilders", [
+        {
+          fullName: "NEARBuilders/citynode.app",
+          url: "https://github.com/NEARBuilders/citynode.app",
+          description: "City node",
+          pushedAt: "2026-10-01T00:00:00Z",
+        },
+      ]);
+      const listed = await service.githubRepos(await studio(), { org: "NEARBuilders" });
+      expect(listed.repos.map((r) => r.fullName)).toEqual(["NEARBuilders/citynode.app"]);
+    });
+
+    test("an unknown organization or a GitHub outage is a clear error", async () => {
+      await refused(service.githubRepos(await studio(), { org: "nobody" }), "GITHUB_ORG_NOT_FOUND");
+      github.orgs.set("down", []);
+      github.failNext("listOrgRepos", new Error("timeout"));
+      await refused(service.githubRepos(await studio(), { org: "down" }), "GITHUB_FAILED");
+    });
+  });
+
+  describe("builder defaults for a new work order", () => {
+    const rival = () => world.manager("rival-admin", "rival");
+
+    test("the profile login, a linked account email, and no email demand without e-signature", async () => {
+      expect(await service.builderDefaults(await studio(), { nearAccount: CAROL })).toEqual({
+        githubLogin: "carol-gh",
+        contractorEmail: null,
+        accountEmail: true,
+        needsEmails: false,
+      });
+    });
+
+    test("an unknown builder gets empty defaults, and e-signature asks for emails", async () => {
+      service = createWorkOrdersService({ ...serviceDeps, esign: new FakeDocumenso() });
+      expect(await service.builderDefaults(await studio(), { nearAccount: "ghost.near" })).toEqual({
+        githubLogin: null,
+        contractorEmail: null,
+        accountEmail: false,
+        needsEmails: true,
+      });
+    });
+
+    test("no account email when the linked user has none", async () => {
+      service = createWorkOrdersService({ ...serviceDeps, userEmail: async () => null });
+      const defaults = await service.builderDefaults(await studio(), { nearAccount: CAROL });
+      expect(defaults.accountEmail).toBe(false);
+    });
+
+    test("the remembered login and latest email stay inside the organization", async () => {
+      const first = await service.create(
+        await studio(),
+        fields({
+          builderNearAccount: "nogit.near",
+          githubLogin: "nogit-gh",
+          contractorEmail: "old@nogit.example",
+        }),
+      );
+      clock = new Date("2026-09-21T12:00:00.000Z");
+      await service.create(
+        await studio(),
+        fields({
+          builderNearAccount: "nogit.near",
+          githubLogin: "nogit-gh",
+          contractorEmail: "new@nogit.example",
+        }),
+      );
+      clock = new Date("2026-09-22T12:00:00.000Z");
+      const leaked = await service.create(
+        await studio(),
+        fields({
+          builderNearAccount: "nogit.near",
+          githubLogin: "nogit-gh",
+          contractorEmail: "rival@nogit.example",
+        }),
+      );
+      await db
+        .update(workOrders)
+        .set({ organizationId: "rival", githubLogin: "rival-gh" })
+        .where(eq(workOrders.id, leaked.id));
+      await db.update(workOrders).set({ contractorEmail: null }).where(eq(workOrders.id, first.id));
+
+      expect(await service.builderDefaults(await studio(), { nearAccount: "nogit.near" })).toEqual({
+        githubLogin: "nogit-gh",
+        contractorEmail: "new@nogit.example",
+        accountEmail: true,
+        needsEmails: false,
+      });
+      expect(await service.builderDefaults(await rival(), { nearAccount: "nogit.near" })).toEqual({
+        githubLogin: "rival-gh",
+        contractorEmail: "rival@nogit.example",
+        accountEmail: true,
+        needsEmails: false,
+      });
+    });
+
+    test("the latest login on the organization's work orders fills in when none is remembered", async () => {
+      await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near", githubLogin: "old-gh" }),
+      );
+      clock = new Date("2026-09-21T12:00:00.000Z");
+      await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near", githubLogin: "new-gh" }),
+      );
+      await db.delete(organizationBuilderLogins);
+
+      expect(
+        (await service.builderDefaults(await studio(), { nearAccount: "nogit.near" })).githubLogin,
+      ).toBe("new-gh");
+      expect(
+        (await service.builderDefaults(await rival(), { nearAccount: "nogit.near" })).githubLogin,
+      ).toBeNull();
     });
   });
 });

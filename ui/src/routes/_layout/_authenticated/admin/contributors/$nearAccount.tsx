@@ -7,7 +7,6 @@ import {
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   DataTable,
@@ -170,11 +169,7 @@ function ContributorDetailPage() {
         <PageHeader
           className="min-w-0 flex-1"
           title={contributor.name ?? nearAccount}
-          description={
-            contributor.name
-              ? `${nearAccount} · profile, project assignments and billing history.`
-              : "Profile, project assignments and billing history."
-          }
+          description={contributor.name ? nearAccount : undefined}
         />
         {contributor.githubLogin && <VerifiedGithub login={contributor.githubLogin} />}
         {contributorQuery.data?.canDelete && (
@@ -191,26 +186,20 @@ function ContributorDetailPage() {
       ) : (
         <p className="text-sm text-muted-foreground">
           {contributor.githubLogin
-            ? "This builder is a member of the contribution board, which verifies their identity, so only they or a platform admin can edit their profile."
-            : "This builder manages their own profile, so only they or a platform admin can edit it."}
+            ? "Verified on the contribution board. Only they or a platform admin can edit this profile."
+            : "Only they or a platform admin can edit this profile."}
         </p>
       )}
 
       <BuilderSummaryPanel billings={billings} projectCount={assignments.length} />
 
-      <WorkOrdersCard
-        filter={{ builderNearAccount: nearAccount }}
-        description="Their terms on each project: period, budget cap and what's committed."
-      />
+      <WorkOrdersCard filter={{ builderNearAccount: nearAccount }} />
 
       <Card>
         <CardHeader>
           <CardTitle>
             <h2>Projects</h2>
           </CardTitle>
-          <CardDescription>
-            Projects this builder is assigned to in your Organization.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable
@@ -229,7 +218,6 @@ function ContributorDetailPage() {
           <CardTitle>
             <h2>Billings</h2>
           </CardTitle>
-          <CardDescription>Every billing recorded for this builder.</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable

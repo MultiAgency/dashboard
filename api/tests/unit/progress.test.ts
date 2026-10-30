@@ -25,7 +25,6 @@ const base: ProgressInput = {
   representativeUrl: null,
   esignError: null,
   blockers: [],
-  payeeNeedsConfirmation: false,
   documentWarning: null,
   driveError: null,
   renewalStatus: null,
@@ -297,8 +296,22 @@ describe("work order progress", () => {
       ...signedActive,
       esignError: "Couldn't check Documenso",
       driveError: "403",
-      payeeNeedsConfirmation: true,
     });
-    expect(p.attention.map((a) => a.key)).toEqual(["esign", "payee", "drive"]);
+    expect(p.attention.map((a) => a.key)).toEqual(["esign", "drive"]);
+  });
+
+  test("an accepted work order lists the blockers its headline doesn't already show", () => {
+    const p = progressOf({
+      ...base,
+      status: "accepted",
+      acceptedAt: "2026-10-26T10:05:00.000Z",
+      builderSignedAt: "a",
+      representativeSignedAt: "b",
+      blockers: [
+        "Add the builder's GitHub login",
+        "The builder hasn't confirmed the payout account",
+      ],
+    });
+    expect(p.attention.map((a) => a.key)).toEqual(["blocker-1"]);
   });
 });

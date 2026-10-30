@@ -9,6 +9,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { cn } from "cn";
 import { type MouseEvent, useMemo, useState } from "react";
 import { LoadError } from "@/components/load-error";
+import { ScrollableTabsList } from "@/components/scrollable-tabs-list";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tabs, TabsTrigger } from "@/components/ui/tabs";
 import { type WorkOrder, WorkOrderStatusBadge } from "@/components/work-orders/work-order-status";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { periodHint, periodRange } from "@/lib/format-date";
@@ -136,30 +137,7 @@ function NextStep({ workOrder }: { workOrder: WorkOrder }) {
   const { waitingOn, headline, since } = workOrder.progress;
   const ago = relativeSince(since);
   return (
-    <div className="flex min-w-0 flex-col items-start gap-1.5">
-      <div className="flex min-w-0 items-center gap-1.5 text-xs">
-        <span
-          aria-hidden
-          className={cn("size-1.5 shrink-0 rounded-full", WAITING_DOT[waitingOn ?? "none"])}
-        />
-        <span
-          className={cn(
-            "truncate font-medium",
-            waitingOn === "you" ? "text-primary" : "text-muted-foreground",
-          )}
-        >
-          {waitingText(workOrder)}
-        </span>
-        {ago && since && (
-          <time
-            dateTime={since}
-            title={new Date(since).toLocaleString()}
-            className="shrink-0 text-muted-foreground tabular-nums"
-          >
-            · {ago}
-          </time>
-        )}
-      </div>
+    <div className="flex min-w-0 flex-col items-start gap-1">
       <p
         className={cn(
           "line-clamp-2 text-pretty",
@@ -169,7 +147,25 @@ function NextStep({ workOrder }: { workOrder: WorkOrder }) {
       >
         {headline}
       </p>
-      <div className="empty:hidden">
+      <div className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
+        <span
+          aria-hidden
+          className={cn("size-1.5 shrink-0 rounded-full", WAITING_DOT[waitingOn ?? "none"])}
+        />
+        <span className={cn("truncate", waitingOn === "you" && "font-medium text-primary")}>
+          {waitingText(workOrder)}
+        </span>
+        {ago && since && (
+          <time
+            dateTime={since}
+            title={new Date(since).toLocaleString()}
+            className="shrink-0 tabular-nums"
+          >
+            · {ago}
+          </time>
+        )}
+      </div>
+      <div className="mt-1 empty:hidden">
         <NextAction workOrder={workOrder} />
       </div>
     </div>
@@ -195,9 +191,14 @@ function BuilderCell({ workOrder }: { workOrder: WorkOrder }) {
         <span className="truncate" title={name}>
           {name}
         </span>
-        <span className="truncate text-muted-foreground text-xs" title={workOrder.projectTitle}>
-          {workOrder.projectTitle}
-        </span>
+        {name !== workOrder.builder.nearAccount && (
+          <span
+            className="truncate text-muted-foreground text-xs"
+            title={workOrder.builder.nearAccount}
+          >
+            {workOrder.builder.nearAccount}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -214,7 +215,7 @@ function PeriodCell({ workOrder }: { workOrder: WorkOrder }) {
       >
         {periodRange(workOrder.periodStart, workOrder.periodEnd)}
       </span>
-      {hint && <span className="text-muted-foreground text-xs">{hint}</span>}
+      {hint && <span className="whitespace-nowrap text-muted-foreground text-xs">{hint}</span>}
     </div>
   );
 }
@@ -233,7 +234,7 @@ function Committed({ workOrder, bar = true }: { workOrder: WorkOrder; bar?: bool
         {formatTokenAmount(workOrder.committedAmount, workOrder.tokenId)}
         <span className="text-muted-foreground">
           {" "}
-          / {formatTokenAmount(workOrder.budgetAmount, workOrder.tokenId)}
+          of {formatTokenAmount(workOrder.budgetAmount, workOrder.tokenId)}
         </span>
       </span>
       {bar && (
@@ -259,23 +260,23 @@ function InboxTable({ rows }: { rows: WorkOrder[] }) {
       <Table className="table-fixed">
         <TableHeader>
           <TableRow className="bg-muted/30 hover:bg-muted/30">
-            <TableHead scope="col" className="w-[24%] pl-4 text-muted-foreground text-xs">
+            <TableHead scope="col" className="w-[28%] pl-4 text-muted-foreground text-xs">
               Work order
             </TableHead>
-            <TableHead scope="col" className="w-[36%] text-muted-foreground text-xs">
+            <TableHead scope="col" className="w-[32%] text-muted-foreground text-xs">
               Next step
             </TableHead>
-            <TableHead scope="col" className="w-[18%] text-muted-foreground text-xs">
+            <TableHead scope="col" className="w-[16%] text-muted-foreground text-xs">
               Builder
             </TableHead>
             <TableHead
               scope="col"
-              className="hidden w-[11%] text-muted-foreground text-xs lg:table-cell"
+              className="hidden w-[12%] text-muted-foreground text-xs lg:table-cell"
             >
               Period
             </TableHead>
-            <TableHead scope="col" className="w-[11%] pr-4 text-muted-foreground text-xs">
-              Committed
+            <TableHead scope="col" className="w-[12%] pr-4 text-muted-foreground text-xs">
+              Budget
             </TableHead>
           </TableRow>
         </TableHeader>
@@ -295,8 +296,14 @@ function InboxTable({ rows }: { rows: WorkOrder[] }) {
                     <CodeLink workOrder={workOrder} />
                     <StatusLine workOrder={workOrder} />
                   </div>
-                  <span className="truncate text-muted-foreground" title={workOrder.title}>
+                  <span className="line-clamp-2 text-pretty" title={workOrder.title}>
                     {workOrder.title}
+                  </span>
+                  <span
+                    className="truncate text-muted-foreground text-xs"
+                    title={workOrder.projectTitle}
+                  >
+                    {workOrder.projectTitle}
                   </span>
                 </div>
               </TableCell>
@@ -399,27 +406,23 @@ export function WorkOrdersInbox({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          size="sm"
-          spacing={1}
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+        <Tabs
           value={active}
           onValueChange={(value) => {
             if (isInboxView(value)) onViewChange(value);
           }}
-          aria-label="Show work orders"
-          className="flex-wrap"
         >
-          {INBOX_VIEWS.map((v) => (
-            <ToggleGroupItem key={v} value={v} className="gap-1.5">
-              {INBOX_VIEW_LABELS[v]}
-              <span className="text-muted-foreground tabular-nums">{counts[v]}</span>
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-        <InputGroup className="w-full lg:w-64">
+          <ScrollableTabsList aria-label="Show work orders">
+            {INBOX_VIEWS.map((v) => (
+              <TabsTrigger key={v} value={v}>
+                {INBOX_VIEW_LABELS[v]}
+                <span className="text-muted-foreground tabular-nums">{counts[v]}</span>
+              </TabsTrigger>
+            ))}
+          </ScrollableTabsList>
+        </Tabs>
+        <InputGroup className="w-full lg:mb-2 lg:w-56">
           <InputGroupAddon>
             <MagnifyingGlassIcon aria-hidden />
           </InputGroupAddon>

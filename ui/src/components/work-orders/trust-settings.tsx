@@ -57,10 +57,9 @@ export function WorkOrderTrustSettings() {
           <h2>Automatic approval for trusted builders</h2>
         </CardTitle>
         <CardDescription>
-          Builders with a clean payment history need fewer manual steps. New builders always wait
-          for you. Established builders (2 clean paid periods) are approved after a window you can
-          stop. Trusted builders (4 clean periods over 60 days, no flagged work) are approved and
-          paid as soon as they submit.
+          New builders always wait for you. Established builders (2 clean paid periods) are approved
+          after a window you can stop. Trusted builders (4 clean periods over 60 days, no flagged
+          work) are approved and paid as soon as they submit.
         </CardDescription>
       </CardHeader>
       <CardContent>

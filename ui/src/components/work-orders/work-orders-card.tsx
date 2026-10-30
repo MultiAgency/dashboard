@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
@@ -9,10 +9,8 @@ import { RenewalBadge, WorkOrderStatusBadge } from "./work-order-status";
 
 export function WorkOrdersCard({
   filter,
-  description,
 }: {
   filter: { builderNearAccount: string } | { projectId: string };
-  description: string;
 }) {
   const apiClient = useApiClient();
   const query = useQuery({
@@ -30,7 +28,6 @@ export function WorkOrdersCard({
         <CardTitle>
           <h2>Work orders</h2>
         </CardTitle>
-        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
         <ul className="flex flex-col divide-y">

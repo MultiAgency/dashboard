@@ -47,6 +47,7 @@ export async function createDatabaseDriver(url: string): Promise<DatabaseDriver>
       mkdirSync(dirname(dataDir), { recursive: true });
     }
     const pglite = new PGlite(dataDir);
+    await pglite.exec("SET TIME ZONE 'UTC'");
     const db = drizzle(pglite, { schema });
     return {
       db,
@@ -67,6 +68,7 @@ export async function createDatabaseDriver(url: string): Promise<DatabaseDriver>
     max: Number(process.env.DB_POOL_MAX) || 10,
     connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS) || 30_000,
     idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS) || 30_000,
+    options: "-c TimeZone=UTC",
   });
   pool.on("error", (err: Error) => {
     console.error("[Database] Unexpected pool error:", err.message);

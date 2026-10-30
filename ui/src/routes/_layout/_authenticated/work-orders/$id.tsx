@@ -1,5 +1,6 @@
+import { UserSwitchIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link, useBlocker } from "@tanstack/react-router";
+import { createFileRoute, Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -13,9 +14,16 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  Empty as EmptyState,
+  EmptyTitle,
   FieldGroup,
   Input,
   PageHeader,
+  Spinner,
   Textarea,
 } from "@/components";
 import { AdminError } from "@/components/admin-error";
@@ -27,9 +35,12 @@ import { ReportMarkdown } from "@/components/work-orders/report-markdown";
 import {
   type CompensationRequest,
   RequestStatusBadge,
+  signedHow,
   WorkOrderStatusBadge,
 } from "@/components/work-orders/work-order-status";
+import { refreshAfterAccountChange, signOut } from "@/lib/account";
 import { type ApiClient, useApiClient } from "@/lib/api";
+import { useAuthClient } from "@/lib/auth";
 import {
   baseToDecimal,
   formatTokenAmount,
@@ -80,7 +91,13 @@ function MyWorkOrderPage() {
     onError: (err: Error) => toast.error(err.message || "Couldn't draft a request"),
   });
 
-  if (query.isError) return <AdminError error={query.error} />;
+  if (query.isError) {
+    return isNotFound(query.error) ? (
+      <NotYourWorkOrder id={id} />
+    ) : (
+      <AdminError error={query.error} />
+    );
+  }
   if (!query.data) return <Loading label="Loading the work order" />;
   const wo = query.data;
   const payable = ["active", "ended", "exhausted"].includes(wo.status);
@@ -114,8 +131,8 @@ function MyWorkOrderPage() {
           <AlertTitle>Confirm your payout account</AlertTitle>
           <AlertDescription className="flex flex-col gap-3">
             <span>
-              {wo.agencyName} hasn't paid {wo.payee.account} before. You're signed in with that NEAR
-              account, so confirming proves it's yours. It's free and moves no money.
+              {wo.agencyName} hasn't paid {wo.payee.account} before. Confirming is free and moves no
+              money.
             </span>
             <Button
               size="sm"
@@ -135,8 +152,8 @@ function MyWorkOrderPage() {
             <h2>Terms</h2>
           </CardTitle>
           <CardDescription>
-            Work counts once the repository owner approves or merges your pull request on GitHub.
-            The budget is a maximum, not a guarantee.
+            Work counts once the repo owner approves or merges it. The budget is a cap, not a
+            guarantee.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -179,11 +196,7 @@ function MyWorkOrderPage() {
               </>
             )}
             <dt className="text-muted-foreground">Monthly renewal</dt>
-            <dd>
-              {wo.autoRenew
-                ? "Renews by itself each month when the base metrics are met; otherwise the Agency decides."
-                : "No"}
-            </dd>
+            <dd>{wo.autoRenew ? "Yes, when the base metrics are met" : "No"}</dd>
             <dt className="text-muted-foreground">Payee</dt>
             <dd>
               {wo.builder.nearAccount}
@@ -200,10 +213,7 @@ function MyWorkOrderPage() {
               <>
                 <dt className="text-muted-foreground">Signed</dt>
                 <dd>
-                  {wo.signature.method === "google_esign"
-                    ? "E-signed in Google Docs"
-                    : "Accepted here"}{" "}
-                  on {wo.signature.signedAt?.slice(0, 10)}
+                  {signedHow(wo.signature.method)} on {wo.signature.signedAt?.slice(0, 10)}
                   {wo.documentUrl ? (
                     <>
                       {" · "}
@@ -233,8 +243,7 @@ function MyWorkOrderPage() {
               <h2>Compensation requests</h2>
             </CardTitle>
             <CardDescription>
-              At the end of each period a request is drafted from your GitHub work. Write your
-              assessment, add work GitHub can't see, set the amount and submit it.
+              Drafted from your GitHub work at the end of each period.
             </CardDescription>
             {payable &&
               !openDraft &&
@@ -283,9 +292,7 @@ function MyWorkOrderPage() {
               <h2>Your work on GitHub</h2>
             </CardTitle>
             <CardDescription>
-              {wo.lastCollectedAt
-                ? `Last collected ${dateTime(wo.lastCollectedAt)}.`
-                : "Collected every 6 hours."}
+              {wo.lastCollectedAt ? `Last collected ${dateTime(wo.lastCollectedAt)}.` : null}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -304,6 +311,57 @@ function MyWorkOrderPage() {
         onConfirm={() => decline.mutateAsync().then(() => undefined)}
       />
     </div>
+  );
+}
+
+function isNotFound(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "NOT_FOUND"
+  );
+}
+
+function NotYourWorkOrder({ id }: { id: string }) {
+  const authClient = useAuthClient();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const switchAccount = useMutation({
+    mutationFn: () => signOut(authClient),
+    onSuccess: async () => {
+      await refreshAfterAccountChange(queryClient, authClient);
+      void navigate({ to: "/sign-in", search: { redirect: `/work-orders/${id}` }, replace: true });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+  return (
+    <EmptyState variant="outline">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <UserSwitchIcon aria-hidden />
+        </EmptyMedia>
+        <EmptyTitle>Work order not available</EmptyTitle>
+        <EmptyDescription>
+          It may have been withdrawn, or it was sent to a NEAR account you're not signed in with.
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button asChild size="sm">
+            <Link to="/dashboard">My work</Link>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={switchAccount.isPending}
+            onClick={() => switchAccount.mutate()}
+          >
+            {switchAccount.isPending && <Spinner data-icon="inline-start" />}
+            {switchAccount.isPending ? "Signing out…" : "Switch account"}
+          </Button>
+        </div>
+      </EmptyContent>
+    </EmptyState>
   );
 }
 

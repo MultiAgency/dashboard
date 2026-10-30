@@ -84,7 +84,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
     return missing(
       name
         ? `“${name}” looks like a placeholder; builders see it in every email and document`
-        : "Your agency has no name; builders see it in every email and document",
+        : "No name yet; builders see it in every email and document",
     );
   }
 
@@ -104,9 +104,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
 
   async function email(organizationId: string): Promise<Outcome> {
     if (!deps.emailEnabled) {
-      return missing(
-        "Emails are off, so builders and your representative only get notifications in MultiAgency",
-      );
+      return missing("Emails are off on this server. Ask your server admin to turn them on.");
     }
     const { email } = await deps.representative(organizationId);
     return ok(
@@ -119,7 +117,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
   async function signing(): Promise<Outcome> {
     return deps.esignEnabled
       ? ok("Builders sign the work order document")
-      : warning("No e-signature: builders accept the terms in MultiAgency");
+      : warning("E-signature is off on this server. Builders accept the terms in MultiAgency.");
   }
 
   async function google(organizationId: string): Promise<Outcome> {
@@ -138,14 +136,14 @@ export function createSetupStatus(deps: SetupStatusDeps) {
     ].filter((item): item is string => !!item);
     if (!linked) {
       return lacking.length === 3
-        ? optional("Connect Google Drive to fill your own work order template")
-        : warning("Connect Google Drive to use the template you chose");
+        ? optional("Connect Drive to use your own template")
+        : warning("Connect Drive to use the template you chose");
     }
     const via = connection.connected
       ? `Connected${connection.email ? ` as ${connection.email}` : ""}`
       : "Using the server's Google account";
     if (lacking.length === 3) {
-      return optional(`${via}; choose a template and folders to use your own document`);
+      return optional(`${via}; choose a template and folders`);
     }
     if (lacking.length > 0) return warning(`${via}; choose ${listOf(lacking)}`);
     if (settings?.googleLastError) return warning(`Google Drive: ${settings.googleLastError}`);
@@ -162,16 +160,14 @@ export function createSetupStatus(deps: SetupStatusDeps) {
     const agent = async (): Promise<Outcome> => {
       const current = await viewOnce();
       if (!current.available) {
-        return optional(
-          "Not available on this server: approved requests are paid through DAO proposals",
-        );
+        return optional("Not on this server; requests are paid by DAO proposal");
       }
       if (!current.agentId) {
-        return optional("No payout agent: approved requests are paid through DAO proposals");
+        return optional("None; requests are paid by DAO proposal");
       }
       if (current.error) return warning(`Couldn't check: ${current.error}`);
       if (!current.ready) return warning(current.blockers.join(". "));
-      return ok("The agent's rules are applied and MultiAgency can pay approved requests");
+      return ok("Rules applied; can pay approved requests");
     };
 
     const funding = async (): Promise<Outcome> => {
@@ -196,7 +192,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
       }
       if (check.budgetTooLow) {
         problems.push(
-          `The $${check.monthlyBudgetUsd} monthly payout limit is below the ≈$${check.monthlyNeededUsd} active work orders need`,
+          `$${check.monthlyBudgetUsd} monthly limit is below the ≈$${check.monthlyNeededUsd} active work orders need`,
         );
       } else if (
         check.monthlyRemainingUsd !== null &&
@@ -210,7 +206,7 @@ export function createSetupStatus(deps: SetupStatusDeps) {
       if (problems.length > 0) return warning(problems.join(". "));
       return ok(
         needed === 0n
-          ? `Holds ${check.balanceNear} NEAR; no unpaid work order budgets yet`
+          ? `Holds ${check.balanceNear} NEAR; no unpaid budgets yet`
           : `Holds ${check.balanceNear} NEAR, enough for the ≈${check.neededNear} NEAR active work orders need`,
       );
     };

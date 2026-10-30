@@ -90,7 +90,6 @@ export type ProgressInput = {
   representativeUrl: string | null;
   esignError: string | null;
   blockers: string[];
-  payeeNeedsConfirmation: boolean;
   documentWarning: string | null;
   driveError: string | null;
   renewalStatus: "renewed" | "needs_approval" | "declined" | null;
@@ -371,13 +370,6 @@ export function progressOf(input: ProgressInput): Progress {
         action: { kind: "edit", label: "Fix it" },
       });
     }
-  }
-  if (input.payeeNeedsConfirmation && !terminated && input.status !== "draft") {
-    attention.push({
-      key: "payee",
-      message: `${builder} hasn't confirmed their payout account yet`,
-      action: null,
-    });
   }
   if (input.documentWarning) {
     attention.push({ key: "document", message: input.documentWarning, action: null });

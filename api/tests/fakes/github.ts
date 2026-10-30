@@ -4,11 +4,13 @@ import type {
   GhIssueRef,
   GhPull,
   GhPullSummary,
+  GhRepo,
   GhRepoOwnership,
   GhReview,
   GhReviewBy,
   GitHubPort,
 } from "../../src/services/work-orders/github";
+import { GitHubError } from "../../src/services/work-orders/github";
 
 type PullRec = {
   pull: GhPull;
@@ -30,6 +32,7 @@ type RepoRec = {
 
 export class FakeGitHub implements GitHubPort {
   repos = new Map<string, RepoRec>();
+  orgs = new Map<string, GhRepo[]>();
   calls: string[] = [];
   private failures = new Map<string, Error[]>();
 
@@ -124,6 +127,13 @@ export class FakeGitHub implements GitHubPort {
     const list = this.failures.get(method) ?? [];
     for (let i = 0; i < times; i++) list.push(error);
     this.failures.set(method, list);
+  }
+
+  async listOrgRepos(org: string): Promise<GhRepo[]> {
+    this.enter("listOrgRepos");
+    const repos = this.orgs.get(org.toLowerCase());
+    if (!repos) throw new GitHubError(404, `GitHub GET /orgs/${org}/repos → 404`);
+    return structuredClone(repos);
   }
 
   private enter(method: string) {

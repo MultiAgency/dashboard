@@ -23,10 +23,7 @@ export const Route = createFileRoute("/_layout/_authenticated/admin/projects/")(
 function AdminProjectsPage() {
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Projects"
-        description="Each project holds the team, budget and billings for work you deliver to clients."
-      />
+      <PageHeader title="Projects" description="Team, budget and billings for client work." />
       <ProjectsAdminSection />
       <SharedWithUsSection />
     </div>
