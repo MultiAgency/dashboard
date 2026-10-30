@@ -111,6 +111,7 @@ describe("work orders", () => {
       builders: { get: async (nearAccount) => builders.get(nearAccount) ?? null },
       github,
       ownership: (repo) => github.getRepoOwnership(repo),
+      orgRepos: (org) => github.listOrgRepos(org),
       proposal: async (dao, id) => proposals.get(`${dao}#${id}`) ?? null,
       proposalBond: async () => "100000000000000000000000",
       prices: { price: async () => ({ priceUsd, at: "2026-09-20T12:00:00.000Z" }) },
@@ -1036,6 +1037,25 @@ describe("work orders", () => {
       ];
     };
 
+    test("a work order whose project is gone is refused without blaming Google", async () => {
+      const created = await service.create(await studio(), fields());
+      await db
+        .update(workOrders)
+        .set({ projectId: "deleted-project", projectTitle: null })
+        .where(eq(workOrders.id, created.id));
+      const copies = google.copies.length;
+      await refused(
+        service.prepareDocument(await studio(), { id: created.id }),
+        "PROJECT_UNAVAILABLE",
+      );
+      expect(google.copies).toHaveLength(copies);
+      const [integration] = await db
+        .select()
+        .from(workOrderIntegrations)
+        .where(eq(workOrderIntegrations.organizationId, "studio"));
+      expect(integration?.googleLastError).toBeNull();
+    });
+
     test("a new work order gets its filled Google Doc and the representative is told", async () => {
       const created = await service.create(
         await studio(),
@@ -1551,6 +1571,62 @@ describe("work orders", () => {
       documenso.cancel = cancel;
       expect((await service.get(await studio(), { id: created.id })).status).toBe("offered");
       await service.remove(await studio(), { id: created.id });
+    });
+
+    test("deleting after the representative signed doesn't send the builder the offer", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      await service.remove(await studio(), { id: created.id });
+      expect(events.map((e) => e.type)).not.toContain("work_order.offered");
+      expect((await notificationsOf("carol")).map((n) => n.kind)).not.toContain(
+        "work_order_offered",
+      );
+      expect(documenso.cancelled.at(-1)?.reason).toBe("The work order was withdrawn");
+    });
+
+    test("deleting a work order the builder declined in Documenso tells no one", async () => {
+      const created = await offered();
+      documenso.reject("contractor");
+      await service.remove(await studio(), { id: created.id });
+      expect((await notificationsOf("studio-admin")).map((n) => n.kind)).not.toContain(
+        "work_order_declined",
+      );
+      expect(documenso.cancelled).toEqual([]);
+    });
+
+    test("terminating goes through when Documenso can't withdraw the envelope, and says so", async () => {
+      const created = await offered();
+      documenso.status = async () => {
+        throw new Error("Documenso is down");
+      };
+      documenso.cancel = async () => {
+        throw new Error("timeout");
+      };
+      const terminated = await service.terminate(await studio(), { id: created.id });
+      expect(terminated.status).toBe("terminated");
+      expect(terminated.signing.esign?.error).toBe(
+        "Couldn't withdraw it in Documenso, so the builder may still be able to sign there: timeout",
+      );
+      expect(terminated.progress.attention.map((a) => a.key)).toContain("esign");
+    });
+
+    test("terminating doesn't warn about an envelope that was already rejected in Documenso", async () => {
+      const created = await offered();
+      documenso.reject("contractor");
+      const terminated = await service.terminate(await studio(), { id: created.id });
+      expect(terminated.status).toBe("terminated");
+      expect(terminated.signing.esign?.error ?? null).toBeNull();
+      expect(documenso.cancelled).toEqual([]);
+    });
+
+    test("terminating withdraws the envelope without recording signatures first", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      const terminated = await service.terminate(await studio(), { id: created.id });
+      expect(terminated.status).toBe("terminated");
+      expect(terminated.signing.esign?.error ?? null).toBeNull();
+      expect(documenso.cancelled.at(-1)?.reason).toBe("The work order was terminated");
+      expect(events.map((e) => e.type)).not.toContain("work_order.offered");
     });
 
     async function completed() {
@@ -3045,7 +3121,7 @@ describe("work orders", () => {
   });
 
   describe("importing repositories from GitHub", () => {
-    test("lists an organization's public repositories and caches them", async () => {
+    test("lists an organization's public repositories", async () => {
       github.orgs.set("nearbuilders", [
         {
           fullName: "NEARBuilders/citynode.app",
@@ -3056,8 +3132,6 @@ describe("work orders", () => {
       ]);
       const listed = await service.githubRepos(await studio(), { org: "NEARBuilders" });
       expect(listed.repos.map((r) => r.fullName)).toEqual(["NEARBuilders/citynode.app"]);
-      await service.githubRepos(await studio(), { org: "nearbuilders" });
-      expect(github.calls.filter((c) => c === "listOrgRepos")).toHaveLength(1);
     });
 
     test("an unknown organization or a GitHub outage is a clear error", async () => {

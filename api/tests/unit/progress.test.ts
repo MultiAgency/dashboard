@@ -25,7 +25,6 @@ const base: ProgressInput = {
   representativeUrl: null,
   esignError: null,
   blockers: [],
-  payeeNeedsConfirmation: false,
   documentWarning: null,
   driveError: null,
   renewalStatus: null,
@@ -297,50 +296,22 @@ describe("work order progress", () => {
       ...signedActive,
       esignError: "Couldn't check Documenso",
       driveError: "403",
-      payeeNeedsConfirmation: true,
     });
-    expect(p.attention.map((a) => a.key)).toEqual(["esign", "payee", "drive"]);
+    expect(p.attention.map((a) => a.key)).toEqual(["esign", "drive"]);
   });
 
-  test("an unconfirmed payout account only needs attention once the builder has signed", () => {
-    const payeeKeys = (input: Partial<ProgressInput>) =>
-      progressOf({ ...base, payeeNeedsConfirmation: true, ...input }).attention.map((a) => a.key);
-    expect(payeeKeys({})).toEqual([]);
-    expect(
-      payeeKeys({
-        status: "offered",
-        offeredAt: "2026-10-26T10:01:00.000Z",
-        awaitingRepresentative: true,
-      }),
-    ).toEqual([]);
-    expect(
-      payeeKeys({
-        status: "offered",
-        offeredAt: "2026-10-26T10:01:00.000Z",
-        representativeSignedAt: "x",
-      }),
-    ).toEqual([]);
-    expect(
-      payeeKeys({
-        status: "accepted",
-        acceptedAt: "2026-10-26T10:05:00.000Z",
-        builderSignedAt: "a",
-        representativeSignedAt: "b",
-      }),
-    ).toEqual(["payee"]);
-    expect(payeeKeys(signedActive)).toEqual(["payee"]);
-    expect(
-      payeeKeys({
-        status: "accepted",
-        acceptedAt: "2026-10-26T10:05:00.000Z",
-        builderSignedAt: "a",
-        representativeSignedAt: "b",
-        blockers: [
-          "Add the builder's GitHub login",
-          "The builder hasn't confirmed the payout account",
-        ],
-      }),
-    ).toEqual(["blocker-1"]);
-    expect(payeeKeys({ ...signedActive, status: "terminated" })).toEqual([]);
+  test("an accepted work order lists the blockers its headline doesn't already show", () => {
+    const p = progressOf({
+      ...base,
+      status: "accepted",
+      acceptedAt: "2026-10-26T10:05:00.000Z",
+      builderSignedAt: "a",
+      representativeSignedAt: "b",
+      blockers: [
+        "Add the builder's GitHub login",
+        "The builder hasn't confirmed the payout account",
+      ],
+    });
+    expect(p.attention.map((a) => a.key)).toEqual(["blocker-1"]);
   });
 });

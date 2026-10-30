@@ -38,7 +38,7 @@ import {
   signedHow,
   WorkOrderStatusBadge,
 } from "@/components/work-orders/work-order-status";
-import { refreshAfterAccountChange } from "@/lib/account";
+import { refreshAfterAccountChange, signOut } from "@/lib/account";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { useAuthClient } from "@/lib/auth";
 import {
@@ -49,7 +49,6 @@ import {
 } from "@/lib/format-amount";
 import { dateTime } from "@/lib/format-date";
 import { myWorkOrderQueryOptions, myWorkOrdersQueryKey } from "@/lib/queries";
-import { clearAllWorkOrderDrafts } from "@/lib/work-order-draft";
 
 export const Route = createFileRoute("/_layout/_authenticated/work-orders/$id")({
   head: () => ({ meta: [{ title: "Work order" }] }),
@@ -328,13 +327,8 @@ function NotYourWorkOrder({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const switchAccount = useMutation({
-    mutationFn: async () => {
-      const { error } = await authClient.signOut();
-      if (error) throw new Error(error.message ?? "Failed to sign out");
-      await authClient.near.disconnect().catch(() => {});
-    },
+    mutationFn: () => signOut(authClient),
     onSuccess: async () => {
-      clearAllWorkOrderDrafts();
       await refreshAfterAccountChange(queryClient, authClient);
       void navigate({ to: "/sign-in", search: { redirect: `/work-orders/${id}` }, replace: true });
     },
@@ -348,22 +342,22 @@ function NotYourWorkOrder({ id }: { id: string }) {
         </EmptyMedia>
         <EmptyTitle>Work order not available</EmptyTitle>
         <EmptyDescription>
-          This work order isn't available to the account you're signed in with. Sign in with the
-          NEAR account it was sent to.
+          It may have been withdrawn, or it was sent to a NEAR account you're not signed in with.
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
         <div className="flex flex-wrap justify-center gap-2">
+          <Button asChild size="sm">
+            <Link to="/dashboard">My work</Link>
+          </Button>
           <Button
+            variant="outline"
             size="sm"
             disabled={switchAccount.isPending}
             onClick={() => switchAccount.mutate()}
           >
             {switchAccount.isPending && <Spinner data-icon="inline-start" />}
             {switchAccount.isPending ? "Signing out…" : "Switch account"}
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link to="/dashboard">My work</Link>
           </Button>
         </div>
       </EmptyContent>

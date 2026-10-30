@@ -15,12 +15,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useNearSignIn } from "@/hooks/use-near-sign-in";
+import { signOut } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import { formatCount } from "@/lib/format-count";
 import { nearProfileQueryOptions } from "@/lib/near-profile";
 import { meRolesQueryOptions } from "@/lib/queries";
-import { clearAllWorkOrderDrafts } from "@/lib/work-order-draft";
 
 export function UserNav() {
   const queryClient = useQueryClient();
@@ -50,13 +50,8 @@ export function UserNav() {
   const invitationCount = invitationsQuery.data?.length ?? 0;
 
   const signOutMutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await authClient.signOut();
-      if (error) throw new Error(error.message || "Failed to sign out");
-      await authClient.near.disconnect().catch(() => {});
-    },
+    mutationFn: () => signOut(authClient),
     onSuccess: async () => {
-      clearAllWorkOrderDrafts();
       queryClient.clear();
       navigate({ to: "/", replace: true });
     },

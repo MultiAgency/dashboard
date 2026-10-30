@@ -63,7 +63,7 @@ import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
 import { createConsistencyChecker } from "./services/work-orders/consistency";
 import { createDocumenso } from "./services/work-orders/documenso";
-import { cachedOwnership, createGitHub } from "./services/work-orders/github";
+import { cachedByName, createGitHub } from "./services/work-orders/github";
 import {
   createGoogle,
   GoogleError,
@@ -361,7 +361,8 @@ export default createPlugin.withPlugins<PluginsClient>()({
           },
         },
         github,
-        ownership: cachedOwnership(github, 10 * 60_000),
+        ownership: cachedByName((repo) => github.getRepoOwnership(repo), 10 * 60_000),
+        orgRepos: cachedByName((org) => github.listOrgRepos(org), 10 * 60_000),
         proposal: (daoAccountId, proposalId) => findProposal(db, daoAccountId, proposalId),
         proposalBond: getProposalBond,
         prices: createPriceFeed(),

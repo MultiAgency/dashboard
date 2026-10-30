@@ -408,28 +408,23 @@ export function createGitHub(token: string | null, fetcher: typeof fetch = fetch
   };
 }
 
-export function cachedOrgRepos(github: GitHubPort, ttlMs: number, now: () => number = Date.now) {
-  const cache = new Map<string, { until: number; value: Promise<GhRepo[]> }>();
-  return (org: string): Promise<GhRepo[]> => {
-    const key = org.toLowerCase();
+export function cachedByName<T>(
+  load: (name: string) => Promise<T>,
+  ttlMs: number,
+  now: () => number = Date.now,
+) {
+  const cache = new Map<string, { until: number; value: Promise<T> }>();
+  return (name: string): Promise<T> => {
+    const key = name.toLowerCase();
+    const at = now();
     const hit = cache.get(key);
-    if (hit && hit.until > now()) return hit.value;
-    const value = github.listOrgRepos(org);
-    cache.set(key, { until: now() + ttlMs, value });
-    value.catch(() => cache.delete(key));
-    return value;
-  };
-}
-
-export function cachedOwnership(github: GitHubPort, ttlMs: number, now: () => number = Date.now) {
-  const cache = new Map<string, { until: number; value: Promise<GhRepoOwnership> }>();
-  return (repo: string): Promise<GhRepoOwnership> => {
-    const key = repo.toLowerCase();
-    const hit = cache.get(key);
-    if (hit && hit.until > now()) return hit.value;
-    const value = github.getRepoOwnership(repo);
-    cache.set(key, { until: now() + ttlMs, value });
-    value.catch(() => cache.delete(key));
+    if (hit && hit.until > at) return hit.value;
+    for (const [stale, entry] of cache) if (entry.until <= at) cache.delete(stale);
+    const value = load(name);
+    cache.set(key, { until: at + ttlMs, value });
+    value.catch(() => {
+      if (cache.get(key)?.value === value) cache.delete(key);
+    });
     return value;
   };
 }

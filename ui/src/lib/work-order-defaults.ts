@@ -100,7 +100,7 @@ export function recentBudgets(
   return choices;
 }
 
-const GITHUB_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+export const GITHUB_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
 export function repoFromProject(repository: string | null | undefined): string {
   if (!repository) return "";

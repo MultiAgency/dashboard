@@ -25,10 +25,10 @@ import { MyOrganizations } from "@/components/my-organizations";
 import { PageHeader } from "@/components/page-header";
 import { PendingInvitationsList } from "@/components/pending-invitations";
 import { SignInMethods } from "@/components/sign-in-methods";
+import { signOut } from "@/lib/account";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
 import { realEmail } from "@/lib/membership";
 import { type NearProfile, nearProfileQueryOptions } from "@/lib/near-profile";
-import { clearAllWorkOrderDrafts } from "@/lib/work-order-draft";
 
 export const Route = createFileRoute("/_layout/_authenticated/profile")({
   head: () => ({
@@ -65,9 +65,8 @@ function ProfilePage() {
   const avatarUrl = resolveAvatarUrl(profile);
 
   const signOutMutation = useMutation({
-    mutationFn: () => authClient.signOut(),
+    mutationFn: () => signOut(authClient),
     onSuccess: async () => {
-      clearAllWorkOrderDrafts();
       queryClient.setQueryData(sessionQueryKey, null);
       await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
       navigate({ to: "/", replace: true });

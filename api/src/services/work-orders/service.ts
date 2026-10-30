@@ -31,7 +31,7 @@ import { type DaoProposal, proposalDescription } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
 import { createAutoApproval, trustViewOf } from "./auto-approval";
 import type { ConsistencyChecker } from "./consistency";
-import type { EsignPort, EsignRole } from "./documenso";
+import type { EsignPort, EsignRole, EsignStatus } from "./documenso";
 import {
   codeIn,
   documentFields,
@@ -42,7 +42,7 @@ import {
 } from "./documents";
 import { eventId, type WorkOrderEvent, type WorkOrderEventType } from "./events";
 import { collectEvidence, summarizeActivity } from "./evidence";
-import { cachedOrgRepos, type GhRepoOwnership, GitHubError, type GitHubPort } from "./github";
+import { type GhRepo, type GhRepoOwnership, GitHubError, type GitHubPort } from "./github";
 import type { DriveFile, GooglePort } from "./google";
 import { type PriceFeed, type PriceQuote, USD, USD_DECIMALS, usdToTokens } from "./prices";
 import { type Progress, progressOf } from "./progress";
@@ -109,6 +109,7 @@ export type WorkOrderDeps = {
   builders: { get(nearAccount: string): Promise<BuilderProfile | null> };
   github: GitHubPort;
   ownership: (repo: string) => Promise<GhRepoOwnership>;
+  orgRepos: (org: string) => Promise<GhRepo[]>;
   proposal: (daoAccountId: string, proposalId: number) => Promise<DaoProposal | null>;
   proposalBond: (daoAccountId: string) => Promise<string>;
   prices?: PriceFeed | null;
@@ -209,6 +210,13 @@ export type WorkOrderFields = {
 
 type WorkOrderStatus = WorkOrderRow["status"];
 type RequestStatus = CompensationRequestRow["status"];
+type PendingEnvelope = { esign: EsignPort; envelopeId: string };
+type GoogleTemplate = {
+  google: GooglePort;
+  templateId: string;
+  folderId: string;
+  fieldMap: string | null;
+};
 
 const COMMITTED: readonly RequestStatus[] = ["approved", "paying", "proposed", "paid"];
 const OPEN_REQUEST: readonly RequestStatus[] = ["draft", "submitted"];
@@ -399,7 +407,6 @@ const sum = (amounts: (string | null)[]) =>
 
 export function createWorkOrdersService(deps: WorkOrderDeps) {
   const { db, directory } = deps;
-  const orgRepos = cachedOrgRepos(deps.github, 10 * 60_000);
   const now = () => deps.now?.() ?? new Date();
   const timeZone = deps.timeZone ?? UTC;
   const today = () => dateOf(now(), timeZone);
@@ -649,19 +656,31 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return (await deps.googleFor?.(organizationId)) ?? deps.google ?? null;
   }
 
-  async function fillGoogleDocument(row: WorkOrderRow): Promise<WorkOrderRow | null> {
-    const google = await googleOf(row.organizationId);
-    const settings = google ? await integrationOf(row.organizationId) : null;
+  async function googleTemplateOf(organizationId: string) {
+    const google = await googleOf(organizationId);
+    const settings = google ? await integrationOf(organizationId) : null;
     if (!google || !settings?.googleTemplateId || !settings.googleDocumentsFolderId) return null;
-    const [project, agencyName, builder] = await Promise.all([
-      projectOf(row),
+    return {
+      google,
+      templateId: settings.googleTemplateId,
+      folderId: settings.googleDocumentsFolderId,
+      fieldMap: settings.googleFieldMap,
+    };
+  }
+
+  async function fillGoogleDocument(
+    row: WorkOrderRow,
+    { google, templateId, folderId, fieldMap }: GoogleTemplate,
+    projectTitle: string,
+  ): Promise<WorkOrderRow> {
+    const [agencyName, builder] = await Promise.all([
       deps.organizationName(row.organizationId).catch(() => row.organizationId),
       deps.builders.get(row.builderNearAccount).catch(() => null),
     ]);
     const contacts = await contactsOf(row, builder);
     const fields = documentFields({
       code: row.code,
-      project: documentProjectTitle(row, project),
+      project: projectTitle,
       contractorName: row.contractorName ?? builder?.name ?? row.builderNearAccount,
       contractorEmail: contacts.contractorEmail,
       representativeName: row.representativeName ?? agencyName,
@@ -679,12 +698,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     });
     const { values, blank } = mappedValues({
       fields,
-      map: parseFieldMap(settings.googleFieldMap),
+      map: parseFieldMap(fieldMap),
       custom: customFieldsOf(row.customFields),
     });
-    const copy = await google.copy(settings.googleTemplateId, {
+    const copy = await google.copy(templateId, {
       name: `Work Order ${row.code}: ${row.title}`,
-      parentId: settings.googleDocumentsFolderId,
+      parentId: folderId,
     });
     const occurrences = await google.fill(copy.id, values);
     const leftover = await google
@@ -707,9 +726,21 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   }
 
   async function draftDocument(row: WorkOrderRow, strict = false): Promise<WorkOrderRow> {
+    const template = await googleTemplateOf(row.organizationId);
+    if (!template) {
+      await announce(row, "work_order.created");
+      return row;
+    }
+    let projectTitle: string;
     try {
-      const filled = await fillGoogleDocument(row);
-      if (filled) return filled;
+      projectTitle = await documentProjectTitle(row);
+    } catch (error) {
+      console.warn(`[API] ${errorText(error)}`);
+      if (strict) throw error;
+      return row;
+    }
+    try {
+      return await fillGoogleDocument(row, template, projectTitle);
     } catch (error) {
       const message = `Couldn't fill the Google Docs template for ${row.code}: ${errorText(error)}`;
       await recordGoogle(row.organizationId, message);
@@ -717,8 +748,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (strict) throw badRequest("GOOGLE_FAILED", message);
       return row;
     }
-    await announce(row, "work_order.created");
-    return row;
   }
 
   async function recordDriveFile(input: {
@@ -855,8 +884,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   }
 
   async function termsRows(row: WorkOrderRow): Promise<[string, string][]> {
-    const [project, agencyName, builder] = await Promise.all([
-      projectOf(row),
+    const [projectTitle, agencyName, builder] = await Promise.all([
+      documentProjectTitle(row),
       deps.organizationName(row.organizationId).catch(() => row.organizationId),
       deps.builders.get(row.builderNearAccount).catch(() => null),
     ]);
@@ -864,7 +893,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return [
       ["Work order", `${row.code}: ${row.title}`],
       ["Agency", agencyName],
-      ["Project", documentProjectTitle(row, project)],
+      ["Project", projectTitle],
       ["Builder (contractor)", row.contractorName ?? builder?.name ?? row.builderNearAccount],
       ["Builder's email", contacts.contractorEmail ?? ""],
       ["Agency representative", row.representativeName ?? agencyName],
@@ -895,15 +924,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   async function prepareOfferDocument(row: WorkOrderRow) {
     let current = row;
     let pdf: Uint8Array;
-    const google = await googleOf(row.organizationId);
-    const settings = google ? await integrationOf(row.organizationId) : null;
-    if (google && settings?.googleTemplateId && settings.googleDocumentsFolderId) {
+    const template = await googleTemplateOf(row.organizationId);
+    if (template) {
+      const refill = !current.documentId || !current.documentFields;
+      const projectTitle = refill ? await documentProjectTitle(current) : null;
       try {
-        if (!current.documentId || !current.documentFields) {
-          current = (await fillGoogleDocument(current)) ?? current;
+        if (projectTitle !== null) {
+          current = await fillGoogleDocument(current, template, projectTitle);
         }
         if (!current.documentId) throw new Error("The template wasn't filled");
-        pdf = await google.exportPdf(current.documentId);
+        pdf = await template.google.exportPdf(current.documentId);
       } catch (error) {
         const message = `Couldn't prepare the document of ${row.code}: ${errorText(error)}`;
         await recordGoogle(row.organizationId, message);
@@ -1245,11 +1275,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return { committed, paid, remaining };
   }
 
-  function documentProjectTitle(row: WorkOrderRow, project: { title: string } | null): string {
+  async function documentProjectTitle(row: WorkOrderRow): Promise<string> {
+    const project = await projectOf(row);
     if (project) return project.title;
     throw badRequest(
       "PROJECT_UNAVAILABLE",
-      `Couldn't load the project of ${row.code}, so its document wasn't made. Try again in a moment.`,
+      `Couldn't load the project of ${row.code}, so its document wasn't made. If the project was deleted, edit the work order and choose another one.`,
     );
   }
 
@@ -1424,18 +1455,26 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     }
   }
 
-  async function cancelEnvelope(row: WorkOrderRow, reason: string, strict = false) {
-    if (!deps.esign || !row.esignEnvelopeId || row.signedAt) return;
+  async function cancelEnvelope(row: WorkOrderRow, reason: string): Promise<string | null> {
+    if (!deps.esign || !row.esignEnvelopeId || row.signedAt) return null;
     try {
       await deps.esign.cancel(row.esignEnvelopeId, reason);
+      return null;
     } catch (error) {
       console.warn(`[API] couldn't cancel the Documenso envelope of ${row.code}`, error);
-      if (strict) {
-        throw badRequest(
-          "ESIGN_CANCEL_FAILED",
-          `Couldn't withdraw ${row.code} in Documenso, so it wasn't deleted: ${errorText(error)}`,
-        );
-      }
+      return errorText(error);
+    }
+  }
+
+  async function envelopeStillSignable(row: WorkOrderRow): Promise<boolean> {
+    if (!deps.esign || !row.esignEnvelopeId) return false;
+    try {
+      const state = await deps.esign.status(row.esignEnvelopeId, {
+        representativeFirst: row.esignRepresentativeFirst,
+      });
+      return state.status === "pending";
+    } catch {
+      return true;
     }
   }
 
@@ -1469,18 +1508,38 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return synced?.value ?? row;
   }
 
+  function pendingEnvelope(row: WorkOrderRow): PendingEnvelope | null {
+    if (!deps.esign || !row.esignEnvelopeId || row.signedAt) return null;
+    if (row.status !== "offered" && row.status !== "accepted") return null;
+    return { esign: deps.esign, envelopeId: row.esignEnvelopeId };
+  }
+
+  async function checkEnvelope(
+    row: WorkOrderRow,
+  ): Promise<{ envelope: PendingEnvelope; state: EsignStatus } | null> {
+    const envelope = pendingEnvelope(row);
+    if (!envelope) return null;
+    const state = await envelope.esign.status(envelope.envelopeId, {
+      representativeFirst: row.esignRepresentativeFirst,
+    });
+    return { envelope, state };
+  }
+
   async function syncEnvelope(row: WorkOrderRow): Promise<WorkOrderRow> {
-    const esign = deps.esign;
-    if (!esign || !row.esignEnvelopeId || row.signedAt) return row;
-    if (row.status !== "offered" && row.status !== "accepted") return row;
-    let state: Awaited<ReturnType<EsignPort["status"]>>;
+    let checked: Awaited<ReturnType<typeof checkEnvelope>>;
     try {
-      state = await esign.status(row.esignEnvelopeId, {
-        representativeFirst: row.esignRepresentativeFirst,
-      });
+      checked = await checkEnvelope(row);
     } catch (error) {
       return update(row.id, { esignError: `Couldn't check Documenso: ${errorText(error)}` });
     }
+    return checked ? applyEnvelope(row, checked.envelope, checked.state) : row;
+  }
+
+  async function applyEnvelope(
+    row: WorkOrderRow,
+    { esign, envelopeId }: PendingEnvelope,
+    state: EsignStatus,
+  ): Promise<WorkOrderRow> {
     const offered = await latestDocument(row.id, "offered");
     if (!offered) return row;
     let current = row.esignError ? await update(row.id, { esignError: null }) : row;
@@ -1552,7 +1611,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (state.status !== "completed") return current;
     let final: Uint8Array;
     try {
-      final = await esign.downloadSigned(row.esignEnvelopeId);
+      final = await esign.downloadSigned(envelopeId);
     } catch (error) {
       return update(row.id, {
         esignError: `Couldn't download the signed PDF: ${errorText(error)}`,
@@ -1821,6 +1880,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     for (const doc of offeredRows) {
       if (!latestOffered.has(doc.workOrderId)) latestOffered.set(doc.workOrderId, doc);
     }
+    const signaturesByDocument = new Map<string, (typeof signatureRows)[number][]>();
+    for (const s of signatureRows) {
+      const key = `${s.workOrderId}:${s.documentSha256}`;
+      const list = signaturesByDocument.get(key);
+      if (list) list.push(s);
+      else signaturesByDocument.set(key, [s]);
+    }
     const signing = new Map(
       rows.map((row) => {
         const offered = latestOffered.get(row.id);
@@ -1830,11 +1896,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           signingFrom(
             row,
             current,
-            current
-              ? signatureRows.filter(
-                  (s) => s.workOrderId === row.id && s.documentSha256 === current.sha256,
-                )
-              : [],
+            current ? (signaturesByDocument.get(`${row.id}:${current.sha256}`) ?? []) : [],
           ),
         ] as const;
       }),
@@ -1890,7 +1952,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       representativeUrl: signing.esign?.representativeUrl ?? null,
       esignError: signing.esign?.error ?? null,
       blockers,
-      payeeNeedsConfirmation: payee.needsConfirmation,
       documentWarning: row.documentWarning,
       driveError: row.signedDriveFileId ? null : row.signedDriveError,
       renewalStatus: row.renewalStatus,
@@ -3450,7 +3511,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
     githubRepos: async (_scope: OrganizationScope, input: { org: string }) => {
       try {
-        return { org: input.org, repos: await orgRepos(input.org) };
+        return { org: input.org, repos: await deps.orgRepos(input.org) };
       } catch (error) {
         if (error instanceof GitHubError && error.status === 404) {
           throw badRequest("GITHUB_ORG_NOT_FOUND", `GitHub has no organization "${input.org}"`);
@@ -3843,8 +3904,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         const row = await ownRow(scope, input.id);
         if (FINAL.includes(row.status))
           throw badRequest("CLOSED", `Work order ${row.code} is already terminated`);
-        await cancelEnvelope(row, "The work order was terminated");
-        return adminView(await view(await update(row.id, { status: "terminated" })));
+        const failed = await cancelEnvelope(row, "The work order was terminated");
+        const terminated = await update(row.id, {
+          status: "terminated",
+          ...(failed && (await envelopeStillSignable(row))
+            ? {
+                esignError: `Couldn't withdraw it in Documenso, so the builder may still be able to sign there: ${failed}`,
+              }
+            : {}),
+        });
+        return adminView(await view(terminated));
       });
     },
 
@@ -3858,21 +3927,32 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             "Only a draft or offered work order can be deleted; terminate it instead",
           );
         }
-        const current = await syncEnvelope(row);
-        if (current.status !== "draft" && current.status !== "offered") {
+        let checked: Awaited<ReturnType<typeof checkEnvelope>>;
+        try {
+          checked = await checkEnvelope(row);
+        } catch (error) {
+          throw badRequest(
+            "ESIGN_UNCHECKED",
+            `Couldn't check Documenso, so ${row.code} wasn't deleted: ${errorText(error)}`,
+          );
+        }
+        if (checked?.state.signers.some((s) => s.role === "contractor" && s.signedAt)) {
+          await applyEnvelope(row, checked.envelope, checked.state);
           throw badRequest(
             "ALREADY_SIGNED",
             `The builder has already signed ${row.code}; terminate it instead`,
           );
         }
-        if (current.esignEnvelopeId && current.esignError) {
-          throw badRequest(
-            "ESIGN_UNCHECKED",
-            `${current.esignError}. ${row.code} wasn't deleted; try again in a moment.`,
-          );
+        if (checked?.state.status !== "rejected") {
+          const failed = await cancelEnvelope(row, "The work order was withdrawn");
+          if (failed) {
+            throw badRequest(
+              "ESIGN_CANCEL_FAILED",
+              `Couldn't withdraw ${row.code} in Documenso, so it wasn't deleted: ${failed}`,
+            );
+          }
         }
-        await cancelEnvelope(current, "The work order was withdrawn", true);
-        await db.delete(workOrders).where(eq(workOrders.id, current.id));
+        await db.delete(workOrders).where(eq(workOrders.id, row.id));
         return { deleted: true as const };
       });
     },

@@ -4,6 +4,7 @@ import {
   clearWorkOrderDraft,
   mergeStoredDraft,
   readWorkOrderDraft,
+  withLivePeriod,
   workOrderDraftKey,
   writeWorkOrderDraft,
 } from "../src/lib/work-order-draft";
@@ -85,5 +86,23 @@ describe("mergeStoredDraft", () => {
     expect(
       mergeStoredDraft(fresh, { title: "Build", graceDays: 5, autoRenew: true, extra: "x" }),
     ).toEqual({ title: "Build", graceDays: "2", autoRenew: true });
+  });
+});
+
+describe("withLivePeriod", () => {
+  const fresh = { title: "", periodStart: "2026-11-01", periodEnd: "2026-11-30" };
+
+  test("replaces a stored period that has already ended", () => {
+    const stored = { title: "Build", periodStart: "2026-09-01", periodEnd: "2026-09-30" };
+    expect(withLivePeriod(stored, fresh, "2026-10-30")).toEqual({
+      title: "Build",
+      periodStart: "2026-11-01",
+      periodEnd: "2026-11-30",
+    });
+  });
+
+  test("keeps a stored period that ends today or later", () => {
+    const stored = { title: "Build", periodStart: "2026-10-01", periodEnd: "2026-10-30" };
+    expect(withLivePeriod(stored, fresh, "2026-10-30")).toBe(stored);
   });
 });

@@ -58,6 +58,16 @@ export function clearAllWorkOrderDrafts(): void {
   } catch {}
 }
 
+export function withLivePeriod<T extends { periodStart: string; periodEnd: string }>(
+  draft: T,
+  fresh: T,
+  today: string,
+): T {
+  return draft.periodEnd < today
+    ? { ...draft, periodStart: fresh.periodStart, periodEnd: fresh.periodEnd }
+    : draft;
+}
+
 export function mergeStoredDraft<T extends Record<string, unknown>>(fresh: T, stored: object): T {
   const merged: Record<string, unknown> = { ...fresh };
   for (const [key, value] of Object.entries(stored)) {

@@ -43,6 +43,7 @@ import { defaultRepresentative } from "@/lib/representative";
 import {
   defaultPeriod,
   duplicateTitle,
+  GITHUB_REPO,
   recentBudgets,
   repoFromProject,
   sendBlocker,
@@ -53,6 +54,7 @@ import {
   mergeStoredDraft,
   readWorkOrderDraft,
   type WorkOrderDraftScope,
+  withLivePeriod,
   writeWorkOrderDraft,
 } from "@/lib/work-order-draft";
 import { BudgetChips } from "./budget-chips";
@@ -91,7 +93,6 @@ const IP_MODELS = [
 const USD = "usd";
 const NEAR = "near";
 const USD_DECIMALS = 6;
-const REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const GITHUB_LOGIN = /^[A-Za-z\d](?:[A-Za-z\d]|-(?=[A-Za-z\d])){0,38}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const NEW_ITEM = "__new__";
@@ -219,9 +220,10 @@ function WorkOrderFields({
       : null,
   );
   const keepsLocalDraft = !editing && !template && draftScope !== null;
+  const today = () => todayIn(listQuery.data?.data[0]?.timeZone);
   const blank = (): Draft => {
     const defaults = defaultRepresentative(representative, me);
-    const period = defaultPeriod(todayIn(listQuery.data?.data[0]?.timeZone));
+    const period = defaultPeriod(today());
     return {
       code: "",
       projectId: "",
@@ -278,7 +280,7 @@ function WorkOrderFields({
     const fresh = blank();
     const stored = keepsLocalDraft && draftScope ? readWorkOrderDraft<Draft>(draftScope) : null;
     if (!stored) return { restored: false, custom: {}, draft: fresh };
-    const merged = mergeStoredDraft(fresh, stored.draft);
+    const merged = withLivePeriod(mergeStoredDraft(fresh, stored.draft), fresh, today());
     const draft: Draft = {
       ...merged,
       code: "",
@@ -343,8 +345,8 @@ function WorkOrderFields({
     .split(/[\s,]+/)
     .map((r) => r.trim())
     .filter(Boolean);
-  const badRepo = repos.find((r) => !REPO.test(r));
-  const validRepos = repos.filter((r) => REPO.test(r));
+  const badRepo = repos.find((r) => !GITHUB_REPO.test(r));
+  const validRepos = repos.filter((r) => GITHUB_REPO.test(r));
   const toggleRepo = (repo: string, checked: boolean) =>
     setDraft((current) => {
       const lines = current.repos
@@ -466,17 +468,20 @@ function WorkOrderFields({
                         ? `${representativeEmail} isn't an email address.`
                         : null;
   const checking = builderChosen && builderDefaultsQuery.isLoading;
+  const checkFailed = builderChosen && builderDefaultsQuery.isError;
   const blocker = editing
     ? null
     : checking
       ? { reason: "Checking the builder's details…", inDetails: false }
-      : sendBlocker({
-          githubLogin: github,
-          contractorEmail,
-          representativeEmail,
-          needsEmails: builderDefaults?.needsEmails ?? false,
-          accountEmail: builderDefaults?.accountEmail ?? false,
-        });
+      : checkFailed
+        ? { reason: "Couldn't check the builder's details ·", inDetails: false }
+        : sendBlocker({
+            githubLogin: github,
+            contractorEmail,
+            representativeEmail,
+            needsEmails: builderDefaults?.needsEmails ?? false,
+            accountEmail: builderDefaults?.accountEmail ?? false,
+          });
   const detailsNeeded =
     badGrace ||
     badRepresentativeEmail ||
@@ -884,7 +889,20 @@ function WorkOrderFields({
       </FieldGroup>
       <DialogFooter className="flex-wrap items-center">
         {(reason ?? blocker?.reason) && (
-          <p className="mr-auto text-xs text-muted-foreground">{reason ?? blocker?.reason}</p>
+          <p className="mr-auto flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            {reason ?? blocker?.reason}
+            {!reason && checkFailed && (
+              <Button
+                type="button"
+                variant="link"
+                size="xs"
+                disabled={builderDefaultsQuery.isFetching}
+                onClick={() => void builderDefaultsQuery.refetch()}
+              >
+                {builderDefaultsQuery.isFetching ? "Trying…" : "Try again"}
+              </Button>
+            )}
+          </p>
         )}
         {editing ? (
           <>

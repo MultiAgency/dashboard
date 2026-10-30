@@ -68,14 +68,10 @@ export async function createDatabaseDriver(url: string): Promise<DatabaseDriver>
     max: Number(process.env.DB_POOL_MAX) || 10,
     connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS) || 30_000,
     idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS) || 30_000,
+    options: "-c TimeZone=UTC",
   });
   pool.on("error", (err: Error) => {
     console.error("[Database] Unexpected pool error:", err.message);
-  });
-  pool.on("connect", (client) => {
-    client.query("SET TIME ZONE 'UTC'").catch((err: Error) => {
-      console.error("[Database] Couldn't set the session time zone to UTC:", err.message);
-    });
   });
   let closed = false;
   return {
