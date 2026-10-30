@@ -506,13 +506,29 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   async function contactsOf(row: WorkOrderRow, builder: BuilderProfile | null) {
     const lookup = async (userId: string | null | undefined) =>
       userId && deps.userEmail ? await deps.userEmail(userId).catch(() => null) : null;
+    const fallback =
+      row.representativeEmail && row.representativeName
+        ? null
+        : await integrationOf(row.organizationId).catch(() => null);
+    const representativeEmail =
+      row.representativeEmail ?? fallback?.defaultRepresentativeEmail ?? null;
     return {
       contractorEmail: row.contractorEmail ?? (await lookup(builder?.userId)),
-      representativeEmail: row.representativeEmail,
+      representativeEmail,
+      representativeName:
+        row.representativeName ??
+        (representativeEmail === fallback?.defaultRepresentativeEmail
+          ? (fallback?.defaultRepresentativeName ?? null)
+          : null),
     };
   }
 
-  async function announce(row: WorkOrderRow, type: WorkOrderEventType, extra: Announcement = {}) {
+  async function announce(
+    row: WorkOrderRow,
+    type: WorkOrderEventType,
+    extra: Announcement = {},
+    workOrderId: string | null = row.id,
+  ) {
     if (!deps.outbox) return;
     try {
       const [project, agencyName, builder] = await Promise.all([
@@ -543,7 +559,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           nearAccount: row.builderNearAccount,
         },
         representative: {
-          name: row.representativeName ?? agencyName,
+          name: contacts.representativeName ?? agencyName,
           email: contacts.representativeEmail,
         },
         request: request
@@ -597,7 +613,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         renewal: extra.renewal ?? null,
         hold: extra.hold ?? null,
       };
-      await deps.outbox.enqueue(row.organizationId, row.id, event);
+      await deps.outbox.enqueue(row.organizationId, workOrderId, event);
     } catch (error) {
       console.warn(`[API] work order ${row.code} ${type} couldn't be queued`, error);
     }
@@ -683,7 +699,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       project: projectTitle,
       contractorName: row.contractorName ?? builder?.name ?? row.builderNearAccount,
       contractorEmail: contacts.contractorEmail,
-      representativeName: row.representativeName ?? agencyName,
+      representativeName: contacts.representativeName ?? agencyName,
       representativeEmail: contacts.representativeEmail,
       periodStart: row.periodStart,
       periodEnd: row.periodEnd,
@@ -896,7 +912,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       ["Project", projectTitle],
       ["Builder (contractor)", row.contractorName ?? builder?.name ?? row.builderNearAccount],
       ["Builder's email", contacts.contractorEmail ?? ""],
-      ["Agency representative", row.representativeName ?? agencyName],
+      ["Agency representative", contacts.representativeName ?? agencyName],
       ["Representative's email", contacts.representativeEmail ?? ""],
       ["Work period", `${longDate(row.periodStart)} to ${longDate(row.periodEnd)}`],
       [
@@ -1376,6 +1392,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     };
   }
 
+  async function sentToBuilder(row: WorkOrderRow): Promise<boolean> {
+    if (row.status === "draft") return false;
+    if (row.status !== "offered") return true;
+    return !(await signingOf(row)).awaitingRepresentative;
+  }
+
   async function syncPendingSignatures(): Promise<number> {
     if (!deps.esign) return 0;
     const pending = await db
@@ -1411,7 +1433,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const signers = [
       {
         role: "representative" as const,
-        name: row.representativeName ?? agencyName,
+        name: contacts.representativeName ?? agencyName,
         email: contacts.representativeEmail ?? "",
       },
       {
@@ -1545,7 +1567,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     let current = row.esignError ? await update(row.id, { esignError: null }) : row;
     if (state.status === "rejected") {
       if (current.status !== "offered") return current;
-      const reason = state.signers.find((s) => s.rejected)?.rejectionReason ?? "";
+      const rejecter = state.signers.find((s) => s.rejected);
+      const reason = rejecter?.rejectionReason ?? "";
       const declined = await update(row.id, {
         status: "draft",
         offeredAt: null,
@@ -1554,11 +1577,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         esignRepresentativeUrl: null,
         esignError: `Declined in Documenso${reason ? `: ${reason}` : ""}`,
       });
-      await notifyManagers(
-        declined,
-        "work_order_declined",
-        await payloadOf(declined, { note: reason }),
-      );
+      if (rejecter?.role === "contractor") {
+        await notifyManagers(
+          declined,
+          "work_order_declined",
+          await payloadOf(declined, { note: reason }),
+        );
+        await announce(declined, "work_order.declined", { note: reason || null });
+      }
       return declined;
     }
     const existing = await signaturesOf(row.id, offered.sha256);
@@ -2157,6 +2183,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     row: WorkOrderRow,
     kind: NotificationKind,
     payload: Record<string, string>,
+    link = builderLink(row.id),
   ) {
     const builder = await deps.builders.get(row.builderNearAccount).catch(() => null);
     if (!builder?.userId) return;
@@ -2166,7 +2193,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         organizationId: row.organizationId,
         kind,
         payload,
-        link: builderLink(row.id),
+        link,
       })
       .catch((error: unknown) => console.warn("[API] work order notification failed:", error));
   }
@@ -3807,6 +3834,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         if (!offered.esignEnvelopeId) {
           await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
           await announce(offered, "work_order.offered");
+        } else if ((await signingOf(offered)).awaitingRepresentative) {
+          await announce(offered, "work_order.sign_first");
         }
         return adminView(await view(offered));
       });
@@ -3904,6 +3933,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         const row = await ownRow(scope, input.id);
         if (FINAL.includes(row.status))
           throw badRequest("CLOSED", `Work order ${row.code} is already terminated`);
+        const builderWasSent = await sentToBuilder(row);
         const failed = await cancelEnvelope(row, "The work order was terminated");
         const terminated = await update(row.id, {
           status: "terminated",
@@ -3913,6 +3943,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
               }
             : {}),
         });
+        if (builderWasSent) {
+          await notifyBuilder(terminated, "work_order_terminated", await payloadOf(terminated));
+          await announce(terminated, "work_order.terminated");
+        }
         return adminView(await view(terminated));
       });
     },
@@ -3952,7 +3986,17 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             );
           }
         }
+        const builderWasSent =
+          row.status === "offered" &&
+          checked?.state.status !== "rejected" &&
+          ((await sentToBuilder(row)) ||
+            !!checked?.state.signers.some((s) => s.role === "representative" && s.signedAt));
+        const payload = builderWasSent ? await payloadOf(row) : null;
         await db.delete(workOrders).where(eq(workOrders.id, row.id));
+        if (payload) {
+          await notifyBuilder(row, "work_order_withdrawn", payload, "/dashboard");
+          await announce(row, "work_order.withdrawn", {}, null);
+        }
         return { deleted: true as const };
       });
     },
