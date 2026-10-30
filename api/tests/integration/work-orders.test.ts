@@ -7,6 +7,7 @@ import {
   billings,
   compensationRequests,
   notifications,
+  organizationBuilderLogins,
   workOrderDocuments,
   workOrderDriveFiles,
   workOrderIntegrations,
@@ -226,6 +227,23 @@ describe("work orders", () => {
       await service.create(await studio(), fields({ code: "SI-004" }));
       expect(await service.nextCode(await studio())).toEqual({ code: "WO-0002" });
       expect((await service.create(await studio(), fields())).code).toBe("WO-0002");
+    });
+
+    test("timestamps follow the service clock, so a new draft is waiting since now", async () => {
+      const created = await service.create(await studio(), fields());
+      expect(created.createdAt).toBe("2026-09-20T12:00:00.000Z");
+      expect(created.progress.since).toBe("2026-09-20T12:00:00.000Z");
+    });
+
+    test("a project that can't be found shows as unknown, never as its id", async () => {
+      const created = await service.create(await studio(), fields());
+      await db
+        .update(workOrders)
+        .set({ projectId: "proj_gone", projectTitle: null, projectSlug: null })
+        .where(eq(workOrders.id, created.id));
+      const view = await service.get(await studio(), { id: created.id });
+      expect(view.projectId).toBe("proj_gone");
+      expect(view.projectTitle).toBe("Unknown project");
     });
 
     test("draft → offered → accepted by the builder's own account → active", async () => {
@@ -801,6 +819,8 @@ describe("work orders", () => {
         signature: { method: null },
       });
       expect(child.signing.builder).toBeNull();
+      const [childRow] = await db.select().from(workOrders).where(eq(workOrders.id, child.id));
+      expect(childRow?.projectTitle).toBe(parent.projectTitle);
       expect(
         (await service.get(await studio(), { id: parent.id })).requests.map((r) => r.status),
       ).toEqual(["draft"]);
@@ -1504,6 +1524,33 @@ describe("work orders", () => {
       await service.offer(await studio(), { id: first.id });
       await service.remove(await studio(), { id: first.id });
       expect(documenso.cancelled.at(-1)?.envelopeId).toBe("envelope_3");
+    });
+
+    test("an offered work order the builder already signed in Documenso can't be deleted", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      documenso.sign("contractor", "2026-09-20T14:00:00.000Z");
+      await refused(service.remove(await studio(), { id: created.id }), "ALREADY_SIGNED");
+      expect(documenso.cancelled).toEqual([]);
+      expect((await service.get(await studio(), { id: created.id })).status).not.toBe("offered");
+    });
+
+    test("deleting stops when Documenso can't be checked or the envelope can't be cancelled", async () => {
+      const created = await offered();
+      const status = documenso.status.bind(documenso);
+      documenso.status = async () => {
+        throw new Error("Documenso is down");
+      };
+      await refused(service.remove(await studio(), { id: created.id }), "ESIGN_UNCHECKED");
+      documenso.status = status;
+      const cancel = documenso.cancel.bind(documenso);
+      documenso.cancel = async () => {
+        throw new Error("timeout");
+      };
+      await refused(service.remove(await studio(), { id: created.id }), "ESIGN_CANCEL_FAILED");
+      documenso.cancel = cancel;
+      expect((await service.get(await studio(), { id: created.id })).status).toBe("offered");
+      await service.remove(await studio(), { id: created.id });
     });
 
     async function completed() {
@@ -2994,6 +3041,126 @@ describe("work orders", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe("importing repositories from GitHub", () => {
+    test("lists an organization's public repositories and caches them", async () => {
+      github.orgs.set("nearbuilders", [
+        {
+          fullName: "NEARBuilders/citynode.app",
+          url: "https://github.com/NEARBuilders/citynode.app",
+          description: "City node",
+          pushedAt: "2026-10-01T00:00:00Z",
+        },
+      ]);
+      const listed = await service.githubRepos(await studio(), { org: "NEARBuilders" });
+      expect(listed.repos.map((r) => r.fullName)).toEqual(["NEARBuilders/citynode.app"]);
+      await service.githubRepos(await studio(), { org: "nearbuilders" });
+      expect(github.calls.filter((c) => c === "listOrgRepos")).toHaveLength(1);
+    });
+
+    test("an unknown organization or a GitHub outage is a clear error", async () => {
+      await refused(service.githubRepos(await studio(), { org: "nobody" }), "GITHUB_ORG_NOT_FOUND");
+      github.orgs.set("down", []);
+      github.failNext("listOrgRepos", new Error("timeout"));
+      await refused(service.githubRepos(await studio(), { org: "down" }), "GITHUB_FAILED");
+    });
+  });
+
+  describe("builder defaults for a new work order", () => {
+    const rival = () => world.manager("rival-admin", "rival");
+
+    test("the profile login, a linked account email, and no email demand without e-signature", async () => {
+      expect(await service.builderDefaults(await studio(), { nearAccount: CAROL })).toEqual({
+        githubLogin: "carol-gh",
+        contractorEmail: null,
+        accountEmail: true,
+        needsEmails: false,
+      });
+    });
+
+    test("an unknown builder gets empty defaults, and e-signature asks for emails", async () => {
+      service = createWorkOrdersService({ ...serviceDeps, esign: new FakeDocumenso() });
+      expect(await service.builderDefaults(await studio(), { nearAccount: "ghost.near" })).toEqual({
+        githubLogin: null,
+        contractorEmail: null,
+        accountEmail: false,
+        needsEmails: true,
+      });
+    });
+
+    test("no account email when the linked user has none", async () => {
+      service = createWorkOrdersService({ ...serviceDeps, userEmail: async () => null });
+      const defaults = await service.builderDefaults(await studio(), { nearAccount: CAROL });
+      expect(defaults.accountEmail).toBe(false);
+    });
+
+    test("the remembered login and latest email stay inside the organization", async () => {
+      const first = await service.create(
+        await studio(),
+        fields({
+          builderNearAccount: "nogit.near",
+          githubLogin: "nogit-gh",
+          contractorEmail: "old@nogit.example",
+        }),
+      );
+      clock = new Date("2026-09-21T12:00:00.000Z");
+      await service.create(
+        await studio(),
+        fields({
+          builderNearAccount: "nogit.near",
+          githubLogin: "nogit-gh",
+          contractorEmail: "new@nogit.example",
+        }),
+      );
+      clock = new Date("2026-09-22T12:00:00.000Z");
+      const leaked = await service.create(
+        await studio(),
+        fields({
+          builderNearAccount: "nogit.near",
+          githubLogin: "nogit-gh",
+          contractorEmail: "rival@nogit.example",
+        }),
+      );
+      await db
+        .update(workOrders)
+        .set({ organizationId: "rival", githubLogin: "rival-gh" })
+        .where(eq(workOrders.id, leaked.id));
+      await db.update(workOrders).set({ contractorEmail: null }).where(eq(workOrders.id, first.id));
+
+      expect(await service.builderDefaults(await studio(), { nearAccount: "nogit.near" })).toEqual({
+        githubLogin: "nogit-gh",
+        contractorEmail: "new@nogit.example",
+        accountEmail: true,
+        needsEmails: false,
+      });
+      expect(await service.builderDefaults(await rival(), { nearAccount: "nogit.near" })).toEqual({
+        githubLogin: "rival-gh",
+        contractorEmail: "rival@nogit.example",
+        accountEmail: true,
+        needsEmails: false,
+      });
+    });
+
+    test("the latest login on the organization's work orders fills in when none is remembered", async () => {
+      await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near", githubLogin: "old-gh" }),
+      );
+      clock = new Date("2026-09-21T12:00:00.000Z");
+      await service.create(
+        await studio(),
+        fields({ builderNearAccount: "nogit.near", githubLogin: "new-gh" }),
+      );
+      await db.delete(organizationBuilderLogins);
+
+      expect(
+        (await service.builderDefaults(await studio(), { nearAccount: "nogit.near" })).githubLogin,
+      ).toBe("new-gh");
+      expect(
+        (await service.builderDefaults(await rival(), { nearAccount: "nogit.near" })).githubLogin,
+      ).toBeNull();
     });
   });
 });

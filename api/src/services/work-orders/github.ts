@@ -72,6 +72,13 @@ export type GhReviewBy = {
   submittedAt: string;
 };
 
+export type GhRepo = {
+  fullName: string;
+  url: string;
+  description: string | null;
+  pushedAt: string | null;
+};
+
 export interface GitHubPort {
   getPull(repo: string, number: number): Promise<GhPull>;
   getClosingIssues(repo: string, number: number): Promise<GhIssueRef[]>;
@@ -82,6 +89,7 @@ export interface GitHubPort {
   getAssignmentEvents(repo: string, number: number): Promise<GhAssignmentEvent[]>;
   listPullsByAuthor(repo: string, login: string, since: string): Promise<GhPullSummary[]>;
   listReviewsBy(repo: string, login: string, since: string): Promise<GhReviewBy[]>;
+  listOrgRepos(org: string): Promise<GhRepo[]>;
 }
 
 export class GitHubError extends Error {
@@ -135,6 +143,15 @@ type RestSearchItem = {
   title: string;
   html_url: string;
   user?: { login: string } | null;
+};
+
+type RestRepo = {
+  full_name: string;
+  html_url: string;
+  description: string | null;
+  pushed_at: string | null;
+  archived?: boolean;
+  private?: boolean;
 };
 
 type RestReview = { user: { login: string } | null; state: string; submitted_at?: string | null };
@@ -374,6 +391,33 @@ export function createGitHub(token: string | null, fetcher: typeof fetch = fetch
       }
       return out;
     },
+
+    async listOrgRepos(org) {
+      const repos = await pages<RestRepo>(
+        `/orgs/${encodeURIComponent(org)}/repos?type=public&sort=pushed`,
+      );
+      return repos
+        .filter((r) => !r.archived && !r.private)
+        .map((r) => ({
+          fullName: r.full_name,
+          url: r.html_url,
+          description: r.description,
+          pushedAt: r.pushed_at,
+        }));
+    },
+  };
+}
+
+export function cachedOrgRepos(github: GitHubPort, ttlMs: number, now: () => number = Date.now) {
+  const cache = new Map<string, { until: number; value: Promise<GhRepo[]> }>();
+  return (org: string): Promise<GhRepo[]> => {
+    const key = org.toLowerCase();
+    const hit = cache.get(key);
+    if (hit && hit.until > now()) return hit.value;
+    const value = github.listOrgRepos(org);
+    cache.set(key, { until: now() + ttlMs, value });
+    value.catch(() => cache.delete(key));
+    return value;
   };
 }
 

@@ -128,9 +128,7 @@ export function ApplicationsAdminSection() {
         <CardTitle>
           <h2>Applications</h2>
         </CardTitle>
-        <CardDescription>
-          Founder, builder and client applications from the public site.
-        </CardDescription>
+        <CardDescription>From the public site.</CardDescription>
         <CardAction>
           <Badge variant="secondary">{apps.length}</Badge>
         </CardAction>
@@ -233,7 +231,7 @@ function ApplicationActions({ application }: { application: Application }) {
       await refreshAfter(queryClient, { type: "applications" });
       toast.success("Status updated");
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to update status"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't update the status"),
   });
 
   const convertMutation = useMutation({
@@ -242,7 +240,7 @@ function ApplicationActions({ application }: { application: Application }) {
       await refreshAfter(queryClient, { type: "applications" }, { type: "builders" });
       toast.success("Converted to builder");
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to convert"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't convert"),
   });
 
   return (

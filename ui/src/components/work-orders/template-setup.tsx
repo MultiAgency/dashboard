@@ -120,7 +120,7 @@ export function TemplateSetup({
         })),
       }),
     onSuccess: (next, tab) => {
-      toast.success("A tagged copy of your template is ready and selected");
+      toast.success("Tagged copy ready");
       tab.go(next.url);
       onDone(next);
     },
@@ -148,8 +148,7 @@ export function TemplateSetup({
       <DialogHeader>
         <DialogTitle>Set up the template's fields</DialogTitle>
         <DialogDescription>
-          MultiAgency found the spots to fill in. Pick what goes in each: it makes a copy of your
-          template with tags in those spots and uses the copy from now on. Your original isn't
+          Pick what goes in each spot. We use a tagged copy from now on; your original isn't
           changed.
         </DialogDescription>
       </DialogHeader>

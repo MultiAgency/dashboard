@@ -372,7 +372,8 @@ export function progressOf(input: ProgressInput): Progress {
       });
     }
   }
-  if (input.payeeNeedsConfirmation && !terminated && input.status !== "draft") {
+  const blockersShown = input.status === "accepted" && input.blockers.length > 0;
+  if (input.payeeNeedsConfirmation && !blockersShown && (input.status === "accepted" || started)) {
     attention.push({
       key: "payee",
       message: `${builder} hasn't confirmed their payout account yet`,

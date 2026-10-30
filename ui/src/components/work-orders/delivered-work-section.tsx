@@ -1,13 +1,5 @@
 import { useState } from "react";
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { ReportMarkdown } from "./report-markdown";
 
@@ -71,10 +63,6 @@ export function DeliveredWorkSection({ items }: { items: DeliveredWork[] }) {
         <CardTitle>
           <h2>Delivered work</h2>
         </CardTitle>
-        <CardDescription>
-          Work accepted for this period: the GitHub issues each builder was assigned, the pull
-          requests the repository owner approved or merged, and their reviews.
-        </CardDescription>
       </CardHeader>
       <CardContent>
         <ul className="flex flex-col gap-3">

@@ -28,8 +28,8 @@ export function PayeePayoutsPrompt({ workOrder }: { workOrder: WorkOrderDetail }
       <AlertTitle>The payout agent can't pay {name} yet</AlertTitle>
       <AlertDescription className="flex flex-col gap-3">
         <span>
-          The rules you signed don't include {payee}. Sign the updated rules with your wallet so
-          approved requests are paid automatically.
+          The rules you signed don't include {payee}. Sign the updated rules so approved requests
+          are paid automatically.
         </span>
         <span className="flex flex-wrap gap-2">
           {agent.changes.length > 0 ? (

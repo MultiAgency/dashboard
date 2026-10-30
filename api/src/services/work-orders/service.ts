@@ -42,7 +42,7 @@ import {
 } from "./documents";
 import { eventId, type WorkOrderEvent, type WorkOrderEventType } from "./events";
 import { collectEvidence, summarizeActivity } from "./evidence";
-import type { GhRepoOwnership, GitHubPort } from "./github";
+import { cachedOrgRepos, type GhRepoOwnership, GitHubError, type GitHubPort } from "./github";
 import type { DriveFile, GooglePort } from "./google";
 import { type PriceFeed, type PriceQuote, USD, USD_DECIMALS, usdToTokens } from "./prices";
 import { type Progress, progressOf } from "./progress";
@@ -225,6 +225,7 @@ const TICK_LOCK_MS = 2 * 60_000;
 const SIGNATURE_LOCK_MS = 2 * 60_000;
 const AUTO_PAY_RETRY_MS = 5 * 60_000;
 const NO_AGENT = "No payout agent";
+const UNKNOWN_PROJECT = "Unknown project";
 
 const IN_FLIGHT: AgentPayoutView["status"][] = [
   "sending",
@@ -398,6 +399,7 @@ const sum = (amounts: (string | null)[]) =>
 
 export function createWorkOrdersService(deps: WorkOrderDeps) {
   const { db, directory } = deps;
+  const orgRepos = cachedOrgRepos(deps.github, 10 * 60_000);
   const now = () => deps.now?.() ?? new Date();
   const timeZone = deps.timeZone ?? UTC;
   const today = () => dateOf(now(), timeZone);
@@ -522,7 +524,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         workOrder: {
           id: row.code,
           title: row.title,
-          project: project?.title ?? row.projectId,
+          project: project?.title ?? UNKNOWN_PROJECT,
           periodStart: row.periodStart,
           periodEnd: row.periodEnd,
           budget: display(row.budgetAmount, row.tokenId),
@@ -659,7 +661,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const contacts = await contactsOf(row, builder);
     const fields = documentFields({
       code: row.code,
-      project: project?.title ?? row.projectId,
+      project: documentProjectTitle(row, project),
       contractorName: row.contractorName ?? builder?.name ?? row.builderNearAccount,
       contractorEmail: contacts.contractorEmail,
       representativeName: row.representativeName ?? agencyName,
@@ -862,7 +864,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return [
       ["Work order", `${row.code}: ${row.title}`],
       ["Agency", agencyName],
-      ["Project", project?.title ?? row.projectId],
+      ["Project", documentProjectTitle(row, project)],
       ["Builder (contractor)", row.contractorName ?? builder?.name ?? row.builderNearAccount],
       ["Builder's email", contacts.contractorEmail ?? ""],
       ["Agency representative", row.representativeName ?? agencyName],
@@ -1108,7 +1110,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return false;
   }
 
-  async function payeeOf(row: WorkOrderRow) {
+  function paidBeforeOnce(row: WorkOrderRow, paidCache?: Map<string, Promise<boolean>>) {
+    if (!paidCache) return paidBefore(row);
+    const key = `${row.organizationId}:${row.builderNearAccount}`;
+    const cached = paidCache.get(key) ?? paidBefore(row);
+    paidCache.set(key, cached);
+    return cached;
+  }
+
+  async function payeeOf(row: WorkOrderRow, paidCache?: Map<string, Promise<boolean>>) {
     if (row.payeeConfirmedAt) {
       return {
         account: row.builderNearAccount,
@@ -1117,7 +1127,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         needsConfirmation: false,
       };
     }
-    const known = EDITABLE.includes(row.status) ? await paidBefore(row) : null;
+    const known = EDITABLE.includes(row.status) ? await paidBeforeOnce(row, paidCache) : null;
     return {
       account: row.builderNearAccount,
       confirmedAt: null,
@@ -1235,6 +1245,14 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return { committed, paid, remaining };
   }
 
+  function documentProjectTitle(row: WorkOrderRow, project: { title: string } | null): string {
+    if (project) return project.title;
+    throw badRequest(
+      "PROJECT_UNAVAILABLE",
+      `Couldn't load the project of ${row.code}, so its document wasn't made. Try again in a moment.`,
+    );
+  }
+
   async function projectOf(
     row: Pick<WorkOrderRow, "organizationId" | "projectId"> &
       Partial<Pick<WorkOrderRow, "projectTitle" | "projectSlug">>,
@@ -1286,9 +1304,18 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   }
 
   async function signingOf(row: WorkOrderRow) {
-    const esign = esignOf(row);
     const offered = await latestDocument(row.id, "offered");
-    if (!offered || offered.termsHash !== termsHash(row)) {
+    const current = offered && offered.termsHash === termsHash(row) ? offered : null;
+    return signingFrom(row, current, current ? await signaturesOf(row.id, current.sha256) : []);
+  }
+
+  function signingFrom(
+    row: WorkOrderRow,
+    offered: { sha256: string } | null,
+    signatures: Pick<WorkOrderSignatureRow, "role" | "name" | "signedAt">[],
+  ) {
+    const esign = esignOf(row);
+    if (!offered) {
       return {
         documentSha256: null,
         builder: null,
@@ -1298,7 +1325,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         esign,
       };
     }
-    const signatures = await signaturesOf(row.id, offered.sha256);
     const signer = (role: "contractor" | "representative") => {
       const found = signatures.find((s) => s.role === role);
       return found ? { name: found.name, signedAt: found.signedAt.toISOString() } : null;
@@ -1398,12 +1424,18 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     }
   }
 
-  async function cancelEnvelope(row: WorkOrderRow, reason: string) {
+  async function cancelEnvelope(row: WorkOrderRow, reason: string, strict = false) {
     if (!deps.esign || !row.esignEnvelopeId || row.signedAt) return;
     try {
       await deps.esign.cancel(row.esignEnvelopeId, reason);
     } catch (error) {
       console.warn(`[API] couldn't cancel the Documenso envelope of ${row.code}`, error);
+      if (strict) {
+        throw badRequest(
+          "ESIGN_CANCEL_FAILED",
+          `Couldn't withdraw ${row.code} in Documenso, so it wasn't deleted: ${errorText(error)}`,
+        );
+      }
     }
   }
 
@@ -1740,14 +1772,92 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     };
   }
 
-  async function view(row: WorkOrderRow, cache?: { projects?: Map<string, Project> }) {
+  type ViewCache = {
+    projects?: Map<string, Project>;
+    requests?: Map<string, CompensationRequestRow[]>;
+    builders?: Map<string, Promise<BuilderProfile | null>>;
+    paid?: Map<string, Promise<boolean>>;
+    signing?: Map<string, ReturnType<typeof signingFrom>>;
+  };
+
+  async function viewCacheOf(rows: WorkOrderRow[], projects: Map<string, Project>) {
+    const ids = rows.map((r) => r.id);
+    const [requestRows, offeredRows, signatureRows] = ids.length
+      ? await Promise.all([
+          db
+            .select()
+            .from(compensationRequests)
+            .where(inArray(compensationRequests.workOrderId, ids))
+            .orderBy(asc(compensationRequests.seq)),
+          db
+            .select({
+              workOrderId: workOrderDocuments.workOrderId,
+              termsHash: workOrderDocuments.termsHash,
+              sha256: workOrderDocuments.sha256,
+            })
+            .from(workOrderDocuments)
+            .where(
+              and(
+                inArray(workOrderDocuments.workOrderId, ids),
+                eq(workOrderDocuments.kind, "offered"),
+              ),
+            )
+            .orderBy(desc(workOrderDocuments.createdAt)),
+          db
+            .select({
+              workOrderId: workOrderSignatures.workOrderId,
+              documentSha256: workOrderSignatures.documentSha256,
+              role: workOrderSignatures.role,
+              name: workOrderSignatures.name,
+              signedAt: workOrderSignatures.signedAt,
+            })
+            .from(workOrderSignatures)
+            .where(inArray(workOrderSignatures.workOrderId, ids)),
+        ])
+      : [[], [], []];
+    const requests = new Map<string, CompensationRequestRow[]>(ids.map((id) => [id, []]));
+    for (const r of requestRows) requests.get(r.workOrderId)?.push(r);
+    const latestOffered = new Map<string, (typeof offeredRows)[number]>();
+    for (const doc of offeredRows) {
+      if (!latestOffered.has(doc.workOrderId)) latestOffered.set(doc.workOrderId, doc);
+    }
+    const signing = new Map(
+      rows.map((row) => {
+        const offered = latestOffered.get(row.id);
+        const current = offered && offered.termsHash === termsHash(row) ? offered : null;
+        return [
+          row.id,
+          signingFrom(
+            row,
+            current,
+            current
+              ? signatureRows.filter(
+                  (s) => s.workOrderId === row.id && s.documentSha256 === current.sha256,
+                )
+              : [],
+          ),
+        ] as const;
+      }),
+    );
+    const builders = new Map<string, Promise<BuilderProfile | null>>();
+    for (const account of new Set(rows.map((r) => r.builderNearAccount))) {
+      builders.set(
+        account,
+        deps.builders.get(account).catch(() => null),
+      );
+    }
+    return { projects, requests, builders, paid: new Map(), signing } satisfies ViewCache;
+  }
+
+  async function view(row: WorkOrderRow, cache?: ViewCache) {
     const [requests, builder] = await Promise.all([
-      requestsOf(row.id),
-      deps.builders.get(row.builderNearAccount).catch(() => null),
+      cache?.requests?.get(row.id) ?? requestsOf(row.id),
+      cache?.builders?.get(row.builderNearAccount) ??
+        deps.builders.get(row.builderNearAccount).catch(() => null),
     ]);
     const project = cache?.projects?.get(row.projectId) ?? (await projectOf(row));
-    const payee = await payeeOf(row);
-    const signing = await signingOf(row);
+    const payee = await payeeOf(row, cache?.paid);
+    const signing = cache?.signing?.get(row.id) ?? (await signingOf(row));
     const { committed, paid, remaining } = amountsOf(row, requests);
     const renewal = parseJson<RenewalAssessment | null>(row.renewalAssessment, null);
     const blockers = activationBlockers(
@@ -1805,7 +1915,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       code: row.code,
       organizationId: row.organizationId,
       projectId: row.projectId,
-      projectTitle: project?.title ?? row.projectId,
+      projectTitle: project?.title ?? UNKNOWN_PROJECT,
       projectSlug: project?.slug ?? null,
       builder: {
         nearAccount: row.builderNearAccount,
@@ -2008,7 +2118,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     ]);
     return {
       code: row.code,
-      projectTitle: project?.title ?? row.projectId,
+      projectTitle: project?.title ?? UNKNOWN_PROJECT,
       agencyName,
       builderName: builder?.name ?? row.builderNearAccount,
       budget: display(row.budgetAmount, row.tokenId),
@@ -2327,7 +2437,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         ? await deps.summarizer
             .draftReport({
               workOrderCode: row.code,
-              project: project?.title ?? row.projectId,
+              project: project?.title ?? UNKNOWN_PROJECT,
               contractorGithub: row.githubLogin ?? "",
               periodStart: coversFrom,
               periodEnd: coversTo,
@@ -2350,6 +2460,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         summary: draft?.summary ?? null,
         contributionsMd,
         assessmentMd,
+        createdAt: now(),
+        updatedAt: now(),
       })
       .returning();
     if (auto) await update(row.id, { autoDraftedFor: row.periodEnd });
@@ -2794,7 +2906,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const description = proposalDescription({
       title: `${row.code}-R${request.seq}: ${row.title}`,
       notes: [
-        `Project: ${project?.title ?? row.projectId}`,
+        `Project: ${project?.title ?? UNKNOWN_PROJECT}`,
         `Covers ${request.coversFrom} to ${request.coversTo}`,
         payout.priceUsd
           ? `${display(request.approvedAmount ?? "0", row.tokenId)} at ${payout.priceUsd} USD per ${symbolOf(payout.tokenId)}`
@@ -2954,6 +3066,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           code,
           organizationId: parent.organizationId,
           projectId: parent.projectId,
+          projectTitle: parent.projectTitle,
+          projectSlug: parent.projectSlug,
           builderNearAccount: parent.builderNearAccount,
           githubLogin: parent.githubLogin,
           title: parent.title,
@@ -2979,6 +3093,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           renewalRoot: root,
           renewalSeq: seq,
           createdBy: "renewal",
+          createdAt: now(),
+          updatedAt: now(),
         })
         .returning();
       await tx
@@ -3285,8 +3401,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           .catch(() => [])
       ).map((p) => [p.id, p]),
     );
+    const cache = await viewCacheOf(rows, projects);
     return {
-      data: await Promise.all(rows.map(async (row) => adminView(await view(row, { projects })))),
+      data: await Promise.all(rows.map(async (row) => adminView(await view(row, cache)))),
     };
   }
 
@@ -3330,6 +3447,56 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     },
 
     nextCode: async (scope: OrganizationScope) => ({ code: await nextCode(scope.organizationId) }),
+
+    githubRepos: async (_scope: OrganizationScope, input: { org: string }) => {
+      try {
+        return { org: input.org, repos: await orgRepos(input.org) };
+      } catch (error) {
+        if (error instanceof GitHubError && error.status === 404) {
+          throw badRequest("GITHUB_ORG_NOT_FOUND", `GitHub has no organization "${input.org}"`);
+        }
+        throw badRequest(
+          "GITHUB_FAILED",
+          `Couldn't load repositories from GitHub: ${errorText(error)}`,
+        );
+      }
+    },
+
+    builderDefaults: async (scope: OrganizationScope, input: { nearAccount: string }) => {
+      const nearAccount = input.nearAccount.trim();
+      const latestOf = (
+        column: typeof workOrders.contractorEmail | typeof workOrders.githubLogin,
+      ) =>
+        db
+          .select({ value: column })
+          .from(workOrders)
+          .where(
+            and(
+              eq(workOrders.organizationId, scope.organizationId),
+              eq(workOrders.builderNearAccount, nearAccount),
+              isNotNull(column),
+            ),
+          )
+          .orderBy(desc(workOrders.createdAt))
+          .limit(1)
+          .then(([row]) => row?.value ?? null);
+      const [builder, remembered, previousEmail, previousLogin] = await Promise.all([
+        nearAccount ? deps.builders.get(nearAccount).catch(() => null) : null,
+        nearAccount ? rememberedLogin(db, scope.organizationId, nearAccount) : null,
+        latestOf(workOrders.contractorEmail),
+        latestOf(workOrders.githubLogin),
+      ]);
+      const accountEmail =
+        builder?.userId && deps.userEmail
+          ? !!(await deps.userEmail(builder.userId).catch(() => null))
+          : false;
+      return {
+        githubLogin: builder?.githubLogin?.toLowerCase() ?? remembered ?? previousLogin,
+        contractorEmail: previousEmail,
+        accountEmail,
+        needsEmails: !!deps.esign,
+      };
+    },
 
     create: async (scope: OrganizationScope, input: WorkOrderFields) => {
       const code = input.code?.trim() || (await nextCode(scope.organizationId));
@@ -3382,6 +3549,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           customFields: customFieldsText(fields.customFields),
           status: "draft",
           createdBy: scope.actorId,
+          createdAt: now(),
+          updatedAt: now(),
         })
         .returning();
       await rememberBuilderLogin(
@@ -3689,8 +3858,21 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             "Only a draft or offered work order can be deleted; terminate it instead",
           );
         }
-        await cancelEnvelope(row, "The work order was withdrawn");
-        await db.delete(workOrders).where(eq(workOrders.id, row.id));
+        const current = await syncEnvelope(row);
+        if (current.status !== "draft" && current.status !== "offered") {
+          throw badRequest(
+            "ALREADY_SIGNED",
+            `The builder has already signed ${row.code}; terminate it instead`,
+          );
+        }
+        if (current.esignEnvelopeId && current.esignError) {
+          throw badRequest(
+            "ESIGN_UNCHECKED",
+            `${current.esignError}. ${row.code} wasn't deleted; try again in a moment.`,
+          );
+        }
+        await cancelEnvelope(current, "The work order was withdrawn", true);
+        await db.delete(workOrders).where(eq(workOrders.id, current.id));
         return { deleted: true as const };
       });
     },
@@ -4387,7 +4569,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       const frozen = renderReport({
         requestId: `${row.code}-R${request.seq}`,
         workOrderCode: row.code,
-        projectTitle: project?.title ?? row.projectId,
+        projectTitle: project?.title ?? UNKNOWN_PROJECT,
         contractor: builder?.name ?? row.builderNearAccount,
         github: row.githubLogin ?? "",
         coversFrom: request.coversFrom,

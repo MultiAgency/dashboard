@@ -1,5 +1,6 @@
+import { ArrowSquareOutIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
 import {
@@ -23,21 +24,41 @@ import { type ApiClient, useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
 import { nextCycle } from "@/lib/budget-periods";
 import { baseToDecimal, tokenSymbol } from "@/lib/format-amount";
+import { getNetwork } from "@/lib/network";
 import { warnIfPayoutsUncovered } from "@/lib/payout-coverage";
 import { openPendingTab, type PendingTab } from "@/lib/pending-tab";
 import {
+  activeOrganizationKey,
   adminContributorsListQueryOptions,
   adminProjectsListQueryOptions,
   adminWorkOrdersQueryKey,
   adminWorkOrdersQueryOptions,
   tokensListQueryOptions,
+  workOrderBuilderDefaultsQueryOptions,
   workOrderIntegrationQueryOptions,
   workOrderNextCodeQueryOptions,
   workOrderRepresentativeQueryOptions,
 } from "@/lib/queries";
 import { defaultRepresentative } from "@/lib/representative";
-import { defaultPeriod, duplicateTitle, recentBudgets, todayIn } from "@/lib/work-order-defaults";
+import {
+  defaultPeriod,
+  duplicateTitle,
+  recentBudgets,
+  repoFromProject,
+  sendBlocker,
+  todayIn,
+} from "@/lib/work-order-defaults";
+import {
+  clearWorkOrderDraft,
+  mergeStoredDraft,
+  readWorkOrderDraft,
+  type WorkOrderDraftScope,
+  writeWorkOrderDraft,
+} from "@/lib/work-order-draft";
 import { BudgetChips } from "./budget-chips";
+import { GithubRepoPicker } from "./github-repo-picker";
+import { QuickCreateBuilder } from "./quick-create-builder";
+import { QuickCreateProject } from "./quick-create-project";
 import { SetupPreflight } from "./setup-checklist";
 import type { WorkOrder } from "./work-order-status";
 
@@ -73,11 +94,14 @@ const USD_DECIMALS = 6;
 const REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const GITHUB_LOGIN = /^[A-Za-z\d](?:[A-Za-z\d]|-(?=[A-Za-z\d])){0,38}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NEW_ITEM = "__new__";
 
-function repoFromProject(repository: string | null | undefined): string {
-  if (!repository) return "";
-  const match = /github\.com\/([^/]+\/[^/#?]+)/i.exec(repository);
-  return (match?.[1] ?? repository).replace(/\.git$/, "");
+function isDirty(draft: Draft, custom: Record<string, string>): boolean {
+  return (
+    [draft.projectId, draft.builderNearAccount, draft.title, draft.repos, draft.amount, draft.scope]
+      .map((value) => value.trim())
+      .some(Boolean) || Object.values(custom).some((value) => value.trim() !== "")
+  );
 }
 
 function amountOf(budgetAmount: string, tokenId: string, tokens: Lists["tokens"]): string {
@@ -155,17 +179,9 @@ export function WorkOrderForm({
     return (
       <>
         {title}
-        <Empty label="No tokens yet" description="No tokens are configured for this network." />
-      </>
-    );
-  }
-  if (lists.projects.length === 0 || lists.builders.length === 0) {
-    return (
-      <>
-        {title}
         <Empty
-          label={lists.projects.length === 0 ? "No projects yet" : "No builders yet"}
-          description="A work order links one builder to one project. Add them first."
+          label="Payments aren't set up on this network"
+          description="Builders are paid in NEAR, and no payment tokens are configured here yet. Ask the platform admin to add NEAR."
         />
       </>
     );
@@ -197,35 +213,14 @@ function WorkOrderFields({
     enabled: !editing,
   });
   const budgetChoices = editing ? [] : recentBudgets(listQuery.data?.data ?? []);
-  const [draft, setDraft] = useState<Draft>(() => {
+  const [draftScope] = useState<WorkOrderDraftScope | null>(() =>
+    me?.id
+      ? { userId: me.id, network: getNetwork(), organizationId: activeOrganizationKey() }
+      : null,
+  );
+  const keepsLocalDraft = !editing && !template && draftScope !== null;
+  const blank = (): Draft => {
     const defaults = defaultRepresentative(representative, me);
-    const source = editing ?? template;
-    if (source) {
-      const period = editing
-        ? { start: editing.periodStart, end: editing.periodEnd }
-        : nextCycle(source.periodStart, source.periodEnd);
-      return {
-        code: editing ? editing.code : "",
-        projectId: source.projectId,
-        builderNearAccount: source.builder.nearAccount,
-        title: editing
-          ? source.title
-          : duplicateTitle(source.title, source.periodStart, period.start),
-        scope: source.scope ?? "",
-        repos: source.repos.join("\n"),
-        periodStart: period.start,
-        periodEnd: period.end,
-        graceDays: String(source.graceDays),
-        tokenId: source.tokenId,
-        amount: amountOf(source.budgetAmount, source.tokenId, tokens),
-        autoRenew: source.autoRenew,
-        githubLogin: source.builder.githubLogin ?? "",
-        contractorEmail: source.contractorEmail ?? "",
-        representativeName: source.representativeName ?? (editing ? "" : defaults.name),
-        representativeEmail: source.representativeEmail ?? (editing ? "" : defaults.email),
-        ipModel: source.ipModel ?? "",
-      };
-    }
     const period = defaultPeriod(todayIn(listQuery.data?.data[0]?.timeZone));
     return {
       code: "",
@@ -246,10 +241,97 @@ function WorkOrderFields({
       representativeEmail: defaults.email,
       ipModel: "",
     };
+  };
+  const [initial] = useState(() => {
+    const source = editing ?? template;
+    if (source) {
+      const defaults = defaultRepresentative(representative, me);
+      const period = editing
+        ? { start: editing.periodStart, end: editing.periodEnd }
+        : nextCycle(source.periodStart, source.periodEnd);
+      return {
+        restored: false,
+        custom: source.customFields ?? {},
+        draft: {
+          code: editing ? editing.code : "",
+          projectId: source.projectId,
+          builderNearAccount: source.builder.nearAccount,
+          title: editing
+            ? source.title
+            : duplicateTitle(source.title, source.periodStart, period.start),
+          scope: source.scope ?? "",
+          repos: source.repos.join("\n"),
+          periodStart: period.start,
+          periodEnd: period.end,
+          graceDays: String(source.graceDays),
+          tokenId: source.tokenId,
+          amount: amountOf(source.budgetAmount, source.tokenId, tokens),
+          autoRenew: source.autoRenew,
+          githubLogin: source.builder.githubLogin ?? "",
+          contractorEmail: source.contractorEmail ?? "",
+          representativeName: source.representativeName ?? (editing ? "" : defaults.name),
+          representativeEmail: source.representativeEmail ?? (editing ? "" : defaults.email),
+          ipModel: source.ipModel ?? "",
+        } satisfies Draft,
+      };
+    }
+    const fresh = blank();
+    const stored = keepsLocalDraft && draftScope ? readWorkOrderDraft<Draft>(draftScope) : null;
+    if (!stored) return { restored: false, custom: {}, draft: fresh };
+    const merged = mergeStoredDraft(fresh, stored.draft);
+    const draft: Draft = {
+      ...merged,
+      code: "",
+      projectId: projects.some((p) => p.id === merged.projectId) ? merged.projectId : "",
+      builderNearAccount: builders.some((b) => b.nearAccount === merged.builderNearAccount)
+        ? merged.builderNearAccount
+        : "",
+    };
+    return isDirty(draft, stored.custom)
+      ? { restored: true, custom: stored.custom, draft }
+      : { restored: false, custom: {}, draft: fresh };
   });
-  const [custom, setCustom] = useState<Record<string, string>>(
-    () => (editing ?? template)?.customFields ?? {},
+  const [draft, setDraft] = useState<Draft>(initial.draft);
+  const [custom, setCustom] = useState<Record<string, string>>(initial.custom);
+  const [restored, setRestored] = useState(initial.restored);
+  const finished = useRef(false);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [creatingBuilder, setCreatingBuilder] = useState(false);
+  const [importingRepos, setImportingRepos] = useState(false);
+
+  useEffect(() => {
+    if (!keepsLocalDraft || !draftScope || finished.current) return;
+    if (isDirty(draft, custom)) {
+      const { representativeName: _name, representativeEmail: _email, ...kept } = draft;
+      writeWorkOrderDraft(draftScope, { draft: kept, custom });
+    } else clearWorkOrderDraft(draftScope);
+  }, [keepsLocalDraft, draftScope, draft, custom]);
+
+  const builderDefaultsQuery = useQuery(
+    workOrderBuilderDefaultsQueryOptions(apiClient, draft.builderNearAccount),
   );
+  const builderDefaults = builderDefaultsQuery.data;
+  const builderAccount = draft.builderNearAccount;
+  useEffect(() => {
+    if (editing || !builderDefaults || !builderAccount) return;
+    setDraft((current) => {
+      if (current.builderNearAccount !== builderAccount) return current;
+      const githubLogin = current.githubLogin || builderDefaults.githubLogin || "";
+      const contractorEmail = current.contractorEmail || builderDefaults.contractorEmail || "";
+      return githubLogin === current.githubLogin && contractorEmail === current.contractorEmail
+        ? current
+        : { ...current, githubLogin, contractorEmail };
+    });
+  }, [editing, builderDefaults, builderAccount]);
+
+  const discard = () => {
+    finished.current = false;
+    if (draftScope) clearWorkOrderDraft(draftScope);
+    setDraft(blank());
+    setCustom({});
+    setRestored(false);
+  };
+
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const token =
@@ -262,6 +344,16 @@ function WorkOrderFields({
     .map((r) => r.trim())
     .filter(Boolean);
   const badRepo = repos.find((r) => !REPO.test(r));
+  const validRepos = repos.filter((r) => REPO.test(r));
+  const toggleRepo = (repo: string, checked: boolean) =>
+    setDraft((current) => {
+      const lines = current.repos
+        .split(/[\s,]+/)
+        .map((r) => r.trim())
+        .filter(Boolean);
+      const others = lines.filter((r) => r.toLowerCase() !== repo.toLowerCase());
+      return { ...current, repos: (checked ? [...others, repo] : others).join("\n") };
+    });
   const tokenId = draft.tokenId || tokens[0]?.tokenId || "";
 
   const save = useMutation({
@@ -297,8 +389,10 @@ function WorkOrderFields({
       };
       if (editing) return apiClient.workOrders.update({ id: editing.id, ...fields });
       const created = await apiClient.workOrders.create(fields);
+      finished.current = true;
+      if (draftScope) clearWorkOrderDraft(draftScope);
       if (intent === "draft") {
-        toast.success(`${created.code} created as a draft`);
+        toast.success(`${created.code} saved as a draft`);
         return created;
       }
       try {
@@ -309,14 +403,14 @@ function WorkOrderFields({
           toast.success(`${offered.code} created: sign it in Documenso to send it to the builder`);
         } else {
           tab?.close();
-          toast.success(`${offered.code} created and offered to the builder`);
+          toast.success(`${offered.code} sent to the builder`);
         }
         await warnIfPayoutsUncovered(queryClient, apiClient, offered.id);
         return offered;
       } catch (err) {
         tab?.close();
         toast.error(
-          `${created.code} is saved as a draft but wasn't offered: ${(err as Error).message || "something went wrong"}`,
+          `${created.code} is saved as a draft but wasn't sent: ${(err as Error).message || "something went wrong"}`,
         );
         return created;
       }
@@ -335,17 +429,23 @@ function WorkOrderFields({
   const selectedBuilder = builders.find((b) => b.nearAccount === draft.builderNearAccount);
   const github = draft.githubLogin.trim().replace(/^@/, "");
   const badGithub = github !== "" && !GITHUB_LOGIN.test(github);
-  const badEmail = [draft.contractorEmail, draft.representativeEmail]
-    .map((e) => e.trim())
-    .find((e) => e !== "" && !EMAIL.test(e));
-  const badRepresentativeEmail =
-    draft.representativeEmail.trim() !== "" && !EMAIL.test(draft.representativeEmail.trim());
-  const [moreShown, setMoreOpen] = useState(!!editing || !!template);
-  const moreOpen = moreShown || badRepresentativeEmail;
-  const reason = !draft.projectId
-    ? "Choose a project."
-    : !draft.builderNearAccount
-      ? "Choose a builder."
+  const contractorEmail = draft.contractorEmail.trim();
+  const representativeEmail = draft.representativeEmail.trim();
+  const badContractorEmail = contractorEmail !== "" && !EMAIL.test(contractorEmail);
+  const badRepresentativeEmail = representativeEmail !== "" && !EMAIL.test(representativeEmail);
+  const badGrace = !/^\d+$/.test(draft.graceDays);
+  const builderChosen = draft.builderNearAccount !== "";
+  const githubInMain =
+    builderChosen && !selectedBuilder?.githubLogin && !builderDefaults?.githubLogin;
+  const emailInMain =
+    builderChosen &&
+    !!builderDefaults?.needsEmails &&
+    !builderDefaults.contractorEmail &&
+    !builderDefaults.accountEmail;
+  const reason = !draft.builderNearAccount
+    ? "Choose a builder."
+    : !draft.projectId
+      ? "Choose a project."
       : !draft.title.trim()
         ? "Give the work order a title."
         : repos.length === 0
@@ -356,18 +456,41 @@ function WorkOrderFields({
               ? "The period must end on or after its start."
               : !budgetAmount || amountError
                 ? amountError || "Enter the budget."
-                : !/^\d+$/.test(draft.graceDays)
+                : badGrace
                   ? "Grace days must be a whole number."
                   : badGithub
                     ? "The GitHub login has letters, digits and single dashes only."
-                    : badEmail
-                      ? `${badEmail} isn't an email address.`
-                      : null;
+                    : badContractorEmail
+                      ? `${contractorEmail} isn't an email address.`
+                      : badRepresentativeEmail
+                        ? `${representativeEmail} isn't an email address.`
+                        : null;
+  const checking = builderChosen && builderDefaultsQuery.isLoading;
+  const blocker = editing
+    ? null
+    : checking
+      ? { reason: "Checking the builder's details…", inDetails: false }
+      : sendBlocker({
+          githubLogin: github,
+          contractorEmail,
+          representativeEmail,
+          needsEmails: builderDefaults?.needsEmails ?? false,
+          accountEmail: builderDefaults?.accountEmail ?? false,
+        });
+  const detailsNeeded =
+    badGrace ||
+    badRepresentativeEmail ||
+    (badGithub && !githubInMain) ||
+    (badContractorEmail && !emailInMain) ||
+    (!reason && !!blocker?.inDetails);
+  const [detailsShown, setDetailsShown] = useState(!!editing || !!template);
+  const detailsOpen = detailsShown || detailsNeeded;
   const primary: Intent = editing ? "draft" : "sign";
   const [confirmingResign, setConfirmingResign] = useState(false);
   const resigns = !!editing && editing.status !== "draft";
   const submit = (intent: Intent, confirmed = false) => {
     if (reason || save.isPending) return;
+    if (intent === "sign" && blocker) return;
     if (resigns && !confirmed) {
       setConfirmingResign(true);
       return;
@@ -375,6 +498,37 @@ function WorkOrderFields({
     const tab = intent === "sign" ? openPendingTab("Preparing the document to sign…") : null;
     save.mutate({ intent, tab });
   };
+
+  const githubField = (
+    <Field
+      label="Builder's GitHub login"
+      htmlFor="wo-github"
+      helper={githubInMain ? "Not on their profile yet. Their work is found by it." : undefined}
+    >
+      <Input
+        id="wo-github"
+        placeholder="octocat"
+        value={draft.githubLogin}
+        aria-invalid={badGithub}
+        onChange={(e) => set("githubLogin", e.target.value)}
+      />
+    </Field>
+  );
+  const emailField = (
+    <Field
+      label="Builder's email"
+      htmlFor="wo-contractor-email"
+      helper={emailInMain ? "The signing request goes here." : "Where their work order emails go."}
+    >
+      <Input
+        id="wo-contractor-email"
+        type="email"
+        value={draft.contractorEmail}
+        aria-invalid={badContractorEmail}
+        onChange={(e) => set("contractorEmail", e.target.value)}
+      />
+    </Field>
+  );
 
   return (
     <form
@@ -393,93 +547,115 @@ function WorkOrderFields({
       <DialogHeader>
         <DialogTitle>{formTitle(editing, template)}</DialogTitle>
         <DialogDescription>
-          A period, a budget cap and the repositories in scope for one builder on one project. It
-          starts as a draft; the builder accepts the terms from their own account.
+          One builder, one project: the repositories, a period and a budget cap. The builder accepts
+          the terms from their own account.
           {editing && editing.status !== "draft"
             ? " Changing a term sends it back to draft, so the builder accepts it again."
             : ""}
         </DialogDescription>
       </DialogHeader>
       {!editing && <SetupPreflight />}
+      {restored && (
+        <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+          Restored your unsent work order ·
+          <Button type="button" variant="link" size="xs" onClick={discard}>
+            Discard
+          </Button>
+        </p>
+      )}
       <FieldGroup>
         <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
-          <Field label="Project" htmlFor="wo-project">
-            <ChoiceSelect
-              id="wo-project"
-              value={draft.projectId}
-              placeholder="Choose a project"
-              onValueChange={(value) => {
-                const project = projects.find((p) => p.id === value);
-                setDraft((current) => ({
-                  ...current,
-                  projectId: value,
-                  repos: current.repos || repoFromProject(project?.repository),
-                }));
-              }}
-              options={projects.map((p) => ({ value: p.id, label: p.title }))}
-            />
-          </Field>
           <Field label="Builder" htmlFor="wo-builder" helper="Their NEAR account is paid.">
-            <ChoiceSelect
-              id="wo-builder"
-              value={draft.builderNearAccount}
-              placeholder="Choose a builder"
-              onValueChange={(value) => {
-                const builder = builders.find((b) => b.nearAccount === value);
-                setDraft((current) => ({
-                  ...current,
-                  builderNearAccount: value,
-                  githubLogin: builder?.githubLogin ?? "",
-                }));
-              }}
-              options={builders.map((b) => ({
-                value: b.nearAccount,
-                label: `${b.name ?? b.nearAccount}${b.githubLogin ? ` · @${b.githubLogin}` : " · no GitHub login"}`,
-              }))}
-            />
+            {builders.length === 0 || creatingBuilder ? (
+              <QuickCreateBuilder
+                onCancel={builders.length > 0 ? () => setCreatingBuilder(false) : undefined}
+                onCreated={(builder) => {
+                  setCreatingBuilder(false);
+                  setDraft((current) => ({
+                    ...current,
+                    builderNearAccount: builder.nearAccount,
+                    githubLogin: builder.githubLogin ?? "",
+                    contractorEmail: "",
+                  }));
+                }}
+              />
+            ) : (
+              <ChoiceSelect
+                id="wo-builder"
+                value={draft.builderNearAccount}
+                placeholder="Choose a builder"
+                onValueChange={(value) => {
+                  if (value === NEW_ITEM) {
+                    setCreatingBuilder(true);
+                    return;
+                  }
+                  const builder = builders.find((b) => b.nearAccount === value);
+                  setDraft((current) => ({
+                    ...current,
+                    builderNearAccount: value,
+                    githubLogin: builder?.githubLogin ?? "",
+                    contractorEmail: "",
+                  }));
+                }}
+                options={[
+                  ...builders.map((b) => ({
+                    value: b.nearAccount,
+                    label: `${b.name ?? b.nearAccount}${b.githubLogin ? ` · @${b.githubLogin}` : ""}`,
+                  })),
+                  { value: NEW_ITEM, label: "+ New builder" },
+                ]}
+              />
+            )}
+          </Field>
+          <Field label="Project" htmlFor="wo-project">
+            {projects.length === 0 || creatingProject ? (
+              <QuickCreateProject
+                onCancel={projects.length > 0 ? () => setCreatingProject(false) : undefined}
+                onCreated={(project) => {
+                  setCreatingProject(false);
+                  setDraft((current) => ({
+                    ...current,
+                    projectId: project.id,
+                    repos: current.repos.trim()
+                      ? current.repos
+                      : repoFromProject(project.repository),
+                  }));
+                }}
+              />
+            ) : (
+              <ChoiceSelect
+                id="wo-project"
+                value={draft.projectId}
+                placeholder="Choose a project"
+                onValueChange={(value) => {
+                  if (value === NEW_ITEM) {
+                    setCreatingProject(true);
+                    return;
+                  }
+                  const project = projects.find((p) => p.id === value);
+                  setDraft((current) => ({
+                    ...current,
+                    projectId: value,
+                    repos: current.repos.trim()
+                      ? current.repos
+                      : repoFromProject(project?.repository),
+                  }));
+                }}
+                options={[
+                  ...projects.map((p) => ({ value: p.id, label: p.title })),
+                  { value: NEW_ITEM, label: "+ New project" },
+                ]}
+              />
+            )}
           </Field>
         </div>
-        <div className="grid gap-4 sm:grid-cols-[1fr_2fr] sm:items-start">
-          <Field
-            label="Code"
-            htmlFor="wo-code"
-            helper={
-              nextCodeQuery.data
-                ? `Optional, e.g. SI-004. Left empty it's ${nextCodeQuery.data.code}.`
-                : "Optional, e.g. SI-004. Default WO-0001…"
-            }
-          >
-            <Input
-              id="wo-code"
-              value={draft.code}
-              placeholder={editing ? undefined : nextCodeQuery.data?.code}
-              onChange={(e) => set("code", e.target.value)}
-            />
-          </Field>
-          <Field label="Title" htmlFor="wo-title">
-            <Input
-              id="wo-title"
-              value={draft.title}
-              onChange={(e) => set("title", e.target.value)}
-            />
-          </Field>
-        </div>
-        <Field
-          label="Authorized work"
-          htmlFor="wo-scope"
-          helper="Optional. Shown to the builder with the terms."
-        >
-          <Textarea
-            id="wo-scope"
-            rows={3}
-            value={draft.scope}
-            onChange={(e) => set("scope", e.target.value)}
-          />
+        <Field label="Title" htmlFor="wo-title">
+          <Input id="wo-title" value={draft.title} onChange={(e) => set("title", e.target.value)} />
         </Field>
         <Field
           label="GitHub repositories"
           htmlFor="wo-repos"
-          helper="owner/name, one per line. Work counts once the repository owner approves or merges it."
+          helper="owner/name, one per line. Work counts once it's approved or merged."
         >
           <Textarea
             id="wo-repos"
@@ -487,8 +663,43 @@ function WorkOrderFields({
             value={draft.repos}
             onChange={(e) => set("repos", e.target.value)}
           />
+          {validRepos.length > 0 && (
+            <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs" aria-label="Repository links">
+              {validRepos.map((repo) => (
+                <li key={repo}>
+                  <a
+                    href={`https://github.com/${repo}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                  >
+                    {repo}
+                    <ArrowSquareOutIcon aria-hidden className="size-3" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          {importingRepos ? (
+            <GithubRepoPicker
+              selected={repos}
+              onToggle={toggleRepo}
+              onClose={() => setImportingRepos(false)}
+            />
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="self-start"
+              onClick={() => setImportingRepos(true)}
+            >
+              <GithubLogoIcon data-icon="inline-start" aria-hidden />
+              Import from GitHub
+            </Button>
+          )}
         </Field>
-        <div className="grid gap-4 sm:grid-cols-3 sm:items-start">
+        <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
           <Field label="Period start" htmlFor="wo-start">
             <Input
               id="wo-start"
@@ -503,14 +714,6 @@ function WorkOrderFields({
               type="date"
               value={draft.periodEnd}
               onChange={(e) => set("periodEnd", e.target.value)}
-            />
-          </Field>
-          <Field label="Grace days" htmlFor="wo-grace" helper="For work merged just after.">
-            <Input
-              id="wo-grace"
-              inputMode="numeric"
-              value={draft.graceDays}
-              onChange={(e) => set("graceDays", e.target.value)}
             />
           </Field>
         </div>
@@ -555,43 +758,18 @@ function WorkOrderFields({
             />
           </Field>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
-          <Field
-            label="Builder's GitHub login"
-            htmlFor="wo-github"
-            helper={
-              selectedBuilder && !selectedBuilder.githubLogin
-                ? "Missing on their profile: add it here. Their work is found by it."
-                : "Their work is found by it. Part of the terms."
-            }
-          >
-            <Input
-              id="wo-github"
-              placeholder="octocat"
-              value={draft.githubLogin}
-              aria-invalid={badGithub}
-              onChange={(e) => set("githubLogin", e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Builder's email"
-            htmlFor="wo-contractor-email"
-            helper="Where the work order emails go. Optional if they have a MultiAgency account."
-          >
-            <Input
-              id="wo-contractor-email"
-              type="email"
-              value={draft.contractorEmail}
-              onChange={(e) => set("contractorEmail", e.target.value)}
-            />
-          </Field>
-        </div>
+        {(githubInMain || emailInMain) && (
+          <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+            {githubInMain && githubField}
+            {emailInMain && emailField}
+          </div>
+        )}
         {askFields.map((field) => (
           <Field
             key={field.tag}
             label={field.label}
             htmlFor={`wo-custom-${field.tag}`}
-            helper="Asked by your document template."
+            helper="Printed in your document."
           >
             <Input
               id={`wo-custom-${field.tag}`}
@@ -602,67 +780,112 @@ function WorkOrderFields({
             />
           </Field>
         ))}
-        <Collapsible open={moreOpen} onOpenChange={setMoreOpen}>
+        <Collapsible open={detailsOpen} onOpenChange={setDetailsShown}>
           <CollapsibleTrigger asChild>
-            <Button type="button" variant="ghost" size="sm" className="self-start px-0">
-              {moreOpen ? "Hide options" : "More options: representative, IP model, renewal"}
+            <Button type="button" variant="ghost" size="sm" className="self-start">
+              {detailsOpen ? "Hide details" : "Details"}
             </Button>
           </CollapsibleTrigger>
-          <CollapsibleContent className="flex flex-col gap-4 pt-2">
-            <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+          <CollapsibleContent>
+            <div className="flex flex-col gap-4 pt-2">
+              <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+                <Field
+                  label="Code"
+                  htmlFor="wo-code"
+                  helper={
+                    nextCodeQuery.data
+                      ? `Left empty it's ${nextCodeQuery.data.code}.`
+                      : "Left empty it's numbered for you."
+                  }
+                >
+                  <Input
+                    id="wo-code"
+                    value={draft.code}
+                    placeholder={editing ? undefined : nextCodeQuery.data?.code}
+                    onChange={(e) => set("code", e.target.value)}
+                  />
+                </Field>
+                <Field label="Grace days" htmlFor="wo-grace" helper="For work merged just after.">
+                  <Input
+                    id="wo-grace"
+                    inputMode="numeric"
+                    value={draft.graceDays}
+                    aria-invalid={badGrace}
+                    onChange={(e) => set("graceDays", e.target.value)}
+                  />
+                </Field>
+              </div>
               <Field
-                label="Representative"
-                htmlFor="wo-rep-name"
-                helper="Signs for the Agency; printed on the document."
+                label="Authorized work"
+                htmlFor="wo-scope"
+                helper="Shown to the builder with the terms."
               >
-                <Input
-                  id="wo-rep-name"
-                  value={draft.representativeName}
-                  onChange={(e) => set("representativeName", e.target.value)}
+                <Textarea
+                  id="wo-scope"
+                  rows={3}
+                  value={draft.scope}
+                  onChange={(e) => set("scope", e.target.value)}
                 />
               </Field>
-              <Field
-                label="Representative's email"
-                htmlFor="wo-rep-email"
-                helper="Agency emails (payout requested, signed, renewed) go only to this address."
-              >
-                <Input
-                  id="wo-rep-email"
-                  type="email"
-                  value={draft.representativeEmail}
-                  onChange={(e) => set("representativeEmail", e.target.value)}
+              {(!githubInMain || !emailInMain) && (
+                <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+                  {!githubInMain && githubField}
+                  {!emailInMain && emailField}
+                </div>
+              )}
+              <div className="grid gap-4 sm:grid-cols-2 sm:items-start">
+                <Field label="Representative" htmlFor="wo-rep-name" helper="Signs for the Agency.">
+                  <Input
+                    id="wo-rep-name"
+                    value={draft.representativeName}
+                    onChange={(e) => set("representativeName", e.target.value)}
+                  />
+                </Field>
+                <Field
+                  label="Representative's email"
+                  htmlFor="wo-rep-email"
+                  helper="Agency emails go only here."
+                >
+                  <Input
+                    id="wo-rep-email"
+                    type="email"
+                    value={draft.representativeEmail}
+                    aria-invalid={badRepresentativeEmail || (!reason && !!blocker?.inDetails)}
+                    onChange={(e) => set("representativeEmail", e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field label="IP model" htmlFor="wo-ip" helper="Printed on the document.">
+                <ChoiceSelect
+                  id="wo-ip"
+                  value={draft.ipModel}
+                  emptyLabel="Not specified"
+                  onValueChange={(value) => set("ipModel", value)}
+                  options={IP_MODELS}
                 />
               </Field>
+              <ShadcnField orientation="horizontal">
+                <Checkbox
+                  id="wo-renew"
+                  checked={draft.autoRenew}
+                  onCheckedChange={(checked) => set("autoRenew", checked === true)}
+                />
+                <FieldLabel htmlFor="wo-renew" className="flex flex-col items-start">
+                  <span>Renew monthly when the base metrics are met</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Each period is measured at its end. All met: next month's work order starts by
+                    itself. Any missed: you decide. Part of the accepted terms.
+                  </span>
+                </FieldLabel>
+              </ShadcnField>
             </div>
-            <Field label="IP model" htmlFor="wo-ip" helper="Printed on the document.">
-              <ChoiceSelect
-                id="wo-ip"
-                value={draft.ipModel}
-                emptyLabel="Not specified"
-                onValueChange={(value) => set("ipModel", value)}
-                options={IP_MODELS}
-              />
-            </Field>
-            <ShadcnField orientation="horizontal">
-              <Checkbox
-                id="wo-renew"
-                checked={draft.autoRenew}
-                onCheckedChange={(checked) => set("autoRenew", checked === true)}
-              />
-              <FieldLabel htmlFor="wo-renew" className="flex flex-col items-start gap-0.5">
-                <span>Renew monthly when the base metrics are met</span>
-                <span className="text-xs font-normal text-muted-foreground">
-                  At the end of each period the work is measured. All met: next month's work order
-                  starts by itself. Any missed: you decide whether it renews. Part of the accepted
-                  terms.
-                </span>
-              </FieldLabel>
-            </ShadcnField>
           </CollapsibleContent>
         </Collapsible>
       </FieldGroup>
-      <DialogFooter className="flex-wrap items-center gap-3">
-        {reason && <p className="mr-auto text-xs text-muted-foreground">{reason}</p>}
+      <DialogFooter className="flex-wrap items-center">
+        {(reason ?? blocker?.reason) && (
+          <p className="mr-auto text-xs text-muted-foreground">{reason ?? blocker?.reason}</p>
+        )}
         {editing ? (
           <>
             <Button type="submit" value="draft" disabled={reason !== null || save.isPending}>
@@ -691,11 +914,11 @@ function WorkOrderFields({
               type="submit"
               value="sign"
               title="Ctrl or ⌘ + Enter"
-              disabled={reason !== null || save.isPending}
+              disabled={reason !== null || blocker !== null || save.isPending}
             >
               {save.isPending && save.variables?.intent === "sign"
-                ? "Creating…"
-                : "Create and sign"}
+                ? "Sending…"
+                : "Send for signature"}
             </Button>
           </>
         )}

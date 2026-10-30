@@ -903,3 +903,27 @@ export async function invalidateWorkspaceQueries(
     router.invalidate(),
   ]);
 }
+
+export function workOrderBuilderDefaultsQueryOptions(apiClient: ApiClient, nearAccount: string) {
+  return queryOptions({
+    queryKey: [
+      ...adminWorkOrdersQueryKey,
+      "builder-defaults",
+      ...workspaceKey(),
+      nearAccount,
+    ] as const,
+    queryFn: () => apiClient.workOrders.builderDefaults({ nearAccount }),
+    enabled: nearAccount !== "",
+    retry: false,
+  });
+}
+
+export function workOrderGithubReposQueryOptions(apiClient: ApiClient, org: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "github-repos", org.toLowerCase()] as const,
+    queryFn: () => apiClient.workOrders.githubRepos({ org }),
+    enabled: org !== "",
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+}

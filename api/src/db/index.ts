@@ -47,6 +47,7 @@ export async function createDatabaseDriver(url: string): Promise<DatabaseDriver>
       mkdirSync(dirname(dataDir), { recursive: true });
     }
     const pglite = new PGlite(dataDir);
+    await pglite.exec("SET TIME ZONE 'UTC'");
     const db = drizzle(pglite, { schema });
     return {
       db,
@@ -70,6 +71,11 @@ export async function createDatabaseDriver(url: string): Promise<DatabaseDriver>
   });
   pool.on("error", (err: Error) => {
     console.error("[Database] Unexpected pool error:", err.message);
+  });
+  pool.on("connect", (client) => {
+    client.query("SET TIME ZONE 'UTC'").catch((err: Error) => {
+      console.error("[Database] Couldn't set the session time zone to UTC:", err.message);
+    });
   });
   let closed = false;
   return {

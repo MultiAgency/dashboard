@@ -28,6 +28,7 @@ import { SignInMethods } from "@/components/sign-in-methods";
 import { sessionQueryKey, sessionQueryOptions } from "@/lib/auth";
 import { realEmail } from "@/lib/membership";
 import { type NearProfile, nearProfileQueryOptions } from "@/lib/near-profile";
+import { clearAllWorkOrderDrafts } from "@/lib/work-order-draft";
 
 export const Route = createFileRoute("/_layout/_authenticated/profile")({
   head: () => ({
@@ -66,6 +67,7 @@ function ProfilePage() {
   const signOutMutation = useMutation({
     mutationFn: () => authClient.signOut(),
     onSuccess: async () => {
+      clearAllWorkOrderDrafts();
       queryClient.setQueryData(sessionQueryKey, null);
       await queryClient.invalidateQueries({ queryKey: sessionQueryKey });
       navigate({ to: "/", replace: true });

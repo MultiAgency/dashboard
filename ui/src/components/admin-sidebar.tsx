@@ -11,7 +11,7 @@ import {
   workspaceNavigation,
 } from "@/lib/navigation";
 
-const WORK_ORDERS = "/admin/work-orders";
+const NEEDS_YOU_BADGE = new Set(["/admin", "/admin/work-orders"]);
 
 const VIEW_LABELS: Record<WorkspaceView, string> = { agency: "Agency", client: "Client" };
 
@@ -35,7 +35,7 @@ export function AdminSidebar() {
 
   const matching = groups
     .flatMap((group) => group.items)
-    .filter((item) => !!matchRoute({ to: item.match ?? item.to, fuzzy: true }));
+    .filter((item) => !!matchRoute({ to: item.match ?? item.to, fuzzy: !item.exact }));
   const activeTo = matching.reduce<string | null>(
     (best, item) => (best === null || item.to.length > best.length ? item.to : best),
     null,
@@ -89,7 +89,7 @@ export function AdminSidebar() {
                 >
                   <Link to={item.to} aria-current={active ? "page" : undefined}>
                     {item.label}
-                    {item.to === WORK_ORDERS && <WorkOrdersNeedsYouBadge />}
+                    {NEEDS_YOU_BADGE.has(item.to) && <WorkOrdersNeedsYouBadge />}
                   </Link>
                 </Button>
               );

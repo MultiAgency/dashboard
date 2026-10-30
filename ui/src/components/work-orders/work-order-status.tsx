@@ -39,6 +39,20 @@ const RENEWAL_STATUS: Record<Renewal["status"], { label: string; variant: BadgeV
   declined: { label: "Not renewed", variant: "secondary" },
 };
 
+export function payeeConfirmedBySigning(wo: WorkOrderDetail): boolean {
+  return (
+    wo.payee.needsConfirmation &&
+    (wo.status === "draft" || wo.status === "offered") &&
+    wo.signing.esign !== null
+  );
+}
+
+export function signedHow(method: WorkOrderDetail["signature"]["method"]): string {
+  if (method === "google_esign") return "E-signed in Google Docs";
+  if (method === "documenso") return "Signed in Documenso";
+  return "Accepted in MultiAgency";
+}
+
 export function WorkOrderStatusBadge({ status }: { status: WorkOrder["status"] }) {
   const { label, variant } = WORK_ORDER_STATUS[status];
   return <Badge variant={variant}>{label}</Badge>;

@@ -20,6 +20,7 @@ import { sessionQueryOptions } from "@/lib/auth";
 import { formatCount } from "@/lib/format-count";
 import { nearProfileQueryOptions } from "@/lib/near-profile";
 import { meRolesQueryOptions } from "@/lib/queries";
+import { clearAllWorkOrderDrafts } from "@/lib/work-order-draft";
 
 export function UserNav() {
   const queryClient = useQueryClient();
@@ -55,6 +56,7 @@ export function UserNav() {
       await authClient.near.disconnect().catch(() => {});
     },
     onSuccess: async () => {
+      clearAllWorkOrderDrafts();
       queryClient.clear();
       navigate({ to: "/", replace: true });
     },

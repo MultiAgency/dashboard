@@ -99,3 +99,42 @@ export function recentBudgets(
   }
   return choices;
 }
+
+const GITHUB_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+export function repoFromProject(repository: string | null | undefined): string {
+  if (!repository) return "";
+  const match = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/#?\s]+)\/([^/#?\s]+)/i.exec(
+    repository.trim(),
+  );
+  if (!match) return "";
+  const repo = `${match[1]}/${match[2]?.replace(/\.git$/i, "")}`;
+  return GITHUB_REPO.test(repo) ? repo : "";
+}
+
+export type SendCheck = {
+  githubLogin: string;
+  contractorEmail: string;
+  representativeEmail: string;
+  needsEmails: boolean;
+  accountEmail: boolean;
+};
+
+export type SendBlocker = { reason: string; inDetails: boolean };
+
+export function sendBlocker(check: SendCheck): SendBlocker | null {
+  if (!check.githubLogin.trim()) {
+    return { reason: "Add the builder's GitHub login to send it.", inDetails: false };
+  }
+  if (!check.needsEmails) return null;
+  if (!check.contractorEmail.trim() && !check.accountEmail) {
+    return {
+      reason: "Add the builder's email: the signing request goes to them.",
+      inDetails: false,
+    };
+  }
+  if (!check.representativeEmail.trim()) {
+    return { reason: "Add the representative's email under Details.", inDetails: true };
+  }
+  return null;
+}

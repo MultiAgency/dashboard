@@ -1184,6 +1184,14 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .use(agencyManager)
           .handler(async ({ context }) => workOrders.nextCode(context.scope)),
 
+        githubRepos: builder.workOrders.githubRepos
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.githubRepos(context.scope, input)),
+
+        builderDefaults: builder.workOrders.builderDefaults
+          .use(agencyManager)
+          .handler(async ({ context, input }) => workOrders.builderDefaults(context.scope, input)),
+
         offer: builder.workOrders.offer
           .use(agencyManager)
           .handler(async ({ context, input }) => workOrders.offer(context.scope, input)),

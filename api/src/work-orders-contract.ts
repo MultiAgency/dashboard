@@ -623,6 +623,43 @@ export const workOrdersContract = {
     .output(z.object({ code: z.string() }))
     .errors({ UNAUTHORIZED, FORBIDDEN }),
 
+  githubRepos: oc
+    .route({ method: "GET", path: "/admin/work-order-github-repos" })
+    .input(
+      z.object({
+        org: z
+          .string()
+          .regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/, "Enter a GitHub organization name"),
+      }),
+    )
+    .output(
+      z.object({
+        org: z.string(),
+        repos: z.array(
+          z.object({
+            fullName: z.string(),
+            url: z.string(),
+            description: z.string().nullable(),
+            pushedAt: z.string().nullable(),
+          }),
+        ),
+      }),
+    )
+    .errors(errors),
+
+  builderDefaults: oc
+    .route({ method: "GET", path: "/admin/work-order-builder-defaults" })
+    .input(z.object({ nearAccount: z.string() }))
+    .output(
+      z.object({
+        githubLogin: z.string().nullable(),
+        contractorEmail: z.string().nullable(),
+        accountEmail: z.boolean(),
+        needsEmails: z.boolean(),
+      }),
+    )
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
+
   offer: oc
     .route({ method: "POST", path: "/admin/work-orders/{id}/offer" })
     .input(byId)

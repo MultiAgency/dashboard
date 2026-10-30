@@ -14,7 +14,7 @@ function AdminMembersPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Team"
-        description="People in this Organization, invited by email as owner, admin or member. Not the same as builders (project workers) or clients (paying customers)."
+        description="People who run this Organization. Builders and clients are listed separately."
       />
       <MembersAdminSection />
     </div>
