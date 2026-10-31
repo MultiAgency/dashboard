@@ -29,6 +29,7 @@ function event(type: WorkOrderEvent["type"], over: Partial<WorkOrderEvent> = {})
       project: "Search",
       periodStart: "2026-09-01",
       periodEnd: "2026-09-30",
+      periodStarted: true,
       budget: "1000 USDC",
     },
     contractor: {
@@ -196,17 +197,23 @@ describe("work order emails", () => {
     expect(signed?.text).toContain("starts on its own unless something still blocks it");
     const [started] = composeEmails(event("work_order.active"));
     expect(started?.text).toContain("Your work period has started");
-    const [upcoming] = composeEmails(
-      event("work_order.active", { createdAt: "2026-08-20T00:00:00.000Z" }),
-    );
+    const later = event("work_order.active");
+    later.workOrder.periodStarted = false;
+    const [upcoming] = composeEmails(later);
     expect(upcoming?.text).toContain("Your work period starts on 2026-09-01");
     expect(upcoming?.text).not.toContain("has started");
+    const offer = event("work_order.offered");
+    offer.links.sign = "https://sign.example/c";
+    offer.workOrder.periodStarted = false;
+    const [offered] = composeEmails(offer);
+    expect(offered?.text).toContain("its work period runs from 2026-09-01 to 2026-09-30");
+    expect(offered?.text).not.toContain("starts right away");
   });
 
-  test("a withdrawn order tells the builder its links no longer work", () => {
+  test("a withdrawn order tells the builder to ignore any signing link", () => {
     const [email] = composeEmails(event("work_order.withdrawn"));
     expect(email?.subject).toBe("Studio withdrew Work Order SI-004");
-    expect(email?.text).toContain("no longer work");
+    expect(email?.text).toContain("If you got a signing link for it, ignore it");
     expect(email?.html).not.toContain("https://app.example/work-orders/1");
   });
 

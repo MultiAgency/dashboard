@@ -114,6 +114,10 @@ export const NOTIFICATION_KINDS = {
     title: `${p.builderName} declined Work Order ${p.code}`,
     body: `${p.builderName} declined Work Order ${p.code} on ${p.projectTitle}${p.note ? `: ${p.note}` : "."} It is back in draft.`,
   }),
+  work_order_esign_cancelled: (p) => ({
+    title: `The signing request for Work Order ${p.code} was cancelled`,
+    body: `The signing request for Work Order ${p.code} on ${p.projectTitle} was cancelled, so it is back in draft.`,
+  }),
   work_order_signed: (p) => ({
     title: `Work Order ${p.code} is signed`,
     body: `Work Order ${p.code} on ${p.projectTitle} was signed by both parties. It starts automatically once nothing else blocks it.`,
@@ -204,7 +208,7 @@ export const NOTIFICATION_KINDS = {
   }),
   work_order_withdrawn: (p) => ({
     title: `${p.agencyName} withdrew Work Order ${p.code}`,
-    body: `${p.agencyName} withdrew the offer of Work Order ${p.code} on ${p.projectTitle} and deleted it. There's nothing to sign, and its signing links no longer work.`,
+    body: `${p.agencyName} withdrew the offer of Work Order ${p.code} on ${p.projectTitle}, so there's nothing to sign. If you got a signing link for it, ignore it.`,
   }),
   work_order_not_renewed: (p) => ({
     title: `Work Order ${p.code} is not renewed`,

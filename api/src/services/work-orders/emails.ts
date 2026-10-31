@@ -71,6 +71,10 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
     return url ? { label, url } : null;
   };
 
+  const starts = wo.periodStarted
+    ? "it starts right away"
+    : `its work period runs from ${wo.periodStart} to ${wo.periodEnd}`;
+
   const send = (role: Role, subject: string, draft: Draft) => {
     const person = role === "contractor" ? e.contractor : e.representative;
     if (!person.email) return;
@@ -83,13 +87,13 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
     case "work_order.offered":
       send("contractor", `${agency} sent you Work Order ${wo.id} to sign`, {
         preheader: e.links.sign
-          ? `${agency} has signed ${wo.title}. Sign it to accept; it starts right away.`
+          ? `${agency} has signed ${wo.title}. Sign it to accept; ${starts}.`
           : `${wo.title}: review the terms and sign to accept.`,
         eyebrow: "Work order sent",
         heading: `${agency} sent you a work order`,
         paragraphs: [
           e.links.sign
-            ? `You're offered "${wo.title}" on ${wo.project}, and ${agency} has already signed it. Review the terms and sign to accept. As soon as you sign, it's complete and starts right away.`
+            ? `You're offered "${wo.title}" on ${wo.project}, and ${agency} has already signed it. Review the terms and sign to accept. As soon as you sign, it's complete: ${starts}.`
             : `You're offered "${wo.title}" on ${wo.project}. Review the terms and sign to accept. It only takes a minute.`,
           `Each approved payout request is paid to ${e.contractor.nearAccount}.`,
         ],
@@ -139,7 +143,7 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
       });
       break;
     case "work_order.active": {
-      const upcoming = !!wo.periodStart && e.createdAt.slice(0, 10) < wo.periodStart;
+      const upcoming = !wo.periodStarted;
       send("contractor", `Work Order ${wo.id} is active`, {
         preheader: upcoming
           ? `Your work period starts on ${wo.periodStart}: ${period}.`
@@ -184,6 +188,18 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
         paragraphs: [
           `${builder} declined "${wo.title}". It's back in draft: edit it and send it again, or delete it.`,
           ...(e.note ? [`Their note: "${e.note}"`] : []),
+        ],
+        details: summary(["Builder", builder], ["Budget", wo.budget]),
+        action: view("representative"),
+      });
+      break;
+    case "work_order.esign_cancelled":
+      send("representative", `The signing request for Work Order ${wo.id} was cancelled`, {
+        preheader: `${wo.title} is back in draft.`,
+        eyebrow: "Signing cancelled",
+        heading: `The signing request for Work Order ${wo.id} was cancelled`,
+        paragraphs: [
+          `The signing request for "${wo.title}" was cancelled, so it's back in draft. Send it again, or delete it.`,
         ],
         details: summary(["Builder", builder], ["Budget", wo.budget]),
         action: view("representative"),
@@ -271,7 +287,7 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
         eyebrow: "Work order withdrawn",
         heading: `${agency} withdrew Work Order ${wo.id}`,
         paragraphs: [
-          `${agency} withdrew its offer of "${wo.title}" and deleted it. There's nothing to sign, and the links in the earlier email no longer work.`,
+          `${agency} withdrew its offer of "${wo.title}", so there's nothing to sign. If you got a signing link for it, ignore it.`,
           `Contact ${agency} if you have questions.`,
         ],
         details: summary(["Budget", `up to ${wo.budget}`]),

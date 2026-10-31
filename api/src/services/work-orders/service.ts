@@ -211,6 +211,7 @@ export type WorkOrderFields = {
 type WorkOrderStatus = WorkOrderRow["status"];
 type RequestStatus = CompensationRequestRow["status"];
 type PendingEnvelope = { esign: EsignPort; envelopeId: string };
+type RequestDrafter = "schedule" | "agency" | "builder";
 type GoogleTemplate = {
   google: GooglePort;
   templateId: string;
@@ -548,6 +549,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           project: project?.title ?? UNKNOWN_PROJECT,
           periodStart: row.periodStart,
           periodEnd: row.periodEnd,
+          periodStarted: today() >= row.periodStart,
           budget: display(row.budgetAmount, row.tokenId),
         },
         contractor: {
@@ -1576,7 +1578,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         esignEnvelopeId: null,
         esignBuilderUrl: null,
         esignRepresentativeUrl: null,
-        esignError: `Declined in Documenso${reason ? `: ${reason}` : ""}`,
+        esignError: rejecter
+          ? `Declined in Documenso${reason ? `: ${reason}` : ""}`
+          : "Cancelled in Documenso",
       });
       if (rejecter?.role === "contractor") {
         await notifyManagers(
@@ -1585,6 +1589,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           await payloadOf(declined, { note: reason }),
         );
         await announce(declined, "work_order.declined", { note: reason || null });
+      } else if (!rejecter) {
+        await notifyManagers(declined, "work_order_esign_cancelled", await payloadOf(declined));
+        await announce(declined, "work_order.esign_cancelled");
       }
       return declined;
     }
@@ -2487,7 +2494,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   async function draftRequest(
     initial: WorkOrderRow,
     input: { coversFrom?: string; coversTo?: string },
-    auto = false,
+    drafter: RequestDrafter,
   ): Promise<CompensationRequestRow> {
     let row = initial;
     if (row.status !== "active" && row.status !== "ended") {
@@ -2505,7 +2512,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (amountsOf(row, existing).remaining <= 0n) {
       throw badRequest("BUDGET_USED", "The work order budget is used up");
     }
-    if (!auto) {
+    if (drafter !== "schedule") {
       try {
         row = await collect(row);
       } catch (error) {
@@ -2553,16 +2560,18 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         updatedAt: now(),
       })
       .returning();
-    if (auto) await update(row.id, { autoDraftedFor: row.periodEnd });
-    await notifyBuilder(
-      row,
-      "compensation_request_ready",
-      await payloadOf(row, { requestCode: `${row.code}-R${seq}` }),
-    );
-    await announce(row, "request.report_ready", {
-      request: inserted,
-      reportMd: draftReportOf(contributionsMd, assessmentMd),
-    });
+    if (drafter === "schedule") await update(row.id, { autoDraftedFor: row.periodEnd });
+    if (drafter !== "builder") {
+      await notifyBuilder(
+        row,
+        "compensation_request_ready",
+        await payloadOf(row, { requestCode: `${row.code}-R${seq}` }),
+      );
+      await announce(row, "request.report_ready", {
+        request: inserted,
+        reportMd: draftReportOf(contributionsMd, assessmentMd),
+      });
+    }
     return inserted!;
   }
 
@@ -3307,7 +3316,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (current.status === "ended" && current.autoDraftedFor !== current.periodEnd && !open) {
       const { remaining } = amountsOf(current, await requestsOf(current.id));
       if (remaining > 0n) {
-        await draftRequest(current, {}, true);
+        await draftRequest(current, {}, "schedule");
         counts.drafted = (counts.drafted ?? 0) + 1;
       } else {
         current = await update(current.id, { autoDraftedFor: current.periodEnd });
@@ -3823,6 +3832,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           "Offer the work order or have it signed before asking for the payout account",
         );
       }
+      if (row.status === "offered" && row.esignEnvelopeId) {
+        throw badRequest(
+          "CONFIRMED_BY_SIGNING",
+          `The builder confirms ${row.builderNearAccount} by signing ${row.code} in Documenso`,
+        );
+      }
       await announce(row, "work_order.confirm_payee");
       await notifyBuilder(row, "work_order_confirm_payee", await payloadOf(row));
       return adminView(await view(row));
@@ -3934,6 +3949,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         if (FINAL.includes(row.status))
           throw badRequest("CLOSED", `Work order ${row.code} is already terminated`);
         const builderWasSent = await sentToBuilder(row);
+        const withdrawsOffer = row.status === "offered";
         const failed = await cancelEnvelope(row, "The work order was terminated");
         const terminated = await update(row.id, {
           status: "terminated",
@@ -3943,7 +3959,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
               }
             : {}),
         });
-        if (builderWasSent) {
+        if (builderWasSent && withdrawsOffer) {
+          await notifyBuilder(terminated, "work_order_withdrawn", await payloadOf(terminated));
+          await announce(terminated, "work_order.withdrawn");
+        } else if (builderWasSent) {
           await notifyBuilder(terminated, "work_order_terminated", await payloadOf(terminated));
           await announce(terminated, "work_order.terminated");
         }
@@ -4008,7 +4027,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       input: { id: string; coversFrom?: string; coversTo?: string },
     ) => {
       const row = await ownRow(scope, input.id);
-      return requestView(await draftRequest(row, input), row);
+      return requestView(await draftRequest(row, input, "agency"), row);
     },
 
     approveRequest: async (
@@ -4499,7 +4518,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         throw badRequest(
           "SIGN_IN_DOCUMENSO",
           (await signingOf(row)).awaitingRepresentative
-            ? `Work order ${row.code} isn't ready for your signature yet: ${row.representativeName ?? "the agency"} signs it first`
+            ? `Work order ${row.code} isn't ready for your signature yet: ${(await contactsOf(row, null)).representativeName ?? "the agency"} signs it first`
             : `Sign work order ${row.code} with the Documenso link in your email or on the work order page`,
         );
       }
@@ -4612,7 +4631,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     ) => {
       const row = await mustRow(input.id);
       requireBuilder(context, row);
-      return { ...(await requestView(await draftRequest(row, input), row)), trust: null };
+      return {
+        ...(await requestView(await draftRequest(row, input, "builder"), row)),
+        trust: null,
+      };
     },
 
     editRequest: async (
