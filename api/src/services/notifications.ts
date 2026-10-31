@@ -192,7 +192,7 @@ export const NOTIFICATION_KINDS = {
   }),
   work_order_renewed: (p) => ({
     title: `Work Order ${p.code} is renewed as ${p.nextCode}`,
-    body: `Work Order ${p.code} on ${p.projectTitle} continues as ${p.nextCode} for ${p.period}, with the same terms.`,
+    body: `Work Order ${p.code} on ${p.projectTitle} continues as ${p.nextCode} for ${p.period}, with the same terms, once it's signed.`,
   }),
   work_order_renewal_needs_approval: (p) => ({
     title: `Renewal of ${p.code} needs your decision`,

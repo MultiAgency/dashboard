@@ -45,8 +45,8 @@ export function RenewalPanel({
             <h2>Monthly renewal</h2>
           </CardTitle>
           <CardDescription>
-            Checked after {workOrder.periodEnd} + {workOrder.graceDays} grace days. Renews by itself
-            if every base metric is met; otherwise you decide.
+            Checked after {workOrder.periodEnd} + {workOrder.graceDays} grace days. If every base
+            metric is met, next month's work order is sent for signature; otherwise you decide.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -152,8 +152,8 @@ function DecideRenewal({ workOrder }: { workOrder: WorkOrder }) {
       <AlertTitle>Renewal needs your decision</AlertTitle>
       <AlertDescription className="flex flex-col gap-3">
         <span>
-          Renew with the same terms, or let {workOrder.code} end here. The builder is told either
-          way.
+          Renew to send next month's work order for signature, or let {workOrder.code} end here. The
+          builder is told either way.
         </span>
         <Input
           aria-label="Note (optional)"

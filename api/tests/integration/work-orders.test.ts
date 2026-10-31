@@ -1380,6 +1380,8 @@ describe("work orders", () => {
         "carol-gh",
         REPO,
         "Rita Rep",
+        "Governing agreement",
+        "typed name",
       ]) {
         expect(text).toContain(part);
       }
@@ -1419,6 +1421,9 @@ describe("work orders", () => {
       const pages = (await PDFDocument.load(doc.pdf)).getPageCount();
       expect(doc.signers[0]?.signature.page).toBe(pages);
       expect(doc.signers[1]?.signature.y).toBeGreaterThan(doc.signers[0]?.signature.y ?? 100);
+      const text = await pdfText(doc.pdf.slice());
+      expect(text).toContain("through Documenso");
+      expect(text).not.toContain("typed name");
       const offeredDoc = await service.document(await studio(), { id: created.id });
       expect(offeredDoc.sha256).toBe(createHash("sha256").update(doc.pdf).digest("hex"));
       expect(events.map((e) => e.type)).not.toContain("work_order.offered");
