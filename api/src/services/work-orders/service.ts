@@ -211,6 +211,7 @@ export type WorkOrderFields = {
 type WorkOrderStatus = WorkOrderRow["status"];
 type RequestStatus = CompensationRequestRow["status"];
 type PendingEnvelope = { esign: EsignPort; envelopeId: string };
+type RequestDrafter = "schedule" | "agency" | "builder";
 type GoogleTemplate = {
   google: GooglePort;
   templateId: string;
@@ -506,13 +507,27 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   async function contactsOf(row: WorkOrderRow, builder: BuilderProfile | null) {
     const lookup = async (userId: string | null | undefined) =>
       userId && deps.userEmail ? await deps.userEmail(userId).catch(() => null) : null;
+    const fallback = row.representativeEmail
+      ? null
+      : await integrationOf(row.organizationId).catch(() => null);
+    const useDefault = !!fallback?.defaultRepresentativeEmail;
     return {
       contractorEmail: row.contractorEmail ?? (await lookup(builder?.userId)),
-      representativeEmail: row.representativeEmail,
+      representativeEmail: useDefault
+        ? (fallback?.defaultRepresentativeEmail ?? null)
+        : row.representativeEmail,
+      representativeName: useDefault
+        ? (fallback?.defaultRepresentativeName ?? null)
+        : row.representativeName,
     };
   }
 
-  async function announce(row: WorkOrderRow, type: WorkOrderEventType, extra: Announcement = {}) {
+  async function announce(
+    row: WorkOrderRow,
+    type: WorkOrderEventType,
+    extra: Announcement = {},
+    workOrderId: string | null = row.id,
+  ) {
     if (!deps.outbox) return;
     try {
       const [project, agencyName, builder] = await Promise.all([
@@ -534,6 +549,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           project: project?.title ?? UNKNOWN_PROJECT,
           periodStart: row.periodStart,
           periodEnd: row.periodEnd,
+          periodStarted: today() >= row.periodStart,
           budget: display(row.budgetAmount, row.tokenId),
         },
         contractor: {
@@ -543,7 +559,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           nearAccount: row.builderNearAccount,
         },
         representative: {
-          name: row.representativeName ?? agencyName,
+          name: contacts.representativeName ?? agencyName,
           email: contacts.representativeEmail,
         },
         request: request
@@ -597,7 +613,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         renewal: extra.renewal ?? null,
         hold: extra.hold ?? null,
       };
-      await deps.outbox.enqueue(row.organizationId, row.id, event);
+      await deps.outbox.enqueue(row.organizationId, workOrderId, event);
     } catch (error) {
       console.warn(`[API] work order ${row.code} ${type} couldn't be queued`, error);
     }
@@ -683,7 +699,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       project: projectTitle,
       contractorName: row.contractorName ?? builder?.name ?? row.builderNearAccount,
       contractorEmail: contacts.contractorEmail,
-      representativeName: row.representativeName ?? agencyName,
+      representativeName: contacts.representativeName ?? agencyName,
       representativeEmail: contacts.representativeEmail,
       periodStart: row.periodStart,
       periodEnd: row.periodEnd,
@@ -896,7 +912,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       ["Project", projectTitle],
       ["Builder (contractor)", row.contractorName ?? builder?.name ?? row.builderNearAccount],
       ["Builder's email", contacts.contractorEmail ?? ""],
-      ["Agency representative", row.representativeName ?? agencyName],
+      ["Agency representative", contacts.representativeName ?? agencyName],
       ["Representative's email", contacts.representativeEmail ?? ""],
       ["Work period", `${longDate(row.periodStart)} to ${longDate(row.periodEnd)}`],
       [
@@ -1376,6 +1392,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     };
   }
 
+  async function sentToBuilder(row: WorkOrderRow, state?: EsignStatus | null): Promise<boolean> {
+    if (row.status === "draft") return false;
+    if (row.status !== "offered") return true;
+    if (!(await signingOf(row)).awaitingRepresentative) return true;
+    const current =
+      state === undefined ? (await checkEnvelope(row).catch(() => null))?.state : state;
+    return !!current?.signers.some((s) => s.role === "representative" && s.signedAt);
+  }
+
   async function syncPendingSignatures(): Promise<number> {
     if (!deps.esign) return 0;
     const pending = await db
@@ -1411,7 +1436,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const signers = [
       {
         role: "representative" as const,
-        name: row.representativeName ?? agencyName,
+        name: contacts.representativeName ?? agencyName,
         email: contacts.representativeEmail ?? "",
       },
       {
@@ -1545,20 +1570,29 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     let current = row.esignError ? await update(row.id, { esignError: null }) : row;
     if (state.status === "rejected") {
       if (current.status !== "offered") return current;
-      const reason = state.signers.find((s) => s.rejected)?.rejectionReason ?? "";
+      const rejecter = state.signers.find((s) => s.rejected);
+      const reason = rejecter?.rejectionReason ?? "";
       const declined = await update(row.id, {
         status: "draft",
         offeredAt: null,
         esignEnvelopeId: null,
         esignBuilderUrl: null,
         esignRepresentativeUrl: null,
-        esignError: `Declined in Documenso${reason ? `: ${reason}` : ""}`,
+        esignError: rejecter
+          ? `Declined in Documenso${reason ? `: ${reason}` : ""}`
+          : "Cancelled in Documenso",
       });
-      await notifyManagers(
-        declined,
-        "work_order_declined",
-        await payloadOf(declined, { note: reason }),
-      );
+      if (rejecter?.role === "contractor") {
+        await notifyManagers(
+          declined,
+          "work_order_declined",
+          await payloadOf(declined, { note: reason }),
+        );
+        await announce(declined, "work_order.declined", { note: reason || null });
+      } else if (!rejecter) {
+        await notifyManagers(declined, "work_order_esign_cancelled", await payloadOf(declined));
+        await announce(declined, "work_order.esign_cancelled");
+      }
       return declined;
     }
     const existing = await signaturesOf(row.id, offered.sha256);
@@ -2157,6 +2191,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     row: WorkOrderRow,
     kind: NotificationKind,
     payload: Record<string, string>,
+    link = builderLink(row.id),
   ) {
     const builder = await deps.builders.get(row.builderNearAccount).catch(() => null);
     if (!builder?.userId) return;
@@ -2166,7 +2201,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         organizationId: row.organizationId,
         kind,
         payload,
-        link: builderLink(row.id),
+        link,
       })
       .catch((error: unknown) => console.warn("[API] work order notification failed:", error));
   }
@@ -2459,7 +2494,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   async function draftRequest(
     initial: WorkOrderRow,
     input: { coversFrom?: string; coversTo?: string },
-    auto = false,
+    drafter: RequestDrafter,
   ): Promise<CompensationRequestRow> {
     let row = initial;
     if (row.status !== "active" && row.status !== "ended") {
@@ -2477,7 +2512,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (amountsOf(row, existing).remaining <= 0n) {
       throw badRequest("BUDGET_USED", "The work order budget is used up");
     }
-    if (!auto) {
+    if (drafter !== "schedule") {
       try {
         row = await collect(row);
       } catch (error) {
@@ -2525,16 +2560,18 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         updatedAt: now(),
       })
       .returning();
-    if (auto) await update(row.id, { autoDraftedFor: row.periodEnd });
-    await notifyBuilder(
-      row,
-      "compensation_request_ready",
-      await payloadOf(row, { requestCode: `${row.code}-R${seq}` }),
-    );
-    await announce(row, "request.report_ready", {
-      request: inserted,
-      reportMd: draftReportOf(contributionsMd, assessmentMd),
-    });
+    if (drafter === "schedule") await update(row.id, { autoDraftedFor: row.periodEnd });
+    if (drafter !== "builder") {
+      await notifyBuilder(
+        row,
+        "compensation_request_ready",
+        await payloadOf(row, { requestCode: `${row.code}-R${seq}` }),
+      );
+      await announce(row, "request.report_ready", {
+        request: inserted,
+        reportMd: draftReportOf(contributionsMd, assessmentMd),
+      });
+    }
     return inserted!;
   }
 
@@ -3279,7 +3316,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     if (current.status === "ended" && current.autoDraftedFor !== current.periodEnd && !open) {
       const { remaining } = amountsOf(current, await requestsOf(current.id));
       if (remaining > 0n) {
-        await draftRequest(current, {}, true);
+        await draftRequest(current, {}, "schedule");
         counts.drafted = (counts.drafted ?? 0) + 1;
       } else {
         current = await update(current.id, { autoDraftedFor: current.periodEnd });
@@ -3795,6 +3832,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           "Offer the work order or have it signed before asking for the payout account",
         );
       }
+      if (row.status === "offered" && row.esignEnvelopeId) {
+        throw badRequest(
+          "CONFIRMED_BY_SIGNING",
+          `The builder confirms ${row.builderNearAccount} by signing ${row.code} in Documenso`,
+        );
+      }
       await announce(row, "work_order.confirm_payee");
       await notifyBuilder(row, "work_order_confirm_payee", await payloadOf(row));
       return adminView(await view(row));
@@ -3807,6 +3850,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         if (!offered.esignEnvelopeId) {
           await notifyBuilder(offered, "work_order_offered", await payloadOf(offered));
           await announce(offered, "work_order.offered");
+        } else if ((await signingOf(offered)).awaitingRepresentative) {
+          await announce(offered, "work_order.sign_first");
         }
         return adminView(await view(offered));
       });
@@ -3846,7 +3891,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (signatures.some((s) => s.role === "representative")) {
         throw badRequest("ALREADY_SIGNED", "You've already countersigned it");
       }
-      const contacts = await contactsOf(row, null);
       await db.insert(workOrderSignatures).values({
         id: crypto.randomUUID(),
         workOrderId: row.id,
@@ -3854,7 +3898,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         role: "representative",
         name,
         email:
-          contacts.representativeEmail ??
+          row.representativeEmail ??
           (deps.userEmail ? await deps.userEmail(scope.actorId).catch(() => null) : null),
         userId: scope.actorId,
         nearAccount: null,
@@ -3904,6 +3948,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         const row = await ownRow(scope, input.id);
         if (FINAL.includes(row.status))
           throw badRequest("CLOSED", `Work order ${row.code} is already terminated`);
+        const builderWasSent = await sentToBuilder(row);
+        const withdrawsOffer = row.status === "offered";
         const failed = await cancelEnvelope(row, "The work order was terminated");
         const terminated = await update(row.id, {
           status: "terminated",
@@ -3913,6 +3959,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
               }
             : {}),
         });
+        if (builderWasSent && withdrawsOffer) {
+          await notifyBuilder(terminated, "work_order_withdrawn", await payloadOf(terminated));
+          await announce(terminated, "work_order.withdrawn");
+        } else if (builderWasSent) {
+          await notifyBuilder(terminated, "work_order_terminated", await payloadOf(terminated));
+          await announce(terminated, "work_order.terminated");
+        }
         return adminView(await view(terminated));
       });
     },
@@ -3952,7 +4005,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             );
           }
         }
+        const builderWasSent =
+          row.status === "offered" &&
+          checked?.state.status !== "rejected" &&
+          (await sentToBuilder(row, checked?.state ?? null));
+        const payload = builderWasSent ? await payloadOf(row) : null;
         await db.delete(workOrders).where(eq(workOrders.id, row.id));
+        if (payload) {
+          await notifyBuilder(row, "work_order_withdrawn", payload, "/dashboard");
+          await announce(row, "work_order.withdrawn", {}, null);
+        }
         return { deleted: true as const };
       });
     },
@@ -3965,7 +4027,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       input: { id: string; coversFrom?: string; coversTo?: string },
     ) => {
       const row = await ownRow(scope, input.id);
-      return requestView(await draftRequest(row, input), row);
+      return requestView(await draftRequest(row, input, "agency"), row);
     },
 
     approveRequest: async (
@@ -4456,7 +4518,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         throw badRequest(
           "SIGN_IN_DOCUMENSO",
           (await signingOf(row)).awaitingRepresentative
-            ? `Work order ${row.code} isn't ready for your signature yet: ${row.representativeName ?? "the agency"} signs it first`
+            ? `Work order ${row.code} isn't ready for your signature yet: ${(await contactsOf(row, null)).representativeName ?? "the agency"} signs it first`
             : `Sign work order ${row.code} with the Documenso link in your email or on the work order page`,
         );
       }
@@ -4569,7 +4631,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     ) => {
       const row = await mustRow(input.id);
       requireBuilder(context, row);
-      return { ...(await requestView(await draftRequest(row, input), row)), trust: null };
+      return {
+        ...(await requestView(await draftRequest(row, input, "builder"), row)),
+        trust: null,
+      };
     },
 
     editRequest: async (

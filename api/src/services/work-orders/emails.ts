@@ -71,6 +71,10 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
     return url ? { label, url } : null;
   };
 
+  const starts = wo.periodStarted
+    ? "it starts right away"
+    : `its work period runs from ${wo.periodStart} to ${wo.periodEnd}`;
+
   const send = (role: Role, subject: string, draft: Draft) => {
     const person = role === "contractor" ? e.contractor : e.representative;
     if (!person.email) return;
@@ -83,13 +87,13 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
     case "work_order.offered":
       send("contractor", `${agency} sent you Work Order ${wo.id} to sign`, {
         preheader: e.links.sign
-          ? `${agency} has signed ${wo.title}. Sign it to accept; it starts right away.`
+          ? `${agency} has signed ${wo.title}. Sign it to accept; ${starts}.`
           : `${wo.title}: review the terms and sign to accept.`,
         eyebrow: "Work order sent",
         heading: `${agency} sent you a work order`,
         paragraphs: [
           e.links.sign
-            ? `You're offered "${wo.title}" on ${wo.project}, and ${agency} has already signed it. Review the terms and sign to accept. As soon as you sign, it's complete and starts right away.`
+            ? `You're offered "${wo.title}" on ${wo.project}, and ${agency} has already signed it. Review the terms and sign to accept. As soon as you sign, it's complete: ${starts}.`
             : `You're offered "${wo.title}" on ${wo.project}. Review the terms and sign to accept. It only takes a minute.`,
           `Each approved payout request is paid to ${e.contractor.nearAccount}.`,
         ],
@@ -129,7 +133,7 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
         heading: `Work Order ${wo.id} is signed`,
         paragraphs: [
           `${builder} and ${agency} have both signed. The signed PDF is attached to the work order.`,
-          "It becomes active automatically when its period starts.",
+          "It starts on its own unless something still blocks it, such as a payout account to confirm. The work order shows anything that's left.",
         ],
         details: summary(["Builder", builder], ["Budget", wo.budget]),
         action: view("representative"),
@@ -138,15 +142,155 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
           : [],
       });
       break;
-    case "work_order.active":
+    case "work_order.active": {
+      const upcoming = !wo.periodStarted;
       send("contractor", `Work Order ${wo.id} is active`, {
-        preheader: `Your work period has started: ${period}.`,
+        preheader: upcoming
+          ? `Your work period starts on ${wo.periodStart}: ${period}.`
+          : `Your work period has started: ${period}.`,
         eyebrow: "Work order active",
         heading: `Work Order ${wo.id} is active`,
-        paragraphs: ["Your work period has started. Here's how your work is counted:"],
+        paragraphs: [
+          upcoming
+            ? `Your work period starts on ${wo.periodStart}. Here's how your work is counted:`
+            : "Your work period has started. Here's how your work is counted:",
+        ],
         list: { title: null, items: COUNTING_RULES },
         details: summary(["Budget", wo.budget], ["Paid to", e.contractor.nearAccount]),
         action: view("contractor"),
+      });
+      break;
+    }
+    case "work_order.sign_first":
+      send("representative", `Sign Work Order ${wo.id} to send it to ${builder}`, {
+        preheader: `${builder} gets their signing link as soon as you've signed.`,
+        eyebrow: "Your signature needed",
+        heading: `Sign Work Order ${wo.id} first`,
+        paragraphs: [
+          `"${wo.title}" for ${builder} is ready in Documenso. You sign first for ${agency}; ${builder} gets their signing link as soon as you have.`,
+          "Until you sign, nothing has gone to the builder.",
+        ],
+        details: summary(["Builder", builder], ["Budget", `up to ${wo.budget}`]),
+        action: e.links.countersign
+          ? { label: "Review and sign", url: e.links.countersign }
+          : view("representative", "Open the work order"),
+        secondary:
+          e.links.countersign && e.links.review
+            ? [{ label: "View it on MultiAgency", url: e.links.review }]
+            : [],
+      });
+      break;
+    case "work_order.declined":
+      send("representative", `${builder} declined Work Order ${wo.id}`, {
+        preheader: `${wo.title} is back in draft.`,
+        eyebrow: "Work order declined",
+        heading: `${builder} declined Work Order ${wo.id}`,
+        paragraphs: [
+          `${builder} declined "${wo.title}". It's back in draft: edit it and send it again, or delete it.`,
+          ...(e.note ? [`Their note: "${e.note}"`] : []),
+        ],
+        details: summary(["Builder", builder], ["Budget", wo.budget]),
+        action: view("representative"),
+      });
+      break;
+    case "work_order.esign_cancelled":
+      send("representative", `The signing request for Work Order ${wo.id} was cancelled`, {
+        preheader: `${wo.title} is back in draft.`,
+        eyebrow: "Signing cancelled",
+        heading: `The signing request for Work Order ${wo.id} was cancelled`,
+        paragraphs: [
+          `The signing request for "${wo.title}" was cancelled, so it's back in draft. Send it again, or delete it.`,
+        ],
+        details: summary(["Builder", builder], ["Budget", wo.budget]),
+        action: view("representative"),
+      });
+      break;
+    case "work_order.confirm_payee":
+      send("contractor", `Confirm your payout account for Work Order ${wo.id}`, {
+        preheader: `Confirm ${e.contractor.nearAccount} so you can be paid.`,
+        eyebrow: "Payout account",
+        heading: "Confirm your payout account",
+        paragraphs: [
+          `${agency} hasn't paid ${e.contractor.nearAccount} before. Open the work order signed in with that NEAR account and confirm it.`,
+          "It's free, takes a few seconds and doesn't move any money.",
+        ],
+        details: summary(["Paid to", e.contractor.nearAccount]),
+        action: e.links.confirm
+          ? { label: "Confirm the account", url: e.links.confirm }
+          : view("contractor", "Confirm the account"),
+      });
+      break;
+    case "work_order.ending_soon":
+      send("contractor", `Work Order ${wo.id} ends on ${wo.periodEnd}`, {
+        preheader: `Your work period ends on ${wo.periodEnd}.`,
+        eyebrow: "Ending soon",
+        heading: `Your work period ends on ${wo.periodEnd}`,
+        paragraphs: [
+          "Your report and payout request are drafted right after it ends; you review them and send the request.",
+          'Make sure your pull requests close their assigned issues ("Closes #12") so they count.',
+        ],
+        details: summary(["Budget", wo.budget]),
+        action: view("contractor"),
+      });
+      break;
+    case "work_order.renewal_needs_approval": {
+      const metrics = e.renewal?.assessment.metrics ?? [];
+      send("representative", `Renew ${builder}'s Work Order ${wo.id}? It needs your decision`, {
+        preheader: `It missed a renewal target, so it wasn't renewed automatically.`,
+        eyebrow: "Renewal needs a decision",
+        heading: `Renew ${builder}'s work order?`,
+        paragraphs: [
+          `The period of "${wo.title}" is over and it missed at least one renewal target, so it wasn't renewed automatically. Renew it anyway or let it end.`,
+        ],
+        list: metrics.length
+          ? {
+              title: "Renewal targets",
+              items: metrics.map(
+                (m) => `${m.met ? "Met" : "Missed"}: ${m.label}: ${m.value} (needs ${m.target})`,
+              ),
+            }
+          : undefined,
+        details: summary(["Builder", builder], ["Budget", wo.budget]),
+        action: view("representative", "Decide on the renewal"),
+      });
+      break;
+    }
+    case "work_order.not_renewed":
+      send("contractor", `Work Order ${wo.id} isn't renewed`, {
+        preheader: `${wo.title} ends with this period.`,
+        eyebrow: "Not renewed",
+        heading: `Work Order ${wo.id} isn't renewed`,
+        paragraphs: [
+          `${agency} didn't renew "${wo.title}". It ends with this period.`,
+          "Payout requests for work done in this period still go through as usual.",
+        ],
+        details: summary(["Budget", wo.budget]),
+        action: view("contractor"),
+      });
+      break;
+    case "work_order.terminated":
+      send("contractor", `${agency} ended Work Order ${wo.id}`, {
+        preheader: `${wo.title} is terminated.`,
+        eyebrow: "Work order ended",
+        heading: `${agency} ended Work Order ${wo.id}`,
+        paragraphs: [
+          `${agency} terminated "${wo.title}". You can't send new payout requests under it.`,
+          `Payouts already sent aren't affected. Contact ${agency} if you have questions.`,
+        ],
+        details: summary(["Budget", wo.budget]),
+        action: view("contractor"),
+      });
+      break;
+    case "work_order.withdrawn":
+      send("contractor", `${agency} withdrew Work Order ${wo.id}`, {
+        preheader: `There's nothing to sign: ${wo.title} was withdrawn.`,
+        eyebrow: "Work order withdrawn",
+        heading: `${agency} withdrew Work Order ${wo.id}`,
+        paragraphs: [
+          `${agency} withdrew its offer of "${wo.title}", so there's nothing to sign. If you got a signing link for it, ignore it.`,
+          `Contact ${agency} if you have questions.`,
+        ],
+        details: summary(["Budget", `up to ${wo.budget}`]),
       });
       break;
     case "work_order.renewed": {
@@ -185,6 +329,20 @@ export function composeEmails(e: WorkOrderEvent): WorkOrderEmail[] {
       });
       break;
     }
+    case "request.report_ready":
+      send("contractor", `Your report for Work Order ${wo.id} is ready to send`, {
+        preheader: `Review your report and send your payout request${r?.requested ? ` for ${r.requested}` : ""}.`,
+        eyebrow: "Report ready",
+        heading: "Your report is ready to review",
+        paragraphs: [
+          `Payout request ${r?.id ?? ""} was drafted from your GitHub activity. Review the report, add any work outside GitHub and send it to ${agency}.`,
+          "You're only paid once you send it.",
+        ],
+        details: summary(["Request", r?.id ?? ""], ["Requested", r?.requested ?? ""]),
+        action: view("contractor", "Review and send"),
+        block: e.reportMd ? { title: "Draft report", body: e.reportMd } : null,
+      });
+      break;
     case "request.awaiting_approval":
       send("contractor", `Your payout request for ${wo.id} was sent`, {
         preheader: `${r?.requested ?? "Your request"} is waiting for ${agency}'s approval.`,

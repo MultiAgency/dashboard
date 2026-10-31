@@ -4,16 +4,20 @@ export const WORK_ORDER_EVENT_TYPES = [
   "work_order.created",
   "work_order.signature_mismatch",
   "work_order.offered",
+  "work_order.sign_first",
   "work_order.builder_signed",
   "work_order.signed",
   "work_order.confirm_payee",
   "work_order.payee_confirmed",
   "work_order.active",
   "work_order.declined",
+  "work_order.esign_cancelled",
   "work_order.ending_soon",
   "work_order.renewed",
   "work_order.renewal_needs_approval",
   "work_order.not_renewed",
+  "work_order.terminated",
+  "work_order.withdrawn",
   "request.report_ready",
   "request.awaiting_approval",
   "request.approved",
@@ -50,6 +54,7 @@ export type WorkOrderEvent = {
     project: string;
     periodStart: string;
     periodEnd: string;
+    periodStarted: boolean;
     budget: string;
   };
   contractor: { name: string; email: string | null; github: string; nearAccount: string };

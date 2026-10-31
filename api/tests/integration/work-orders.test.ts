@@ -12,6 +12,7 @@ import {
   workOrderDriveFiles,
   workOrderIntegrations,
   workOrderOutbox,
+  workOrderSignatures,
   workOrders,
 } from "../../src/db/schema";
 import { rememberedLogin } from "../../src/services/builder-logins";
@@ -961,10 +962,87 @@ describe("work orders", () => {
       expect(event?.links.review).toBe(`https://app.example/admin/work-orders/${created.id}`);
     });
 
-    test("agency emails go only to the representative's email on the work order", async () => {
+    test("agency emails go to the work order's representative, else the Agency's default one", async () => {
       await service.create(await studio(), fields({ tokenId: REAL_USDC }));
-      const event = events.find((e) => e.type === "work_order.created");
-      expect(event?.representative.email).toBeNull();
+      expect(events.find((e) => e.type === "work_order.created")?.representative.email).toBeNull();
+
+      await createWorkOrderIntegrations({ db }).saveRepresentative("studio", "studio-admin", {
+        name: "Dana Default",
+        email: "dana@example.com",
+      });
+      events.length = 0;
+      await service.create(await studio(), fields({ tokenId: REAL_USDC }));
+      expect(events.find((e) => e.type === "work_order.created")?.representative).toEqual({
+        name: "Dana Default",
+        email: "dana@example.com",
+      });
+
+      events.length = 0;
+      await service.create(
+        await studio(),
+        fields({ representativeName: "Rita Rep", representativeEmail: "rita@example.com" }),
+      );
+      expect(events.find((e) => e.type === "work_order.created")?.representative).toEqual({
+        name: "Rita Rep",
+        email: "rita@example.com",
+      });
+
+      events.length = 0;
+      await service.create(await studio(), fields({ representativeName: "Rita Rep" }));
+      expect(events.find((e) => e.type === "work_order.created")?.representative).toEqual({
+        name: "Dana Default",
+        email: "dana@example.com",
+      });
+    });
+
+    test("a countersignature records the signer's own email, not the default representative's", async () => {
+      await createWorkOrderIntegrations({ db }).saveRepresentative("studio", "studio-admin", {
+        name: "Dana Default",
+        email: "dana@example.com",
+      });
+      const wo = await active();
+      const [signature] = await db
+        .select()
+        .from(workOrderSignatures)
+        .where(
+          and(
+            eq(workOrderSignatures.workOrderId, wo.id),
+            eq(workOrderSignatures.role, "representative"),
+          ),
+        );
+      expect(signature?.email).toBe("studio-admin@example.com");
+    });
+
+    test("terminating tells the builder; a draft they never saw stays quiet", async () => {
+      const wo = await active();
+      events.length = 0;
+      await service.terminate(await studio(), { id: wo.id });
+      expect(events.map((e) => e.type)).toEqual(["work_order.terminated"]);
+      expect((await notificationsOf("carol")).map((n) => n.kind)).toContain(
+        "work_order_terminated",
+      );
+
+      const draft = await service.create(await studio(), fields());
+      events.length = 0;
+      await service.terminate(await studio(), { id: draft.id });
+      expect(events).toEqual([]);
+    });
+
+    test("deleting an offered work order tells the builder it was withdrawn", async () => {
+      const created = await service.create(await studio(), fields());
+      await service.offer(await studio(), { id: created.id });
+      events.length = 0;
+      await service.remove(await studio(), { id: created.id });
+      expect(events.map((e) => e.type)).toEqual(["work_order.withdrawn"]);
+      const [notice] = (await notificationsOf("carol")).filter(
+        (n) => n.kind === "work_order_withdrawn",
+      );
+      expect(notice?.link).toBe("/dashboard");
+
+      const draft = await service.create(await studio(), fields());
+      events.length = 0;
+      await service.remove(await studio(), { id: draft.id });
+      expect(events).toEqual([]);
     });
 
     test("accepting in the app proves the payout account", async () => {
@@ -994,7 +1072,7 @@ describe("work orders", () => {
       strongEvidence();
       const wo = await active({ tokenId: REAL_USDC });
       await service.collect(await studio(), { id: wo.id });
-      const draft = await service.mineDraftRequest(carol(), { id: wo.id });
+      const draft = await service.draftRequest(await studio(), { id: wo.id });
       expect(draft.contributionsMd).toContain("Carol shipped the search feature.");
       expect(draft.assessmentMd).toContain("Search unblocks onboarding.");
       const edited = await service.editRequest(carol(), {
@@ -1011,6 +1089,23 @@ describe("work orders", () => {
       expect(waiting?.request?.requested).toBe("500 USDC");
     });
   });
+  test("whether the period has started is judged in the agency's time zone", async () => {
+    service = createWorkOrdersService({ ...serviceDeps, timeZone: "Pacific/Kiritimati" });
+    await active();
+    const started = events.find((e) => e.type === "work_order.active");
+    expect(started?.workOrder.periodStarted).toBe(true);
+    expect(composeEmails(started!)[0]?.text).toContain("Your work period has started");
+  });
+
+  test("a builder drafting their own request isn't told it's ready", async () => {
+    const wo = await active();
+    const notes = (await notificationsOf("carol")).length;
+    const draft = await service.mineDraftRequest(carol(), { id: wo.id });
+    expect(draft.status).toBe("draft");
+    expect(events.map((e) => e.type)).not.toContain("request.report_ready");
+    expect((await notificationsOf("carol")).length).toBe(notes);
+  });
+
   describe("Google Docs and Drive", () => {
     const REAL_USDC = "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 
@@ -1425,6 +1520,9 @@ describe("work orders", () => {
       expect((await notificationsOf("carol")).map((n) => n.kind)).not.toContain(
         "work_order_offered",
       );
+      const signFirst = events.find((e) => e.type === "work_order.sign_first");
+      expect(signFirst?.representative.email).toBe("rita@example.com");
+      expect(signFirst?.links.countersign).toBe("https://sign.example/envelope_1/representative");
 
       const admin = await service.get(await studio(), { id: created.id });
       expect(admin.status).toBe("offered");
@@ -1627,6 +1725,60 @@ describe("work orders", () => {
       expect(terminated.signing.esign?.error ?? null).toBeNull();
       expect(documenso.cancelled.at(-1)?.reason).toBe("The work order was terminated");
       expect(events.map((e) => e.type)).not.toContain("work_order.offered");
+    });
+
+    test("asking for the payout account of a Documenso offer is refused: signing confirms it", async () => {
+      const created = await offered();
+      events.length = 0;
+      const notes = (await notificationsOf("carol")).length;
+      await refused(
+        service.requestPayeeConfirmation(await studio(), { id: created.id }),
+        "CONFIRMED_BY_SIGNING",
+      );
+      expect(events).toEqual([]);
+      expect((await notificationsOf("carol")).length).toBe(notes);
+    });
+
+    test("an envelope cancelled in Documenso puts the order back in draft and tells the agency", async () => {
+      const created = await offered();
+      events.length = 0;
+      documenso.last().status = "rejected";
+      const back = await service.get(await studio(), { id: created.id });
+      expect(back.status).toBe("draft");
+      expect(back.signing.esign?.error).toBe("Cancelled in Documenso");
+      expect(events.map((e) => e.type)).toEqual(["work_order.esign_cancelled"]);
+      expect(composeEmails(events[0]!).map((m) => m.to)).toEqual(["rita@example.com"]);
+      const kinds = (await notificationsOf("studio-admin")).map((n) => n.kind);
+      expect(kinds).toContain("work_order_esign_cancelled");
+      expect(kinds).not.toContain("work_order_declined");
+    });
+
+    test("a builder too early to sign is told the default representative signs first", async () => {
+      await createWorkOrderIntegrations({ db }).saveRepresentative("studio", "studio-admin", {
+        name: "Dana Default",
+        email: "dana@example.com",
+      });
+      const created = await service.create(await studio(), fields());
+      await service.offer(await studio(), { id: created.id });
+      const doc = await service.myDocument(carol(), { id: created.id });
+      await expect(
+        service.sign(carol(), { id: created.id, documentSha256: doc.sha256, name: "Carol" }),
+      ).rejects.toThrow("Dana Default signs it first");
+    });
+
+    test("terminating when Documenso can't withdraw a live envelope still tells the builder to ignore its link", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      documenso.cancel = async () => {
+        throw new Error("timeout");
+      };
+      events.length = 0;
+      const terminated = await service.terminate(await studio(), { id: created.id });
+      expect(terminated.signing.esign?.error).toContain("may still be able to sign there");
+      expect(events.map((e) => e.type)).toEqual(["work_order.withdrawn"]);
+      expect(composeEmails(events[0]!)[0]?.text).toContain(
+        "If you got a signing link for it, ignore it",
+      );
     });
 
     async function completed() {
@@ -1880,6 +2032,7 @@ describe("work orders", () => {
       expect(back.status).toBe("draft");
       expect(back.signing.esign?.error).toBe("Declined in Documenso: Wrong budget");
       expect(events.map((e) => e.type)).not.toContain("work_order.offered");
+      expect(events.map((e) => e.type)).not.toContain("work_order.declined");
 
       await service.offer(await studio(), { id: created.id });
       documenso.sign("representative", "2026-09-20T13:00:00.000Z");
@@ -1888,6 +2041,36 @@ describe("work orders", () => {
       const declined = await service.get(await studio(), { id: created.id });
       expect(declined.status).toBe("draft");
       expect(declined.signing.esign?.error).toBe("Declined in Documenso: Wrong budget");
+      const email = events.find((e) => e.type === "work_order.declined");
+      expect(email?.note).toBe("Wrong budget");
+    });
+
+    test("terminating an offer the builder never accepted tells them it was withdrawn, once the representative signed in Documenso", async () => {
+      const created = await offered();
+      documenso.sign("representative", "2026-09-20T13:00:00.000Z");
+      events.length = 0;
+      await service.terminate(await studio(), { id: created.id });
+      expect(events.map((e) => e.type)).toEqual(["work_order.withdrawn"]);
+      const kinds = (await notificationsOf("carol")).map((n) => n.kind);
+      expect(kinds).toContain("work_order_withdrawn");
+      expect(kinds).not.toContain("work_order_terminated");
+    });
+
+    test("terminating before the representative signed in Documenso doesn't tell the builder", async () => {
+      const created = await offered();
+      events.length = 0;
+      await service.terminate(await studio(), { id: created.id });
+      expect(events).toEqual([]);
+    });
+
+    test("withdrawing before the representative signed doesn't tell the builder", async () => {
+      const created = await offered();
+      events.length = 0;
+      await service.remove(await studio(), { id: created.id });
+      expect(events).toEqual([]);
+      expect((await notificationsOf("carol")).map((n) => n.kind)).not.toContain(
+        "work_order_withdrawn",
+      );
     });
 
     test("it isn't offered without both emails, or when Documenso refuses", async () => {

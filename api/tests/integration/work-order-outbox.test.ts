@@ -29,6 +29,7 @@ function event(type: WorkOrderEvent["type"], over: Partial<WorkOrderEvent> = {})
       project: "Search",
       periodStart: "2026-09-01",
       periodEnd: "2026-09-30",
+      periodStarted: true,
       budget: "1000 USDC",
     },
     contractor: {
@@ -80,12 +81,20 @@ describe("work order emails", () => {
     expect(to("request.awaiting_approval")).toEqual(["carol@example.com", "rita@example.com"]);
     expect(to("work_order.builder_signed")).toEqual(["rita@example.com"]);
     expect(to("request.approved")).toEqual(["carol@example.com"]);
-    for (const quiet of [
-      "work_order.created",
-      "work_order.confirm_payee",
-      "work_order.declined",
+    expect(to("work_order.sign_first")).toEqual(["rita@example.com"]);
+    expect(to("work_order.declined")).toEqual(["rita@example.com"]);
+    expect(to("work_order.renewal_needs_approval")).toEqual(["rita@example.com"]);
+    for (const builder of [
       "request.report_ready",
+      "work_order.confirm_payee",
+      "work_order.ending_soon",
+      "work_order.not_renewed",
+      "work_order.terminated",
+      "work_order.withdrawn",
     ] as const) {
+      expect(to(builder)).toEqual(["carol@example.com"]);
+    }
+    for (const quiet of ["work_order.created", "work_order.payee_confirmed"] as const) {
       expect(to(quiet)).toEqual([]);
     }
     const request = {
@@ -169,6 +178,43 @@ describe("work order emails", () => {
     );
     expect(email?.subject).toBe("Your turn to sign Work Order SI-004");
     expect(email?.html).toContain('href="https://sign.example/envelope_1/representative"');
+  });
+
+  test("the representative is asked to sign a new Documenso order first", () => {
+    const base = event("work_order.sign_first");
+    const [email] = composeEmails(
+      event("work_order.sign_first", {
+        links: { ...base.links, countersign: "https://sign.example/envelope_1/representative" },
+      }),
+    );
+    expect(email?.subject).toBe("Sign Work Order SI-004 to send it to Carol");
+    expect(email?.html).toContain('href="https://sign.example/envelope_1/representative"');
+  });
+
+  test("signed and active emails say when the work order starts", () => {
+    const [signed] = composeEmails(event("work_order.signed"));
+    expect(signed?.text).not.toContain("when its period starts");
+    expect(signed?.text).toContain("starts on its own unless something still blocks it");
+    const [started] = composeEmails(event("work_order.active"));
+    expect(started?.text).toContain("Your work period has started");
+    const later = event("work_order.active");
+    later.workOrder.periodStarted = false;
+    const [upcoming] = composeEmails(later);
+    expect(upcoming?.text).toContain("Your work period starts on 2026-09-01");
+    expect(upcoming?.text).not.toContain("has started");
+    const offer = event("work_order.offered");
+    offer.links.sign = "https://sign.example/c";
+    offer.workOrder.periodStarted = false;
+    const [offered] = composeEmails(offer);
+    expect(offered?.text).toContain("its work period runs from 2026-09-01 to 2026-09-30");
+    expect(offered?.text).not.toContain("starts right away");
+  });
+
+  test("a withdrawn order tells the builder to ignore any signing link", () => {
+    const [email] = composeEmails(event("work_order.withdrawn"));
+    expect(email?.subject).toBe("Studio withdrew Work Order SI-004");
+    expect(email?.text).toContain("If you got a signing link for it, ignore it");
+    expect(email?.html).not.toContain("https://app.example/work-orders/1");
   });
 
   test("emails go out once through Resend", async () => {

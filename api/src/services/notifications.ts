@@ -108,11 +108,15 @@ export const NOTIFICATION_KINDS = {
   }),
   work_order_accepted: (p) => ({
     title: `${p.builderName} signed Work Order ${p.code}`,
-    body: `${p.builderName} signed Work Order ${p.code} on ${p.projectTitle}. Countersign it on MultiAgency, then activate it to start the work period.`,
+    body: `${p.builderName} signed Work Order ${p.code} on ${p.projectTitle}. It starts on its own once both of you have signed and nothing else blocks it.`,
   }),
   work_order_declined: (p) => ({
     title: `${p.builderName} declined Work Order ${p.code}`,
     body: `${p.builderName} declined Work Order ${p.code} on ${p.projectTitle}${p.note ? `: ${p.note}` : "."} It is back in draft.`,
+  }),
+  work_order_esign_cancelled: (p) => ({
+    title: `The signing request for Work Order ${p.code} was cancelled`,
+    body: `The signing request for Work Order ${p.code} on ${p.projectTitle} was cancelled, so it is back in draft.`,
   }),
   work_order_signed: (p) => ({
     title: `Work Order ${p.code} is signed`,
@@ -132,7 +136,7 @@ export const NOTIFICATION_KINDS = {
   }),
   work_order_payee_confirmed: (p) => ({
     title: `${p.builderName} confirmed the payout account for ${p.code}`,
-    body: `${p.builderName} proved they control the payout account of Work Order ${p.code} on ${p.projectTitle}. You can activate it.`,
+    body: `${p.builderName} proved they control the payout account of Work Order ${p.code} on ${p.projectTitle}. It starts on its own unless something else blocks it.`,
   }),
   work_order_activated: (p) => ({
     title: `Work Order ${p.code} is active`,
@@ -197,6 +201,14 @@ export const NOTIFICATION_KINDS = {
   work_order_renewal_needs_approval: (p) => ({
     title: `Renewal of ${p.code} needs your decision`,
     body: `Work Order ${p.code} on ${p.projectTitle} missed ${p.missed} for renewal. Renew it anyway or let it end on MultiAgency.`,
+  }),
+  work_order_terminated: (p) => ({
+    title: `${p.agencyName} ended Work Order ${p.code}`,
+    body: `${p.agencyName} terminated Work Order ${p.code} on ${p.projectTitle}. You can't send new payout requests under it; payouts already sent aren't affected.`,
+  }),
+  work_order_withdrawn: (p) => ({
+    title: `${p.agencyName} withdrew Work Order ${p.code}`,
+    body: `${p.agencyName} withdrew the offer of Work Order ${p.code} on ${p.projectTitle}, so there's nothing to sign. If you got a signing link for it, ignore it.`,
   }),
   work_order_not_renewed: (p) => ({
     title: `Work Order ${p.code} is not renewed`,
