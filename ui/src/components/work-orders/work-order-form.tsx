@@ -878,8 +878,9 @@ function WorkOrderFields({
                 <FieldLabel htmlFor="wo-renew" className="flex flex-col items-start">
                   <span>Renew monthly when the base metrics are met</span>
                   <span className="text-xs font-normal text-muted-foreground">
-                    Each period is measured at its end. All met: next month's work order starts by
-                    itself. Any missed: you decide. Part of the accepted terms.
+                    Each period is measured at its end. All met: next month's work order is sent for
+                    signature. Any missed: you decide. It starts once the representative and the
+                    builder sign it.
                   </span>
                 </FieldLabel>
               </ShadcnField>

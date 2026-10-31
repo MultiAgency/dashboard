@@ -901,7 +901,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       ["Work period", `${longDate(row.periodStart)} to ${longDate(row.periodEnd)}`],
       [
         "Budget cap",
-        `${display(row.budgetAmount, row.tokenId)}${row.tokenId === USD ? ", paid in NEAR at the price when each payment is made" : ""}`,
+        `${display(row.budgetAmount, row.tokenId)}${row.tokenId === USD ? ", paid in NEAR at the price when each payment is started" : ""}`,
       ],
       ["Payout account (NEAR)", row.builderNearAccount],
       ["GitHub account", row.githubLogin ?? ""],
@@ -911,12 +911,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       [
         "Monthly renewal",
         row.autoRenew
-          ? "Renews monthly, with the same terms, while the base metrics are met; otherwise the representative decides."
+          ? "A work order for the next month with the same terms is sent for signature when the base metrics are met; otherwise the representative decides."
           : "No",
       ],
       [
         "How work counts",
         "Work counts once the repository owner approves or merges it on GitHub. The budget is a maximum, not a guarantee; each payment follows an approved compensation request.",
+      ],
+      [
+        "Governing agreement",
+        "This work order is governed by and incorporated into the services agreement between the builder and the Agency, which controls in a conflict.",
       ],
     ];
   }
@@ -943,8 +947,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       pdf = await termsPdf({
         title: `Work Order ${row.code}`,
         rows: await termsRows(row),
-        footer:
-          "Signed electronically in MultiAgency: each party reviews this document and signs it with their typed name; the builder signs in with the NEAR account above.",
+        footer: deps.esign
+          ? "Signed electronically through Documenso: the Agency representative signs first, then the builder, each from their own signing link."
+          : "Signed electronically in MultiAgency: each party reviews this document and signs it with their typed name; the builder signs in with the NEAR account above.",
       });
     }
     const sha256 = sha256Bytes(pdf);

@@ -68,7 +68,7 @@ export function documentFields(input: {
     repos: input.repos.join(", "),
     auto_renew: box(input.autoRenew),
     auto_renew_text: input.autoRenew
-      ? "This work order renews monthly, with the same terms, while the base metrics are met; otherwise the representative decides whether it renews."
+      ? "When the base metrics are met, a work order for the next month with the same terms is sent for signature; otherwise the representative decides whether to send one. Each renewal starts only once both parties sign it."
       : "",
     contractor_email: input.contractorEmail ?? "",
     representative_email: input.representativeEmail ?? "",
