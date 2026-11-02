@@ -75,6 +75,17 @@ describe("memberships offered for activation", () => {
     expect(ids).toEqual(["asked", "live", "refused"]);
   });
 
+  test("count an Organization without a status as active", async () => {
+    pg = await authDatabase(false);
+    await pg.exec(`
+      ALTER TABLE "organization" ADD COLUMN status text;
+      UPDATE "organization" SET status = 'pending' WHERE id = 'asked';
+    `);
+    const directory = authDatabaseDirectory(sqlOf(pg) as never);
+    const ids = (await directory.memberships("ada")).map((m) => m.organization.id).sort();
+    expect(ids).toEqual(["live", "refused"]);
+  });
+
   test("filter by status once the auth migration adds it, without a restart", async () => {
     pg = await authDatabase(false);
     const directory = authDatabaseDirectory(sqlOf(pg) as never);

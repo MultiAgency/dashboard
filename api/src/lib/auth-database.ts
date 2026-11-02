@@ -230,7 +230,7 @@ export function authDatabaseDirectory(
     memberships: async (userId) => {
       const m = await columns(tables.member);
       const activeOnly = (await columns.present(tables.organization, "status"))
-        ? ` AND o.status = 'active'`
+        ? ` AND COALESCE(o.status, 'active') = 'active'`
         : "";
       const { rows } = await sql.query<OrganizationRowShape & { role: string }>(
         `SELECT ${await organizationSelect("o")}, m.role FROM ${member} m JOIN ${organization} o ON o.id = m.${m("organizationId")} WHERE m.${m("userId")} = $1${activeOnly}`,
