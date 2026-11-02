@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components";
+import { openPendingTab } from "@/lib/pending-tab";
 
 export type WorkOrderPdf = {
   kind: "offered" | "signed";
@@ -45,16 +46,14 @@ export function OpenDocumentButton({
   }
 
   const open = async () => {
-    const tab = window.open("", "_blank");
+    const tab = openPendingTab("Opening the document…");
     try {
       setOpening(true);
       const doc = pdf ?? (await load?.());
       if (!doc) throw new Error("The document isn't available yet");
-      const target = doc.driveUrl ?? blobUrlOf(doc.pdfBase64);
-      if (tab) tab.location.href = target;
-      else window.location.href = target;
+      tab.go(doc.driveUrl ?? blobUrlOf(doc.pdfBase64));
     } catch (error) {
-      tab?.close();
+      tab.close();
       toast.error(error instanceof Error ? error.message : "Couldn't open the document");
     } finally {
       setOpening(false);
