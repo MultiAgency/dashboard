@@ -4331,6 +4331,16 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       input: { requestId: string; proposalId: string },
     ) => {
       const { request, row } = await daoPayable(scope, input.requestId, { linking: true });
+      if (
+        row.tokenId !== USD &&
+        payoutTokenOf(row) === NATIVE_TOKEN_ID &&
+        !request.daoPaymentStartedAt
+      ) {
+        throw badRequest(
+          "DAO_PAYMENT_NOT_STARTED",
+          "Start the DAO payment first: it turns automatic payment off for this request. Then create the proposal from the transaction it returns and link it.",
+        );
+      }
       const id = Number.parseInt(input.proposalId, 10);
       if (!Number.isInteger(id) || id < 0)
         throw badRequest("INVALID_PROPOSAL", "Invalid proposal id");

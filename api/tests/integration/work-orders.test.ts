@@ -2682,7 +2682,7 @@ describe("work orders", () => {
       expect(agent.withdrawals).toHaveLength(2);
     });
 
-    test("a proposal can't be linked while an automatic payout that may have gone out is settling", async () => {
+    test("a NEAR work order's proposal links only once its DAO payment has turned automatic payment off", async () => {
       strongEvidence();
       const amount = "100000000000000000000000";
       const wo = await active({ tokenId: "near", budgetAmount: "1000000000000000000000000" });
@@ -2693,35 +2693,27 @@ describe("work orders", () => {
       await setUpAgent();
       agent.nextWithdraw = { refuse: "insufficient_balance" };
       await service.approveRequest(await studio(), { requestId: draft.id, amount });
-      transfer(35, { tokenId: "", amount });
-      let raced = false;
-      service = createWorkOrdersService({
-        ...serviceDeps,
-        payouts,
-        proposal: async (dao, id) => {
-          if (!raced) {
-            raced = true;
-            agent.nextWithdraw = { status: "FAILED", details: {} };
-            await service.payNow(await studio(), { requestId: draft.id }).catch(() => null);
-          }
-          return serviceDeps.proposal(dao, id);
-        },
+      const preview = await service.paymentProposal(requireTreasury(await studio()), {
+        requestId: draft.id,
       });
+      transfer(36, { tokenId: "", amount: preview.args.proposal.kind.Transfer.amount });
       await refused(
         service.linkProposal(requireTreasury(await studio()), {
           requestId: draft.id,
-          proposalId: "35",
+          proposalId: "36",
         }),
-        "AGENT_PAYOUT_UNSETTLED",
+        "DAO_PAYMENT_NOT_STARTED",
       );
-      const [after] = await db
-        .select()
-        .from(compensationRequests)
-        .where(eq(compensationRequests.id, draft.id));
-      expect(after?.status).toBe("approved");
-      expect(after?.proposalId).toBeNull();
-      expect(await db.select().from(billings).where(eq(billings.proposalId, "35"))).toHaveLength(0);
-      expect(agent.withdrawals).toHaveLength(2);
+      expect(await db.select().from(billings).where(eq(billings.proposalId, "36"))).toHaveLength(0);
+      await service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id });
+      agent.nextWithdraw = { status: "SUCCESS", details: { tx_hash: "TX9" } };
+      await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
+      expect(agent.withdrawals).toHaveLength(1);
+      const linked = await service.linkProposal(requireTreasury(await studio()), {
+        requestId: draft.id,
+        proposalId: "36",
+      });
+      expect(linked.status).toBe("proposed");
     });
 
     test("a scheduled retry that fails after a DAO payment started leaves the DAO payment alone", async () => {
