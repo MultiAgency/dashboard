@@ -24,7 +24,7 @@ import {
 } from "@/components";
 import { TreasurySettings } from "@/components/admin/treasury-settings";
 import { AdminError } from "@/components/admin-error";
-import { Loading } from "@/components/admin-form";
+import { Empty, Loading } from "@/components/admin-form";
 import { AgencyNamePrompt, useActiveOrganization } from "@/components/agency-name-prompt";
 import { PageHeader } from "@/components/page-header";
 import { SettingsSection } from "@/components/settings-section";
@@ -51,11 +51,33 @@ export const Route = createFileRoute("/_authenticated/admin/settings")({
     }
   },
   loader: ({ context }) =>
-    context.queryClient.ensureQueryData(adminSettingsQueryOptions(context.apiClient)),
+    context.isOrgAdmin
+      ? context.queryClient.ensureQueryData(adminSettingsQueryOptions(context.apiClient))
+      : null,
   component: AdminSettingsPage,
 });
 
 function AdminSettingsPage() {
+  const { canAccessAdmin, isLoaded } = useMeRoles();
+  if (!isLoaded) return <Loading label="Loading settings" />;
+  if (!canAccessAdmin) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader title="Settings" />
+        <SettingsSection
+          id="organization"
+          title="Organization"
+          description="Name and slug Agencies use to reach you."
+        >
+          <OrganizationIdentity />
+        </SettingsSection>
+        <Empty
+          label="Only owners and admins change these settings"
+          description="Treasury, work order documents, automatic approval, automatic payouts and Agency details are managed by your Organization's owners and admins. Ask one of them if something here needs to change."
+        />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Settings" />
