@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import type { Database } from "../../db";
 import {
   billings,
@@ -1269,6 +1269,26 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       )
       .returning();
     return row ?? mustRequest(id);
+  }
+
+  async function claimApproved(
+    id: string,
+    condition: SQL | undefined,
+    patch: Partial<CompensationRequestRow>,
+  ): Promise<CompensationRequestRow | undefined> {
+    const [row] = await db
+      .update(compensationRequests)
+      .set({ ...patch, updatedAt: now() })
+      .where(
+        and(
+          eq(compensationRequests.id, id),
+          eq(compensationRequests.status, "approved"),
+          isNull(compensationRequests.daoPaymentStartedAt),
+          condition,
+        ),
+      )
+      .returning();
+    return row;
   }
 
   async function requestsOf(workOrderId: string) {
@@ -2713,14 +2733,33 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       note,
       autoPayBlockedReason: reason,
       autoPayBlockedCode: hold?.code ?? null,
-      autoPayBlockedAt: request.autoPayBlockedAt ?? now(),
       autoPayTriedAt: now(),
     });
-    if (blocked.status === "approved" && hold && hold.code !== request.autoPayHoldNotified) {
-      await announce(row, "request.payout_blocked", { request: blocked, hold });
-      await updateUnpaid(request.id, { autoPayHoldNotified: hold.code });
+    if (blocked.status !== "approved") return blocked;
+    const first = await claimApproved(request.id, isNull(compensationRequests.autoPayBlockedAt), {
+      autoPayBlockedAt: now(),
+    });
+    const held = hold
+      ? await claimApproved(
+          request.id,
+          or(
+            isNull(compensationRequests.autoPayHoldNotified),
+            ne(compensationRequests.autoPayHoldNotified, hold.code),
+          ),
+          { autoPayHoldNotified: hold.code },
+        )
+      : undefined;
+    if (held && hold) {
+      await announce(row, "request.payout_blocked", { request: held, hold }).catch(
+        async (error: unknown) => {
+          await claimApproved(request.id, eq(compensationRequests.autoPayHoldNotified, hold.code), {
+            autoPayHoldNotified: null,
+          });
+          throw error;
+        },
+      );
     }
-    if (blocked.status === "approved" && !request.autoPayBlockedAt) {
+    if (first) {
       await notifyManagers(
         row,
         "compensation_request_payout_blocked",
@@ -2731,7 +2770,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         }),
       );
     }
-    return blocked;
+    return held ?? first ?? blocked;
   }
 
   async function settleAgentPayout(

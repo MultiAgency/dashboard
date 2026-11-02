@@ -2845,6 +2845,39 @@ describe("work orders", () => {
       expect((await reject()).status).toBe("rejected");
     });
 
+    test("a payout the tick and the run both find stuck tells the managers once", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { status: "PROCESSING" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      await db
+        .update(compensationRequests)
+        .set({ status: "paying", autoPayTriedAt: clock })
+        .where(eq(compensationRequests.id, draft.id));
+      clock = new Date(clock.getTime() + 11 * 60_000);
+      const waiting: (() => void)[] = [];
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        payouts: {
+          ...payouts,
+          latest: async () => {
+            if (waiting.length < 2) {
+              await new Promise<void>((resolve) => {
+                waiting.push(resolve);
+                if (waiting.length === 2) for (const go of waiting) go();
+              });
+            }
+            return null;
+          },
+        },
+      });
+      await Promise.all([service.tick("tick"), service.run("run")]);
+      const told = (await notificationsOf("studio-admin")).filter(
+        (n) => n.kind === "compensation_request_payout_blocked",
+      );
+      expect(told).toHaveLength(1);
+    });
+
     test("a refused payout waits for funds, tells the managers once and pays on its own once funded", async () => {
       const { draft } = await approvedRequest();
       await setUpAgent();
