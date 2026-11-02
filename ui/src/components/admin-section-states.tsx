@@ -25,18 +25,14 @@ export function AdminSectionSkeleton({ rows = 5 }: { rows?: number }) {
   );
 }
 
-export function AdminSectionError({
-  error,
-  onRetry,
-}: {
-  error: Error | null | undefined;
-  onRetry?: () => void;
-}) {
+export function AdminSectionError({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   if (needsTreasury(error)) return <ConnectTreasuryPrompt />;
   return (
     <LoadError
       title="Could not load this section"
-      description={error?.message || "Check your connection and try again."}
+      description={
+        (error instanceof Error && error.message) || "Check your connection and try again."
+      }
       onRetry={onRetry}
     />
   );

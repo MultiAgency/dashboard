@@ -18,7 +18,7 @@
   "dependencies": {
     "@better-auth/core": "catalog:",
     "@electric-sql/pglite": "catalog:",
-    "@near-intents-agent-api/sdk": "0.4.1",
+    "@near-intents-agent-api/sdk": "catalog:",
     "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/openapi": "catalog:",

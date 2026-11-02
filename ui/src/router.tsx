@@ -10,7 +10,7 @@ export type {
   RouterModule,
 } from "./app";
 
-function defaultErrorComponent({ error }: { error: Error }) {
+function defaultErrorComponent({ error }: { error: unknown }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="text-center">
@@ -18,7 +18,9 @@ function defaultErrorComponent({ error }: { error: Error }) {
         <p className="text-muted-foreground mb-4">Something went wrong</p>
         <details className="text-sm text-muted-foreground bg-muted p-4 rounded mb-8">
           <summary className="cursor-pointer">Error Details</summary>
-          <pre className="mt-2 whitespace-pre-wrap text-left">{error.message}</pre>
+          <pre className="mt-2 whitespace-pre-wrap text-left">
+            {error instanceof Error ? error.message : String(error)}
+          </pre>
         </details>
       </div>
     </div>

@@ -45,7 +45,7 @@ export const Route = createFileRoute("/_authenticated/admin/contributors/$nearAc
     ),
   pendingComponent: () => <AdminSectionSkeleton rows={6} />,
   errorComponent: ({ error, reset }) => {
-    if (error.message?.toLowerCase().includes("not found")) {
+    if (error instanceof Error && error.message.toLowerCase().includes("not found")) {
       return (
         <Empty variant="outline">
           <EmptyHeader>
