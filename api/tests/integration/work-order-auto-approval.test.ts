@@ -71,6 +71,7 @@ describe("work order trust tiers and automatic approval", () => {
       ownership: (repo) => github.getRepoOwnership(repo),
       orgRepos: (org) => github.listOrgRepos(org),
       proposal: async () => null,
+      proposalsSince: async () => [],
       proposalBond: async () => "100000000000000000000000",
       prices: { price: async () => ({ priceUsd: "4.99", at: "2026-09-20T12:00:00.000Z" }) },
       summarizer: { draftReport: async () => null },

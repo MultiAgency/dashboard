@@ -391,6 +391,31 @@ export async function getProposals(
   return proposals;
 }
 
+const SCAN_PAGE = 100;
+const SCAN_PAGES = 20;
+
+export async function proposalsSince(
+  db: Database,
+  daoAccountId: string,
+  since: Date,
+): Promise<DaoProposal[]> {
+  const sinceNs = BigInt(since.getTime()) * 1_000_000n;
+  const found: DaoProposal[] = [];
+  let end = await getLastProposalId(daoAccountId);
+  for (let page = 0; end > 0; page++) {
+    if (page === SCAN_PAGES) {
+      throw new Error(`More than ${SCAN_PAGES * SCAN_PAGE} proposals to check on ${daoAccountId}`);
+    }
+    const from = Math.max(0, end - SCAN_PAGE);
+    const proposals = await getProposals(db, daoAccountId, from, end - from);
+    found.push(...proposals);
+    const oldest = proposals[0]?.submissionTime;
+    if (oldest && /^\d+$/.test(oldest) && BigInt(oldest) < sinceNs) break;
+    end = from;
+  }
+  return found;
+}
+
 const balanceCache = new Map<string, { balance: string; expiresAt: number }>();
 const BALANCE_TTL_MS = 30_000;
 

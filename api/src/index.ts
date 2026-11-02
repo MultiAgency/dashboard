@@ -59,7 +59,13 @@ import {
   getResolvedPublicSettings,
   upsertSettings,
 } from "./services/settings-admin";
-import { findProposal, fullAccessKeys, getProposalBond, getRoles } from "./services/sputnik";
+import {
+  findProposal,
+  fullAccessKeys,
+  getProposalBond,
+  getRoles,
+  proposalsSince,
+} from "./services/sputnik";
 import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
 import { createConsistencyChecker } from "./services/work-orders/consistency";
@@ -360,6 +366,7 @@ const initializeServices = (
       ownership: cachedByName((repo) => github.getRepoOwnership(repo), 10 * 60_000),
       orgRepos: cachedByName((org) => github.listOrgRepos(org), 10 * 60_000),
       proposal: (daoAccountId, proposalId) => findProposal(db, daoAccountId, proposalId),
+      proposalsSince: (daoAccountId, since) => proposalsSince(db, daoAccountId, since),
       proposalBond: getProposalBond,
       prices: createPriceFeed(),
       esign: config.secrets.DOCUMENSO_API_KEY

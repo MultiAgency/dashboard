@@ -111,6 +111,7 @@ export type WorkOrderDeps = {
   ownership: (repo: string) => Promise<GhRepoOwnership>;
   orgRepos: (org: string) => Promise<GhRepo[]>;
   proposal: (daoAccountId: string, proposalId: number) => Promise<DaoProposal | null>;
+  proposalsSince: (daoAccountId: string, since: Date) => Promise<DaoProposal[]>;
   proposalBond: (daoAccountId: string) => Promise<string>;
   prices?: PriceFeed | null;
   esign?: EsignPort | null;
@@ -245,7 +246,7 @@ const IN_FLIGHT: AgentPayoutView["status"][] = [
 ];
 const STUCK_PAYING_MS = 10 * 60_000;
 const DAO_PAYMENT_NOTE =
-  "Being paid through a DAO proposal: automatic payment is off for this request. Link the proposal once it's created, or reject the request so the builder can request it again.";
+  "Being paid through a DAO proposal: automatic payment is off for this request. Link the proposal once it's created. To pay it another way, reject or remove the proposal on the DAO first, then reject the request so the builder can request it again.";
 
 function payoutInFlight(last: AgentPayoutView | null | undefined): boolean {
   return !!last && IN_FLIGHT.includes(last.status);
@@ -2986,6 +2987,51 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return { request: { ...request, approvedAmount }, row };
   }
 
+  async function refuseOpenDaoPayment(request: CompensationRequestRow, row: WorkOrderRow) {
+    const dao = await deps.agencyDaoOf(row.organizationId).catch(() => null);
+    const since = request.decidedAt ?? request.daoPaymentStartedAt;
+    const unavailable = () =>
+      badRequest(
+        "DAO_PROPOSALS_UNAVAILABLE",
+        "Couldn't check the Agency DAO for a proposal paying this request; try again",
+      );
+    if (!dao || !since) throw unavailable();
+    const proposals = await deps.proposalsSince(dao, since).catch(() => {
+      throw unavailable();
+    });
+    const billed = new Set(
+      (
+        await db
+          .select({ proposalId: billings.proposalId })
+          .from(billings)
+          .where(
+            and(
+              eq(billings.payingDaoAccountId, dao),
+              eq(billings.nearAccount, row.builderNearAccount),
+            ),
+          )
+      ).map((b) => b.proposalId),
+    );
+    const payoutToken = payoutTokenOf(row);
+    const sinceNs = BigInt(since.getTime()) * 1_000_000n;
+    const open = proposals.find(
+      (p) =>
+        p.kind.type === "Transfer" &&
+        p.kind.receiverId === row.builderNearAccount &&
+        (p.kind.tokenId === "" ? NATIVE_TOKEN_ID : p.kind.tokenId) === payoutToken &&
+        !FAILED_PROPOSAL.has(p.status) &&
+        !billed.has(String(p.id)) &&
+        /^\d+$/.test(p.submissionTime) &&
+        BigInt(p.submissionTime) >= sinceNs,
+    );
+    if (open) {
+      throw badRequest(
+        "DAO_PROPOSAL_OPEN",
+        `Proposal #${open.id} on ${dao} pays ${row.builderNearAccount} and is ${open.status}. Link it to this request, or reject or remove it on the DAO first; then the request can be rejected.`,
+      );
+    }
+  }
+
   async function requireSettledPayout(requestId: string) {
     const unsettled = await deps.payouts?.latest(requestId);
     if (unsettled && !payoutRetryable(unsettled)) {
@@ -4243,6 +4289,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       if (request.status !== "submitted" && request.status !== "approved") {
         throw badRequest("NOT_SUBMITTED", "Only a submitted or approved request can be rejected");
       }
+      if (request.status === "approved" && request.daoPaymentStartedAt) {
+        await refuseOpenDaoPayment(request, row);
+      }
       const [rejected] = await db
         .update(compensationRequests)
         .set({
@@ -4256,6 +4305,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           and(
             eq(compensationRequests.id, request.id),
             inArray(compensationRequests.status, ["submitted", "approved"]),
+            request.daoPaymentStartedAt
+              ? isNotNull(compensationRequests.daoPaymentStartedAt)
+              : isNull(compensationRequests.daoPaymentStartedAt),
           ),
         )
         .returning();

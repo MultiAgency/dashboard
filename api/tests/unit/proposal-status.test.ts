@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Database } from "../../src/db";
-import { findProposal, getProposal, getProposals } from "../../src/services/sputnik";
+import {
+  findProposal,
+  getProposal,
+  getProposals,
+  proposalsSince,
+} from "../../src/services/sputnik";
 
 const DAY_NS = 86_400_000_000_000n;
 const POLICY = { roles: [], proposal_period: String(7n * DAY_NS) };
@@ -110,6 +115,36 @@ describe("reading a DAO proposal", () => {
       "InProgress",
     ]);
     expect(saved.map((row) => row.status)).toEqual(["Expired", "Expired", "Expired", "Rejected"]);
+  });
+
+  test("proposals since a moment are read page by page back past that moment", async () => {
+    const { db } = database();
+    const pages: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const { params } = JSON.parse(String(init.body));
+        const args = JSON.parse(atob(params.args_base64));
+        let value: unknown = POLICY;
+        if (params.method_name === "get_last_proposal_id") value = 250;
+        if (params.method_name === "get_proposals") {
+          pages.push(args.from_index);
+          value = Array.from({ length: args.limit }, (_, i) => {
+            const id = args.from_index + i;
+            return { id, ...proposal("Rejected", (BigInt(250 - id) * DAY_NS) / 100n) };
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            result: { result: [...new TextEncoder().encode(JSON.stringify(value))] },
+          }),
+        );
+      }),
+    );
+    const since = new Date(Date.now() - 1.2 * 86_400_000);
+    const found = await proposalsSince(db, "paged.sputnik-dao.near", since);
+    expect(pages).toEqual([150, 50]);
+    expect(found).toHaveLength(200);
   });
 
   test("without the DAO's policy the chain's status stands", async () => {

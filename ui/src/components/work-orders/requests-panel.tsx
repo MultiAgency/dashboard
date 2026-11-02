@@ -662,7 +662,8 @@ function ProposalForm({
           A transfer proposal paying {workOrder.builder.nearAccount}. It becomes a billing on the
           project, and the request is paid when the DAO approves it. Creating the proposal, or
           locking the amount to propose it elsewhere, turns automatic payment off for this request:
-          from then on it's paid through the DAO, or rejected so the builder can request it again.
+          from then on it's paid through the DAO. To pay it another way, reject or remove the
+          proposal on the DAO first, then reject the request so the builder can request it again.
         </DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-1 border p-3">

@@ -114,6 +114,8 @@ describe("work orders", () => {
       ownership: (repo) => github.getRepoOwnership(repo),
       orgRepos: (org) => github.listOrgRepos(org),
       proposal: async (dao, id) => proposals.get(`${dao}#${id}`) ?? null,
+      proposalsSince: async (dao) =>
+        [...proposals.entries()].filter(([key]) => key.startsWith(`${dao}#`)).map(([, p]) => p),
       proposalBond: async () => "100000000000000000000000",
       prices: { price: async () => ({ priceUsd, at: "2026-09-20T12:00:00.000Z" }) },
       outbox: {
@@ -199,6 +201,7 @@ describe("work orders", () => {
       amount: string;
       tokenId: string;
       status: DaoProposal["status"];
+      submissionTime: string;
     }> = {},
   ) {
     proposals.set(`${DAO}#${id}`, {
@@ -212,7 +215,7 @@ describe("work orders", () => {
         amount: over.amount ?? "600000000",
       },
       status: over.status ?? "InProgress",
-      submissionTime: "0",
+      submissionTime: over.submissionTime ?? "0",
       votes: {},
     });
   }
@@ -2806,6 +2809,48 @@ describe("work orders", () => {
       });
       expect(rejected.status).toBe("rejected");
       expect(agent.withdrawals).toHaveLength(1);
+    });
+
+    test("a request whose DAO proposal is still open on the DAO can't be rejected", async () => {
+      const { draft } = await approvedRequest();
+      await setUpAgent();
+      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
+      const tx = await service.startDaoPayment(requireTreasury(await studio()), {
+        requestId: draft.id,
+      });
+      const pay = tx.args.proposal.kind.Transfer;
+      const submittedAt = String(BigInt(clock.getTime()) * 1_000_000n);
+      transfer(41, { tokenId: pay.token_id, amount: pay.amount, submissionTime: submittedAt });
+      const reject = async () =>
+        service.rejectRequest(await studio(), {
+          requestId: draft.id,
+          note: "Paying it as a new request instead",
+        });
+      await refused(reject(), "DAO_PROPOSAL_OPEN");
+      transfer(41, {
+        tokenId: pay.token_id,
+        amount: pay.amount,
+        submissionTime: submittedAt,
+        status: "Failed",
+      });
+      await refused(reject(), "DAO_PROPOSAL_OPEN");
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        payouts,
+        proposalsSince: async () => {
+          throw new Error("RPC unavailable");
+        },
+      });
+      await refused(reject(), "DAO_PROPOSALS_UNAVAILABLE");
+      service = createWorkOrdersService({ ...serviceDeps, payouts });
+      transfer(41, {
+        tokenId: pay.token_id,
+        amount: pay.amount,
+        submissionTime: submittedAt,
+        status: "Removed",
+      });
+      expect((await reject()).status).toBe("rejected");
     });
 
     test("a refused payout waits for funds, tells the managers once and pays on its own once funded", async () => {
