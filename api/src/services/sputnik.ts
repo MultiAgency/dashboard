@@ -351,7 +351,8 @@ export async function findProposal(
     reported = parsed.status;
     [proposal = null] = await expireByPolicy(daoAccountId, [parsed]);
   } catch (err) {
-    if (!(err as Error).message.includes("ERR_NO_PROPOSAL")) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes("ERR_NO_PROPOSAL")) throw err;
   }
   const isTerminal = proposal && reported && TERMINAL_STATUSES.has(reported);
   const expiresAt = isTerminal ? Number.POSITIVE_INFINITY : Date.now() + PROPOSAL_TTL_MS;

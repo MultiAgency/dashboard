@@ -132,6 +132,17 @@ describe("reading a DAO proposal", () => {
     expect((await findProposal(db, dao, 11))?.status).toBe("InProgress");
   });
 
+  test("a lookup that fails with something other than an Error reports what failed", async () => {
+    const { db } = database();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw "socket hang up";
+      }),
+    );
+    await expect(findProposal(db, "odd.sputnik-dao.near", 4)).rejects.toBe("socket hang up");
+  });
+
   test("proposals since a moment are read page by page back past that moment", async () => {
     const { db } = database();
     const pages: number[] = [];
