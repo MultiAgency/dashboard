@@ -17,6 +17,10 @@ const repo = z
   .trim()
   .regex(/^[A-Za-z0-9-]{1,39}\/(?!\.{1,2}$)[A-Za-z0-9._-]{1,100}$/, "owner/name");
 const nearAccount = z.string().trim().min(2).max(64);
+const link = z
+  .url()
+  .max(2000)
+  .refine((s) => /^https?:\/\//i.test(s), "must start with http:// or https://");
 const status = z.enum([
   "draft",
   "offered",
@@ -216,10 +220,12 @@ const evidence = z.object({
 
 const manualItem = z.object({
   title: z.string().trim().min(1).max(300),
-  url: z.url().max(2000),
+  url: z.string(),
   date: day.nullable(),
   note: z.string().trim().max(500).nullable(),
 });
+
+const manualItemInput = manualItem.extend({ url: link });
 
 const trustDecision = z.enum(["manual", "veto_window", "auto_pay"]);
 
@@ -703,7 +709,7 @@ export const workOrdersContract = {
       z.object({
         id: z.string().min(1),
         sha256: z.string().regex(/^[0-9a-fA-F]{64}$/, "a SHA-256 hex digest"),
-        url: z.url().max(2000).nullable().optional(),
+        url: link.nullable().optional(),
       }),
     )
     .output(workOrder)
@@ -1178,7 +1184,7 @@ export const myWorkOrdersContract = {
       z.object({
         requestId: z.string().min(1),
         assessmentMd: z.string().max(20_000).optional(),
-        manualItems: z.array(manualItem).max(50).optional(),
+        manualItems: z.array(manualItemInput).max(50).optional(),
         requestedAmount: amount.optional(),
       }),
     )

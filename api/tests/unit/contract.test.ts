@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import type { z } from "zod";
 import {
   baseAmount,
   contract,
@@ -81,6 +82,35 @@ describe("httpUrl validator — XSS-safe URL scheme check", () => {
 
   test("rejects URLs exceeding the 500-char cap", () => {
     expect(httpUrl.safeParse(`https://example.com/${"a".repeat(500)}`).success).toBe(false);
+  });
+});
+
+describe("work order links", () => {
+  const inputOf = (procedure: unknown) => {
+    const [schema] = (procedure as { "~orpc": { inputSchemas: z.ZodType[] } })["~orpc"]
+      .inputSchemas;
+    if (!schema) throw new Error("The route has no input schema");
+    return schema;
+  };
+
+  test("a manual item takes only an http(s) link", () => {
+    const edit = inputOf(contract.myWorkOrders.editRequest);
+    const item = (url: string) => ({
+      requestId: "r1",
+      manualItems: [{ title: "Note", url, date: null, note: null }],
+    });
+    expect(edit.safeParse(item("https://docs.example/research")).success).toBe(true);
+    expect(edit.safeParse(item(`https://docs.example/${"a".repeat(1900)}`)).success).toBe(true);
+    expect(edit.safeParse(item("javascript:alert(1)")).success).toBe(false);
+    expect(edit.safeParse(item("data:text/html,<script>alert(1)</script>")).success).toBe(false);
+  });
+
+  test("an attached document takes only an http(s) link", () => {
+    const attach = inputOf(contract.workOrders.attachDocument);
+    const doc = (url: string | null) => ({ id: "w1", sha256: "a".repeat(64), url });
+    expect(attach.safeParse(doc("https://drive.google.com/file/d/1")).success).toBe(true);
+    expect(attach.safeParse(doc(null)).success).toBe(true);
+    expect(attach.safeParse(doc("javascript:alert(1)")).success).toBe(false);
   });
 });
 

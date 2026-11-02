@@ -49,6 +49,7 @@ import {
 } from "@/lib/format-amount";
 import { dateTime } from "@/lib/format-date";
 import { myWorkOrderQueryOptions, myWorkOrdersQueryKey } from "@/lib/queries";
+import { safeHttpHref } from "@/lib/url";
 
 export const Route = createFileRoute("/_authenticated/work-orders/$id")({
   head: () => ({ meta: [{ title: "Work order" }] }),
@@ -103,6 +104,7 @@ function MyWorkOrderPage() {
   const payable = ["active", "ended", "exhausted"].includes(wo.status);
   const openDraft = wo.requests.find((r) => r.status === "draft");
   const amount = (value: string) => formatTokenAmount(value, wo.tokenId);
+  const documentHref = safeHttpHref(wo.documentUrl);
 
   return (
     <div className="flex flex-col gap-6 [&_[data-slot=card-description]]:text-sm [&_[data-slot=card]]:text-sm">
@@ -214,11 +216,11 @@ function MyWorkOrderPage() {
                 <dt className="text-muted-foreground">Signed</dt>
                 <dd>
                   {signedHow(wo.signature.method)} on {wo.signature.signedAt?.slice(0, 10)}
-                  {wo.documentUrl ? (
+                  {documentHref ? (
                     <>
                       {" · "}
                       <a
-                        href={wo.documentUrl}
+                        href={documentHref}
                         target="_blank"
                         rel="noreferrer"
                         className="underline underline-offset-4"
@@ -431,6 +433,21 @@ function SubmittedRequest({
   );
 }
 
+function ManualItemLink({ item }: { item: ManualItem }) {
+  const href = safeHttpHref(item.url);
+  if (!href) return <span className="min-w-0 flex-1 truncate">{item.title}</span>;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="min-w-0 flex-1 truncate underline-offset-4 hover:underline"
+    >
+      {item.title}
+    </a>
+  );
+}
+
 function DraftEditor({
   request,
   workOrder,
@@ -530,14 +547,7 @@ function DraftEditor({
             <ul className="flex flex-col gap-1 text-sm">
               {items.map((item, i) => (
                 <li key={`${item.url}-${i}`} className="flex items-center gap-2">
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="min-w-0 flex-1 truncate underline-offset-4 hover:underline"
-                  >
-                    {item.title}
-                  </a>
+                  <ManualItemLink item={item} />
                   <Button
                     size="sm"
                     variant="ghost"
