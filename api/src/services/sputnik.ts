@@ -337,6 +337,7 @@ export async function findProposal(
   }
 
   let proposal: DaoProposal | null = null;
+  let reported: DaoProposalStatus | null = null;
   try {
     const raw = await viewCall<Record<string, unknown>>(
       daoAccountId,
@@ -346,11 +347,13 @@ export async function findProposal(
         id: proposalId,
       },
     );
-    [proposal = null] = await expireByPolicy(daoAccountId, [parseProposal(raw, proposalId)]);
+    const parsed = parseProposal(raw, proposalId);
+    reported = parsed.status;
+    [proposal = null] = await expireByPolicy(daoAccountId, [parsed]);
   } catch (err) {
     if (!(err as Error).message.includes("ERR_NO_PROPOSAL")) throw err;
   }
-  const isTerminal = proposal && TERMINAL_STATUSES.has(proposal.status);
+  const isTerminal = proposal && reported && TERMINAL_STATUSES.has(reported);
   const expiresAt = isTerminal ? Number.POSITIVE_INFINITY : Date.now() + PROPOSAL_TTL_MS;
   proposalCache.set(cacheKey, { proposal, expiresAt });
   if (isTerminal && proposal) {
@@ -375,19 +378,23 @@ export async function getProposals(
     "get_proposals",
     { from_index: fromIndex, limit },
   );
-  const proposals = await expireByPolicy(
-    daoAccountId,
-    raw.map((r, idx) => parseProposal(r, fromIndex + idx)),
-  );
+  const parsed = raw.map((r, idx) => parseProposal(r, fromIndex + idx));
+  const proposals = await expireByPolicy(daoAccountId, parsed);
+  const reportedTerminal = (idx: number) =>
+    TERMINAL_STATUSES.has(parsed[idx]?.status ?? "InProgress");
   // Warm the per-proposal cache so subsequent getProposal(id) calls hit cache.
-  for (const p of proposals) {
+  proposals.forEach((p, idx) => {
     const cacheKey = `${daoAccountId}::${p.id}`;
-    const expiresAt = TERMINAL_STATUSES.has(p.status)
+    const expiresAt = reportedTerminal(idx)
       ? Number.POSITIVE_INFINITY
       : Date.now() + PROPOSAL_TTL_MS;
     proposalCache.set(cacheKey, { proposal: p, expiresAt });
-  }
-  await persistTerminalProposals(db, daoAccountId, proposals);
+  });
+  await persistTerminalProposals(
+    db,
+    daoAccountId,
+    proposals.filter((_, idx) => reportedTerminal(idx)),
+  );
   return proposals;
 }
 

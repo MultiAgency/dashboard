@@ -114,7 +114,22 @@ describe("reading a DAO proposal", () => {
       "Rejected",
       "InProgress",
     ]);
-    expect(saved.map((row) => row.status)).toEqual(["Expired", "Expired", "Expired", "Rejected"]);
+    expect(saved.map((row) => row.status)).toEqual(["Rejected"]);
+  });
+
+  test("an expiry read from the DAO's voting period isn't saved, so a longer period reopens it", async () => {
+    vi.useFakeTimers();
+    const { db, saved } = database();
+    let policy = POLICY;
+    chain((method) =>
+      method === "get_policy" ? { value: policy } : { value: proposal("InProgress", 8n * DAY_NS) },
+    );
+    const dao = "extended.sputnik-dao.near";
+    expect((await findProposal(db, dao, 11))?.status).toBe("Expired");
+    expect(saved).toEqual([]);
+    policy = { roles: [], proposal_period: String(30n * DAY_NS) };
+    vi.advanceTimersByTime(61_000);
+    expect((await findProposal(db, dao, 11))?.status).toBe("InProgress");
   });
 
   test("proposals since a moment are read page by page back past that moment", async () => {
