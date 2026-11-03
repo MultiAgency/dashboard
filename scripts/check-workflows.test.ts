@@ -49,6 +49,19 @@ test("a staging workflow on production's Railway token is refused", () => {
   ]);
 });
 
+test("a staging workflow with a workspace-scoped Railway token is refused", () => {
+  const directory = workflows({
+    "staging.yml": `env:
+  RAILWAY_TOKEN: \${{ secrets.RAILWAY_STAGING_TOKEN }}
+  RAILWAY_API_TOKEN: \${{ secrets.RAILWAY_STAGING_API_TOKEN }}
+  RAILWAY_PROJECT_ID: \${{ vars.RAILWAY_STAGING_PROJECT_ID }}
+`,
+  });
+  assert.deepEqual(checkWorkflows(directory), [
+    `staging.yml: sets RAILWAY_API_TOKEN, a workspace-scoped Railway token that reaches every project in the workspace, production included`,
+  ]);
+});
+
 test("our workflows pass", () => {
   const directory = workflows({
     "staging.yml": `env:
