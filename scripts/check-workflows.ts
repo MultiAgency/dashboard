@@ -17,6 +17,14 @@ export function checkWorkflows(directory: string): string[] {
     if (file === "staging.yml" && /secrets\.RAILWAY_TOKEN\b/.test(text)) {
       problems.push(`${file}: reads secrets.RAILWAY_TOKEN, production's Railway token`);
     }
+    if (
+      file === "staging.yml" &&
+      /\bRAILWAY_API_TOKEN\b|secrets\.RAILWAY_\w*API_TOKEN\b/.test(text)
+    ) {
+      problems.push(
+        `${file}: uses a workspace-scoped Railway token (RAILWAY_API_TOKEN), which reaches every project in the workspace, production included`,
+      );
+    }
     for (const match of text.matchAll(
       /^\s*uses:\s*([^\s#]+\/\.github\/workflows\/[^\s#@]+)@([^\s#]+)/gm,
     )) {
@@ -33,6 +41,6 @@ if (import.meta.url === `file://${resolve(process.argv[1] ?? "")}`) {
   for (const problem of problems) console.error(problem);
   if (problems.length > 0) process.exit(1);
   console.log(
-    "Workflows keep staging on its own token, pass no inherited secrets, and pin by SHA.",
+    "Workflows keep staging on its own project token, pass no inherited secrets, and pin by SHA.",
   );
 }

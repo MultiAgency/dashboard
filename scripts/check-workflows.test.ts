@@ -49,6 +49,46 @@ test("a staging workflow on production's Railway token is refused", () => {
   ]);
 });
 
+const WORKSPACE_TOKEN = `staging.yml: uses a workspace-scoped Railway token (RAILWAY_API_TOKEN), which reaches every project in the workspace, production included`;
+
+for (const [name, text] of [
+  [
+    "an env key",
+    `env:
+  RAILWAY_TOKEN: \${{ secrets.RAILWAY_STAGING_TOKEN }}
+  RAILWAY_API_TOKEN: \${{ secrets.RAILWAY_STAGING_API_TOKEN }}
+`,
+  ],
+  [
+    "a quoted env key",
+    `env:
+  "RAILWAY_API_TOKEN": \${{ secrets.RAILWAY_STAGING_API_TOKEN }}
+`,
+  ],
+  [
+    "a GITHUB_ENV write",
+    `steps:
+  - run: echo "RAILWAY_API_TOKEN=\${{ secrets.RAILWAY_STAGING_API_TOKEN }}" >> "$GITHUB_ENV"
+`,
+  ],
+  [
+    "an inline assignment",
+    `steps:
+  - run: RAILWAY_API_TOKEN=\${{ secrets.RAILWAY_STAGING_API_TOKEN }} pnpm run bos deploy --env staging
+`,
+  ],
+  [
+    "a workspace token secret under another name",
+    `env:
+  RAILWAY_DEPLOY_KEY: \${{ secrets.RAILWAY_STAGING_API_TOKEN }}
+`,
+  ],
+] as const) {
+  test(`a staging workflow with a workspace-scoped Railway token in ${name} is refused`, () => {
+    assert.deepEqual(checkWorkflows(workflows({ "staging.yml": text })), [WORKSPACE_TOKEN]);
+  });
+}
+
 test("our workflows pass", () => {
   const directory = workflows({
     "staging.yml": `env:
