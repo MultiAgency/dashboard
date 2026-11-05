@@ -45,7 +45,8 @@
     "dotenv": "^17.2.3",
     "everything-dev": "catalog:",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "@module-federation/runtime-tools": "catalog:"
   },
   "scripts": {
     "build": "every-plugin build",

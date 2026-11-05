@@ -5,7 +5,7 @@ import { App } from "everything-dev/descriptor";
 export default App({
   name: "multiagency.ai",
   extends: "bos://dev.everything.near/everything.dev",
-  platform: "2.0.0-rc.29",
+  release: "2.0.0-rc.38",
   account: "multiagentic.near",
   domain: "multiagency.ai",
   title: "MultiAgency",
