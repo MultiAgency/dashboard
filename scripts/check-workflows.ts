@@ -17,9 +17,12 @@ export function checkWorkflows(directory: string): string[] {
     if (file === "staging.yml" && /secrets\.RAILWAY_TOKEN\b/.test(text)) {
       problems.push(`${file}: reads secrets.RAILWAY_TOKEN, production's Railway token`);
     }
-    if (file === "staging.yml" && /^\s*RAILWAY_API_TOKEN\s*:/m.test(text)) {
+    if (
+      file === "staging.yml" &&
+      /\bRAILWAY_API_TOKEN\b|secrets\.RAILWAY_\w*API_TOKEN\b/.test(text)
+    ) {
       problems.push(
-        `${file}: sets RAILWAY_API_TOKEN, a workspace-scoped Railway token that reaches every project in the workspace, production included`,
+        `${file}: uses a workspace-scoped Railway token (RAILWAY_API_TOKEN), which reaches every project in the workspace, production included`,
       );
     }
     for (const match of text.matchAll(

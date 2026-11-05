@@ -100,6 +100,8 @@ bos deploy              # Build, upload bundles to the CDN, publish config, rede
 bos deploy --env staging  # The same for staging (CI runs this on push to `staging`)
 ```
 
+Staging CI deploys with a project-scoped Railway token, which can redeploy the `dashboard` service but cannot change its image. After a `bos upgrade` moves to a new release, switch the staging service's source to the new image by hand once the staging deploy has published: Railway → staging → `dashboard` → Settings → Source → `ghcr.io/nearbuilders/everything-dev:v<release>`.
+
 ### Project Management
 
 ```bash
