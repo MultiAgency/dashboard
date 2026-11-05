@@ -26,5 +26,5 @@ jobs:
       - name: Test the guard
         run: node --test scripts/check-workflows.test.ts
 
-      - name: Check workflows (bos upgrade rewrites ci.yml and staging.yml)
+      - name: Check workflows (bos upgrade rewrites ci.yml, staging.yml and deploy.yml)
         run: node scripts/check-workflows.ts
