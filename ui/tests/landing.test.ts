@@ -31,7 +31,7 @@ describe("organizationToActivate", () => {
 describe("organizationHome", () => {
   const none = { canManageMembers: false, hasAgencySections: false, hasClientSections: false };
 
-  test("owners and admins land on the Agency admin sections", () => {
+  test("owners and admins land on the Agency Home", () => {
     expect(organizationHome({ ...none, canManageMembers: true, hasAgencySections: true })).toBe(
       "/admin",
     );
@@ -43,6 +43,12 @@ describe("organizationHome", () => {
 
   test("users with only Client-side access land on their shared Projects", () => {
     expect(organizationHome({ ...none, hasClientSections: true })).toBe("/client/projects");
+  });
+
+  test("a recommended Client view lands on shared Projects", () => {
+    expect(
+      organizationHome({ ...none, hasAgencySections: true, hasClientSections: true }, "client"),
+    ).toBe("/client/projects");
   });
 
   test("users without sections land on My work", () => {

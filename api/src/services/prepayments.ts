@@ -1,5 +1,5 @@
+import { ORPCError } from "@orpc/server";
 import { desc, eq } from "drizzle-orm";
-import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type EngagementRow, engagements, type PrepaymentRow, prepayments } from "../db/schema";
 import type { OrganizationDirectory } from "../lib/organizations";

@@ -1,0 +1,298 @@
+import { beforeEach, describe, expect, test } from "vitest";
+import type { Database } from "../../src/db";
+import { workOrderOutbox } from "../../src/db/schema";
+import type { EmailMessage } from "../../src/services/notify";
+import { composeEmails } from "../../src/services/work-orders/emails";
+import type { WorkOrderEvent } from "../../src/services/work-orders/events";
+import {
+  createWorkOrderIntegrations,
+  createWorkOrderOutbox,
+} from "../../src/services/work-orders/outbox";
+import { migratedDatabase } from "./_pg";
+
+function event(type: WorkOrderEvent["type"], over: Partial<WorkOrderEvent> = {}): WorkOrderEvent {
+  return {
+    id: "evt_test",
+    type,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    request: null,
+    payout: null,
+    reportMd: null,
+    terms: null,
+    mismatches: null,
+    note: null,
+    renewal: null,
+    agency: { id: "studio", name: "Studio" },
+    workOrder: {
+      id: "SI-004",
+      title: "Contributor role",
+      project: "Search",
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-30",
+      periodStarted: true,
+      budget: "1000 USDC",
+    },
+    contractor: {
+      name: "Carol",
+      email: "carol@example.com",
+      github: "carol-gh",
+      nearAccount: "carol.near",
+    },
+    representative: { name: "Rita", email: "rita@example.com" },
+    links: {
+      contractor: "https://app.example/work-orders/1",
+      review: "https://app.example/admin/work-orders/1",
+      report: null,
+      confirm: "https://app.example/work-orders/1",
+      document: null,
+    },
+    ...over,
+  };
+}
+
+describe("work order emails", () => {
+  const database = migratedDatabase({ perTest: true });
+  let db: Database;
+  let clock: Date;
+  let sent: EmailMessage[];
+  let outbox: ReturnType<typeof createWorkOrderOutbox>;
+
+  beforeEach(() => {
+    db = database.db;
+    clock = new Date("2026-09-20T12:00:00.000Z");
+    sent = [];
+    outbox = createWorkOrderOutbox({
+      db,
+      sendEmail: async (message) => {
+        sent.push(message);
+      },
+      now: () => clock,
+    });
+  });
+
+  test("only the chosen events email, each to the right person", () => {
+    const to = (type: WorkOrderEvent["type"], over: Partial<WorkOrderEvent> = {}) =>
+      composeEmails(event(type, over)).map((m) => m.to);
+    expect(to("work_order.offered")).toEqual(["carol@example.com"]);
+    expect(to("work_order.active")).toEqual(["carol@example.com"]);
+    expect(to("request.payout_released")).toEqual(["carol@example.com"]);
+    expect(to("work_order.signed")).toEqual(["rita@example.com"]);
+    expect(to("work_order.renewed")).toEqual(["rita@example.com"]);
+    expect(to("request.awaiting_approval")).toEqual(["carol@example.com", "rita@example.com"]);
+    expect(to("work_order.builder_signed")).toEqual(["rita@example.com"]);
+    expect(to("request.approved")).toEqual(["carol@example.com"]);
+    expect(to("work_order.sign_first")).toEqual(["rita@example.com"]);
+    expect(to("work_order.declined")).toEqual(["rita@example.com"]);
+    expect(to("work_order.renewal_needs_approval")).toEqual(["rita@example.com"]);
+    for (const builder of [
+      "request.report_ready",
+      "work_order.confirm_payee",
+      "work_order.ending_soon",
+      "work_order.not_renewed",
+      "work_order.terminated",
+      "work_order.withdrawn",
+    ] as const) {
+      expect(to(builder)).toEqual(["carol@example.com"]);
+    }
+    for (const quiet of ["work_order.created", "work_order.payee_confirmed"] as const) {
+      expect(to(quiet)).toEqual([]);
+    }
+    const request = {
+      id: "SI-004-R1",
+      status: "rejected",
+      requestedUsd: "500",
+      approvedUsd: null,
+      tokenAmount: null,
+      symbol: "USD",
+      requested: "$500",
+      approved: null,
+      note: "Missing pull requests",
+    };
+    const declined = composeEmails(event("request.needs_review", { request }));
+    expect(declined.map((m) => m.to)).toEqual(["carol@example.com"]);
+    expect(declined[0]?.subject).toBe("Payout declined: request SI-004-R1");
+    expect(declined[0]?.text).toContain("Missing pull requests");
+    expect(to("request.needs_review", { request: { ...request, status: "failed" } })).toEqual([]);
+  });
+
+  test("a payout on hold emails only the representative, with a link to fund the agent", () => {
+    const base = event("request.payout_blocked");
+    const held = event("request.payout_blocked", {
+      request: {
+        id: "SI-004-R1",
+        status: "approved",
+        requestedUsd: "1",
+        approvedUsd: "1",
+        tokenAmount: "1000000",
+        symbol: "USD",
+        requested: "$1",
+        approved: "$1",
+        note: null,
+      },
+      links: { ...base.links, settings: "https://app.example/admin/settings#payouts" },
+      hold: {
+        code: "insufficient_balance",
+        reason: "The agent holds 0.0148 NEAR; this payout needs 0.22 NEAR",
+        balanceNear: "0.0148",
+        neededNear: "0.22",
+      },
+    });
+    const emails = composeEmails(held);
+    expect(emails.map((m) => m.to)).toEqual(["rita@example.com"]);
+    const [email] = emails;
+    expect(email?.subject).toBe("Payout on hold: fund the agent to pay Carol $1");
+    expect(email?.html).toContain("Payout on hold");
+    expect(email?.html).toContain("Fund the agent to pay Carol $1");
+    expect(email?.html).toContain('href="https://app.example/admin/settings#payouts"');
+    expect(email?.text).toContain("The agent holds 0.0148 NEAR; this payout needs 0.22 NEAR.");
+    expect(email?.text).toContain("paid automatically");
+    expect(email?.text).toContain("0.0148 NEAR");
+    expect(composeEmails(event("request.payout_blocked"))).toEqual([]);
+  });
+
+  test("the offer email links straight to the signing page", () => {
+    const base = event("work_order.offered");
+    const [offer] = composeEmails(
+      event("work_order.offered", {
+        links: { ...base.links, sign: "https://sign.example/abc" },
+      }),
+    );
+    expect(offer?.subject).toBe("Studio sent you Work Order SI-004 to sign");
+    expect(offer?.html).toContain('href="https://sign.example/abc"');
+    expect(offer?.fromName).toBe("Studio via MultiAgency");
+    expect(offer?.text).toContain("carol.near");
+  });
+
+  test("the representative's countersign email links straight to their signing page", () => {
+    const [email] = composeEmails(
+      event("work_order.builder_signed", {
+        links: {
+          contractor: "https://app.example/work-orders/1",
+          review: "https://app.example/admin/work-orders/1",
+          report: null,
+          confirm: null,
+          document: null,
+          countersign: "https://sign.example/envelope_1/representative",
+        },
+      }),
+    );
+    expect(email?.subject).toBe("Your turn to sign Work Order SI-004");
+    expect(email?.html).toContain('href="https://sign.example/envelope_1/representative"');
+  });
+
+  test("the representative is asked to sign a new Documenso order first", () => {
+    const base = event("work_order.sign_first");
+    const [email] = composeEmails(
+      event("work_order.sign_first", {
+        links: { ...base.links, countersign: "https://sign.example/envelope_1/representative" },
+      }),
+    );
+    expect(email?.subject).toBe("Sign Work Order SI-004 to send it to Carol");
+    expect(email?.html).toContain('href="https://sign.example/envelope_1/representative"');
+  });
+
+  test("signed and active emails say when the work order starts", () => {
+    const [signed] = composeEmails(event("work_order.signed"));
+    expect(signed?.text).not.toContain("when its period starts");
+    expect(signed?.text).toContain("starts on its own unless something still blocks it");
+    const [started] = composeEmails(event("work_order.active"));
+    expect(started?.text).toContain("Your work period has started");
+    const later = event("work_order.active");
+    later.workOrder.periodStarted = false;
+    const [upcoming] = composeEmails(later);
+    expect(upcoming?.text).toContain("Your work period starts on 2026-09-01");
+    expect(upcoming?.text).not.toContain("has started");
+    const offer = event("work_order.offered");
+    offer.links.sign = "https://sign.example/c";
+    offer.workOrder.periodStarted = false;
+    const [offered] = composeEmails(offer);
+    expect(offered?.text).toContain("its work period runs from 2026-09-01 to 2026-09-30");
+    expect(offered?.text).not.toContain("starts right away");
+  });
+
+  test("a withdrawn order tells the builder to ignore any signing link", () => {
+    const [email] = composeEmails(event("work_order.withdrawn"));
+    expect(email?.subject).toBe("Studio withdrew Work Order SI-004");
+    expect(email?.text).toContain("If you got a signing link for it, ignore it");
+    expect(email?.html).not.toContain("https://app.example/work-orders/1");
+  });
+
+  test("emails go out once through Resend", async () => {
+    const signed = event("work_order.signed");
+    signed.links.document = "https://drive.example/signed?id=1&v=2";
+    const ids = await outbox.enqueue("studio", "wo1", signed);
+    expect(ids).toHaveLength(1);
+    expect(await outbox.deliver()).toEqual({ delivered: 1, failed: 0 });
+    expect(sent.map((m) => m.to)).toEqual(["rita@example.com"]);
+    expect(sent[0]?.text).toContain("Download the signed PDF");
+    expect(sent[0]?.html).toContain('href="https://drive.example/signed?id=1&amp;v=2"');
+    expect(sent[0]?.subject).toBe("Work Order SI-004 is signed");
+    expect(sent[0]?.html).toContain('src="cid:multiagency-logo"');
+    expect(sent[0]?.inlineImages).toEqual([
+      expect.objectContaining({ contentId: "multiagency-logo", filename: "multiagency.png" }),
+    ]);
+    expect(
+      Buffer.from(sent[0]?.inlineImages?.[0]?.content ?? "", "base64")
+        .subarray(1, 4)
+        .toString(),
+    ).toBe("PNG");
+    expect(await outbox.deliver()).toEqual({ delivered: 0, failed: 0 });
+  });
+
+  test("overlapping deliveries send each email once", async () => {
+    const ids = await outbox.enqueue("studio", "wo1", event("work_order.signed"));
+    const [first, second] = await Promise.all([outbox.deliver({ ids }), outbox.deliver()]);
+    expect(first.delivered + second.delivered).toBe(1);
+    expect(sent).toHaveLength(1);
+  });
+
+  test("a failed email is retried with backoff", async () => {
+    let fail = true;
+    outbox = createWorkOrderOutbox({
+      db,
+      sendEmail: async (message) => {
+        if (fail) throw new Error("Resend answered 502");
+        sent.push(message);
+      },
+      now: () => clock,
+    });
+    await outbox.enqueue("studio", "wo1", event("request.awaiting_approval"));
+    expect((await outbox.deliver()).failed).toBe(2);
+    const [row] = await db.select().from(workOrderOutbox);
+    expect(row?.lastError).toBe("Resend answered 502");
+    expect(row?.nextAttemptAt.getTime()).toBe(clock.getTime() + 60_000);
+    fail = false;
+    expect((await outbox.deliver()).delivered).toBe(0);
+    clock = new Date(clock.getTime() + 61_000);
+    expect((await outbox.deliver()).delivered).toBe(2);
+  });
+
+  test("an Agency's default representative is saved and read back", async () => {
+    const integrations = createWorkOrderIntegrations({ db });
+    expect(await integrations.representative("studio")).toEqual({ name: null, email: null });
+    await integrations.saveRepresentative("studio", "rita", {
+      name: "  Rita Rep ",
+      email: " Rita@Studio.Example ",
+    });
+    expect(await integrations.representative("studio")).toEqual({
+      name: "Rita Rep",
+      email: "rita@studio.example",
+    });
+    expect(await integrations.representative("rival")).toEqual({ name: null, email: null });
+    await integrations.saveRepresentative("studio", "rita", { name: "", email: null });
+    expect(await integrations.representative("studio")).toEqual({ name: null, email: null });
+  });
+
+  test("deliveries older than a day are given up", async () => {
+    outbox = createWorkOrderOutbox({
+      db,
+      sendEmail: async () => {
+        throw new Error("down");
+      },
+      now: () => clock,
+    });
+    await outbox.enqueue("studio", "wo1", event("work_order.signed"));
+    clock = new Date(clock.getTime() + 25 * 3_600_000);
+    expect(await outbox.deliver()).toEqual({ delivered: 0, failed: 0 });
+  });
+});

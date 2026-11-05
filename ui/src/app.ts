@@ -1,9 +1,7 @@
 /**
  * Public UI surface — runtime helpers, client factories, and router types.
  *
- * ⚠️  DO NOT MODIFY THIS FILE.
- * It is framework-owned and will be overwritten by `bos sync` / `bos upgrade`.
- *
+ * Authored seam (ADR 0023): scaffolded once, app-owned forever after.
  * Imports within this file must be relative paths (./lib/api, ./lib/auth).
  * Never import from "@/app" here — that would create a circular self-reference.
  *
@@ -11,32 +9,11 @@
  * thin runtime helpers (getAccount, getAppName, etc.) derived from
  * the injected runtime config.
  *
- * Framework file roles (understand this boundary — don't dig into host):
- *
- *   hydrate.tsx       — Client bootstrap. Creates browser-side QueryClient,
- *                        Router, and browser-side auth/API clients once.
- *                        Called from the host-rendered HTML shell.
- *
- *   router.tsx        — Client router factory. Consumes the context set up
- *                        during hydration. Uses browser history.
- *
- *   router.server.tsx — SSR router factory. Creates request-scoped server
- *                        router and server-side API/auth clients per request.
- *                        Mirrors client router shape for hydration consistency.
- *
- *   routes/__root.tsx — HTML shell, head/scripts/styles, runtime config
- *                        handoff. Root boundary between host-rendered
- *                        document and the UI application.
- *
- *   app.ts            — This file. Re-exports the minimal shared runtime
- *                        helpers plus public client surfaces from ./lib/api
- *                        and ./lib/auth. Also re-exports router-facing
- *                        public types.
- *
- *   Boundary rule: The host loads UI remotely via Module Federation and
+ * Boundary rule: The host loads UI remotely via Module Federation and
  * provides runtime config + auth/API routing. Work within the typed
  * surface exported here. Only investigate host internals if something
- * is genuinely broken and a host PR is warranted.
+ * is genuinely broken and a parent PR is warranted
+ * (https://github.com/nearbuilders/everything-dev).
  */
 
 export { getBaseStyles } from "everything-dev/ui/head";
@@ -104,6 +81,7 @@ import type {
   RenderOptions as BaseRenderOptions,
   RouterContextWithApi as BaseRouterContextWithApi,
 } from "everything-dev/ui/types";
+import { APP_LOCALE_COOKIE, APP_LOCALES, DEFAULT_APP_LOCALE } from "./i18n/catalogs";
 import type { SessionData } from "./lib/auth";
 
 export type {
@@ -133,4 +111,17 @@ export interface RenderOptions extends Omit<BaseRenderOptions<SessionData>, "run
   runtimeConfig: BaseRenderOptions<SessionData>["runtimeConfig"];
   apiClient: ApiClient;
   authClient?: AuthClientType;
+}
+
+export const appLocale = {
+  locales: APP_LOCALES,
+  defaultLocale: DEFAULT_APP_LOCALE,
+  cookieName: APP_LOCALE_COOKIE,
+};
+
+export function apiConnectionError() {
+  return {
+    title: "Unable to connect to API",
+    description: "The API is currently unavailable. Please try again later.",
+  };
 }

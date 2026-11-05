@@ -62,7 +62,21 @@ async function sendWebhook(url: string, app: ApplicationNotification): Promise<v
   }
 }
 
-export type EmailMessage = { to: string; subject: string; html: string };
+export type InlineImage = { contentId: string; filename: string; content: string };
+
+export type EmailMessage = {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  fromName?: string;
+  inlineImages?: InlineImage[];
+};
+
+function sender(fromEmail: string, fromName: string | undefined): string {
+  if (!fromName || fromEmail.includes("<")) return fromEmail;
+  return `${fromName.replace(/["<>]/g, "")} <${fromEmail}>`;
+}
 
 export type EmailSender = (message: EmailMessage) => Promise<void>;
 
@@ -79,7 +93,22 @@ export function resendEmailSender(config: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${resendApiKey}`,
       },
-      body: JSON.stringify({ from: fromEmail, ...message }),
+      body: JSON.stringify({
+        from: sender(fromEmail, message.fromName),
+        to: message.to,
+        subject: message.subject,
+        html: message.html,
+        ...(message.text ? { text: message.text } : {}),
+        ...(message.inlineImages?.length
+          ? {
+              attachments: message.inlineImages.map((image) => ({
+                content: image.content,
+                filename: image.filename,
+                content_id: image.contentId,
+              })),
+            }
+          : {}),
+      }),
     });
     if (!res.ok) {
       throw new Error(`resend POST failed: ${res.status}`);

@@ -1,4 +1,4 @@
-import type { Effect } from "every-plugin/effect";
+import type { Effect } from "effect";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import { budgets, engagements, reportSnapshots } from "../../src/db/schema";
@@ -38,7 +38,7 @@ const SEED = {
 };
 
 const builders = {
-  builders: () => ({ listBuilders: async () => ({ data: [] }) }),
+  builders: { client: () => ({ listBuilders: async () => ({ data: [] }) }) },
 } as unknown as Partial<PluginsClient>;
 
 describe("client agreements", () => {

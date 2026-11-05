@@ -1,4 +1,4 @@
-import { ORPCError } from "every-plugin/orpc";
+import { ORPCError } from "@orpc/server";
 import type { PluginContext } from "../../src/lib/organizations";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import type { AgencyScope, TreasuryScope } from "../../src/services/organization-access";
@@ -71,8 +71,8 @@ export function agencyScope(
   };
 }
 
-type CreateInput = Parameters<ReturnType<PluginsClient["projects"]>["createProject"]>[0];
-type UpdateInput = Parameters<ReturnType<PluginsClient["projects"]>["updateProject"]>[0];
+type CreateInput = Parameters<ReturnType<PluginsClient["projects"]["client"]>["createProject"]>[0];
+type UpdateInput = Parameters<ReturnType<PluginsClient["projects"]["client"]>["updateProject"]>[0];
 
 export function inMemoryProjectsPlugin(seed: PluginProject[]) {
   const projects = [...seed];
@@ -111,8 +111,8 @@ export function inMemoryProjectsPlugin(seed: PluginProject[]) {
     },
   });
   const plugins = {
-    projects: forContext,
-    builders: () => ({ listBuilders: async () => ({ data: [] }) }),
+    projects: { client: forContext },
+    builders: { client: () => ({ listBuilders: async () => ({ data: [] }) }) },
   } as unknown as PluginsClient;
   return { plugins, directory: createProjectDirectory(forContext), projects };
 }

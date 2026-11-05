@@ -1,6 +1,6 @@
+import { ORPCError } from "@orpc/server";
 import { and, count, desc, eq, ilike, isNotNull, or } from "drizzle-orm";
-import { Context, Effect, Layer } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Context, Effect, Layer } from "effect";
 import { DatabaseTag } from "../db/layer";
 import { builders } from "../db/schema";
 
@@ -123,7 +123,7 @@ export function generateId(): string {
   return `bld_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
-export class BuilderService extends Context.Tag("builders/BuilderService")<
+export class BuilderService extends Context.Service<
   BuilderService,
   {
     listBuilders: (input: {
@@ -176,7 +176,7 @@ export class BuilderService extends Context.Tag("builders/BuilderService")<
       caller: BuilderCaller,
     ) => Effect.Effect<{ deleted: boolean }, ORPCError<string, unknown>>;
   }
->() {}
+>()("builders/BuilderService") {}
 
 export const BuilderServiceLive = Layer.effect(
   BuilderService,

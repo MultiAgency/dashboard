@@ -1,6 +1,7 @@
 import { Link, useMatchRoute, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { WorkOrdersNeedsYouBadge } from "@/components/work-orders/needs-you-badge";
 import { useWorkspaceView } from "@/hooks/use-workspace-view";
 import {
   type NavItem,
@@ -9,6 +10,8 @@ import {
   type WorkspaceView,
   workspaceNavigation,
 } from "@/lib/navigation";
+
+const NEEDS_YOU_BADGE = new Set(["/admin", "/admin/work-orders"]);
 
 const VIEW_LABELS: Record<WorkspaceView, string> = { agency: "Agency", client: "Client" };
 
@@ -32,7 +35,7 @@ export function AdminSidebar() {
 
   const matching = groups
     .flatMap((group) => group.items)
-    .filter((item) => !!matchRoute({ to: item.match ?? item.to, fuzzy: true }));
+    .filter((item) => !!matchRoute({ to: item.match ?? item.to, fuzzy: !item.exact }));
   const activeTo = matching.reduce<string | null>(
     (best, item) => (best === null || item.to.length > best.length ? item.to : best),
     null,
@@ -86,6 +89,7 @@ export function AdminSidebar() {
                 >
                   <Link to={item.to} aria-current={active ? "page" : undefined}>
                     {item.label}
+                    {NEEDS_YOU_BADGE.has(item.to) && <WorkOrdersNeedsYouBadge />}
                   </Link>
                 </Button>
               );

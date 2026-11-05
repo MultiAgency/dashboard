@@ -1,6 +1,6 @@
+import { ORPCError } from "@orpc/server";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { Context, Effect, Layer } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Context, Effect, Layer } from "effect";
 import type { Database } from "../db";
 import { DatabaseTag } from "../db/layer";
 import { builderAccounts, builderAdmissions, builderAgreements, builders } from "../db/schema";
@@ -60,6 +60,15 @@ export interface RecordedAgreement {
   recordedBy: string;
   recordedAt: string;
 }
+
+export interface AgreementSummary {
+  version: string;
+  attestedAt: string;
+  recordedBy: string;
+  recordedAt: string;
+}
+
+export type MemberWithAgreement = Member & { agreement: AgreementSummary | null };
 
 export interface MemberFilter {
   network?: Network;
@@ -380,6 +389,43 @@ async function writeMember(tx: Transaction, input: MemberWrite) {
   return { data, overwritten };
 }
 
+async function listMembersWithAgreements(
+  db: Database,
+  caller: BuilderCaller,
+): Promise<MemberWithAgreement[]> {
+  if (!isPlatformAdmin(caller)) {
+    throw new ORPCError("FORBIDDEN", { message: "Only a platform admin sees services agreements" });
+  }
+  const [members, agreements] = await Promise.all([
+    listMembers(db, {}),
+    db
+      .select({
+        githubLogin: builders.githubLogin,
+        version: builderAgreements.version,
+        attestedAt: builderAgreements.attestedAt,
+        recordedBy: builderAgreements.recordedBy,
+        recordedAt: builderAgreements.recordedAt,
+      })
+      .from(builderAgreements)
+      .innerJoin(builders, eq(builders.id, builderAgreements.builderId)),
+  ]);
+  const byLogin = new Map(agreements.map((a) => [a.githubLogin, a]));
+  return members.map((member) => {
+    const agreement = byLogin.get(member.githubLogin);
+    return {
+      ...member,
+      agreement: agreement
+        ? {
+            version: agreement.version,
+            attestedAt: agreement.attestedAt.toISOString(),
+            recordedBy: agreement.recordedBy,
+            recordedAt: agreement.recordedAt.toISOString(),
+          }
+        : null,
+    };
+  });
+}
+
 async function recordAgreement(
   db: Database,
   githubLogin: string,
@@ -413,7 +459,7 @@ async function recordAgreement(
   };
 }
 
-export class MemberService extends Context.Tag("builders/MemberService")<
+export class MemberService extends Context.Service<
   MemberService,
   {
     putMember: (
@@ -421,13 +467,16 @@ export class MemberService extends Context.Tag("builders/MemberService")<
     ) => Effect.Effect<{ data: Member; overwritten: string[] }, ORPCError<string, unknown>>;
     listMembers: (filter: MemberFilter) => Effect.Effect<Member[], ORPCError<string, unknown>>;
     getMember: (githubLogin: string) => Effect.Effect<Member | null, ORPCError<string, unknown>>;
+    listMembersWithAgreements: (
+      caller: BuilderCaller,
+    ) => Effect.Effect<MemberWithAgreement[], ORPCError<string, unknown>>;
     recordAgreement: (
       githubLogin: string,
       agreement: Agreement,
       caller: BuilderCaller,
     ) => Effect.Effect<RecordedAgreement, ORPCError<string, unknown>>;
   }
->() {}
+>()("builders/MemberService") {}
 
 export const MemberServiceLive = Layer.effect(
   MemberService,
@@ -447,6 +496,8 @@ export const MemberServiceLive = Layer.effect(
         Effect.tryPromise({ try: () => listMembers(db, filter), catch: toOrpcError }),
       getMember: (githubLogin) =>
         Effect.tryPromise({ try: () => readMember(db, githubLogin), catch: toOrpcError }),
+      listMembersWithAgreements: (caller) =>
+        Effect.tryPromise({ try: () => listMembersWithAgreements(db, caller), catch: toOrpcError }),
       recordAgreement: (githubLogin, agreement, caller) =>
         Effect.tryPromise({
           try: () => recordAgreement(db, githubLogin, agreement, caller),

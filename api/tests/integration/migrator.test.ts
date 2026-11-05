@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Migration } from "virtual:drizzle-migrations.sql";
 import { sql } from "drizzle-orm";
-import { Effect } from "every-plugin/effect";
+import { Effect } from "effect";
+import { detectDrift, runMigrations } from "everything-dev/db";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createDatabaseDriver, type DatabaseDriver } from "../../src/db";
-import { detectDrift, loadMigrations, migrate } from "../../src/db/migrate";
+import { migrations as loadMigrations } from "../../src/db/layer";
 
 const probeTable: Migration = {
   idx: 0,
@@ -72,7 +73,7 @@ describe("migration files", () => {
   });
 });
 
-describe("migrate — runtime migrator", () => {
+describe("runMigrations — runtime migrator", () => {
   let driver: DatabaseDriver;
 
   beforeEach(async () => {
@@ -84,9 +85,9 @@ describe("migrate — runtime migrator", () => {
   });
 
   const migrateBefore = async (tag: string) => {
-    const { migrations } = await Effect.runPromise(loadMigrations());
+    const { migrations } = await Effect.runPromise(loadMigrations);
     await Effect.runPromise(
-      migrate(
+      runMigrations(
         driver.db,
         migrations.filter((m) => m.tag < tag),
       ),
@@ -95,7 +96,7 @@ describe("migrate — runtime migrator", () => {
   };
 
   test("tracks applied hashes in drizzle.__drizzle_migrations, not public", async () => {
-    await Effect.runPromise(migrate(driver.db, [probeTable]));
+    await Effect.runPromise(runMigrations(driver.db, [probeTable]));
 
     const rawTracking = await driver.db.execute(
       sql`SELECT hash FROM "drizzle"."__drizzle_migrations"`,
@@ -111,8 +112,8 @@ describe("migrate — runtime migrator", () => {
   });
 
   test("skips a migration whose hash is already applied (idempotent)", async () => {
-    await Effect.runPromise(migrate(driver.db, [probeTable]));
-    await Effect.runPromise(migrate(driver.db, [probeTable]));
+    await Effect.runPromise(runMigrations(driver.db, [probeTable]));
+    await Effect.runPromise(runMigrations(driver.db, [probeTable]));
 
     const rawCount = await driver.db.execute(
       sql`SELECT count(*)::int AS n FROM "drizzle"."__drizzle_migrations"`,
@@ -122,8 +123,8 @@ describe("migrate — runtime migrator", () => {
   });
 
   test("applies only new migrations on a subsequent call", async () => {
-    await Effect.runPromise(migrate(driver.db, [probeTable]));
-    await Effect.runPromise(migrate(driver.db, [probeTable, probeInsert]));
+    await Effect.runPromise(runMigrations(driver.db, [probeTable]));
+    await Effect.runPromise(runMigrations(driver.db, [probeTable, probeInsert]));
 
     const rawRows = await driver.db.execute(sql`SELECT id FROM "probe"`);
     const ids = (rawRows as unknown as { rows: { id: string }[] }).rows.map((r) => r.id);
@@ -137,17 +138,17 @@ describe("migrate — runtime migrator", () => {
   });
 
   test("a fully migrated database reports no drift, even for tables a later migration dropped", async () => {
-    const { migrations } = await Effect.runPromise(loadMigrations());
-    await Effect.runPromise(migrate(driver.db, migrations));
+    const { migrations } = await Effect.runPromise(loadMigrations);
+    await Effect.runPromise(runMigrations(driver.db, migrations));
 
     const drift = await Effect.runPromise(detectDrift(driver.db, migrations));
 
     expect(drift).toMatchObject({ status: "healthy", missingTables: [] });
   });
 
-  test("CREATE SCHEMA IF NOT EXISTS is idempotent across multiple migrate() calls", async () => {
-    await Effect.runPromise(migrate(driver.db, []));
-    await Effect.runPromise(migrate(driver.db, []));
+  test("CREATE SCHEMA IF NOT EXISTS is idempotent across multiple runMigrations() calls", async () => {
+    await Effect.runPromise(runMigrations(driver.db, [probeTable]));
+    await Effect.runPromise(runMigrations(driver.db, [probeTable, probeInsert]));
     const rawSchemas = await driver.db.execute(
       sql`SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'drizzle'`,
     );
@@ -183,7 +184,7 @@ describe("migrate — runtime migrator", () => {
       sql`INSERT INTO settings (org_account_id, nearn_account_id, created_by, updated_by) VALUES ('multiagency.sputnik-dao.near', 'multiagency', 'admin.near', 'admin.near'), ('unmapped.sputnik-dao.near', 'unmapped', 'admin.near', 'admin.near')`,
     );
 
-    await Effect.runPromise(migrate(driver.db, migrations));
+    await Effect.runPromise(runMigrations(driver.db, migrations));
 
     const raw = await driver.db.execute(
       sql`SELECT org_account_id, dao_account_id, nearn_account_id FROM settings ORDER BY nearn_account_id`,
@@ -208,7 +209,7 @@ describe("migrate — runtime migrator", () => {
       sql`INSERT INTO budgets (id, project_id, token_id, amount, actor_account_id) VALUES ('b1', 'p1', 'near', '10', 'admin.near')`,
     );
 
-    await Effect.runPromise(migrate(driver.db, migrations));
+    await Effect.runPromise(runMigrations(driver.db, migrations));
 
     const raw = await driver.db.execute(sql`SELECT id, engagement_id FROM budgets`);
     expect((raw as unknown as { rows: unknown[] }).rows).toEqual([
@@ -367,7 +368,7 @@ describe("migrate — runtime migrator", () => {
       const migrations = await seedClient(organization, engagement !== null);
       if (engagement) await engage(engagement);
 
-      await Effect.runPromise(migrate(driver.db, migrations));
+      await Effect.runPromise(runMigrations(driver.db, migrations));
 
       expect(await legacyLeft()).toEqual([]);
       expect(await rows(sql`SELECT id, engagement_id FROM budgets`)).toEqual(
@@ -389,7 +390,7 @@ describe("migrate — runtime migrator", () => {
       const migrations = await seedClient(organization, true);
       if (engagement) await engage(engagement);
 
-      await expect(Effect.runPromise(migrate(driver.db, migrations))).rejects.toThrow(
+      await expect(Effect.runPromise(runMigrations(driver.db, migrations))).rejects.toThrow(
         "Legacy clients are not migrated to Engagements yet",
       );
 

@@ -383,6 +383,32 @@ describe("writing board members", () => {
         code: "NOT_FOUND",
       });
     });
+
+    test("is listed for a platform admin with every member, without its proof", async () => {
+      const signed = await admittedHuman("testnet");
+      const unsigned = await admittedHuman("testnet");
+      await record(platformAdminClient(), signed);
+
+      const { data } = await platformAdminClient().listMembersWithAgreements({});
+      const byLogin = new Map<string, any>(data.map((m: any) => [m.githubLogin, m]));
+
+      expect(byLogin.get(signed).agreement).toEqual({
+        version: agreement.version,
+        attestedAt: agreement.attestedAt,
+        recordedBy: "platform",
+        recordedAt: expect.any(String),
+      });
+      expect(byLogin.get(unsigned).agreement).toBeNull();
+      expect(byLogin.get(unsigned).nearAccount).toBeNull();
+      expect(JSON.stringify(data)).not.toContain(agreement.proof);
+    });
+
+    test.each([
+      ["anyone signed out", () => anonymousClient(), "UNAUTHORIZED"],
+      ["an Agency manager", () => agencyClient(), "FORBIDDEN"],
+    ])("is not listed for %s", async (_name, client, code) => {
+      await expect(client().listMembersWithAgreements({})).rejects.toMatchObject({ code });
+    });
   });
 
   describe("the mainnet account", () => {

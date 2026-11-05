@@ -51,6 +51,15 @@ export function adminSettingsQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const organizationRequestsQueryKey = ["platform", "organization-requests"] as const;
+
+export function organizationRequestsQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: organizationRequestsQueryKey,
+    queryFn: () => apiClient.organizationRequests.list(),
+  });
+}
+
 export const agencyDaoQueryKey = ["admin", "agency-dao"] as const;
 
 export function agencyDaoQueryOptions(apiClient: ApiClient) {
@@ -167,6 +176,16 @@ export function adminContributorsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const platformMembersQueryKey = ["platform", "members"] as const;
+
+export function platformMembersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: platformMembersQueryKey,
+    queryFn: () => apiClient.members.list(),
+    retry: false,
+  });
+}
+
 export const adminAssignmentsListQueryKey = ["admin", "assignments", "list"] as const;
 
 export function adminAssignmentsListQueryOptions(apiClient: ApiClient) {
@@ -244,6 +263,181 @@ export function proposalsQueryKey() {
 
 export function adminApplicationsListQueryKey(kind?: string | null, status?: string | null) {
   return ["admin", "applications", "list", kind ?? null, status ?? null] as const;
+}
+
+export const adminWorkOrdersQueryKey = ["admin", "work-orders"] as const;
+
+const SIGNATURE_POLL_MS = 10_000;
+const AUTO_APPROVAL_POLL_MS = 30_000;
+
+function awaitingSignature(wo: {
+  status: string;
+  signing: { representative: unknown; esign: { sent: boolean } | null };
+}) {
+  return (
+    !!wo.signing.esign?.sent &&
+    (wo.status === "offered" || (wo.status === "accepted" && !wo.signing.representative))
+  );
+}
+
+function awaitingAutoApproval(wo: {
+  requests: { status: string; trust: { autoApproveAt: string | null } | null }[];
+}) {
+  return wo.requests.some((r) => r.status === "submitted" && !!r.trust?.autoApproveAt);
+}
+
+export function adminWorkOrdersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "list", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.list({}),
+    retry: false,
+  });
+}
+
+const NEEDS_YOU_POLL_MS = 60_000;
+
+export function adminWorkOrdersNeedsYouQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "needs-you", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.needsYouCount({}),
+    retry: false,
+    refetchInterval: NEEDS_YOU_POLL_MS,
+  });
+}
+
+export function workOrderNextCodeQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "next-code", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.nextCode({}),
+    retry: false,
+  });
+}
+
+export function adminWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "detail", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.workOrders.get({ id }),
+    retry: false,
+    refetchInterval: (query) => {
+      const wo = query.state.data;
+      if (!wo) return false;
+      if (awaitingSignature(wo)) return SIGNATURE_POLL_MS;
+      return awaitingAutoApproval(wo) ? AUTO_APPROVAL_POLL_MS : false;
+    },
+  });
+}
+
+export function adminWorkOrderActivityQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "activity", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.workOrders.activity({ id }),
+    retry: false,
+  });
+}
+
+export const workOrderIntegrationQueryKey = ["admin", "work-order-integration"] as const;
+
+export function workOrderIntegrationQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderIntegrationQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.integration({}),
+    retry: false,
+  });
+}
+
+export const workOrderRepresentativeQueryKey = ["admin", "work-order-representative"] as const;
+
+export function workOrderRepresentativeQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderRepresentativeQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.representativeDefaults({}),
+    retry: false,
+  });
+}
+
+export const workOrderTrustQueryKey = ["admin", "work-order-trust"] as const;
+
+export function workOrderTrustQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderTrustQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.trustSettings({}),
+    retry: false,
+  });
+}
+
+export const workOrderSetupQueryKey = ["admin", "work-order-setup"] as const;
+
+export function workOrderSetupQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...workOrderSetupQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.setupStatus({}),
+    retry: false,
+    staleTime: 30_000,
+  });
+}
+
+export const payoutAgentQueryKey = ["admin", "payout-agent"] as const;
+
+export function payoutAgentQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...payoutAgentQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.payoutAgent({}),
+    retry: false,
+  });
+}
+
+export function payoutCoverageQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "payout-coverage", ...workspaceKey(), id] as const,
+    queryFn: () => apiClient.workOrders.payoutCoverage({ id }),
+    retry: false,
+  });
+}
+
+export function payoutReadinessQueryOptions(
+  apiClient: ApiClient,
+  requestId: string,
+  amount: string,
+) {
+  return queryOptions({
+    queryKey: [
+      ...adminWorkOrdersQueryKey,
+      "payout-readiness",
+      ...workspaceKey(),
+      requestId,
+      amount,
+    ] as const,
+    queryFn: () => apiClient.workOrders.payoutReadiness({ requestId, amount }),
+    retry: false,
+  });
+}
+
+export function payoutFundingQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...payoutAgentQueryKey, "funding", ...workspaceKey()] as const,
+    queryFn: () => apiClient.workOrders.payoutFunding({}),
+    retry: false,
+  });
+}
+
+export const myWorkOrdersQueryKey = ["me", "work-orders"] as const;
+
+export function myWorkOrdersQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...myWorkOrdersQueryKey, "list"] as const,
+    queryFn: () => apiClient.myWorkOrders.list({}),
+    retry: false,
+  });
+}
+
+export function myWorkOrderQueryOptions(apiClient: ApiClient, id: string) {
+  return queryOptions({
+    queryKey: [...myWorkOrdersQueryKey, "detail", id] as const,
+    queryFn: () => apiClient.myWorkOrders.get({ id }),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data && awaitingSignature(query.state.data) ? SIGNATURE_POLL_MS : false,
+  });
 }
 
 export const adminTokensQueryKey = ["admin", "tokens"] as const;
@@ -717,4 +911,28 @@ export async function invalidateWorkspaceQueries(
     queryClient.invalidateQueries({ queryKey: tokensListQueryKey }),
     router.invalidate(),
   ]);
+}
+
+export function workOrderBuilderDefaultsQueryOptions(apiClient: ApiClient, nearAccount: string) {
+  return queryOptions({
+    queryKey: [
+      ...adminWorkOrdersQueryKey,
+      "builder-defaults",
+      ...workspaceKey(),
+      nearAccount,
+    ] as const,
+    queryFn: () => apiClient.workOrders.builderDefaults({ nearAccount }),
+    enabled: nearAccount !== "",
+    retry: false,
+  });
+}
+
+export function workOrderGithubReposQueryOptions(apiClient: ApiClient, org: string) {
+  return queryOptions({
+    queryKey: [...adminWorkOrdersQueryKey, "github-repos", org.toLowerCase()] as const,
+    queryFn: () => apiClient.workOrders.githubRepos({ org }),
+    enabled: org !== "",
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
 }

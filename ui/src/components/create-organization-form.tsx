@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { landingDestination, refreshAccountQueries } from "@/lib/account";
 import { useApiClient } from "@/lib/api";
+import { isActiveOrganization } from "@/lib/landing";
 import { availableSlug, isOrganizationSlugTaken, isValidSlug, slugify } from "@/lib/slugify";
 import { announceWorkspace } from "@/lib/workspace";
 
@@ -27,6 +28,7 @@ export function CreateOrganizationForm({ onCreated }: { onCreated?: () => void }
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState<string | null>(null);
 
   const slugTrimmed = slug.trim();
 
@@ -49,6 +51,10 @@ export function CreateOrganizationForm({ onCreated }: { onCreated?: () => void }
       }
       if (error || !data?.id)
         throw new Error(error?.message ?? "Could not create the Organization");
+      if (!isActiveOrganization(data)) {
+        await refreshAccountQueries(queryClient);
+        return null;
+      }
       const { error: activeError } = await authClient.organization.setActive({
         organizationId: data.id,
       });
@@ -58,8 +64,12 @@ export function CreateOrganizationForm({ onCreated }: { onCreated?: () => void }
       return landingDestination({ authClient, apiClient, queryClient });
     },
     onSuccess: (destination) => {
-      toast.success(`Organization "${name.trim()}" created`);
       onCreated?.();
+      if (destination === null) {
+        setWaiting(name.trim());
+        return;
+      }
+      toast.success(`Organization "${name.trim()}" created`);
       navigate({ to: destination, replace: true });
     },
     onError: (e: Error) => {
@@ -82,6 +92,18 @@ export function CreateOrganizationForm({ onCreated }: { onCreated?: () => void }
     setSuggestion(null);
     create.reset();
   };
+
+  if (waiting) {
+    return (
+      <div className="flex flex-col gap-2" role="status">
+        <p className="font-medium">Waiting for approval</p>
+        <p className="text-sm text-muted-foreground">
+          “{waiting}” is created. A site admin reviews new Organizations; you can open it once it's
+          approved.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <form

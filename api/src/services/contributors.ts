@@ -1,10 +1,11 @@
+import { ORPCError } from "@orpc/server";
 import { and, eq, or } from "drizzle-orm";
-import { Effect, Either } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Effect, Result } from "effect";
 import type { Database } from "../db";
 import { organizationBuilders, projectContributors } from "../db/schema";
 import { nearAccountsOf, type PluginContext } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
+import { rememberedLogins } from "./builder-logins";
 
 export type BuilderProfile = {
   nearAccount: string;
@@ -96,6 +97,9 @@ const notYourBuilder = () =>
 
 const asManager = (context: PluginContext): PluginContext => ({ ...context, trusted: true });
 
+const asOrpcError = (err: unknown) =>
+  err instanceof ORPCError ? err : new ORPCError("INTERNAL_SERVER_ERROR", { message: String(err) });
+
 export function createContributorsService(db: Database, plugins: PluginsClient) {
   async function managesBuilder(manager: ManagerScope | undefined, nearAccount: string) {
     if (!manager) return false;
@@ -138,7 +142,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
     list: (context: PluginContext, manager?: ManagerScope) =>
       Effect.gen(function* () {
         const result = yield* Effect.promise(() =>
-          plugins.builders(context).listBuilders({ limit: 100 }),
+          plugins.builders.client(context).listBuilders({ limit: 100 }),
         );
         const byNear = new Map(result.data.map((row) => [row.nearAccount, toProfile(row)]));
 
@@ -174,6 +178,15 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
             })
           : [];
 
+        if (manager) {
+          const logins = yield* Effect.promise(() => rememberedLogins(db, manager.organizationId));
+          for (const [nearAccount, githubLogin] of logins) {
+            const profile = byNear.get(nearAccount);
+            if (profile && !profile.githubLogin)
+              byNear.set(nearAccount, { ...profile, githubLogin });
+          }
+        }
+
         return { data: [...byNear.values()], manageable };
       }),
 
@@ -187,12 +200,12 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
             .limit(1),
         );
 
-        const builder = yield* Effect.either(
-          Effect.tryPromise(() => plugins.builders(context).getBuilder({ nearAccount })),
+        const builder = yield* Effect.result(
+          Effect.tryPromise(() => plugins.builders.client(context).getBuilder({ nearAccount })),
         );
         const manages = yield* Effect.promise(() => managesBuilder(manager, nearAccount));
-        if (Either.isRight(builder)) {
-          const profile = builder.right.data;
+        if (Result.isSuccess(builder)) {
+          const profile = builder.success.data;
           const managesUnclaimed = manages && !profile.userId && !profile.githubLogin;
           return {
             contributor: toProfile(profile),
@@ -229,12 +242,12 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           );
         }
         const nearAccount = input.nearAccount.trim();
-        const existing = yield* Effect.either(
-          Effect.tryPromise(() => plugins.builders(context).getBuilder({ nearAccount })),
+        const existing = yield* Effect.result(
+          Effect.tryPromise(() => plugins.builders.client(context).getBuilder({ nearAccount })),
         );
-        if (Either.isRight(existing)) return { contributor: toProfile(existing.right.data) };
+        if (Result.isSuccess(existing)) return { contributor: toProfile(existing.success.data) };
         const result = yield* Effect.promise(() =>
-          plugins.builders(asManager(context)).createBuilder({
+          plugins.builders.client(asManager(context)).createBuilder({
             nearAccount,
             name: input.name,
             bio: input.bio,
@@ -275,14 +288,16 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           links: input.links,
         };
         const result = yield* Effect.tryPromise({
-          try: () => plugins.builders(caller).updateBuilderProfile(profile),
+          try: () => plugins.builders.client(caller).updateBuilderProfile(profile),
           catch: (err) => err,
         }).pipe(
           Effect.catchIf(
             (err) => err instanceof ORPCError && err.code === "NOT_FOUND",
             () =>
               Effect.promise(async () => {
-                const created = await plugins.builders(asManager(context)).createBuilder(profile);
+                const created = await plugins.builders
+                  .client(asManager(context))
+                  .createBuilder(profile);
                 await recordAdded(manager, input.nearAccount);
                 return created;
               }),
@@ -317,7 +332,7 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           );
         }
         const result = yield* Effect.tryPromise({
-          try: () => plugins.builders(asManager(context)).deleteBuilder({ nearAccount }),
+          try: () => plugins.builders.client(asManager(context)).deleteBuilder({ nearAccount }),
           catch: (err) =>
             err instanceof ORPCError
               ? err
@@ -327,6 +342,21 @@ export function createContributorsService(db: Database, plugins: PluginsClient) 
           db.delete(organizationBuilders).where(eq(organizationBuilders.nearAccount, nearAccount)),
         );
         return result;
+      }),
+
+    members: (context: PluginContext) =>
+      Effect.tryPromise({
+        try: () => plugins.builders.client(context).listMembersWithAgreements({}),
+        catch: asOrpcError,
+      }),
+
+    recordAgreement: (
+      context: PluginContext,
+      input: { githubLogin: string; version: string; attestedAt: string; proof: string },
+    ) =>
+      Effect.tryPromise({
+        try: () => plugins.builders.client(context).recordAgreement(input),
+        catch: asOrpcError,
       }),
   };
 }

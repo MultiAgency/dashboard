@@ -1,5 +1,5 @@
+import { ORPCError } from "@orpc/server";
 import { and, desc, eq } from "drizzle-orm";
-import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type EngagementRow, engagementProjects, type IdeaRow, ideas } from "../db/schema";
 import { runEffect } from "../lib/context";

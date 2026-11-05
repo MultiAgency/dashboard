@@ -1,4 +1,4 @@
-import { Effect } from "every-plugin/effect";
+import { Effect } from "effect";
 import type { ProjectLedgers } from "./ledger";
 import type { TreasuryScope } from "./organization-access";
 import type { ProjectDirectory } from "./project-directory";

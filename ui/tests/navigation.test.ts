@@ -5,6 +5,7 @@ import {
   clientEngagementSections,
   resolveView,
   viewForPath,
+  viewHome,
   workspaceNavigation,
 } from "../src/lib/navigation";
 import { prepaymentsEnabled } from "../src/lib/prepayments";
@@ -22,21 +23,32 @@ describe("workspaceNavigation", () => {
       "owner",
       false,
       false,
-      ["Projects", "Reports", "Engagements", "Builders", "Team", "Settings"],
+      ["Home", "Projects", "Reports", "Engagements", "Builders", "Work orders", "Team", "Settings"],
     ],
     [
       "money only with an Agency DAO",
       "admin",
       true,
       false,
-      ["Projects", "Reports", "Engagements", "Builders", "Team", "Billings", "Budgets", "Settings"],
+      [
+        "Home",
+        "Projects",
+        "Reports",
+        "Engagements",
+        "Builders",
+        "Work orders",
+        "Team",
+        "Billings",
+        "Budgets",
+        "Settings",
+      ],
     ],
     [
       "members the screens they can use, without management links",
       "member",
       true,
       true,
-      ["Projects", "Reports", "Builders", "Billings", "Budgets"],
+      ["Home", "Projects", "Reports", "Builders", "Work orders", "Billings", "Budgets"],
     ],
   ] as const)("gives %s", (_, role, hasAgencyDao, hasClientSections, expected) => {
     expect(
@@ -58,6 +70,14 @@ describe("workspaceNavigation", () => {
       { to: "/client", label: "Agencies" },
       { to: "/admin/members", label: "Team" },
     ]);
+  });
+
+  it("puts Home first in the Agency Work group and matches it exactly", () => {
+    const [work] = workspaceNavigation(
+      { role: "member", hasAgencyDao: false, hasAgencySections: true, hasClientSections: false },
+      "agency",
+    );
+    expect(work.items[0]).toEqual({ to: "/admin", label: "Home", exact: true });
   });
 
   it("leaves Team out of the client screens for members", () => {
@@ -91,6 +111,11 @@ describe("viewing role", () => {
     expect(viewForPath("/admin/settings")).toBe("agency");
     expect(viewForPath("/admin/members")).toBeNull();
     expect(viewForPath("/dashboard")).toBeNull();
+  });
+
+  it("sends each view to its home", () => {
+    expect(viewHome("agency")).toBe("/admin");
+    expect(viewHome("client")).toBe("/client/projects");
   });
 });
 

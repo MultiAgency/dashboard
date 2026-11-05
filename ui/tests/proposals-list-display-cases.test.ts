@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const source = readFileSync(
-  resolve(import.meta.dirname, "..", "src", "routes", "_layout", "treasury.tsx"),
+  resolve(import.meta.dirname, "..", "src", "routes", "_public", "treasury.tsx"),
   "utf8",
 );
 

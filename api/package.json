@@ -16,18 +16,23 @@
     "typescript": "catalog:"
   },
   "dependencies": {
+    "@better-auth/core": "catalog:",
     "@electric-sql/pglite": "catalog:",
+    "@near-intents-agent-api/sdk": "catalog:",
     "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
+    "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
     "better-auth": "catalog:",
     "drizzle-kit": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "every-plugin": "catalog:",
+    "near-kit": "catalog:",
+    "pdf-lib": "^1.17.1",
     "pg": "catalog:",
-    "zod": "catalog:",
-    "@better-auth/core": "catalog:"
+    "unpdf": "^1.9.1",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@effect/language-service": "^0.85.1",
@@ -41,13 +46,11 @@
     "everything-dev": "catalog:",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "catalog:",
-    "zephyr-rspack-plugin": "catalog:"
+    "@module-federation/runtime-tools": "catalog:"
   },
   "scripts": {
-    "build": "bun run build:types && rspack build",
-    "build:types": "tsc -p tsconfig.contract.json",
-    "deploy": "bun run build:types && DEPLOY=true rspack build",
-    "dev": "bun run build:types && rspack serve",
+    "build": "every-plugin build",
+    "dev": "every-plugin dev",
     "test": "vitest run --root . --pool=forks",
     "test:watch": "vitest --root .",
     "coverage": "vitest run --root . --coverage",

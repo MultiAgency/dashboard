@@ -1,3 +1,5 @@
+import "@orpc/openapi/extensions/route";
+import { oc } from "@orpc/contract";
 import {
   BAD_REQUEST,
   FORBIDDEN,
@@ -5,8 +7,8 @@ import {
   SERVICE_UNAVAILABLE,
   UNAUTHORIZED,
 } from "every-plugin/errors";
-import { oc } from "every-plugin/orpc";
-import { z } from "every-plugin/zod";
+import { z } from "zod";
+import { myWorkOrdersContract, workOrdersContract } from "./work-orders-contract";
 
 const tokenList = z.object({
   tokens: z.array(
@@ -227,6 +229,34 @@ const contributor = z.object({
   updatedAt: z.string(),
 });
 
+const registryNetwork = z.enum(["testnet", "mainnet"]);
+
+const registryMember = z.object({
+  githubLogin: z.string(),
+  kind: z.enum(["human", "agent"]),
+  operatorGithubLogin: z.string().nullable(),
+  name: z.string().nullable(),
+  skills: z.array(z.string()),
+  nearAccount: z.string().nullable(),
+  accounts: z.array(z.object({ network: registryNetwork, account: z.string() })),
+  admissions: z.array(
+    z.object({
+      network: registryNetwork,
+      status: z.enum(["admitted", "suspended", "removed"]),
+      proofUrl: z.string().nullable(),
+      admittedAt: z.string().nullable(),
+    }),
+  ),
+  agreement: z
+    .object({
+      version: z.string(),
+      attestedAt: z.string(),
+      recordedBy: z.string(),
+      recordedAt: z.string(),
+    })
+    .nullable(),
+});
+
 const engagementParty = z.object({ id: z.string(), name: z.string(), slug: z.string() });
 
 const engagementStatus = z.enum(["proposed", "active", "declined", "ended"]);
@@ -314,6 +344,23 @@ const reportOutput = z.object({
       allocated: z.string(),
     })
     .nullable()
+    .optional(),
+  deliveredWork: z
+    .array(
+      z.object({
+        workOrderCode: z.string(),
+        workOrderTitle: z.string(),
+        projectTitle: z.string(),
+        projectSlug: z.string(),
+        builderName: z.string(),
+        requestCode: z.string(),
+        coversFrom: z.string(),
+        coversTo: z.string(),
+        status: z.enum(["approved", "proposed", "paid"]),
+        contributionsMd: z.string(),
+        amount: tokenAmount.nullable(),
+      }),
+    )
     .optional(),
   notes: z.string(),
   generatedAt: z.string(),
@@ -637,6 +684,10 @@ export const proposalListItem = proposalPublicItem.extend({
 });
 
 export const contract = oc.router({
+  workOrders: workOrdersContract,
+
+  myWorkOrders: myWorkOrdersContract,
+
   ping: oc.route({ method: "GET", path: "/ping" }).output(
     z.object({
       status: z.literal("ok"),
@@ -1429,6 +1480,76 @@ export const contract = oc.router({
       .route({ method: "DELETE", path: "/admin/contributors/{nearAccount}" })
       .input(z.object({ nearAccount: nearAccountId }))
       .output(z.object({ deleted: z.boolean() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
+  },
+
+  members: {
+    list: oc
+      .route({ method: "GET", path: "/platform/members" })
+      .output(z.object({ data: z.array(registryMember) }))
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    recordAgreement: oc
+      .route({ method: "PUT", path: "/platform/members/{githubLogin}/agreement" })
+      .input(
+        z.object({
+          githubLogin: z.string().trim().toLowerCase().min(1).max(60),
+          version: z.string().trim().min(1).max(100),
+          attestedAt: z.iso.datetime(),
+          proof: z.string().trim().min(1).max(2000),
+        }),
+      )
+      .output(z.object({ recorded: z.boolean() }))
+      .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+  },
+
+  organizationRequests: {
+    list: oc
+      .route({ method: "GET", path: "/platform/organization-requests" })
+      .output(
+        z.object({
+          data: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              slug: z.string(),
+              requestedBy: z.string().nullable(),
+              requestedByEmail: z.string().nullable(),
+              requestedAt: z.iso.datetime(),
+            }),
+          ),
+        }),
+      )
+      .errors({ UNAUTHORIZED, FORBIDDEN }),
+
+    review: oc
+      .route({ method: "POST", path: "/platform/organization-requests/{organizationId}/review" })
+      .input(
+        z.discriminatedUnion("decision", [
+          z.object({
+            organizationId: z.string().min(1),
+            decision: z.literal("approve"),
+            adminEmail: z.string().trim().email().max(320).optional(),
+          }),
+          z.object({
+            organizationId: z.string().min(1),
+            decision: z.literal("reject"),
+            reason: z.string().trim().min(1).max(2000),
+          }),
+        ]),
+      )
+      .output(
+        z.object({
+          id: z.string(),
+          status: z.enum(["active", "pending", "rejected"]),
+          adminInvite: z
+            .discriminatedUnion("status", [
+              z.object({ status: z.literal("invited"), email: z.string() }),
+              z.object({ status: z.literal("failed"), message: z.string() }),
+            ])
+            .nullable(),
+        }),
+      )
       .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
   },
 

@@ -22,6 +22,7 @@ export type PluginContext = {
       name?: string;
       slug?: string;
       metadata?: unknown;
+      status?: string;
     } | null;
     member?: { role?: string | null } | null;
   } | null;
@@ -169,7 +170,7 @@ export function toOrganization(raw: {
 
 export type BetterAuthOrganizationsClient = {
   listOrganizations(): Promise<
-    Array<{ id: string; name: string; slug: string; metadata: unknown; createdAt: Date | string }>
+    Array<{ id: string; name: string; slug: string; metadata?: unknown; createdAt: Date | string }>
   >;
   deleteOrganization(input: { organizationId: string }): Promise<unknown>;
 };
@@ -182,6 +183,8 @@ export function betterAuthOrganizations(
       const active = context.organization;
       const id = active?.activeOrganizationId ?? active?.organization?.id;
       if (!context.userId || !id || !active?.organization) return null;
+      const status = active.organization.status;
+      if (status && status !== "active") return null;
       return {
         organization: toOrganization({ ...active.organization, id }),
         role: toOrganizationRole(active.member?.role),

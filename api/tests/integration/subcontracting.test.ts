@@ -37,7 +37,7 @@ describe("subcontracting", () => {
   function buildServices() {
     const { db } = database;
     const plugins = {
-      builders: () => ({ listBuilders: async () => ({ data: [] }) }),
+      builders: { client: () => ({ listBuilders: async () => ({ data: [] }) }) },
     } as unknown as PluginsClient;
     const listings = createListingsService(db, world.directory);
     const ledgers = createProjectLedgers(db, listings);
@@ -113,7 +113,7 @@ describe("subcontracting", () => {
     daoAccountId: string,
     proposalId: number,
     amount: string,
-    status: Exclude<DaoProposalStatus, "InProgress"> = "Approved",
+    status: Exclude<DaoProposalStatus, "InProgress" | "Failed"> = "Approved",
   ) {
     await database.db.insert(proposals).values({
       daoAccountId,

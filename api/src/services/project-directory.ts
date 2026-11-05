@@ -1,12 +1,12 @@
+import { ORPCError } from "@orpc/server";
 import { inArray } from "drizzle-orm";
-import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { ideas } from "../db/schema";
 import type { PluginContext } from "../lib/organizations";
 import type { PluginsClient } from "../lib/plugins-types.gen";
 import type { AgencyScope } from "./organization-access";
 
-type PluginProjectsClient = ReturnType<PluginsClient["projects"]>;
+type PluginProjectsClient = ReturnType<PluginsClient["projects"]["client"]>;
 
 export type ProjectsClient = Pick<
   PluginProjectsClient,

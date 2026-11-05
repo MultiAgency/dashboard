@@ -44,6 +44,6 @@ The bootstrap root is published from `dev.everything.near/everything.dev` and co
 ## Canonical context
 
 - Bootstrap runtime: `dev.everything.near/everything.dev`
-- This site extends `bos://dev.everything.near/everything.dev` via `bos.config.json`
+- This site extends `bos://dev.everything.near/everything.dev` via `bos.app.ts`
 - Stable host URLs can be reused across multiple sites
 - Composition happens through published config, not rebuild-only deployment

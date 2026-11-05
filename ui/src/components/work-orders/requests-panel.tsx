@@ -1,0 +1,759 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+  Button,
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  FieldGroup,
+  Input,
+  Textarea,
+} from "@/components";
+import { Empty, Field } from "@/components/admin-form";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useApiClient } from "@/lib/api";
+import { useAuthClient } from "@/lib/auth";
+import {
+  baseToDecimal,
+  formatTokenAmount,
+  parseDecimalToBase,
+  tokenDecimals,
+  tokenSymbol,
+} from "@/lib/format-amount";
+import { dateTime } from "@/lib/format-date";
+import { proposalIdOf } from "@/lib/proposal-id";
+import {
+  adminWorkOrdersQueryKey,
+  payoutAgentQueryKey,
+  payoutAgentQueryOptions,
+  payoutReadinessQueryOptions,
+} from "@/lib/queries";
+import { ReportMarkdown } from "./report-markdown";
+import { RequestTrust } from "./request-trust";
+import {
+  type CompensationRequest,
+  RequestStatusBadge,
+  type WorkOrderDetail,
+} from "./work-order-status";
+
+const QUIET_READINESS = ["unavailable", "no_agent"];
+
+export function RequestsPanel({
+  workOrder,
+  canManage,
+  hasTreasury,
+  approveRequestId = null,
+  onApproveOpened,
+}: {
+  workOrder: WorkOrderDetail;
+  canManage: boolean;
+  hasTreasury: boolean;
+  approveRequestId?: string | null;
+  onApproveOpened?: () => void;
+}) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  const refresh = () => queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+  const draft = useMutation({
+    mutationFn: () => apiClient.workOrders.draftRequest({ id: workOrder.id }),
+    onSuccess: async (request) => {
+      await refresh();
+      toast.success(`${request.code} drafted; the builder can now edit and submit it`);
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't draft a request"),
+  });
+  const canDraft =
+    canManage &&
+    (workOrder.status === "active" || workOrder.status === "ended") &&
+    !workOrder.requests.some((r) => r.status === "draft") &&
+    BigInt(workOrder.remainingAmount) > 0n;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>Compensation requests</h2>
+        </CardTitle>
+        {canDraft && (
+          <CardAction>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={draft.isPending}
+              onClick={() => draft.mutate()}
+            >
+              Draft a request
+            </Button>
+          </CardAction>
+        )}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {workOrder.requests.length === 0 ? (
+          <Empty label="No requests yet." description="One is drafted when the period ends." />
+        ) : (
+          workOrder.requests
+            .slice()
+            .reverse()
+            .map((request) => (
+              <RequestItem
+                key={request.id}
+                request={request}
+                workOrder={workOrder}
+                canManage={canManage}
+                hasTreasury={hasTreasury}
+                approve={approveRequestId === request.id}
+                onApproveOpened={onApproveOpened}
+              />
+            ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RequestItem({
+  request,
+  workOrder,
+  canManage,
+  hasTreasury,
+  approve = false,
+  onApproveOpened,
+}: {
+  request: CompensationRequest;
+  workOrder: WorkOrderDetail;
+  canManage: boolean;
+  hasTreasury: boolean;
+  approve?: boolean;
+  onApproveOpened?: () => void;
+}) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState<null | "approve" | "reject" | "proposal">(null);
+  const [confirmingPay, setConfirmingPay] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!approve) return;
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (canManage && request.status === "submitted") setOpen("approve");
+    onApproveOpened?.();
+  }, [approve, canManage, request.status, onApproveOpened]);
+  const payoutAgent = useQuery({ ...payoutAgentQueryOptions(apiClient), enabled: canManage }).data;
+  const autoPays =
+    !!payoutAgent?.ready && (workOrder.tokenId === "usd" || workOrder.tokenId === "near");
+  const payNow = useMutation({
+    mutationFn: () => apiClient.workOrders.payNow({ requestId: request.id }),
+    onSuccess: async (updated) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey }),
+        queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey }),
+      ]);
+      toast.success(
+        updated.status === "paid" ? `${updated.code} is paid` : "Payout sent; it settles shortly",
+      );
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't pay it"),
+  });
+  const daoPaymentStarted = !!request.daoPaymentStartedAt;
+  const terminated = workOrder.status === "terminated";
+  const [showReport, setShowReport] = useState(request.status === "submitted");
+  const amount = (value: string | null) =>
+    value ? formatTokenAmount(value, workOrder.tokenId) : "—";
+  const refreshPayment = useMutation({
+    mutationFn: () => apiClient.workOrders.refreshPayment({ requestId: request.id }),
+    onSuccess: async (updated) => {
+      await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      toast.success(
+        updated.status === "paid" ? `${updated.code} is paid` : "The proposal is still open",
+      );
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't read the proposal"),
+  });
+
+  return (
+    <section
+      ref={sectionRef}
+      className="flex scroll-mt-4 flex-col gap-3 border p-4"
+      aria-label={request.code}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium tabular-nums">{request.code}</span>
+        <RequestStatusBadge status={request.status} closed={terminated} />
+        <span className="text-sm text-muted-foreground tabular-nums">
+          {request.coversFrom} → {request.coversTo}
+        </span>
+        <span className="ml-auto text-sm tabular-nums">
+          Requested {amount(request.requestedAmount)}
+          {request.approvedAmount ? ` · approved ${amount(request.approvedAmount)}` : ""}
+        </span>
+      </div>
+      {request.note && <p className="text-sm text-muted-foreground">{request.note}</p>}
+      {request.autoPayBlocked && (
+        <p className="text-sm text-muted-foreground">
+          Waiting to be paid automatically since {dateTime(request.autoPayBlocked.since)}
+          {request.autoPayBlocked.triedAt
+            ? `, last tried ${dateTime(request.autoPayBlocked.triedAt)}`
+            : ""}
+          .
+        </p>
+      )}
+      <RequestTrust request={request} canManage={canManage} />
+      {request.overlaps.length > 0 && (
+        <p className="text-sm text-destructive">
+          Its dates overlap {request.overlaps.join(", ")}, already approved or paid: check the same
+          work isn't paid twice.
+        </p>
+      )}
+      {request.proposalId && (
+        <p className="text-sm text-muted-foreground">
+          Paid through proposal #{request.proposalId}
+          {request.payingDaoAccountId ? ` of ${request.payingDaoAccountId}` : ""}
+          {request.paidAt ? `, approved ${request.paidAt.slice(0, 10)}` : ""}.
+        </p>
+      )}
+      {request.proposalId && request.payout?.priceUsd && (
+        <p className="text-sm text-muted-foreground">
+          {formatTokenAmount(request.payout.amount, request.payout.tokenId)} at $
+          {request.payout.priceUsd} per {tokenSymbol(request.payout.tokenId)}
+          {request.payout.pricedAt ? `, priced ${dateTime(request.payout.pricedAt)}` : ""}.
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {request.reportMd && (
+          <Button size="sm" variant="ghost" onClick={() => setShowReport((v) => !v)}>
+            {showReport ? "Hide report" : "Show report"}
+          </Button>
+        )}
+        {canManage && request.status === "submitted" && (
+          <>
+            {!terminated && (
+              <Button size="sm" onClick={() => setOpen("approve")}>
+                Review and approve
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={() => setOpen("reject")}>
+              Reject
+            </Button>
+          </>
+        )}
+        {canManage && request.status === "approved" && (
+          <>
+            {autoPays &&
+              !terminated &&
+              !daoPaymentStarted &&
+              (request.agentPayout?.canRetry ?? true) && (
+                <Button
+                  size="sm"
+                  disabled={payNow.isPending}
+                  onClick={() => setConfirmingPay(true)}
+                >
+                  {payNow.isPending ? "Paying…" : "Pay now (NEAR Intents)"}
+                </Button>
+              )}
+            {(request.agentPayout?.canRetry ?? true) &&
+              (!terminated || daoPaymentStarted) &&
+              (hasTreasury ? (
+                <Button
+                  size="sm"
+                  variant={autoPays ? "outline" : "default"}
+                  onClick={() => setOpen("proposal")}
+                >
+                  {daoPaymentStarted ? "Link the DAO proposal" : "Pay through a DAO proposal"}
+                </Button>
+              ) : (
+                <span className="text-sm text-muted-foreground">
+                  To pay through a proposal,{" "}
+                  <Link
+                    to="/admin/settings"
+                    hash="treasury"
+                    className="underline underline-offset-4"
+                  >
+                    connect your Agency DAO
+                  </Link>
+                  .
+                </span>
+              ))}
+            <Button size="sm" variant="outline" onClick={() => setOpen("reject")}>
+              Reject
+            </Button>
+          </>
+        )}
+        {request.agentPayout && request.status !== "approved" && (
+          <span className="text-sm text-muted-foreground">
+            {request.agentPayout.status === "paid" ? "Paid " : "Paying "}
+            {formatTokenAmount(request.agentPayout.amount, "near")} through the payout agent
+            {request.agentPayout.txUrl || request.agentPayout.accountUrl ? (
+              <>
+                {" · "}
+                <a
+                  href={request.agentPayout.txUrl ?? request.agentPayout.accountUrl ?? undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-4"
+                >
+                  {request.agentPayout.txUrl ? "transaction" : "see it on NearBlocks"}
+                </a>
+              </>
+            ) : null}
+          </span>
+        )}
+        {request.status === "proposed" && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={refreshPayment.isPending}
+            onClick={() => refreshPayment.mutate()}
+          >
+            Check the proposal
+          </Button>
+        )}
+      </div>
+      {showReport && request.reportMd && (
+        <div className="border-t pt-3">
+          <ReportMarkdown markdown={request.reportMd} />
+        </div>
+      )}
+      {showReport && !request.reportMd && <ReportMarkdown markdown={request.contributionsMd} />}
+      <Dialog open={open !== null} onOpenChange={(next) => !next && setOpen(null)}>
+        <DialogContent className="sm:max-w-lg">
+          {open === "approve" && (
+            <ApproveForm request={request} workOrder={workOrder} onDone={() => setOpen(null)} />
+          )}
+          {open === "reject" && <RejectForm request={request} onDone={() => setOpen(null)} />}
+          {open === "proposal" && (
+            <ProposalForm request={request} workOrder={workOrder} onDone={() => setOpen(null)} />
+          )}
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={confirmingPay}
+        onOpenChange={setConfirmingPay}
+        title={`Pay ${amount(request.approvedAmount)} to ${workOrder.builder.nearAccount}?`}
+        description="Your payout agent sends it in NEAR now. A payment that went out can't be taken back."
+        confirmLabel="Pay now"
+        onConfirm={() => payNow.mutateAsync().then(() => undefined)}
+      />
+    </section>
+  );
+}
+
+function ApproveForm({
+  request,
+  workOrder,
+  onDone,
+}: {
+  request: CompensationRequest;
+  workOrder: WorkOrderDetail;
+  onDone: () => void;
+}) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  const payoutAgent = useQuery(payoutAgentQueryOptions(apiClient)).data;
+  const autoPays =
+    !!payoutAgent?.ready && (workOrder.tokenId === "usd" || workOrder.tokenId === "near");
+  const decimals = tokenDecimals(workOrder.tokenId);
+  const toDecimal = (value: string) =>
+    decimals === undefined ? value : baseToDecimal(value, decimals);
+  const [value, setValue] = useState(toDecimal(request.requestedAmount));
+  const pending = workOrder.evidence.filter((e) => !e.authorized && e.kind === "unlinked_pr");
+  const [confirmed, setConfirmed] = useState<string[]>([]);
+  const [withoutEvidence, setWithoutEvidence] = useState(false);
+  const needsEvidenceConfirm = request.authorizedEvidence === 0 && confirmed.length === 0;
+  let base = "";
+  let error = "";
+  try {
+    base = decimals === undefined ? value.trim() : parseDecimalToBase(value.trim(), decimals);
+  } catch (e) {
+    error = (e as Error).message;
+  }
+  const over = base && BigInt(base) > BigInt(workOrder.remainingAmount);
+  const blocked = needsEvidenceConfirm && !withoutEvidence;
+  const quotable = base && !error && !over && BigInt(base) > 0n ? base : "";
+  const [quoted, setQuoted] = useState(quotable);
+  useEffect(() => {
+    const timer = setTimeout(() => setQuoted(quotable), 400);
+    return () => clearTimeout(timer);
+  }, [quotable]);
+  const readiness = useQuery({
+    ...payoutReadinessQueryOptions(apiClient, request.id, quoted),
+    enabled: !!quoted && (workOrder.tokenId === "usd" || workOrder.tokenId === "near"),
+  }).data;
+  const hold =
+    readiness && !readiness.ready && readiness.code && !QUIET_READINESS.includes(readiness.code)
+      ? readiness
+      : null;
+  const approve = useMutation({
+    mutationFn: () =>
+      apiClient.workOrders.approveRequest({
+        requestId: request.id,
+        amount: base,
+        confirmEvidenceIds: confirmed,
+        allowWithoutEvidence: needsEvidenceConfirm && withoutEvidence,
+      }),
+    onSuccess: async (updated) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey }),
+        queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey }),
+      ]);
+      toast.success(
+        updated.status === "paid"
+          ? `${updated.code} approved and paid through the payout agent`
+          : updated.status === "paying"
+            ? `${updated.code} approved; the payout is on its way`
+            : updated.note
+              ? `${updated.code} approved. ${updated.note}`
+              : `${updated.code} approved. Pay it through a DAO proposal.`,
+      );
+      onDone();
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't approve the request"),
+  });
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (base && !error && !over && !blocked) approve.mutate();
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>Approve {request.code}</DialogTitle>
+        <DialogDescription>
+          Up to {formatTokenAmount(workOrder.remainingAmount, workOrder.tokenId)} remains.{" "}
+          {autoPays
+            ? hold
+              ? "Approving queues it for your payout agent, which pays it in NEAR."
+              : "Approving pays it right away in NEAR through your payout agent."
+            : "Approving reserves it; the money moves once the DAO approves the transfer proposal."}
+        </DialogDescription>
+      </DialogHeader>
+      <FieldGroup>
+        <Field label={`Amount (${tokenSymbol(workOrder.tokenId)})`} htmlFor="approve-amount">
+          <Input
+            id="approve-amount"
+            inputMode="decimal"
+            aria-invalid={!!error || !!over}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </Field>
+        {(error || over) && (
+          <p className="text-sm text-destructive">
+            {error || "That's more than the remaining budget."}
+          </p>
+        )}
+        {hold && quoted === quotable && (
+          <Alert>
+            <AlertTitle>Approving won't pay right away</AlertTitle>
+            <AlertDescription className="flex flex-col gap-3">
+              <span>
+                {hold.code === "insufficient_balance" && hold.balanceNear && hold.near
+                  ? `The agent holds ${hold.balanceNear} NEAR and this needs ${hold.near} NEAR.`
+                  : `${(hold.reason ?? "The payout agent isn't ready").replace(/\.$/, "")}.`}{" "}
+                You can still approve: it's queued and paid automatically once the agent can cover
+                it.
+              </span>
+              <span className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/admin/settings" hash="payouts">
+                    {hold.code === "insufficient_balance"
+                      ? "Fund the agent"
+                      : "Open the payout settings"}
+                  </Link>
+                </Button>
+              </span>
+            </AlertDescription>
+          </Alert>
+        )}
+        {pending.length > 0 && (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium">Confirm other merged work</legend>
+            {pending.map((item) => (
+              <label
+                key={item.id}
+                htmlFor={`confirm-${item.id}`}
+                className="flex items-start gap-2 text-sm"
+              >
+                <Checkbox
+                  id={`confirm-${item.id}`}
+                  checked={confirmed.includes(item.id)}
+                  onCheckedChange={(checked) =>
+                    setConfirmed((current) =>
+                      checked === true
+                        ? [...current, item.id]
+                        : current.filter((id) => id !== item.id),
+                    )
+                  }
+                />
+                <span>
+                  {item.repo}#{item.number} {item.title}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {needsEvidenceConfirm && (
+          <label htmlFor="approve-without-evidence" className="flex items-start gap-2 text-sm">
+            <Checkbox
+              id="approve-without-evidence"
+              checked={withoutEvidence}
+              onCheckedChange={(checked) => setWithoutEvidence(checked === true)}
+            />
+            <span>
+              No work in this request was approved by the repository owner. Approve it anyway, based
+              on the report.
+            </span>
+          </label>
+        )}
+      </FieldGroup>
+      <DialogFooter>
+        <Button type="submit" disabled={!base || !!error || !!over || blocked || approve.isPending}>
+          {approve.isPending ? "Approving…" : autoPays && !hold ? "Approve and pay" : "Approve"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function RejectForm({ request, onDone }: { request: CompensationRequest; onDone: () => void }) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  const [note, setNote] = useState("");
+  const reject = useMutation({
+    mutationFn: () =>
+      apiClient.workOrders.rejectRequest({ requestId: request.id, note: note.trim() }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+      toast.success(`${request.code} rejected`);
+      onDone();
+    },
+    onError: (err: Error) => toast.error(err.message || "Couldn't reject the request"),
+  });
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (note.trim()) reject.mutate();
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>Reject {request.code}</DialogTitle>
+        <DialogDescription>
+          The builder sees your reason and can draft a new request.
+        </DialogDescription>
+      </DialogHeader>
+      <Field label="Reason" htmlFor="reject-note">
+        <Textarea
+          id="reject-note"
+          rows={3}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </Field>
+      <DialogFooter>
+        <Button type="submit" variant="destructive" disabled={!note.trim() || reject.isPending}>
+          Reject
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function ProposalForm({
+  request,
+  workOrder,
+  onDone,
+}: {
+  request: CompensationRequest;
+  workOrder: WorkOrderDetail;
+  onDone: () => void;
+}) {
+  const apiClient = useApiClient();
+  const authClient = useAuthClient();
+  const queryClient = useQueryClient();
+  const [proposalId, setProposalId] = useState("");
+  const linked = async (updated: CompensationRequest) => {
+    await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+    await queryClient.invalidateQueries({ queryKey: ["admin", "billings"] });
+    toast.success(
+      updated.status === "paid"
+        ? `${updated.code} is paid`
+        : `Proposal #${updated.proposalId} linked`,
+    );
+    onDone();
+  };
+  const link = useMutation({
+    mutationFn: (id: string) =>
+      apiClient.workOrders.linkProposal({ requestId: request.id, proposalId: id }),
+    onSuccess: linked,
+    onError: (err: Error) => toast.error(err.message || "Couldn't link the proposal"),
+  });
+  const quoteKey = ["admin", "work-order-quote", request.id];
+  const quote = useQuery({
+    queryKey: quoteKey,
+    queryFn: () => apiClient.workOrders.paymentProposal({ requestId: request.id }),
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
+    retry: false,
+  });
+  const started = !!request.daoPaymentStartedAt;
+  const terminated = workOrder.status === "terminated";
+  const startDaoPayment = async () => {
+    const tx = await apiClient.workOrders.startDaoPayment({ requestId: request.id });
+    queryClient.setQueryData(quoteKey, tx);
+    await queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey });
+    return tx;
+  };
+  const start = useMutation({
+    mutationFn: startDaoPayment,
+    onError: (err: Error) => toast.error(err.message || "Couldn't lock the amount"),
+  });
+  const create = useMutation({
+    mutationFn: async () => {
+      await authClient.near.ensureConnected();
+      const signer = authClient.near.getAccountId();
+      if (!signer) throw new Error("Connect your NEAR wallet first");
+      const tx = await startDaoPayment();
+      const outcome = await authClient.near
+        .getNearClient()
+        .transaction(signer)
+        .functionCall(tx.daoAccountId, tx.method, tx.args, {
+          gas: tx.gas as `${number}`,
+          attachedDeposit: BigInt(tx.deposit),
+        })
+        .send({ waitUntil: "FINAL" });
+      const id = proposalIdOf(outcome);
+      if (!id) {
+        throw new Error("The proposal was sent, but its number couldn't be read. Enter it below.");
+      }
+      setProposalId(id);
+      return apiClient.workOrders.linkProposal({ requestId: request.id, proposalId: id });
+    },
+    onSuccess: linked,
+    onError: (err: Error) => toast.error(err.message || "Couldn't create the proposal"),
+  });
+  const busy = link.isPending || create.isPending || start.isPending || quote.isFetching;
+  const q = quote.data?.quote;
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (/^\d+$/.test(proposalId.trim())) link.mutate(proposalId.trim());
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle>Pay through the Agency DAO</DialogTitle>
+        <DialogDescription>
+          A transfer proposal paying {workOrder.builder.nearAccount}. It becomes a billing on the
+          project, and the request is paid when the DAO approves it. Creating the proposal, or
+          locking the amount to propose it elsewhere, turns automatic payment off for this request:
+          from then on it's paid through the DAO. To pay it another way, reject or remove the
+          proposal on the DAO first, then reject the request so the builder can request it again.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="flex flex-col gap-1 border p-3">
+        {quote.isError ? (
+          <span className="text-sm text-destructive">{(quote.error as Error).message}</span>
+        ) : !q ? (
+          <span className="text-sm text-muted-foreground">Getting the amount…</span>
+        ) : (
+          <>
+            <span className="text-lg font-medium tabular-nums">
+              {formatTokenAmount(q.amount, q.tokenId)}
+            </span>
+            {q.priceUsd && q.usd && (
+              <span className="text-xs text-muted-foreground">
+                {formatTokenAmount(q.usd, "usd")} at ${q.priceUsd} per {tokenSymbol(q.tokenId)},
+                {q.pricedAt ? `quoted ${dateTime(q.pricedAt)}. ` : ""}The proposal must pay exactly
+                this amount.
+              </span>
+            )}
+          </>
+        )}
+        {workOrder.tokenId === "usd" && !started && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="self-start"
+            disabled={quote.isFetching}
+            onClick={() => quote.refetch()}
+          >
+            {quote.isFetching ? "Pricing…" : "Refresh the quote"}
+          </Button>
+        )}
+      </div>
+      {terminated ? (
+        <p className="text-sm text-muted-foreground">
+          This work order is terminated, so no new proposal can be made. Link the proposal you
+          already created for this amount.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <Button type="button" disabled={busy || !q} onClick={() => create.mutate()}>
+            {create.isPending ? "Waiting for the wallet…" : "Create the proposal with my wallet"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Your wallet signs add_proposal on the DAO with its proposal bond as the deposit. Your
+            account needs permission to add transfer proposals.
+          </p>
+        </div>
+      )}
+      {started ? (
+        <>
+          <Field
+            label={terminated ? "Proposal number" : "Or link one made elsewhere (e.g. Trezu)"}
+            htmlFor="proposal-id"
+          >
+            <Input
+              id="proposal-id"
+              inputMode="numeric"
+              placeholder="Proposal number"
+              value={proposalId}
+              onChange={(e) => setProposalId(e.target.value)}
+            />
+          </Field>
+          <DialogFooter>
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={!/^\d+$/.test(proposalId.trim()) || busy}
+            >
+              {link.isPending ? "Checking…" : "Link proposal"}
+            </Button>
+          </DialogFooter>
+        </>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy || !q}
+            onClick={() => start.mutate()}
+          >
+            {start.isPending ? "Locking…" : "Lock the amount to propose it elsewhere (e.g. Trezu)"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            The amount is priced again when you lock it. Then create the proposal there with exactly
+            the locked amount and link its number here.
+          </p>
+        </div>
+      )}
+    </form>
+  );
+}

@@ -1,6 +1,5 @@
 import { TrayIcon } from "@phosphor-icons/react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -16,6 +15,7 @@ import {
 } from "@/components";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Empty } from "@/components/admin-form";
+import type { ColumnDef } from "@/components/ui/data-table";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { adminApplicationsListQueryKey, refreshAfter } from "@/lib/queries";
@@ -128,9 +128,7 @@ export function ApplicationsAdminSection() {
         <CardTitle>
           <h2>Applications</h2>
         </CardTitle>
-        <CardDescription>
-          Founder, builder and client applications from the public site.
-        </CardDescription>
+        <CardDescription>From the public site.</CardDescription>
         <CardAction>
           <Badge variant="secondary">{apps.length}</Badge>
         </CardAction>
@@ -233,7 +231,7 @@ function ApplicationActions({ application }: { application: Application }) {
       await refreshAfter(queryClient, { type: "applications" });
       toast.success("Status updated");
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to update status"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't update the status"),
   });
 
   const convertMutation = useMutation({
@@ -242,7 +240,7 @@ function ApplicationActions({ application }: { application: Application }) {
       await refreshAfter(queryClient, { type: "applications" }, { type: "builders" });
       toast.success("Converted to builder");
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to convert"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't convert"),
   });
 
   return (

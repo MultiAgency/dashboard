@@ -6,7 +6,6 @@ import {
   Button,
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -129,7 +128,7 @@ export function ProjectForm({
     },
     onError: (err: Error) => {
       if (isSlugTakenError(err)) return;
-      toast.error(err.message || (mode === "create" ? "Failed to create" : "Failed to update"));
+      toast.error(err.message || "Couldn't save the project");
     },
   });
 
@@ -187,11 +186,6 @@ export function ProjectForm({
         <CardTitle>
           <h2>{mode === "create" ? "New project" : "Project details"}</h2>
         </CardTitle>
-        <CardDescription>
-          {mode === "create"
-            ? "Projects hold the team, budget and billings for work you deliver."
-            : "Title, notes, repository, NEARN link, status and visibility."}
-        </CardDescription>
       </CardHeader>
       <form
         className="flex flex-col gap-4"

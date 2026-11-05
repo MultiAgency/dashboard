@@ -1,6 +1,7 @@
+import "@orpc/openapi/extensions/route";
+import { oc } from "@orpc/contract";
 import { BAD_REQUEST, FORBIDDEN, NOT_FOUND, UNAUTHORIZED } from "every-plugin/errors";
-import { oc } from "every-plugin/orpc";
-import { z } from "every-plugin/zod";
+import { z } from "zod";
 
 const BuilderOutput = z.object({
   id: z.string(),
@@ -163,6 +164,27 @@ export const contract = oc.router({
     )
     .output(z.object({ data: MemberOutput, overwritten: z.array(z.string()) }))
     .errors({ UNAUTHORIZED, FORBIDDEN, BAD_REQUEST, CONFLICT }),
+
+  listMembersWithAgreements: oc
+    .route({ method: "GET", path: "/v1/admin/members" })
+    .input(z.object({}))
+    .output(
+      z.object({
+        data: z.array(
+          MemberOutput.extend({
+            agreement: z
+              .object({
+                version: z.string(),
+                attestedAt: z.iso.datetime(),
+                recordedBy: z.string(),
+                recordedAt: z.iso.datetime(),
+              })
+              .nullable(),
+          }),
+        ),
+      }),
+    )
+    .errors({ UNAUTHORIZED, FORBIDDEN }),
 
   recordAgreement: oc
     .route({ method: "PUT", path: "/v1/members/{githubLogin}/agreement" })

@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { queryOptions } from "@tanstack/react-query";
 import type { ApiClient } from "./api";
-import { type AuthClient, sessionQueryKey, sessionQueryOptions } from "./auth";
+import { type AuthClient, type Organization, sessionQueryKey, sessionQueryOptions } from "./auth";
 import { pendingInvitations } from "./invitations";
 import { type OrganizationHome, organizationHome, organizationToActivate } from "./landing";
 import {
@@ -10,6 +10,7 @@ import {
   myOrganizationsQueryKey,
   setActiveOrganizationKey,
 } from "./queries";
+import { clearAllWorkOrderDrafts } from "./work-order-draft";
 import { announceWorkspace, switchWorkspace } from "./workspace";
 
 export const WELCOME_PATH = "/welcome";
@@ -42,10 +43,15 @@ export function userInvitationsQueryOptions(authClient: AuthClient, enabled: boo
 
 export const organizationsQueryKey = ["organizations", "list"] as const;
 
+export type AuthOrganization = Organization & {
+  status?: "active" | "pending" | "rejected";
+  rejectionReason?: string | null;
+};
+
 export function organizationsQueryOptions(authClient: AuthClient) {
   return queryOptions({
     queryKey: organizationsQueryKey,
-    queryFn: async () => {
+    queryFn: async (): Promise<AuthOrganization[]> => {
       const res = await authClient.organization.list();
       return res.data ?? [];
     },
@@ -68,11 +74,16 @@ export async function refreshAccountQueries(queryClient: QueryClient) {
   ]);
 }
 
+export async function signOut(authClient: AuthClient) {
+  const { error } = await authClient.signOut();
+  if (error) throw new Error(error.message || "Failed to sign out");
+  await authClient.near.disconnect().catch(() => {});
+  clearAllWorkOrderDrafts();
+}
+
 export async function refreshAfterAccountChange(queryClient: QueryClient, authClient: AuthClient) {
   queryClient.clear();
-  return queryClient.fetchQuery(
-    sessionQueryOptions(authClient, undefined, { disableCookieCache: true }),
-  );
+  return queryClient.fetchQuery(sessionQueryOptions(authClient));
 }
 
 type AccountDeps = {

@@ -24,7 +24,7 @@ export function NetworkToggle({ label }: { label?: string }) {
       }}
       aria-label="NEAR network"
     >
-      {supportedNetworks.map((network) => (
+      {supportedNetworks.map((network: string) => (
         <ToggleGroupItem key={network} value={network} aria-label={network}>
           <span className="sm:hidden">{network === "mainnet" ? "Main" : "Test"}</span>
           <span className="hidden sm:inline">{network === "mainnet" ? "Mainnet" : "Testnet"}</span>

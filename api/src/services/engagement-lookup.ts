@@ -1,5 +1,5 @@
+import { ORPCError } from "@orpc/server";
 import { eq } from "drizzle-orm";
-import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type EngagementRow, engagements } from "../db/schema";
 import { type OrganizationScope, SHARED_STATUSES } from "./organization-access";

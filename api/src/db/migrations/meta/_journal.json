@@ -127,6 +127,139 @@
       "when": 1792281600000,
       "tag": "0018_client_agreements",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792368000000,
+      "tag": "0019_work_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792454400000,
+      "tag": "0020_work_order_google",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792540800000,
+      "tag": "0021_work_order_usd",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792627200000,
+      "tag": "0022_work_order_signing",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792713600000,
+      "tag": "0023_payout_agents",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792800000000,
+      "tag": "0024_work_order_documenso",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0025_work_order_auto_pay",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793059200000,
+      "tag": "0027_work_order_trust",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793145600000,
+      "tag": "0028_drop_n8n",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793232000000,
+      "tag": "0029_owner_signing",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793318400000,
+      "tag": "0030_organization_builder_logins",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793404800000,
+      "tag": "0031_work_order_representative",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793491200000,
+      "tag": "0032_work_order_payout_hold",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793577600000,
+      "tag": "0033_work_order_google_oauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793664000000,
+      "tag": "0034_work_order_esign_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793750400000,
+      "tag": "0035_payout_hold_notified",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793836800000,
+      "tag": "0036_payout_explorer_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793923200000,
+      "tag": "0037_dao_payment_started",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794009600000,
+      "tag": "0038_failed_proposals_not_final",
+      "breakpoints": true
     }
   ]
 }

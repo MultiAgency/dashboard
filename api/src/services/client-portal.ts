@@ -1,5 +1,5 @@
-import { Effect } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { ORPCError } from "@orpc/server";
+import { Effect } from "effect";
 import type { PluginContext } from "../lib/organizations";
 import type { AgencyService } from "./agency";
 import type { AgreementView } from "./agreements";

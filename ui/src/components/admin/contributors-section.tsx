@@ -7,7 +7,6 @@ import {
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import type { ColumnDef } from "@tanstack/react-table";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -30,6 +29,7 @@ import { CommunityBuildersImportPanel } from "@/components/admin/community-build
 import { AdminError } from "@/components/admin-error";
 import { Field } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import type { ColumnDef } from "@/components/ui/data-table";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import {
@@ -44,7 +44,7 @@ import { adminContributorsListQueryOptions, refreshAfter } from "@/lib/queries";
 
 type Contributor = Awaited<ReturnType<ApiClient["contributors"]["list"]>>["data"][number];
 
-function VerifiedGithub({ login }: { login: string }) {
+export function VerifiedGithub({ login }: { login: string }) {
   return (
     <a
       href={githubProfileUrl(login)}
@@ -175,9 +175,7 @@ export function ContributorsAdminSection() {
           <CardTitle>
             <h2>Builder directory</h2>
           </CardTitle>
-          <CardDescription>
-            Profiles are shared across Agencies and keyed by NEAR account.
-          </CardDescription>
+          <CardDescription>Shared across Agencies.</CardDescription>
           {!creating && (
             <CardAction className="flex flex-wrap gap-2">
               {!importing && (
@@ -237,7 +235,7 @@ function ContributorCreateForm({ onDone }: { onDone: () => void }) {
       toast.success("Builder created");
       onDone();
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to create builder"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't create the builder"),
   });
 
   const isPending = createMutation.isPending;
@@ -380,7 +378,7 @@ export function ContributorProfileForm({
       await refreshAfter(queryClient, { type: "builders" });
       toast.success("Profile saved");
     },
-    onError: (err: Error) => toast.error(err.message || "Failed to save profile"),
+    onError: (err: Error) => toast.error(err.message || "Couldn't save"),
   });
 
   const isPending = saveMutation.isPending;
@@ -395,11 +393,6 @@ export function ContributorProfileForm({
         {!contributor.registered && (
           <CardAction>
             <Badge variant="outline">Not registered yet</Badge>
-          </CardAction>
-        )}
-        {contributor.githubLogin && (
-          <CardAction>
-            <VerifiedGithub login={contributor.githubLogin} />
           </CardAction>
         )}
       </CardHeader>
@@ -507,7 +500,7 @@ export function RemoveBuilderButton({
         open={confirming}
         onOpenChange={setConfirming}
         title={`Remove ${name}?`}
-        description="Their profile is deleted from the builder directory. Billings already recorded for them are kept."
+        description="Their profile leaves the directory. Recorded billings are kept."
         confirmLabel="Remove builder"
         destructive
         onConfirm={async () => {

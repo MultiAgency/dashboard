@@ -60,6 +60,15 @@ describe("notifications", () => {
     expect((await failing.unreadCount("owner")).count).toBe(1);
   });
 
+  test("a notification can stay in the inbox without emailing anyone", async () => {
+    await expect(service().notify({ ...proposal, email: false })).resolves.toEqual({
+      recipients: 3,
+      emailed: 0,
+    });
+    expect(sent).toEqual([]);
+    expect((await service().unreadCount("owner")).count).toBe(1);
+  });
+
   test("marking read clears the unread badge for that user only", async () => {
     await service().notify(proposal);
     await service().notify({ ...proposal, kind: "project_shared" });

@@ -1,5 +1,5 @@
+import { ORPCError } from "@orpc/server";
 import { asc, eq, max } from "drizzle-orm";
-import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { type AgentLinkRow, agentLinks, type EngagementRow } from "../db/schema";
 import {

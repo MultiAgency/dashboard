@@ -1,14 +1,6 @@
-/**
- * Client router factory — creates a TanStack Router with browser history.
- *
- * BE CAREFUL MODIFYING THIS FILE — changes will be overwritten by `bos sync` / `bos upgrade`.
- * Prefer upstream changes at https://github.com/nearbuilders/everything-dev
- */
-
-import { dehydrate, hydrate } from "@tanstack/react-query";
-import { createBrowserHistory, createRouter as createTanStackRouter } from "@tanstack/react-router";
-import type { CreateRouterOptions } from "./app";
-import { createAuthClient } from "./app";
+import { createRouter as createCoreRouter } from "everything-dev/ui/router-client";
+import { defaultQueryClient } from "everything-dev/ui/router-defaults";
+import type { ApiClient, CreateRouterOptions, SessionData } from "./app";
 import { routeTree } from "./routeTree.gen";
 
 export type {
@@ -18,7 +10,7 @@ export type {
   RouterModule,
 } from "./app";
 
-function defaultErrorComponent({ error }: { error: Error }) {
+function defaultErrorComponent({ error }: { error: unknown }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="text-center">
@@ -26,7 +18,9 @@ function defaultErrorComponent({ error }: { error: Error }) {
         <p className="text-muted-foreground mb-4">Something went wrong</p>
         <details className="text-sm text-muted-foreground bg-muted p-4 rounded mb-8">
           <summary className="cursor-pointer">Error Details</summary>
-          <pre className="mt-2 whitespace-pre-wrap text-left">{error.message}</pre>
+          <pre className="mt-2 whitespace-pre-wrap text-left">
+            {error instanceof Error ? error.message : String(error)}
+          </pre>
         </details>
       </div>
     </div>
@@ -52,51 +46,21 @@ function defaultPendingComponent() {
   );
 }
 
-export function createRouter(opts: CreateRouterOptions) {
-  const queryClient = opts.context.queryClient;
-  const history = opts.history ?? createBrowserHistory();
-  const cspNonce = opts.context.cspNonce;
+export function createQueryClient() {
+  return defaultQueryClient();
+}
 
-  const router = createTanStackRouter({
-    routeTree,
-    history,
-    basepath: opts.basepath ?? opts.context.runtimeConfig?.runtime?.runtimeBasePath ?? "/",
-    context: {
-      queryClient,
-      runtimeConfig: opts.context.runtimeConfig,
-      cspNonce: opts.context.cspNonce,
-      apiClient: opts.context.apiClient,
-      authClient:
-        opts.context.authClient ??
-        createAuthClient({
-          runtimeConfig: opts.context.runtimeConfig,
-          cspNonce: opts.context.cspNonce,
-        }),
-      session: opts.context.session,
-    },
-    ...(cspNonce ? { ssr: { nonce: cspNonce } } : {}),
-    defaultPreload: "intent",
-    scrollRestoration: true,
-    defaultStructuralSharing: true,
-    defaultPreloadStaleTime: 0,
-    defaultPendingMinMs: 0,
+export function createRouter(opts: CreateRouterOptions) {
+  const { router, queryClient } = createCoreRouter<ApiClient, SessionData, typeof routeTree>({
+    ...opts,
+    defaultRouteTree: routeTree,
+  });
+  router.update({
+    context: router.options.context,
     defaultErrorComponent,
     defaultNotFoundComponent,
     defaultPendingComponent,
-    dehydrate: () => {
-      if (typeof window === "undefined") {
-        return { queryClientState: dehydrate(queryClient) };
-      }
-
-      return { queryClientState: {} };
-    },
-    hydrate: (dehydrated: { queryClientState?: unknown }) => {
-      if (typeof window !== "undefined" && dehydrated?.queryClientState) {
-        hydrate(queryClient, dehydrated.queryClientState);
-      }
-    },
   });
-
   return { router, queryClient };
 }
 

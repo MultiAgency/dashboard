@@ -1,5 +1,5 @@
+import { ORPCError } from "@orpc/server";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import {
   type AGREEMENT_KINDS,

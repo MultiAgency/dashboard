@@ -1,0 +1,30 @@
+name: Child CI Jobs
+
+# CHILD-OWNED — bos upgrade never rewrites this file (#538). This repo's extra
+# CI jobs live here. `ci.yml` (framework-owned) calls this workflow in parallel
+# with the pinned reusable `ci` call and includes its result in the merge gate.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-guard:
+    name: Workflow guard
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0 (Node 24)
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+
+      - name: Test the guard
+        run: node --test scripts/check-workflows.test.ts
+
+      - name: Check workflows (bos upgrade rewrites ci.yml and staging.yml)
+        run: node scripts/check-workflows.ts

@@ -1,7 +1,7 @@
 import type { PGlite } from "@electric-sql/pglite";
+import { ORPCError } from "@orpc/server";
 import { drizzle } from "drizzle-orm/pglite";
-import { Effect, Either } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Effect, Result } from "effect";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import * as schema from "../../src/db/schema";
@@ -96,23 +96,64 @@ describe("when upstream services fail", () => {
       const nearn = createNearnService();
 
       const outcome = await Effect.runPromise(
-        Effect.either(nearn.getListing(agencyScope(uniqueDao()), { slug: "gone-listing" })),
+        Effect.result(nearn.getListing(agencyScope(uniqueDao()), { slug: "gone-listing" })),
       );
 
-      expect(Either.isLeft(outcome) && outcome.left).toMatchObject({ code: "NOT_FOUND" });
+      expect(Result.isFailure(outcome) && outcome.failure).toMatchObject({ code: "NOT_FOUND" });
     });
   });
 
   describe("contributors", () => {
     function contributorsWith(builders: Record<string, unknown>, contexts: unknown[] = []) {
       const plugins = {
-        builders: (context: unknown) => {
-          contexts.push(context);
-          return builders;
+        builders: {
+          client: (context: unknown) => {
+            contexts.push(context);
+            return builders;
+          },
         },
       } as unknown as PluginsClient;
       return createContributorsService(db, plugins);
     }
+
+    test("lists board members for the caller the plugin is asked about", async () => {
+      const contexts: unknown[] = [];
+      const contributors = contributorsWith(
+        { listMembersWithAgreements: async () => ({ data: [{ githubLogin: "ada" }] }) },
+        contexts,
+      );
+
+      const result = await Effect.runPromise(contributors.members({ userId: "platform" }));
+
+      expect(result).toEqual({ data: [{ githubLogin: "ada" }] });
+      expect(contexts.at(-1)).toEqual({ userId: "platform" });
+    });
+
+    test("passes the plugin's refusal to record an agreement through unchanged", async () => {
+      const contributors = contributorsWith({
+        recordAgreement: async () => {
+          throw new ORPCError("FORBIDDEN", {
+            message: "Only a platform admin records a services agreement",
+          });
+        },
+      });
+
+      const outcome = await Effect.runPromise(
+        Effect.result(
+          contributors.recordAgreement(
+            { userId: "manager" },
+            {
+              githubLogin: "ada",
+              version: "v1",
+              attestedAt: "2026-10-01T00:00:00.000Z",
+              proof: "p",
+            },
+          ),
+        ),
+      );
+
+      expect(Result.isFailure(outcome) && outcome.failure).toMatchObject({ code: "FORBIDDEN" });
+    });
 
     test("an assigned contributor without a builder profile gets an unregistered stub", async () => {
       await db
@@ -280,10 +321,10 @@ describe("when upstream services fail", () => {
       });
 
       const outcome = await Effect.runPromise(
-        Effect.either(contributors.delete({}, "ada.near", { organizationId: "acme" })),
+        Effect.result(contributors.delete({}, "ada.near", { organizationId: "acme" })),
       );
 
-      expect(Either.isLeft(outcome) && outcome.left).toMatchObject({ code: "BAD_REQUEST" });
+      expect(Result.isFailure(outcome) && outcome.failure).toMatchObject({ code: "BAD_REQUEST" });
       expect(deleted).toEqual([]);
     });
 

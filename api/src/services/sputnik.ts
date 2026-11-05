@@ -37,6 +37,21 @@ const FASTNEAR_HOSTS = new Set([
   "test.api.fastnear.com",
 ]);
 
+export function proposalDescription(fields: {
+  title: string;
+  notes?: string | null;
+  url?: string | null;
+}): string {
+  const entries: [string, string | null | undefined][] = [
+    ["Title", fields.title],
+    ["Notes", fields.notes],
+    ["Url", fields.url],
+  ];
+  return entries
+    .flatMap(([key, value]) => (value ? [`* ${key}: ${value.replace(/<br>/g, " ")}`] : []))
+    .join(" <br>");
+}
+
 export function fastnearAuthHeaders(url: string): Record<string, string> {
   let host: string;
   try {
@@ -57,6 +72,8 @@ interface SputnikRole {
 
 interface SputnikPolicy {
   roles: SputnikRole[];
+  proposal_bond?: string;
+  proposal_period?: string;
 }
 
 const policyCache = new Map<string, { policy: SputnikPolicy; expiresAt: number }>();
@@ -76,6 +93,11 @@ async function fetchPolicy(daoAccountId: string): Promise<SputnikPolicy> {
     }
     throw err;
   }
+}
+
+export async function getProposalBond(daoAccountId: string): Promise<string> {
+  const policy = await fetchPolicy(daoAccountId);
+  return policy.proposal_bond ?? "0";
 }
 
 export interface DaoRole {
@@ -146,7 +168,6 @@ const TERMINAL_STATUSES = new Set<DaoProposalStatus>([
   "Removed",
   "Expired",
   "Moved",
-  "Failed",
 ]);
 
 type ProposalRow = typeof proposalsTable.$inferSelect;
@@ -180,7 +201,7 @@ function daoProposalToRow(daoAccountId: string, p: DaoProposal): NewProposalRow 
     proposalId: p.id,
     proposer: p.proposer,
     description: p.description,
-    status: p.status as Exclude<DaoProposalStatus, "InProgress">,
+    status: p.status as Exclude<DaoProposalStatus, "InProgress" | "Failed">,
     kindType: p.kind.type,
     transferTokenId: p.kind.type === "Transfer" ? p.kind.tokenId : null,
     transferReceiverId: p.kind.type === "Transfer" ? p.kind.receiverId : null,
@@ -269,7 +290,38 @@ function parseProposal(raw: Record<string, unknown>, fallbackId: number): DaoPro
   };
 }
 
+const EXPIRABLE = new Set<DaoProposalStatus>(["InProgress", "Failed"]);
+const EXPIRY_MARGIN_NS = 600_000_000_000n;
+
+async function expireByPolicy(
+  daoAccountId: string,
+  proposals: DaoProposal[],
+): Promise<DaoProposal[]> {
+  if (!proposals.some((p) => EXPIRABLE.has(p.status))) return proposals;
+  const period = await fetchPolicy(daoAccountId).then(
+    (policy) => policy.proposal_period,
+    () => undefined,
+  );
+  if (!period) return proposals;
+  const nowNs = BigInt(Date.now()) * 1_000_000n;
+  return proposals.map((p) =>
+    EXPIRABLE.has(p.status) &&
+    p.submissionTime &&
+    BigInt(p.submissionTime) + BigInt(period) + EXPIRY_MARGIN_NS < nowNs
+      ? { ...p, status: "Expired" }
+      : p,
+  );
+}
+
 export async function getProposal(
+  db: Database,
+  daoAccountId: string,
+  proposalId: number,
+): Promise<DaoProposal | null> {
+  return findProposal(db, daoAccountId, proposalId).catch(() => null);
+}
+
+export async function findProposal(
   db: Database,
   daoAccountId: string,
   proposalId: number,
@@ -285,6 +337,7 @@ export async function getProposal(
   }
 
   let proposal: DaoProposal | null = null;
+  let reported: DaoProposalStatus | null = null;
   try {
     const raw = await viewCall<Record<string, unknown>>(
       daoAccountId,
@@ -294,11 +347,14 @@ export async function getProposal(
         id: proposalId,
       },
     );
-    proposal = parseProposal(raw, proposalId);
-  } catch {
-    proposal = null;
+    const parsed = parseProposal(raw, proposalId);
+    reported = parsed.status;
+    [proposal = null] = await expireByPolicy(daoAccountId, [parsed]);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes("ERR_NO_PROPOSAL")) throw err;
   }
-  const isTerminal = proposal && TERMINAL_STATUSES.has(proposal.status);
+  const isTerminal = proposal && reported && TERMINAL_STATUSES.has(reported);
   const expiresAt = isTerminal ? Number.POSITIVE_INFINITY : Date.now() + PROPOSAL_TTL_MS;
   proposalCache.set(cacheKey, { proposal, expiresAt });
   if (isTerminal && proposal) {
@@ -323,17 +379,49 @@ export async function getProposals(
     "get_proposals",
     { from_index: fromIndex, limit },
   );
-  const proposals = raw.map((r, idx) => parseProposal(r, fromIndex + idx));
+  const parsed = raw.map((r, idx) => parseProposal(r, fromIndex + idx));
+  const proposals = await expireByPolicy(daoAccountId, parsed);
+  const reportedTerminal = (idx: number) =>
+    TERMINAL_STATUSES.has(parsed[idx]?.status ?? "InProgress");
   // Warm the per-proposal cache so subsequent getProposal(id) calls hit cache.
-  for (const p of proposals) {
+  proposals.forEach((p, idx) => {
     const cacheKey = `${daoAccountId}::${p.id}`;
-    const expiresAt = TERMINAL_STATUSES.has(p.status)
+    const expiresAt = reportedTerminal(idx)
       ? Number.POSITIVE_INFINITY
       : Date.now() + PROPOSAL_TTL_MS;
     proposalCache.set(cacheKey, { proposal: p, expiresAt });
-  }
-  await persistTerminalProposals(db, daoAccountId, proposals);
+  });
+  await persistTerminalProposals(
+    db,
+    daoAccountId,
+    proposals.filter((_, idx) => reportedTerminal(idx)),
+  );
   return proposals;
+}
+
+const SCAN_PAGE = 100;
+const SCAN_PAGES = 20;
+
+export async function proposalsSince(
+  db: Database,
+  daoAccountId: string,
+  since: Date,
+): Promise<DaoProposal[]> {
+  const sinceNs = BigInt(since.getTime()) * 1_000_000n;
+  const found: DaoProposal[] = [];
+  let end = await getLastProposalId(daoAccountId);
+  for (let page = 0; end > 0; page++) {
+    if (page === SCAN_PAGES) {
+      throw new Error(`More than ${SCAN_PAGES * SCAN_PAGE} proposals to check on ${daoAccountId}`);
+    }
+    const from = Math.max(0, end - SCAN_PAGE);
+    const proposals = await getProposals(db, daoAccountId, from, end - from);
+    found.push(...proposals);
+    const oldest = proposals[0]?.submissionTime;
+    if (oldest && /^\d+$/.test(oldest) && BigInt(oldest) < sinceNs) break;
+    end = from;
+  }
+  return found;
 }
 
 const balanceCache = new Map<string, { balance: string; expiresAt: number }>();
@@ -427,6 +515,20 @@ async function rpcCall<T>(accountId: string, body: unknown): Promise<T> {
     );
     return await rpcFetch<T>(fallback, body);
   }
+}
+
+export async function fullAccessKeys(accountId: string): Promise<string[]> {
+  const result = await rpcCall<{
+    keys: { public_key: string; access_key: { permission: unknown } }[];
+  }>(accountId, {
+    jsonrpc: "2.0",
+    id: "full-access-keys",
+    method: "query",
+    params: { request_type: "view_access_key_list", finality: "final", account_id: accountId },
+  });
+  return result.keys
+    .filter((key) => key.access_key.permission === "FullAccess")
+    .map((key) => key.public_key);
 }
 
 // All call_function views; inner result.error must surface (else misleading EOF).
@@ -626,6 +728,7 @@ export async function enrichWithChainStatus<T extends { proposalId: string }>(
   b: T,
   orgAccountId: string,
 ): Promise<T & { status: DaoProposalStatus }> {
+  if (b.proposalId.startsWith("intents:")) return { ...b, status: "Approved" as const };
   const proposalId = Number.parseInt(b.proposalId, 10);
   if (Number.isNaN(proposalId)) return { ...b, status: "InProgress" as const };
   const proposal = await getProposal(db, orgAccountId, proposalId);

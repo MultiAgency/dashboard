@@ -6,7 +6,6 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import type { ColumnDef } from "@tanstack/react-table";
 import { useState } from "react";
 import {
   Alert,
@@ -32,6 +31,7 @@ import {
 import { CommunityImportPanel } from "@/components/admin/community-import-panel";
 import { ProjectForm, type ProjectFormValues } from "@/components/admin/project-form";
 import { AdminError } from "@/components/admin-error";
+import type { ColumnDef } from "@/components/ui/data-table";
 import type { ApiClient } from "@/lib/api";
 import { useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
@@ -171,9 +171,6 @@ export function ProjectsAdminSection() {
           <CardTitle>
             <h2>Your projects</h2>
           </CardTitle>
-          <CardDescription>
-            Open a project to manage its builders, budget and billings.
-          </CardDescription>
           {!creating && (
             <CardAction className="flex flex-wrap gap-2">
               {!importing && (
@@ -302,9 +299,7 @@ function NearnSponsorBountiesPanel({
         <CardTitle>
           <h2>Unlinked NEARN bounties</h2>
         </CardTitle>
-        <CardDescription>
-          Bounties from your NEARN sponsor account that no project tracks yet.
-        </CardDescription>
+        <CardDescription>No project tracks these yet.</CardDescription>
       </CardHeader>
       <CardContent>
         <ItemGroup>

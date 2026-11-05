@@ -1,0 +1,29 @@
+name: Work orders
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: work-orders
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  run:
+    name: Collect evidence, end periods, renew, sync payments
+    runs-on: ubuntu-latest
+    env:
+      WORK_ORDERS_BASE_URL: ${{ vars.WORK_ORDERS_BASE_URL }}
+      WORK_ORDERS_RUN_SECRET: ${{ secrets.WORK_ORDERS_RUN_SECRET }}
+    steps:
+      - name: Run the work-order job
+        if: ${{ env.WORK_ORDERS_BASE_URL != '' && env.WORK_ORDERS_RUN_SECRET != '' }}
+        run: |
+          curl --fail-with-body -sS -X POST "${WORK_ORDERS_BASE_URL%/}/api/work-orders/run" \
+            -H "authorization: Bearer ${WORK_ORDERS_RUN_SECRET}" \
+            -H "content-type: application/json" \
+            -H "origin: ${WORK_ORDERS_BASE_URL%/}" \
+            -d '{}'

@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { ORPCError } from "every-plugin/orpc";
+import { ORPCError } from "@orpc/server";
 import { describe, expect, test } from "vitest";
 import {
   type ContactFormInput,

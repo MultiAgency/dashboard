@@ -1,5 +1,5 @@
+import { ORPCError } from "@orpc/server";
 import { and, count, eq, inArray, isNull, ne, or } from "drizzle-orm";
-import { ORPCError } from "every-plugin/orpc";
 import type { Database } from "../db";
 import { billings, budgets, organizationDaos, prepayments } from "../db/schema";
 import type { Network } from "../lib/network";

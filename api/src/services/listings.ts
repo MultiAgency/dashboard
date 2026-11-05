@@ -1,6 +1,6 @@
+import { ORPCError } from "@orpc/server";
 import { and, eq, inArray } from "drizzle-orm";
-import { Effect } from "every-plugin/effect";
-import { ORPCError } from "every-plugin/orpc";
+import { Effect } from "effect";
 import type { Database } from "../db";
 import { type Listing, listings, type NewListing } from "../db/schema";
 import {
@@ -509,7 +509,7 @@ export function createListingsService(db: Database, directory: ProjectDirectory)
         return yield* Effect.tryPromise({
           try: () => attachNearnListing(projectId, slug, db),
           catch: (err) => err,
-        }).pipe(Effect.catchAll((err) => Effect.flatMap(attachFailure(scope, err), Effect.fail)));
+        }).pipe(Effect.catch((err) => Effect.flatMap(attachFailure(scope, err), Effect.fail)));
       }),
 
     detachNearn: (projectId: string) => Effect.promise(() => detachNearnListing(projectId, db)),

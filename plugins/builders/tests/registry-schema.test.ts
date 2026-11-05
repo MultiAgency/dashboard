@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { PluginIdTag } from "every-plugin";
-import { Effect, Layer, ManagedRuntime } from "every-plugin/effect";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { DatabaseLive, DatabaseTag } from "../src/db/layer";
 import { builders } from "../src/db/schema";
@@ -155,8 +155,8 @@ const layer = BuilderServiceLive.pipe(
 );
 
 describe("a member with no mainnet account", () => {
-  let runtime: ManagedRuntime.ManagedRuntime<Layer.Layer.Success<typeof layer>, unknown>;
-  const run = <A, E>(effect: Effect.Effect<A, E, Layer.Layer.Success<typeof layer>>) =>
+  let runtime: ManagedRuntime.ManagedRuntime<Layer.Success<typeof layer>, unknown>;
+  const run = <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>) =>
     runtime.runPromise(effect);
 
   beforeAll(async () => {
