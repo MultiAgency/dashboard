@@ -89,6 +89,35 @@ for (const [name, text] of [
   });
 }
 
+test("the template's automatic production deploy is refused", () => {
+  const directory = workflows({
+    "deploy.yml": `on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: NEARBuilders/everything-dev/.github/workflows/consumer-deploy.yml@${SHA}
+    secrets: inherit
+`,
+  });
+  assert.deepEqual(checkWorkflows(directory), [
+    `deploy.yml: passes every repository secret (secrets: inherit)`,
+    `deploy.yml: deploys production on workflow_run; production deploys run by hand (workflow_dispatch only)`,
+  ]);
+});
+
+test("a production deploy on push, inline or listed, is refused", () => {
+  for (const on of ["on: push", "on: [push, workflow_dispatch]"]) {
+    assert.deepEqual(checkWorkflows(workflows({ "deploy.yml": `${on}\n` })), [
+      `deploy.yml: deploys production on push; production deploys run by hand (workflow_dispatch only)`,
+    ]);
+  }
+});
+
 test("our workflows pass", () => {
   const directory = workflows({
     "staging.yml": `env:
@@ -100,6 +129,19 @@ test("our workflows pass", () => {
     uses: NEARBuilders/everything-dev/.github/workflows/consumer-ci.yml@${SHA} # v2.0.0-rc.27
   child-ci:
     uses: ./.github/workflows/ci-child.yml
+`,
+    "deploy.yml": `on:
+  workflow_dispatch:
+    inputs:
+      smoke:
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    environment: production
+    env:
+      RAILWAY_TOKEN: \${{ secrets.RAILWAY_TOKEN }}
 `,
   });
   assert.deepEqual(checkWorkflows(directory), []);
