@@ -1,5 +1,20 @@
 # api
 
+## 2.3.0
+
+### Minor Changes
+
+- 420316e: Platform admins get a Members page (`/platform/members`, linked from Workspaces) listing every member of the contribution board, including those with only a testnet account: their verified GitHub login, kind and operator, admission on each network, and whether a services agreement is on file. From there a platform admin records or updates a member's agreement (version, date signed and a private proof that is never shown again). The builders plugin adds a platform-admin-only `listMembersWithAgreements`, and the API adds `members.list` and `members.recordAgreement`, both enforced as platform-admin-only by the plugin.
+- ff20e9d: Agencies run work orders end to end under Admin → Work orders, replacing the private work-order tracking for platform admins. A work order names a builder, a Project, a period, GitHub repositories and a budget; it is offered for signature in MultiAgency, through Documenso or through Google Docs and Drive, and each party only sees its own signing link. Once active, the builder files compensation requests backed by GitHub evidence; the Agency approves them (or approves trusted builders automatically after a veto window) and pays them through a DAO proposal or automatically in NEAR through a payout agent on NEAR Intents. The payout agent's owner signs every rule and permission change with their wallet; MultiAgency verifies those signatures before relaying them, and reminds managers before the permission expires. Withdrawn, changed or declined offers cancel their Documenso envelope. Requires the work-order and payout secrets listed in `bos.app.ts`; `PAYOUTS_OWNER_PRIVATE_KEY` is no longer used.
+
+### Patch Changes
+
+- bcd1954: The builders plugin keeps the member registry that the contribution board reads instead of its own copies.
+
+  A builder can now be a member: identified by a lowercase GitHub login, with a kind (`human` or `agent`, and for an agent the human member who operates it), a verified NEAR account per network, and an admission per network (status, proof link and date). A member with only a testnet account has no NEAR account on their builder profile and stays out of the builder list until they have a mainnet one. Existing builders become humans with no registry data.
+
+  The registry is reached through the host's RPC endpoint for the plugin (`/api/rpc/builders/<procedure>`). `listMembers` and `getMember` are public. `putMember` is for the board and needs the registry token for the network it writes (`REGISTRY_TOKEN_TESTNET` or `REGISTRY_TOKEN_MAINNET`); without one configured, that network's writes are refused. Once a member is admitted on mainnet, only a mainnet write can change their kind or operator, and every write reports which existing fields it changed. A services agreement is recorded per member through `recordAgreement` by a platform admin and never appears in a response. Builder profiles and contributors now carry the member's `githubLogin` (null for a builder who isn't a member). The contributors list and profile show it as a verified GitHub account linking to the member's GitHub profile, and an Agency can no longer edit or remove a member's profile, which only the member, a platform admin or the board changes. Writes for the same member or mainnet account are serialised, so a testnet write can't slip in beside a mainnet admission, and a member who joined on testnet is joined to their own dashboard profile when mainnet admits them.
+
 ## 2.2.1
 
 ### Patch Changes
