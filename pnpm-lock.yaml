@@ -270,8 +270,8 @@ catalogs:
       specifier: ^19.3.0
       version: 19.3.0
     better-near-auth:
-      specifier: 2.0.0-rc.6
-      version: 2.0.0-rc.6
+      specifier: 2.0.0-rc.7
+      version: 2.0.0-rc.7
     drizzle-kit:
       specifier: ^0.31.11
       version: 0.31.11
@@ -285,8 +285,8 @@ catalogs:
       specifier: 3.0.0-rc.15
       version: 3.0.0-rc.15
     everything-dev:
-      specifier: 2.0.0-rc.38
-      version: 2.0.0-rc.38
+      specifier: 2.0.0-rc.39
+      version: 2.0.0-rc.39
     near-kit:
       specifier: ^0.20.2
       version: 0.20.2
@@ -353,7 +353,7 @@ importers:
         version: 1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
       better-near-auth:
         specifier: 'catalog:'
-        version: 2.0.0-rc.6(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@https://codeload.github.com/elliotBraem/near-connect/tar.gz/83355f19408cd98c03b9fa823f9e52cd03929418)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2)
+        version: 2.0.0-rc.7(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@https://codeload.github.com/elliotBraem/near-connect/tar.gz/83355f19408cd98c03b9fa823f9e52cd03929418)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2)
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1)
@@ -365,7 +365,7 @@ importers:
         version: 3.0.0-rc.15(@orpc/contract@2.0.0-beta.45)(@orpc/server@2.0.0-beta.45)(@orpc/tanstack-query@2.0.0-beta.45(@tanstack/query-core@5.105.0))(@orpc/zod@2.0.0-beta.45(zod@4.6.7))(@proj-airi/unplugin-drizzle-orm-migrations@0.1.6(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(@rspack/core@2.2.8(@module-federation/runtime-tools@2.9.2)(@swc/helpers@0.5.23))(@tanstack/react-router@1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@tanstack/router-generator@1.167.46)(@types/react@19.3.0)(effect@4.0.0-rc.118)(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(redis@6.3.0(@opentelemetry/api@1.10.0))(rolldown@1.2.15)(typescript@7.0.2)(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.7)
       everything-dev:
         specifier: 'catalog:'
-        version: 2.0.0-rc.38(3d438afb7e5bdda0ffff4fed52c8154b)
+        version: 2.0.0-rc.39(560c30236c60b20111b3f858f016477a)
       mermaid:
         specifier: ^11.16.0
         version: 11.17.2
@@ -502,7 +502,7 @@ importers:
         version: 17.4.2
       everything-dev:
         specifier: 'catalog:'
-        version: 2.0.0-rc.38(512207fc1f530b0e81a4087829fa8d11)
+        version: 2.0.0-rc.39(5727f06c375c2c081e55c89a6795a054)
       vite-tsconfig-paths:
         specifier: ^5.1.4
         version: 5.1.4(typescript@7.0.2)(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -572,7 +572,7 @@ importers:
         version: 3.0.0-rc.15(@orpc/contract@2.0.0-beta.45)(@orpc/server@2.0.0-beta.45)(@orpc/tanstack-query@2.0.0-beta.45(@tanstack/query-core@5.105.0))(@orpc/zod@2.0.0-beta.45(zod@4.6.7))(@proj-airi/unplugin-drizzle-orm-migrations@0.1.6(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(@rspack/core@2.2.8(@module-federation/runtime-tools@2.9.2)(@swc/helpers@0.5.23))(@tanstack/react-router@1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@tanstack/router-generator@1.167.46)(@types/react@19.3.0)(effect@4.0.0-rc.118)(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(redis@6.3.0(@opentelemetry/api@1.10.0))(rolldown@1.2.15)(typescript@7.0.2)(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.7)
       everything-dev:
         specifier: 'catalog:'
-        version: 2.0.0-rc.38(3d438afb7e5bdda0ffff4fed52c8154b)
+        version: 2.0.0-rc.39(560c30236c60b20111b3f858f016477a)
       vite-tsconfig-paths:
         specifier: ^5.1.4
         version: 5.1.4(typescript@7.0.2)(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -642,7 +642,7 @@ importers:
         version: 3.0.0-rc.15(@orpc/contract@2.0.0-beta.45)(@orpc/server@2.0.0-beta.45)(@orpc/tanstack-query@2.0.0-beta.45(@tanstack/query-core@5.105.0))(@orpc/zod@2.0.0-beta.45(zod@4.6.7))(@proj-airi/unplugin-drizzle-orm-migrations@0.1.6(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(@rspack/core@2.2.8(@module-federation/runtime-tools@2.9.2)(@swc/helpers@0.5.23))(@tanstack/react-router@1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@tanstack/router-generator@1.167.46)(@types/react@19.3.0)(effect@4.0.0-rc.118)(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(redis@6.3.0(@opentelemetry/api@1.10.0))(rolldown@1.2.15)(typescript@7.0.2)(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.7)
       everything-dev:
         specifier: 'catalog:'
-        version: 2.0.0-rc.38(3d438afb7e5bdda0ffff4fed52c8154b)
+        version: 2.0.0-rc.39(560c30236c60b20111b3f858f016477a)
       vite-tsconfig-paths:
         specifier: ^5.1.4
         version: 5.1.4(typescript@7.0.2)(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -759,7 +759,7 @@ importers:
         version: 1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
       better-near-auth:
         specifier: 'catalog:'
-        version: 2.0.0-rc.6(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@https://codeload.github.com/elliotBraem/near-connect/tar.gz/83355f19408cd98c03b9fa823f9e52cd03929418)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2)
+        version: 2.0.0-rc.7(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@https://codeload.github.com/elliotBraem/near-connect/tar.gz/83355f19408cd98c03b9fa823f9e52cd03929418)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -868,7 +868,7 @@ importers:
         version: 3.0.0-rc.15(@orpc/contract@2.0.0-beta.45)(@orpc/server@2.0.0-beta.45)(@orpc/tanstack-query@2.0.0-beta.45(@tanstack/query-core@5.105.0))(@orpc/zod@2.0.0-beta.45(zod@4.6.7))(@proj-airi/unplugin-drizzle-orm-migrations@0.1.6(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(@rspack/core@2.2.8(@module-federation/runtime-tools@2.9.2)(@swc/helpers@0.5.23))(@tanstack/react-router@1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(@tanstack/router-generator@1.167.46)(@types/react@19.3.0)(effect@4.0.0-rc.118)(esbuild@0.28.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(redis@6.3.0(@opentelemetry/api@1.10.0))(rolldown@1.2.15)(typescript@7.0.2)(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.7)
       everything-dev:
         specifier: 'catalog:'
-        version: 2.0.0-rc.38(3d438afb7e5bdda0ffff4fed52c8154b)
+        version: 2.0.0-rc.39(560c30236c60b20111b3f858f016477a)
       jsdom:
         specifier: ^30.0.1
         version: 30.1.3(@noble/hashes@2.4.0)
@@ -4744,9 +4744,8 @@ packages:
       zod:
         optional: true
 
-  better-near-auth@2.0.0-rc.6:
-    resolution: {integrity: sha512-hvVh0Nco7zu7ZGy72ElR9FTaB+wXKQH70y7srtxFEML3vVilRW/PEshvrmbiQ6lHbOutR+7Pj7ope7VhM8ZgdQ==}
-    version: 2.0.0-rc.6
+  better-near-auth@2.0.0-rc.7:
+    resolution: {integrity: sha512-/+1CjCPvhhE2SqJ63lAEY87/gD1dNFFsaITkpe0A1dy02vb3+ZcuHZ+sfLvUfoewMmtjlUWu0dnfgHWvXF1aRQ==}
     engines: {node: '>=24.0.0'}
     peerDependencies:
       '@better-auth/core': ^1.7.7
@@ -5474,8 +5473,8 @@ packages:
       typescript: ^7.0.2
       zod: 4.6.7
 
-  everything-dev@2.0.0-rc.38:
-    resolution: {integrity: sha512-P0kqooqt29Ld96QVJ3D8/WZeTPwlDoko9Zmwbei5wxXErjwgKtPGIQxJScxfkjxB6Q327tHPsxbY49JFxcKAKA==}
+  everything-dev@2.0.0-rc.39:
+    resolution: {integrity: sha512-jYr58Rbx8k+rmPmG0+g07/MCEGCLCzjYEYMb+jPMQvATvFqBkRXfK2vw9eGsu9BAKnePkOR5X5NmW3hSxpnRFA==}
     engines: {node: '>=20.11'}
     hasBin: true
     peerDependencies:
@@ -5490,7 +5489,7 @@ packages:
       '@tanstack/react-router': 1.170.46
       alchemy: '>=2.0.0-beta.79 <3.0.0'
       better-auth: 1.7.14
-      better-near-auth: ^2.0.0-rc.6
+      better-near-auth: ^2.0.0-rc.7
       effect: 4.0.0-rc.118
       react: 19.3.1
       react-dom: 19.3.1
@@ -11446,7 +11445,7 @@ snapshots:
     optionalDependencies:
       zod: 4.6.7
 
-  better-near-auth@2.0.0-rc.6(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@0.11.2)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2):
+  better-near-auth@2.0.0-rc.7(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@0.11.2)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2):
     dependencies:
       '@better-auth/core': 1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5)
       '@near-intents-agent-api/sdk': 0.4.1
@@ -11467,7 +11466,7 @@ snapshots:
       - '@near-wallet-selector/core'
     optional: true
 
-  better-near-auth@2.0.0-rc.6(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@https://codeload.github.com/elliotBraem/near-connect/tar.gz/83355f19408cd98c03b9fa823f9e52cd03929418)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2):
+  better-near-auth@2.0.0-rc.7(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@https://codeload.github.com/elliotBraem/near-connect/tar.gz/83355f19408cd98c03b9fa823f9e52cd03929418)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2):
     dependencies:
       '@better-auth/core': 1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5)
       '@near-intents-agent-api/sdk': 0.4.1
@@ -12180,7 +12179,7 @@ snapshots:
       - vue-tsc
       - webpack
 
-  everything-dev@2.0.0-rc.38(3d438afb7e5bdda0ffff4fed52c8154b):
+  everything-dev@2.0.0-rc.39(560c30236c60b20111b3f858f016477a):
     dependencies:
       '@clack/prompts': 0.10.1
       '@effect/platform-node': 4.0.0-rc.118(effect@4.0.0-rc.118)(redis@6.3.0(@opentelemetry/api@1.10.0))
@@ -12215,7 +12214,7 @@ snapshots:
       '@tanstack/react-query': 5.104.5(@types/react@19.3.0)(react@19.3.1)
       '@tanstack/react-router': 1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       better-auth: 1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
-      better-near-auth: 2.0.0-rc.6(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@https://codeload.github.com/elliotBraem/near-connect/tar.gz/83355f19408cd98c03b9fa823f9e52cd03929418)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2)
+      better-near-auth: 2.0.0-rc.7(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@https://codeload.github.com/elliotBraem/near-connect/tar.gz/83355f19408cd98c03b9fa823f9e52cd03929418)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2)
       sonner: 2.0.8(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
     transitivePeerDependencies:
       - '@farmfe/core'
@@ -12250,7 +12249,7 @@ snapshots:
       - vue-tsc
       - webpack
 
-  everything-dev@2.0.0-rc.38(512207fc1f530b0e81a4087829fa8d11):
+  everything-dev@2.0.0-rc.39(5727f06c375c2c081e55c89a6795a054):
     dependencies:
       '@clack/prompts': 0.10.1
       '@effect/platform-node': 4.0.0-rc.118(effect@4.0.0-rc.118)(redis@6.3.0(@opentelemetry/api@1.10.0))
@@ -12285,7 +12284,7 @@ snapshots:
       '@tanstack/react-query': 5.104.5(@types/react@19.3.0)(react@19.3.1)
       '@tanstack/react-router': 1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       better-auth: 1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))
-      better-near-auth: 2.0.0-rc.6(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@0.11.2)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2)
+      better-near-auth: 2.0.0-rc.7(@better-auth/core@1.7.14(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.10.0)(better-call@1.4.4(zod@4.6.7))(jose@6.2.13)(kysely@0.29.7)(nanostores@1.5.5))(@hot-labs/near-connect@0.11.2)(better-auth@1.7.14(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@electric-sql/pglite@0.4.6)(@libsql/client@0.17.0(encoding@0.1.13))(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(bun-types@1.4.4)(kysely@0.29.7)(pg@8.23.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(solid-js@1.9.17)(vitest@4.1.12(@opentelemetry/api@1.10.0)(@types/node@25.9.9)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@25.9.9)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))))(react@19.3.1)(typescript@7.0.2)
       sonner: 2.0.8(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
     transitivePeerDependencies:
       - '@farmfe/core'
