@@ -3,11 +3,18 @@ import { ORPCError } from "@orpc/server";
 import { drizzle } from "drizzle-orm/pglite";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { billings, budgets, engagementProjects, engagements, proposals } from "../../src/db/schema";
+import {
+  billings,
+  budgets,
+  engagementProjects,
+  engagements,
+  projectContributors,
+  proposals,
+} from "../../src/db/schema";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { ALLOCATION_PLAN_ENABLED } from "../../src/services/budgets";
 import { createProjectDirectory, type ProjectsClient } from "../../src/services/project-directory";
-import { createReportsService } from "../../src/services/reports";
+import { clientSafe, createReportsService, proposalNote } from "../../src/services/reports";
 import { inMemoryOrganizations } from "../fakes/organizations";
 import { agencyScope } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
@@ -374,6 +381,273 @@ describe("reports.generate", () => {
     expect(october.overview.budgetByToken).toEqual([{ tokenId: "near", amount: "300" }]);
   });
 
+  test("generate — a dated report counts and breaks down only projects with activity in the period", async () => {
+    await insertClient("client-a");
+    await linkProject("client-a", "project-active");
+    await linkProject("client-a", "project-idle");
+    await db.insert(budgets).values([
+      {
+        id: "budget-active-october",
+        projectId: "project-active",
+        tokenId: "near",
+        amount: "500",
+        effectiveOn: "2026-10-01",
+        actorAccountId: "admin.near",
+        createdAt: new Date("2026-11-02T10:00:00.000Z"),
+      },
+      {
+        id: "budget-idle-july",
+        projectId: "project-idle",
+        tokenId: "near",
+        amount: "100",
+        effectiveOn: "2026-07-15",
+        actorAccountId: "admin.near",
+        createdAt: new Date("2026-10-08T10:00:00.000Z"),
+      },
+    ]);
+
+    const reports = buildReports(
+      createFakePlugins([
+        makeProject({ id: "project-active", slug: "active", title: "Active" }),
+        makeProject({ id: "project-idle", slug: "idle", title: "Idle" }),
+      ]),
+    );
+
+    const october = await Effect.runPromise(
+      reports.generate(scope, { startDate: "2026-10-01", endDate: "2026-10-31" }),
+    );
+    expect(october.overview.projectCount).toBe(1);
+    expect(october.projectBreakdown.map((p) => p.projectSlug)).toEqual(["active"]);
+    expect(october.clientBreakdown.map((p) => p.projectSlug)).toEqual(["active"]);
+
+    const allTime = await Effect.runPromise(reports.generate(scope, {}));
+    expect(allTime.overview.projectCount).toBe(2);
+    expect(allTime.clientBreakdown.map((p) => p.projectSlug).sort()).toEqual(["active", "idle"]);
+  });
+
+  describe("DAO payouts", () => {
+    const oct = (day: number) => String(BigInt(Date.UTC(2026, 9, day, 12)) * 1_000_000n);
+
+    async function insertTransfer(opts: {
+      proposalId: number;
+      receiver: string;
+      amount: string;
+      submittedAt: string;
+      status?: "Approved" | "Rejected";
+      description?: string;
+    }) {
+      await db.insert(proposals).values({
+        daoAccountId: AGENCY,
+        proposalId: opts.proposalId,
+        proposer: "admin.near",
+        description: opts.description ?? "",
+        status: opts.status ?? "Approved",
+        kindType: "Transfer",
+        transferTokenId: "",
+        transferReceiverId: opts.receiver,
+        transferAmount: opts.amount,
+        submissionTime: opts.submittedAt,
+      });
+    }
+
+    async function assign(projectId: string, nearAccount: string) {
+      await db.insert(projectContributors).values({ projectId, nearAccount });
+    }
+
+    const october = { startDate: "2026-10-01", endDate: "2026-10-31" };
+    const plugins = () =>
+      createFakePlugins(
+        [
+          makeProject({ id: "project-a", slug: "a", title: "Alpha" }),
+          makeProject({ id: "project-b", slug: "b", title: "Bravo" }),
+        ],
+        [
+          { nearAccount: "solo.near", name: "Solo" },
+          { nearAccount: "both.near", name: "Both" },
+        ],
+      );
+
+    test("a transfer to a builder on one project counts as that project's spend", async () => {
+      await assign("project-a", "solo.near");
+      await insertTransfer({
+        proposalId: 10,
+        receiver: "solo.near",
+        amount: "40",
+        submittedAt: oct(5),
+        description: "* Notes: October design work",
+      });
+      await insertTransfer({
+        proposalId: 11,
+        receiver: "solo.near",
+        amount: "99",
+        submittedAt: oct(5),
+        status: "Rejected",
+      });
+      await insertTransfer({
+        proposalId: 12,
+        receiver: "solo.near",
+        amount: "77",
+        submittedAt: String(BigInt(Date.UTC(2026, 8, 5)) * 1_000_000n),
+      });
+
+      const result = await Effect.runPromise(buildReports(plugins()).generate(scope, october));
+
+      expect(result.overview.billedByToken).toEqual([{ tokenId: "near", amount: "40" }]);
+      expect(result.projectBreakdown).toEqual([
+        expect.objectContaining({
+          projectSlug: "a",
+          billedByToken: [{ tokenId: "near", amount: "40" }],
+        }),
+      ]);
+      expect(result.payouts).toEqual([
+        expect.objectContaining({
+          proposalId: "10",
+          builderName: "Solo",
+          projectSlug: "a",
+          attribution: "assignment",
+          note: "October design work",
+        }),
+      ]);
+    });
+
+    test("a transfer to a builder on several projects is listed but not split into any project", async () => {
+      await assign("project-a", "both.near");
+      await assign("project-b", "both.near");
+      await insertTransfer({
+        proposalId: 20,
+        receiver: "both.near",
+        amount: "60",
+        submittedAt: oct(8),
+      });
+
+      const result = await Effect.runPromise(buildReports(plugins()).generate(scope, october));
+
+      expect(result.overview.billedByToken).toEqual([]);
+      expect(result.overview.unattributedByToken).toEqual([{ tokenId: "near", amount: "60" }]);
+      expect(result.payouts).toEqual([
+        expect.objectContaining({
+          attribution: "shared",
+          sharedWith: ["Alpha", "Bravo"],
+          projectSlug: null,
+        }),
+      ]);
+    });
+
+    test("a client's report leaves out payouts to people on none of its projects", async () => {
+      await insertClient("client-a");
+      await linkProject("client-a", "project-a");
+      await assign("project-a", "solo.near");
+      await insertTransfer({
+        proposalId: 30,
+        receiver: "solo.near",
+        amount: "40",
+        submittedAt: oct(5),
+      });
+      await insertTransfer({
+        proposalId: 31,
+        receiver: "stranger.near",
+        amount: "500",
+        submittedAt: oct(6),
+      });
+
+      const reports = buildReports(plugins());
+      const agencyWide = await Effect.runPromise(reports.generate(scope, october));
+      expect(agencyWide.payouts.map((p) => [p.proposalId, p.attribution])).toEqual([
+        ["31", "unassigned"],
+        ["30", "assignment"],
+      ]);
+
+      const forClient = await Effect.runPromise(
+        reports.generate(scope, { ...october, engagementId: "client-a" }),
+      );
+      expect(forClient.payouts.map((p) => p.proposalId)).toEqual(["30"]);
+      expect(forClient.overview.billedByToken).toEqual([{ tokenId: "near", amount: "40" }]);
+      expect(forClient.clientBreakdown).toEqual([
+        expect.objectContaining({ spentByToken: [{ tokenId: "near", amount: "40" }] }),
+      ]);
+      expect(clientSafe(forClient).payouts).toEqual([]);
+    });
+
+    test("a transfer already recorded as a billing is counted once, from the billing", async () => {
+      await assign("project-b", "solo.near");
+      await db.insert(proposals).values({
+        daoAccountId: AGENCY,
+        proposalId: 40,
+        proposer: "admin.near",
+        description: "",
+        status: "Approved",
+        kindType: "Transfer",
+        transferTokenId: "",
+        transferReceiverId: "solo.near",
+        transferAmount: "25",
+        submissionTime: oct(3),
+      });
+      await db.insert(billings).values({
+        id: "billing-40",
+        projectId: "project-a",
+        nearAccount: "solo.near",
+        tokenId: "near",
+        amount: "25",
+        proposalId: "40",
+        createdAt: new Date("2026-10-03T12:00:00.000Z"),
+      });
+
+      const result = await Effect.runPromise(buildReports(plugins()).generate(scope, october));
+
+      expect(result.payouts).toEqual([
+        expect.objectContaining({ proposalId: "40", projectSlug: "a", attribution: "billing" }),
+      ]);
+      expect(result.overview.billedByToken).toEqual([{ tokenId: "near", amount: "25" }]);
+    });
+  });
+
+  test("a payout linked to a project later still counts in the month it was paid", async () => {
+    await db.insert(proposals).values({
+      daoAccountId: AGENCY,
+      proposalId: 50,
+      proposer: "admin.near",
+      description: "",
+      status: "Approved",
+      kindType: "Transfer",
+      transferTokenId: "",
+      transferReceiverId: "late.near",
+      transferAmount: "80",
+      submissionTime: String(BigInt(Date.UTC(2026, 9, 20)) * 1_000_000n),
+    });
+    await db.insert(billings).values({
+      id: "billing-late",
+      projectId: "project-a",
+      nearAccount: "late.near",
+      tokenId: "near",
+      amount: "80",
+      proposalId: "50",
+      createdAt: new Date("2026-11-09T12:00:00.000Z"),
+    });
+    const reports = buildReports(
+      createFakePlugins([makeProject({ id: "project-a", slug: "a", title: "Alpha" })]),
+    );
+
+    const october = await Effect.runPromise(
+      reports.generate(scope, { startDate: "2026-10-01", endDate: "2026-10-31" }),
+    );
+    const november = await Effect.runPromise(
+      reports.generate(scope, { startDate: "2026-11-01", endDate: "2026-11-30" }),
+    );
+
+    expect(october.overview.billedByToken).toEqual([{ tokenId: "near", amount: "80" }]);
+    expect(october.payouts).toEqual([
+      expect.objectContaining({ proposalId: "50", paidAt: "2026-10-20T00:00:00.000Z" }),
+    ]);
+    expect(november.overview.billedByToken).toEqual([]);
+  });
+
+  test("proposalNote reads the notes out of a proposal description", () => {
+    expect(proposalNote("* Title: Pay Om <br>* Notes: Video clip requests")).toBe(
+      "Pay Om — Video clip requests",
+    );
+    expect(proposalNote("")).toBeNull();
+  });
+
   test("generate — projectBreakdown lists each project's budget and billed amounts for the period", async () => {
     await db.insert(budgets).values([
       {
@@ -445,12 +719,14 @@ describe("reports.generate", () => {
         projectSlug: "project-a-slug",
         budgetByToken: [{ tokenId: "near", amount: "700" }],
         billedByToken: [],
+        builders: [],
       },
       {
         projectTitle: "Bravo",
         projectSlug: "project-b-slug",
         budgetByToken: [{ tokenId: "near", amount: "300" }],
         billedByToken: [],
+        builders: [],
       },
     ]);
   });

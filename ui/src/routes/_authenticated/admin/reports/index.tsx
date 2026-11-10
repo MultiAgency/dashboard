@@ -16,7 +16,11 @@ import {
   FieldGroup,
   Input,
 } from "@/components";
-import { ReportPreview, reportOverviewCsvValues } from "@/components/admin/report-preview";
+import {
+  type ReportPayout,
+  ReportPreview,
+  reportOverviewCsvValues,
+} from "@/components/admin/report-preview";
 import { AdminError } from "@/components/admin-error";
 import { ChoiceSelect, Field } from "@/components/admin-form";
 import { PageHeader } from "@/components/page-header";
@@ -66,7 +70,16 @@ function summaryCsv(report: ShownReport) {
   const rows = [
     { section: "Overview", label: "Projects", value: String(report.overview.projectCount) },
     { section: "Overview", label: "Total budget", value: overview.budget },
-    { section: "Overview", label: "Total billed", value: overview.billed },
+    { section: "Overview", label: "Total paid", value: overview.billed },
+    ...(report.overview.unattributedByToken?.length
+      ? [
+          {
+            section: "Overview",
+            label: "Paid, no single project",
+            value: formatTokenTotals(report.overview.unattributedByToken),
+          },
+        ]
+      : []),
     { section: "Overview", label: "Period", value: report.overview.period },
     ...(report.agreement
       ? [
@@ -81,12 +94,17 @@ function summaryCsv(report: ShownReport) {
     ...(report.projectBreakdown ?? []).map((p) => ({
       section: "Project",
       label: p.projectTitle,
-      value: `budget: ${formatTokenTotals(p.budgetByToken)}, billed: ${formatTokenTotals(p.billedByToken)}`,
+      value: `budget: ${formatTokenTotals(p.budgetByToken)}, paid: ${formatTokenTotals(p.billedByToken)}`,
     })),
     ...report.contributorStats.map((s) => ({
       section: "Contributor",
       label: s.name,
-      value: `${formatTokenTotals(s.billedByToken)} (${s.billingCount} billings)`,
+      value: `${formatTokenTotals(s.billedByToken)} (${s.billingCount} payouts)`,
+    })),
+    ...(report.payouts ?? []).map((p) => ({
+      section: "Payout",
+      label: `${p.paidAt.slice(0, 10)} ${p.builderName} #${p.proposalId}`,
+      value: `${formatTokenAmount(p.amount, p.tokenId)} → ${p.projectTitle ?? (p.sharedWith.length > 0 ? `several: ${p.sharedWith.join(", ")}` : "no project")}`,
     })),
     ...report.clientBreakdown.map((r) => ({
       section: "Client project",
@@ -101,6 +119,48 @@ function summaryCsv(report: ShownReport) {
     { header: "Value", value: (r) => r.value },
   ];
   downloadCsv(`report-${csvTimestamp()}.csv`, rows, columns);
+}
+
+function LinkPayoutToProject({
+  payout,
+  projects,
+  onLinked,
+}: {
+  payout: ReportPayout;
+  projects: Array<{ id: string; title: string }>;
+  onLinked: () => Promise<void>;
+}) {
+  const apiClient = useApiClient();
+  const queryClient = useQueryClient();
+  const linkMutation = useMutation({
+    mutationFn: (projectId: string) =>
+      apiClient.billings.create({
+        projectId,
+        proposalId: payout.proposalId,
+        nearAccount: payout.nearAccount || undefined,
+        note: payout.note?.slice(0, 2000) ?? undefined,
+      }),
+    onSuccess: async (_data, projectId) => {
+      await refreshAfter(queryClient, { type: "billings" });
+      await onLinked();
+      toast.success(
+        `Payout #${payout.proposalId} counted toward ${projects.find((p) => p.id === projectId)?.title ?? "the project"}`,
+      );
+    },
+    onError: (err: Error) => toast.error(err.message || "Failed to link payout"),
+  });
+  if (payout.attribution === "billing") return null;
+  return (
+    <ChoiceSelect
+      value=""
+      size="sm"
+      ariaLabel={`Count payout #${payout.proposalId} toward a project`}
+      disabled={linkMutation.isPending}
+      onValueChange={(projectId) => projectId && linkMutation.mutate(projectId)}
+      emptyLabel={payout.attribution === "assignment" ? "Confirm project…" : "Link to project…"}
+      options={projects.map((p) => ({ value: p.id, label: p.title }))}
+    />
+  );
 }
 
 function AdminReportsPage() {
@@ -345,6 +405,20 @@ function AdminReportsPage() {
       {shown && (
         <ReportPreview
           report={shown}
+          payoutAction={
+            preview && canAccessAdmin
+              ? (payout) => (
+                  <LinkPayoutToProject
+                    payout={payout}
+                    projects={projects}
+                    onLinked={async () => {
+                      const report = await apiClient.agency.reports.preview(preview.filters);
+                      setPreview({ filters: preview.filters, report });
+                    }}
+                  />
+                )
+              : undefined
+          }
           actions={
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => summaryCsv(shown)}>
