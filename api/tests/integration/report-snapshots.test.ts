@@ -36,9 +36,12 @@ describe("saved reports", () => {
       world.plugins,
       world.organizations.directory,
       {
-        notify: async (input: NotifyInput) => {
-          sent.push(input);
-          return { recipients: 1, emailed: 0 };
+        syncProposals: async () => {},
+        notifications: {
+          notify: async (input: NotifyInput) => {
+            sent.push(input);
+            return { recipients: 1, emailed: 0 };
+          },
         },
       },
     );

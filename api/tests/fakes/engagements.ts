@@ -223,7 +223,9 @@ export function clientPortalOf(db: Database, world: Awaited<ReturnType<typeof en
     world.access,
     createAgencyService(db, plugins, world.directory, listings, ledgers),
     createBillingsService(db, world.directory, world.access),
-    createReportsService(db, world.directory, plugins, world.organizations.directory),
+    createReportsService(db, world.directory, plugins, world.organizations.directory, {
+      syncProposals: async () => {},
+    }),
     world.directory,
     ledgers,
   );

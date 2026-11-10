@@ -131,8 +131,12 @@ export function createReportsService(
   directory: ProjectDirectory,
   plugins: PluginsClient,
   organizations: Pick<OrganizationDirectory, "get">,
-  notifications?: Pick<NotificationsService, "notify">,
+  deps: {
+    syncProposals: (daoAccountId: string, since: Date) => Promise<unknown>;
+    notifications?: Pick<NotificationsService, "notify">;
+  },
 ) {
+  const { syncProposals, notifications } = deps;
   const generate = (scope: AgencyScope, requested: ReportInput) =>
     Effect.gen(function* () {
       const agreement = requested.agreementId
@@ -330,6 +334,17 @@ export function createReportsService(
       );
 
       const paidBillings = billingRows.filter((b) => b.status === "Approved");
+
+      if (agencyDao && subcontractorDao === undefined) {
+        yield* Effect.promise(() =>
+          syncProposals(agencyDao, startAt ?? new Date(0)).catch((err) =>
+            console.warn(
+              "[API] DAO proposal sync before report failed:",
+              err instanceof Error ? err.message : err,
+            ),
+          ),
+        );
+      }
 
       const approvedTransfers =
         agencyDao && subcontractorDao === undefined

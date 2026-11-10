@@ -149,6 +149,7 @@ describe("Client ideas", () => {
       world().directory,
       world().plugins,
       world().organizations.directory,
+      { syncProposals: async () => {} },
     );
     const count = async () =>
       (await Effect.runPromise(reports.generate(await studio(), {}))).overview.projectCount;
