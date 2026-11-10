@@ -43,7 +43,7 @@ describe("saved reports", () => {
       world.plugins,
       world.organizations.directory,
       {
-        syncProposals: async () => ({ pending: [] }),
+        syncProposals: async () => ({ pending: [], complete: true }),
         notifications: {
           notify: async (input: NotifyInput) => {
             sent.push(input);

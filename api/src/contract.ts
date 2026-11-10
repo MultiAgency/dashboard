@@ -302,6 +302,7 @@ const reportOutput = z.object({
     billedByToken: z.array(tokenAmount),
     unattributedByToken: z.array(tokenAmount).optional(),
     pendingByToken: z.array(tokenAmount).optional(),
+    payoutSync: z.enum(["complete", "partial", "unavailable"]).optional(),
     period: z.string(),
   }),
   project: z.object({ title: z.string(), slug: z.string() }).nullable().optional(),
@@ -1415,7 +1416,7 @@ export const contract = oc.router({
           }),
         )
         .output(generatedReport)
-        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
       delete: oc
         .route({ method: "DELETE", path: "/client/{engagementId}/reports/{id}" })

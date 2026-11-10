@@ -33,6 +33,7 @@ export type ReportViewData = {
     billedByToken: TokenAmount[];
     unattributedByToken?: TokenAmount[];
     pendingByToken?: TokenAmount[];
+    payoutSync?: "complete" | "partial" | "unavailable";
     period: string;
   };
   projectBreakdown?: Array<{
@@ -526,6 +527,17 @@ export function ReportPreview({
             viewId="report-token-summary"
             enableSearch={false}
           />
+          {report.overview.payoutSync === "partial" && (
+            <p className="text-sm text-warning">
+              The DAO's payout history is still loading, so Paid may be too low. Generate the report
+              again in a moment before saving or sharing it.
+            </p>
+          )}
+          {report.overview.payoutSync === "unavailable" && (
+            <p className="text-sm text-warning">
+              Couldn't reach the DAO, so payouts made since it was last checked may be missing.
+            </p>
+          )}
           {hasUnattributed && (
             <p className="text-sm text-muted-foreground">
               Paid, no single project: payouts to someone on several projects or on none, so they

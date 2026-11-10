@@ -108,8 +108,11 @@ describe("reports.generate", () => {
 
   function buildReports(
     plugins: PluginsClient,
-    syncProposals: (daoAccountId: string) => Promise<{ pending: DaoProposal[] }> = async () => ({
+    syncProposals: (
+      daoAccountId: string,
+    ) => Promise<{ pending: DaoProposal[]; complete: boolean }> = async () => ({
       pending: [],
+      complete: true,
     }),
   ) {
     const directory = createProjectDirectory(() => plugins.projects.client() as ProjectsClient);
@@ -721,7 +724,7 @@ describe("reports.generate", () => {
       const sync = async (dao: string) => {
         calls.push(dao);
         await db.insert(proposals).values(transfer).onConflictDoNothing();
-        return { pending: [] };
+        return { pending: [], complete: true };
       };
 
       const result = await Effect.runPromise(
@@ -738,7 +741,7 @@ describe("reports.generate", () => {
         .insert(projectContributors)
         .values({ projectId: "project-a", nearAccount: "fresh.near" });
       await db.insert(proposals).values(transfer);
-      const sync = async (): Promise<{ pending: DaoProposal[] }> => {
+      const sync = async (): Promise<{ pending: DaoProposal[]; complete: boolean }> => {
         throw new Error("rpc down");
       };
 
@@ -761,7 +764,7 @@ describe("reports.generate", () => {
       });
       const sync = async () => {
         await db.insert(proposals).values(transfer).onConflictDoNothing();
-        return { pending: [] };
+        return { pending: [], complete: true };
       };
 
       const result = await Effect.runPromise(
@@ -779,10 +782,42 @@ describe("reports.generate", () => {
       await Effect.runPromise(
         buildReports(plugins(), async (dao) => {
           calls.push(dao);
-          return { pending: [] };
+          return { pending: [], complete: true };
         }).generate(scope, { subcontractorDao: "crew.sputnik-dao.near" }),
       );
       expect(calls).toEqual([]);
+    });
+
+    test("a report says whether the DAO's payout history was fully synced", async () => {
+      const partial = await Effect.runPromise(
+        buildReports(plugins(), async () => ({ pending: [], complete: false })).generate(
+          scope,
+          october,
+        ),
+      );
+      expect(partial.overview.payoutSync).toBe("partial");
+
+      const unavailable = await Effect.runPromise(
+        buildReports(
+          plugins(),
+          async (): Promise<{ pending: DaoProposal[]; complete: boolean }> => {
+            throw new Error("rpc down");
+          },
+        ).generate(scope, october),
+      );
+      expect(unavailable.overview.payoutSync).toBe("unavailable");
+
+      const complete = await Effect.runPromise(buildReports(plugins()).generate(scope, october));
+      expect(complete.overview.payoutSync).toBe("complete");
+    });
+
+    test("a report can't be saved while the DAO's payout history is still loading", async () => {
+      const reports = buildReports(plugins(), async () => ({ pending: [], complete: false }));
+      await expect(
+        Effect.runPromise(
+          reports.generateSaved(scope, october, { organizationId: "agency-org", userId: "u1" }),
+        ),
+      ).rejects.toThrow(/payout history is still loading/);
     });
 
     const pendingTransfer = (id: number, receiver: string, amount: string): DaoProposal => ({
@@ -799,7 +834,10 @@ describe("reports.generate", () => {
       await db
         .insert(projectContributors)
         .values({ projectId: "project-a", nearAccount: "fresh.near" });
-      const sync = async () => ({ pending: [pendingTransfer(95, "fresh.near", "120")] });
+      const sync = async () => ({
+        pending: [pendingTransfer(95, "fresh.near", "120")],
+        complete: true,
+      });
 
       const result = await Effect.runPromise(
         buildReports(plugins(), sync).generate(scope, october),
@@ -829,7 +867,10 @@ describe("reports.generate", () => {
         proposalId: "96",
         createdAt: new Date("2026-10-30T12:00:00.000Z"),
       });
-      const sync = async () => ({ pending: [pendingTransfer(96, "elsewhere.near", "50")] });
+      const sync = async () => ({
+        pending: [pendingTransfer(96, "elsewhere.near", "50")],
+        complete: true,
+      });
 
       const result = await Effect.runPromise(
         buildReports(plugins(), sync).generate(scope, october),

@@ -93,6 +93,8 @@ export function clientSafe<
   };
 }
 
+export type PayoutSync = "complete" | "partial" | "unavailable";
+
 export type PayoutAttribution = "billing" | "assignment" | "shared" | "unassigned";
 
 function nanosToDate(value: string): Date | null {
@@ -132,7 +134,7 @@ export function createReportsService(
   plugins: PluginsClient,
   organizations: Pick<OrganizationDirectory, "get">,
   deps: {
-    syncProposals: (daoAccountId: string) => Promise<{ pending: DaoProposal[] }>;
+    syncProposals: (daoAccountId: string) => Promise<{ pending: DaoProposal[]; complete: boolean }>;
     notifications?: Pick<NotificationsService, "notify">;
   },
 ) {
@@ -273,20 +275,25 @@ export function createReportsService(
             b.engagementId === input.engagementId ||
             (!input.forClient && b.engagementId === null),
         );
-      const pendingProposals =
+      const synced: { pending: DaoProposal[]; payoutSync: PayoutSync } =
         agencyDao && subcontractorDao === undefined
           ? yield* Effect.promise(async () => {
               try {
-                return (await syncProposals(agencyDao)).pending;
+                const result = await syncProposals(agencyDao);
+                return {
+                  pending: result.pending,
+                  payoutSync: result.complete ? ("complete" as const) : ("partial" as const),
+                };
               } catch (err) {
                 console.warn(
                   "[API] DAO proposal sync before report failed:",
                   err instanceof Error ? err.message : err,
                 );
-                return [];
+                return { pending: [], payoutSync: "unavailable" as const };
               }
             })
-          : [];
+          : { pending: [], payoutSync: "complete" };
+      const pendingProposals = synced.pending;
 
       const billingProposalRows =
         billingRowsRawAll.length > 0
@@ -714,6 +721,7 @@ export function createReportsService(
           billedByToken: sumByToken(attributed),
           unattributedByToken: sumByToken(unattributed),
           pendingByToken: sumByToken(pendingAttributed),
+          payoutSync: synced.payoutSync,
           period,
         },
         contributorStats: [...contributorStats.values()].map((s) => ({
@@ -826,6 +834,15 @@ export function createReportsService(
     generateSaved: (scope: AgencyScope, input: ReportInput, owner: ReportOwner) =>
       Effect.gen(function* () {
         const report = yield* generate(scope, input);
+        if (report.overview.payoutSync === "partial") {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message:
+                "The DAO's payout history is still loading, so this report's totals are incomplete. Generate it again in a moment, then save.",
+              data: { reason: "PAYOUT_HISTORY_INCOMPLETE" },
+            }),
+          );
+        }
         const id = crypto.randomUUID();
         yield* Effect.promise(() =>
           db.insert(reportSnapshots).values({
