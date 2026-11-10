@@ -818,6 +818,18 @@ describe("reports.generate", () => {
           reports.generateSaved(scope, october, { organizationId: "agency-org", userId: "u1" }),
         ),
       ).rejects.toThrow(/payout history is still loading/);
+
+      const unreachable = buildReports(
+        plugins(),
+        async (): Promise<{ pending: DaoProposal[]; complete: boolean }> => {
+          throw new Error("rpc down");
+        },
+      );
+      await expect(
+        Effect.runPromise(
+          unreachable.generateSaved(scope, october, { organizationId: "agency-org", userId: "u1" }),
+        ),
+      ).rejects.toThrow(/Couldn't reach the DAO/);
     });
 
     const pendingTransfer = (id: number, receiver: string, amount: string): DaoProposal => ({

@@ -834,11 +834,13 @@ export function createReportsService(
     generateSaved: (scope: AgencyScope, input: ReportInput, owner: ReportOwner) =>
       Effect.gen(function* () {
         const report = yield* generate(scope, input);
-        if (report.overview.payoutSync === "partial") {
+        if (report.overview.payoutSync !== "complete") {
           return yield* Effect.fail(
             new ORPCError("BAD_REQUEST", {
               message:
-                "The DAO's payout history is still loading, so this report's totals are incomplete. Generate it again in a moment, then save.",
+                report.overview.payoutSync === "partial"
+                  ? "The DAO's payout history is still loading, so this report's totals are incomplete. Generate it again in a moment, then save."
+                  : "Couldn't reach the DAO to check its payouts, so this report's totals may be incomplete. Try again in a moment.",
               data: { reason: "PAYOUT_HISTORY_INCOMPLETE" },
             }),
           );

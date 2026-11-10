@@ -535,7 +535,8 @@ export function ReportPreview({
           )}
           {report.overview.payoutSync === "unavailable" && (
             <p className="text-sm text-warning">
-              Couldn't reach the DAO, so payouts made since it was last checked may be missing.
+              Couldn't reach the DAO, so some payouts may be missing. Generate the report again
+              before saving or sharing it.
             </p>
           )}
           {hasUnattributed && (
