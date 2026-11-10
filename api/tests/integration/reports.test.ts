@@ -745,7 +745,42 @@ describe("reports.generate", () => {
       expect(result.payouts.map((p) => p.proposalId)).toEqual(["90"]);
     });
 
-    test("an all-time report syncs the DAO from its first proposal", async () => {
+    test("an all-time report re-checks only the last 30 days before the newest cached proposal", async () => {
+      await db.insert(proposals).values(transfer);
+      const calls: string[] = [];
+      await Effect.runPromise(
+        buildReports(plugins(), async (_dao, since) => {
+          calls.push(since.toISOString());
+        }).generate(scope, {}),
+      );
+      expect(calls).toEqual(["2026-09-28T00:00:00.000Z"]);
+    });
+
+    test("a payout linked while its proposal was pending counts in the month it was paid", async () => {
+      await db.insert(billings).values({
+        id: "billing-pending",
+        projectId: "project-a",
+        nearAccount: "fresh.near",
+        tokenId: "near",
+        amount: "70",
+        proposalId: "90",
+        createdAt: new Date("2026-11-02T12:00:00.000Z"),
+      });
+      const sync = async () => {
+        await db.insert(proposals).values(transfer).onConflictDoNothing();
+      };
+
+      const result = await Effect.runPromise(
+        buildReports(plugins(), sync).generate(scope, october),
+      );
+
+      expect(result.payouts).toEqual([
+        expect.objectContaining({ proposalId: "90", attribution: "billing", projectSlug: "a" }),
+      ]);
+      expect(result.overview.billedByToken).toEqual([{ tokenId: "near", amount: "70" }]);
+    });
+
+    test("an empty cache syncs the DAO from its first proposal", async () => {
       const calls: string[] = [];
       await Effect.runPromise(
         buildReports(plugins(), async (_dao, since) => {

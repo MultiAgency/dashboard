@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { Effect } from "effect";
 import type { Database } from "../db";
 import {
@@ -92,6 +92,8 @@ export function clientSafe<
       : {}),
   };
 }
+
+const RESYNC_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type PayoutAttribution = "billing" | "assignment" | "shared" | "unassigned";
 
@@ -273,6 +275,29 @@ export function createReportsService(
             b.engagementId === input.engagementId ||
             (!input.forClient && b.engagementId === null),
         );
+      if (agencyDao && subcontractorDao === undefined) {
+        const since =
+          startAt ??
+          (yield* Effect.promise(async () => {
+            const [row] = await db
+              .select({
+                newest: sql<string | null>`max(${proposals.submissionTime}::numeric)::text`,
+              })
+              .from(proposals)
+              .where(eq(proposals.daoAccountId, agencyDao));
+            const newest = row?.newest ? nanosToDate(row.newest) : null;
+            return newest ? new Date(newest.getTime() - RESYNC_WINDOW_MS) : new Date(0);
+          }));
+        yield* Effect.promise(() =>
+          syncProposals(agencyDao, since).catch((err) =>
+            console.warn(
+              "[API] DAO proposal sync before report failed:",
+              err instanceof Error ? err.message : err,
+            ),
+          ),
+        );
+      }
+
       const billingProposalRows =
         billingRowsRawAll.length > 0
           ? yield* Effect.promise(() =>
@@ -334,17 +359,6 @@ export function createReportsService(
       );
 
       const paidBillings = billingRows.filter((b) => b.status === "Approved");
-
-      if (agencyDao && subcontractorDao === undefined) {
-        yield* Effect.promise(() =>
-          syncProposals(agencyDao, startAt ?? new Date(0)).catch((err) =>
-            console.warn(
-              "[API] DAO proposal sync before report failed:",
-              err instanceof Error ? err.message : err,
-            ),
-          ),
-        );
-      }
 
       const approvedTransfers =
         agencyDao && subcontractorDao === undefined
