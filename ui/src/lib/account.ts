@@ -27,13 +27,22 @@ export type UserInvitation = {
   expiresAt: Date | string;
 };
 
-export function userInvitationsQueryOptions(authClient: AuthClient, enabled: boolean) {
+export function userInvitationsQueryOptions(apiClient: ApiClient, enabled: boolean) {
   return queryOptions({
     queryKey: userInvitationsQueryKey,
     queryFn: async (): Promise<UserInvitation[]> => {
-      const { data, error } = await authClient.organization.listUserInvitations();
-      if (error || !Array.isArray(data)) return [];
-      return pendingInvitations(data as UserInvitation[], new Date());
+      const data = await apiClient.auth.listUserInvitations().catch(() => []);
+      const invitations: UserInvitation[] = data.map((invitation) => ({
+        id: invitation.id,
+        organizationId: invitation.organizationId,
+        organizationName:
+          invitation.organizationName ?? invitation.organizationSlug ?? invitation.organizationId,
+        email: invitation.email ?? invitation.nearAccountId ?? "",
+        role: invitation.role,
+        status: invitation.status,
+        expiresAt: invitation.expiresAt,
+      }));
+      return pendingInvitations(invitations, new Date());
     },
     enabled,
     staleTime: 60_000,

@@ -69,8 +69,9 @@ export function useInvitationActions() {
 
 export function usePendingInvitations() {
   const authClient = useAuthClient();
+  const apiClient = useApiClient();
   const { data: session } = useQuery(sessionQueryOptions(authClient));
-  return useQuery(userInvitationsQueryOptions(authClient, !!session?.user));
+  return useQuery(userInvitationsQueryOptions(apiClient, !!session?.user));
 }
 
 export function PendingInvitationsList({
