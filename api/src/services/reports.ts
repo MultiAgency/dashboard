@@ -22,7 +22,7 @@ import type { NotificationsService } from "./notifications";
 import { type AgencyScope, SHARED_STATUSES } from "./organization-access";
 import { type ProjectDirectory, withoutClientIdeas } from "./project-directory";
 import { sumByToken } from "./report-tokens";
-import { enrichWithChainStatus } from "./sputnik";
+import { type DaoProposal, enrichWithChainStatus } from "./sputnik";
 
 export type ReportInput = {
   engagementId?: string;
@@ -132,7 +132,7 @@ export function createReportsService(
   plugins: PluginsClient,
   organizations: Pick<OrganizationDirectory, "get">,
   deps: {
-    syncProposals: (daoAccountId: string) => Promise<unknown>;
+    syncProposals: (daoAccountId: string) => Promise<{ pending: DaoProposal[] }>;
     notifications?: Pick<NotificationsService, "notify">;
   },
 ) {
@@ -273,16 +273,20 @@ export function createReportsService(
             b.engagementId === input.engagementId ||
             (!input.forClient && b.engagementId === null),
         );
-      if (agencyDao && subcontractorDao === undefined) {
-        yield* Effect.promise(() =>
-          syncProposals(agencyDao).catch((err) =>
-            console.warn(
-              "[API] DAO proposal sync before report failed:",
-              err instanceof Error ? err.message : err,
-            ),
-          ),
-        );
-      }
+      const pendingProposals =
+        agencyDao && subcontractorDao === undefined
+          ? yield* Effect.promise(async () => {
+              try {
+                return (await syncProposals(agencyDao)).pending;
+              } catch (err) {
+                console.warn(
+                  "[API] DAO proposal sync before report failed:",
+                  err instanceof Error ? err.message : err,
+                );
+                return [];
+              }
+            })
+          : [];
 
       const billingProposalRows =
         billingRowsRawAll.length > 0
@@ -361,18 +365,19 @@ export function createReportsService(
                 ),
             )
           : [];
+      const transferIds = [
+        ...approvedTransfers.map((t) => String(t.proposalId)),
+        ...pendingProposals.map((p) => String(p.id)),
+      ];
       const linkedProposals =
-        approvedTransfers.length > 0
+        transferIds.length > 0
           ? yield* Effect.promise(() =>
               db
-                .select({ proposalId: billings.proposalId })
+                .select({ proposalId: billings.proposalId, projectId: billings.projectId })
                 .from(billings)
                 .where(
                   and(
-                    inArray(
-                      billings.proposalId,
-                      approvedTransfers.map((t) => String(t.proposalId)),
-                    ),
+                    inArray(billings.proposalId, transferIds),
                     or(
                       eq(billings.payingDaoAccountId, agencyDao!),
                       and(
@@ -387,7 +392,7 @@ export function createReportsService(
                 ),
             )
           : [];
-      const linkedIds = new Set(linkedProposals.map((l) => l.proposalId));
+      const linkedProject = new Map(linkedProposals.map((l) => [l.proposalId, l.projectId]));
 
       const allAssignmentRows =
         allProjects.length > 0
@@ -432,6 +437,7 @@ export function createReportsService(
         projectSlug: string | null;
         attribution: PayoutAttribution;
         sharedWith: string[];
+        status: "paid" | "pending";
       };
 
       const billedPayouts: Payout[] = paidBillings.map((b) => ({
@@ -447,32 +453,46 @@ export function createReportsService(
         ...projectRef(b.projectId),
         attribution: "billing",
         sharedWith: [],
+        status: "paid",
       }));
 
       const scopedToProjects = Boolean(input.engagementId || input.projectId);
-      const transferPayouts: Payout[] = approvedTransfers.flatMap((t) => {
-        if (linkedIds.has(String(t.proposalId))) return [];
-        if (!t.transferReceiverId || !t.transferAmount) return [];
-        const paidAt = nanosToDate(t.submissionTime);
-        if (!paidAt || !within(paidAt)) return [];
-        const candidates = projectsOfBuilder(t.transferReceiverId);
+      const toPayout = (
+        t: {
+          proposalId: number;
+          daoAccountId: string;
+          receiver: string | null;
+          amount: string | null;
+          tokenId: string | null;
+          submissionTime: string;
+          description: string;
+        },
+        status: Payout["status"],
+      ): Payout[] => {
+        if (!t.receiver || !t.amount) return [];
+        const requestedAt = nanosToDate(t.submissionTime);
+        if (!requestedAt || !within(requestedAt)) return [];
+        const billedProject = linkedProject.get(String(t.proposalId));
+        const candidates = billedProject ? [billedProject] : projectsOfBuilder(t.receiver);
         const inScope = candidates.filter((pid) => projectIds.includes(pid));
         const only = candidates.length === 1 ? candidates[0]! : null;
         if (scopedToProjects && (only ? !inScope.includes(only) : inScope.length === 0)) return [];
-        const attribution: PayoutAttribution = only
-          ? "assignment"
-          : candidates.length > 1
-            ? "shared"
-            : "unassigned";
+        const attribution: PayoutAttribution = billedProject
+          ? "billing"
+          : only
+            ? "assignment"
+            : candidates.length > 1
+              ? "shared"
+              : "unassigned";
         return [
           {
-            paidAt: paidAt.toISOString(),
+            paidAt: requestedAt.toISOString(),
             daoAccountId: t.daoAccountId,
             proposalId: String(t.proposalId),
-            nearAccount: t.transferReceiverId,
-            builderName: nameOf(t.transferReceiverId),
-            tokenId: t.transferTokenId || "near",
-            amount: t.transferAmount,
+            nearAccount: t.receiver,
+            builderName: nameOf(t.receiver),
+            tokenId: t.tokenId || "near",
+            amount: t.amount,
             note: proposalNote(t.description),
             projectId: only,
             ...(only ? projectRef(only) : { projectTitle: null, projectSlug: null }),
@@ -481,18 +501,54 @@ export function createReportsService(
               attribution === "shared"
                 ? candidates.map((pid) => projectRef(pid).projectTitle).sort()
                 : [],
+            status,
           },
         ];
-      });
+      };
 
-      const payouts = [...billedPayouts, ...transferPayouts].sort(
+      const transferPayouts = approvedTransfers.flatMap((t) =>
+        linkedProject.has(String(t.proposalId))
+          ? []
+          : toPayout(
+              {
+                proposalId: t.proposalId,
+                daoAccountId: t.daoAccountId,
+                receiver: t.transferReceiverId,
+                amount: t.transferAmount,
+                tokenId: t.transferTokenId,
+                submissionTime: t.submissionTime,
+                description: t.description,
+              },
+              "paid",
+            ),
+      );
+      const pendingPayouts = pendingProposals.flatMap((p) =>
+        p.kind.type === "Transfer"
+          ? toPayout(
+              {
+                proposalId: p.id,
+                daoAccountId: agencyDao ?? "",
+                receiver: p.kind.receiverId,
+                amount: p.kind.amount,
+                tokenId: p.kind.tokenId,
+                submissionTime: p.submissionTime,
+                description: p.description,
+              },
+              "pending",
+            )
+          : [],
+      );
+
+      const payouts = [...billedPayouts, ...transferPayouts, ...pendingPayouts].sort(
         (a, b) =>
           b.paidAt.localeCompare(a.paidAt) ||
           Number(b.proposalId) - Number(a.proposalId) ||
           a.builderName.localeCompare(b.builderName),
       );
-      const attributed = payouts.filter((p) => p.projectId !== null);
-      const unattributed = payouts.filter((p) => p.projectId === null);
+      const paidPayouts = payouts.filter((p) => p.status === "paid");
+      const attributed = paidPayouts.filter((p) => p.projectId !== null);
+      const unattributed = paidPayouts.filter((p) => p.projectId === null);
+      const pendingAttributed = pendingPayouts.filter((p) => p.projectId !== null);
       const paidFor = (pid: string) => attributed.filter((p) => p.projectId === pid);
 
       const contributorStats = new Map<
@@ -504,7 +560,7 @@ export function createReportsService(
           count: number;
         }
       >();
-      for (const p of payouts) {
+      for (const p of paidPayouts) {
         if (!p.nearAccount) continue;
         const existing = contributorStats.get(p.nearAccount) ?? {
           nearAccount: p.nearAccount,
@@ -579,12 +635,13 @@ export function createReportsService(
       const dated = Boolean(agreement || input.startDate || input.endDate);
       const activeIds = new Set([
         ...projectIds.filter((pid) =>
-          sumByToken(budgetRowsInScope.filter((b) => b.projectId === pid)).some(
+          sumByToken(budgetRows.filter((b) => b.projectId === pid)).some(
             (t) => BigInt(t.amount) !== 0n,
           ),
         ),
         ...billingRows.map((b) => b.projectId),
         ...attributed.map((p) => p.projectId!),
+        ...pendingAttributed.map((p) => p.projectId!),
         ...deliveredWorkRows.map((d) => d.projectId),
       ]);
       const reportedIds =
@@ -656,6 +713,7 @@ export function createReportsService(
           budgetByToken: sumByToken(budgetRows),
           billedByToken: sumByToken(attributed),
           unattributedByToken: sumByToken(unattributed),
+          pendingByToken: sumByToken(pendingAttributed),
           period,
         },
         contributorStats: [...contributorStats.values()].map((s) => ({

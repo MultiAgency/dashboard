@@ -80,6 +80,15 @@ function summaryCsv(report: ShownReport) {
           },
         ]
       : []),
+    ...(report.overview.pendingByToken?.length
+      ? [
+          {
+            section: "Overview",
+            label: "Awaiting approval",
+            value: formatTokenTotals(report.overview.pendingByToken),
+          },
+        ]
+      : []),
     { section: "Overview", label: "Period", value: report.overview.period },
     ...(report.agreement
       ? [
@@ -104,7 +113,7 @@ function summaryCsv(report: ShownReport) {
     ...(report.payouts ?? []).map((p) => ({
       section: "Payout",
       label: `${p.paidAt.slice(0, 10)} ${p.builderName} #${p.proposalId}`,
-      value: `${formatTokenAmount(p.amount, p.tokenId)} → ${p.projectTitle ?? (p.sharedWith.length > 0 ? `several: ${p.sharedWith.join(", ")}` : "no project")}`,
+      value: `${formatTokenAmount(p.amount, p.tokenId)}${p.status === "pending" ? " (awaiting approval)" : ""} → ${p.projectTitle ?? (p.sharedWith.length > 0 ? `several: ${p.sharedWith.join(", ")}` : "no project")}`,
     })),
     ...report.clientBreakdown.map((r) => ({
       section: "Client project",

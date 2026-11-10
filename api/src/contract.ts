@@ -301,6 +301,7 @@ const reportOutput = z.object({
     budgetByToken: z.array(tokenAmount),
     billedByToken: z.array(tokenAmount),
     unattributedByToken: z.array(tokenAmount).optional(),
+    pendingByToken: z.array(tokenAmount).optional(),
     period: z.string(),
   }),
   project: z.object({ title: z.string(), slug: z.string() }).nullable().optional(),
@@ -338,6 +339,7 @@ const reportOutput = z.object({
         projectSlug: z.string().nullable(),
         attribution: z.enum(["billing", "assignment", "shared", "unassigned"]),
         sharedWith: z.array(z.string()),
+        status: z.enum(["paid", "pending"]).optional(),
       }),
     )
     .optional(),

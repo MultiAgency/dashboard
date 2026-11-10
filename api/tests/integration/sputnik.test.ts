@@ -257,7 +257,7 @@ describe("syncDaoProposals", () => {
     const result = await syncDaoProposals(db as never, dao);
 
     expect(pages).toEqual([100]);
-    expect(result).toEqual({ fetchedPages: 1, complete: true });
+    expect(result).toMatchObject({ fetchedPages: 1, complete: true });
     expect(await cachedIds(dao)).toEqual(range(0, 250));
   });
 
@@ -266,7 +266,10 @@ describe("syncDaoProposals", () => {
     await cache(dao, range(0, 120));
     const pages = fakeDao(120);
 
-    expect(await syncDaoProposals(db as never, dao)).toEqual({ fetchedPages: 0, complete: true });
+    expect(await syncDaoProposals(db as never, dao)).toMatchObject({
+      fetchedPages: 0,
+      complete: true,
+    });
     expect(pages).toEqual([]);
   });
 
@@ -285,13 +288,13 @@ describe("syncDaoProposals", () => {
     const dao = uniqueDao();
     const pages = fakeDao(250);
 
-    expect(await syncDaoProposals(db as never, dao, 2)).toEqual({
+    expect(await syncDaoProposals(db as never, dao, 2)).toMatchObject({
       fetchedPages: 2,
       complete: false,
     });
     expect(pages).toEqual([200, 100]);
 
-    expect(await syncDaoProposals(db as never, dao, 2)).toEqual({
+    expect(await syncDaoProposals(db as never, dao, 2)).toMatchObject({
       fetchedPages: 1,
       complete: true,
     });
@@ -312,7 +315,10 @@ describe("syncDaoProposals", () => {
       .where(and(eq(proposalsTable.daoAccountId, dao), eq(proposalsTable.proposalId, 120)));
     expect(row).toMatchObject({ status: "Removed", kindType: "Other" });
 
-    expect(await syncDaoProposals(db as never, dao)).toEqual({ fetchedPages: 0, complete: true });
+    expect(await syncDaoProposals(db as never, dao)).toMatchObject({
+      fetchedPages: 0,
+      complete: true,
+    });
     expect(pages).toEqual([100]);
   });
 
@@ -334,7 +340,10 @@ describe("syncDaoProposals", () => {
       .where(and(eq(proposalsTable.daoAccountId, dao), eq(proposalsTable.proposalId, 105)));
     expect(row).toMatchObject({ status: "Expired" });
 
-    expect(await syncDaoProposals(db as never, dao)).toEqual({ fetchedPages: 0, complete: true });
+    expect(await syncDaoProposals(db as never, dao)).toMatchObject({
+      fetchedPages: 0,
+      complete: true,
+    });
     expect(pages).toEqual([100]);
   });
 
@@ -350,8 +359,11 @@ describe("syncDaoProposals", () => {
     });
 
     await syncDaoProposals(db as never, dao);
-    await syncDaoProposals(db as never, dao);
+    const second = await syncDaoProposals(db as never, dao);
     expect(pages).toEqual([100, 100]);
+    expect(second.pending.map((p) => [p.id, p.status, p.kind.type])).toEqual([
+      [105, "InProgress", "Transfer"],
+    ]);
   });
 
   test("a proposal a lagging node hasn't seen yet is never recorded as removed", async () => {
@@ -380,7 +392,10 @@ describe("syncDaoProposals", () => {
 
     await syncDaoProposals(db as never, dao);
     expect(pages).toEqual([0]);
-    expect(await syncDaoProposals(db as never, dao)).toEqual({ fetchedPages: 0, complete: true });
+    expect(await syncDaoProposals(db as never, dao)).toMatchObject({
+      fetchedPages: 0,
+      complete: true,
+    });
   });
 
   test("a removed newest proposal waits until a later proposal confirms it", async () => {

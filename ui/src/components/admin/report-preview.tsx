@@ -32,6 +32,7 @@ export type ReportViewData = {
     budgetByToken: TokenAmount[];
     billedByToken: TokenAmount[];
     unattributedByToken?: TokenAmount[];
+    pendingByToken?: TokenAmount[];
     period: string;
   };
   projectBreakdown?: Array<{
@@ -82,6 +83,7 @@ export type ReportPayout = {
   projectSlug: string | null;
   attribution: "billing" | "assignment" | "shared" | "unassigned";
   sharedWith: string[];
+  status?: "paid" | "pending";
 };
 
 function payoutProjectLabel(payout: ReportPayout): string {
@@ -93,7 +95,7 @@ function payoutProjectLabel(payout: ReportPayout): string {
 const basePayoutColumns: ColumnDef<ReportPayout>[] = [
   {
     id: "date",
-    header: "Date",
+    header: "Requested",
     accessorKey: "paidAt",
     cell: ({ row }) => (
       <div className="flex flex-col gap-0.5">
@@ -159,10 +161,16 @@ const basePayoutColumns: ColumnDef<ReportPayout>[] = [
     header: "Amount",
     accessorKey: "amount",
     cell: ({ row }) => (
-      <TokenAmountCell amount={row.original.amount} tokenId={row.original.tokenId} />
+      <div className="flex flex-col gap-0.5">
+        <TokenAmountCell amount={row.original.amount} tokenId={row.original.tokenId} />
+        {row.original.status === "pending" && (
+          <span className="whitespace-nowrap text-muted-foreground">Awaiting approval</span>
+        )}
+      </div>
     ),
     meta: {
-      exportValue: (row: ReportPayout) => formatTokenAmount(row.amount, row.tokenId),
+      exportValue: (row: ReportPayout) =>
+        `${formatTokenAmount(row.amount, row.tokenId)}${row.status === "pending" ? " (awaiting approval)" : ""}`,
     },
   },
   {
@@ -184,6 +192,7 @@ type TokenSummaryRow = {
   budget?: string;
   billed?: string;
   unattributed?: string;
+  pending?: string;
 };
 
 type ProjectBudgetRow = TokenSummaryRow & {
@@ -203,13 +212,15 @@ function buildTokenSummaryRows(
   budget: TokenAmount[],
   billed: TokenAmount[],
   unattributed: TokenAmount[] = [],
+  pending: TokenAmount[] = [],
 ): TokenSummaryRow[] {
-  return collectReportTokenIds(budget, billed, unattributed).map((tokenId) => ({
+  return collectReportTokenIds(budget, billed, unattributed, pending).map((tokenId) => ({
     tokenId,
     tokenLabel: tokenDisplayName(tokenId),
     budget: getTokenAmount(budget, tokenId),
     billed: getTokenAmount(billed, tokenId),
     unattributed: getTokenAmount(unattributed, tokenId),
+    pending: getTokenAmount(pending, tokenId),
   }));
 }
 
@@ -260,6 +271,19 @@ const unattributedColumn: ColumnDef<TokenSummaryRow> = {
   meta: {
     exportValue: (row: TokenSummaryRow) =>
       row.unattributed ? formatTokenAmount(row.unattributed, row.tokenId) : "—",
+  },
+};
+
+const pendingColumn: ColumnDef<TokenSummaryRow> = {
+  id: "pending",
+  header: "Awaiting approval",
+  accessorFn: (row) => row.pending ?? "",
+  cell: ({ row }) => (
+    <TokenAmountCell amount={row.original.pending} tokenId={row.original.tokenId} />
+  ),
+  meta: {
+    exportValue: (row: TokenSummaryRow) =>
+      row.pending ? formatTokenAmount(row.pending, row.tokenId) : "—",
   },
 };
 
@@ -384,17 +408,24 @@ export function ReportPreview({
         report.overview.budgetByToken,
         report.overview.billedByToken,
         report.overview.unattributedByToken,
+        report.overview.pendingByToken,
       ),
     [
       report.overview.budgetByToken,
       report.overview.billedByToken,
       report.overview.unattributedByToken,
+      report.overview.pendingByToken,
     ],
   );
   const hasUnattributed = unattributed.some((t) => BigInt(t.amount) !== 0n);
+  const hasPending = (report.overview.pendingByToken ?? []).some((t) => BigInt(t.amount) !== 0n);
   const summaryColumns = useMemo(
-    () => (hasUnattributed ? [...tokenSummaryColumns, unattributedColumn] : tokenSummaryColumns),
-    [hasUnattributed],
+    () => [
+      ...tokenSummaryColumns,
+      ...(hasUnattributed ? [unattributedColumn] : []),
+      ...(hasPending ? [pendingColumn] : []),
+    ],
+    [hasUnattributed, hasPending],
   );
 
   const projectBudgetRows = useMemo(

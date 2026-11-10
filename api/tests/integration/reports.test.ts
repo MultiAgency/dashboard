@@ -15,6 +15,7 @@ import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import { ALLOCATION_PLAN_ENABLED } from "../../src/services/budgets";
 import { createProjectDirectory, type ProjectsClient } from "../../src/services/project-directory";
 import { clientSafe, createReportsService, proposalNote } from "../../src/services/reports";
+import type { DaoProposal } from "../../src/services/sputnik";
 import { inMemoryOrganizations } from "../fakes/organizations";
 import { agencyScope } from "../fakes/projects";
 import { applyAllMigrations } from "./_pg";
@@ -107,7 +108,9 @@ describe("reports.generate", () => {
 
   function buildReports(
     plugins: PluginsClient,
-    syncProposals: (daoAccountId: string) => Promise<unknown> = async () => {},
+    syncProposals: (daoAccountId: string) => Promise<{ pending: DaoProposal[] }> = async () => ({
+      pending: [],
+    }),
   ) {
     const directory = createProjectDirectory(() => plugins.projects.client() as ProjectsClient);
     return createReportsService(db as never, directory, plugins, organizations, { syncProposals });
@@ -718,6 +721,7 @@ describe("reports.generate", () => {
       const sync = async (dao: string) => {
         calls.push(dao);
         await db.insert(proposals).values(transfer).onConflictDoNothing();
+        return { pending: [] };
       };
 
       const result = await Effect.runPromise(
@@ -734,7 +738,7 @@ describe("reports.generate", () => {
         .insert(projectContributors)
         .values({ projectId: "project-a", nearAccount: "fresh.near" });
       await db.insert(proposals).values(transfer);
-      const sync = async () => {
+      const sync = async (): Promise<{ pending: DaoProposal[] }> => {
         throw new Error("rpc down");
       };
 
@@ -757,6 +761,7 @@ describe("reports.generate", () => {
       });
       const sync = async () => {
         await db.insert(proposals).values(transfer).onConflictDoNothing();
+        return { pending: [] };
       };
 
       const result = await Effect.runPromise(
@@ -774,9 +779,71 @@ describe("reports.generate", () => {
       await Effect.runPromise(
         buildReports(plugins(), async (dao) => {
           calls.push(dao);
+          return { pending: [] };
         }).generate(scope, { subcontractorDao: "crew.sputnik-dao.near" }),
       );
       expect(calls).toEqual([]);
+    });
+
+    const pendingTransfer = (id: number, receiver: string, amount: string): DaoProposal => ({
+      id,
+      proposer: "admin.near",
+      description: "* Notes: September work",
+      kind: { type: "Transfer", tokenId: "", receiverId: receiver, amount },
+      status: "InProgress",
+      submissionTime: String(BigInt(Date.UTC(2026, 9, 30)) * 1_000_000n),
+      votes: {},
+    });
+
+    test("a payout awaiting DAO approval is listed but not counted as paid", async () => {
+      await db
+        .insert(projectContributors)
+        .values({ projectId: "project-a", nearAccount: "fresh.near" });
+      const sync = async () => ({ pending: [pendingTransfer(95, "fresh.near", "120")] });
+
+      const result = await Effect.runPromise(
+        buildReports(plugins(), sync).generate(scope, october),
+      );
+
+      expect(result.payouts).toEqual([
+        expect.objectContaining({
+          proposalId: "95",
+          status: "pending",
+          projectSlug: "a",
+          note: "September work",
+        }),
+      ]);
+      expect(result.overview.billedByToken).toEqual([]);
+      expect(result.overview.pendingByToken).toEqual([{ tokenId: "near", amount: "120" }]);
+      expect(result.contributorStats).toEqual([]);
+      expect(result.projectBreakdown.map((p) => p.projectSlug)).toEqual(["a"]);
+    });
+
+    test("a pending payout already linked to a project counts toward that project", async () => {
+      await db.insert(billings).values({
+        id: "billing-awaiting",
+        projectId: "project-a",
+        nearAccount: "elsewhere.near",
+        tokenId: "near",
+        amount: "50",
+        proposalId: "96",
+        createdAt: new Date("2026-10-30T12:00:00.000Z"),
+      });
+      const sync = async () => ({ pending: [pendingTransfer(96, "elsewhere.near", "50")] });
+
+      const result = await Effect.runPromise(
+        buildReports(plugins(), sync).generate(scope, october),
+      );
+
+      expect(result.payouts).toEqual([
+        expect.objectContaining({
+          proposalId: "96",
+          status: "pending",
+          attribution: "billing",
+          projectSlug: "a",
+        }),
+      ]);
+      expect(result.overview.pendingByToken).toEqual([{ tokenId: "near", amount: "50" }]);
     });
   });
 

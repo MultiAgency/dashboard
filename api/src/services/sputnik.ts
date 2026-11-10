@@ -406,9 +406,9 @@ export async function syncDaoProposals(
   db: Database,
   daoAccountId: string,
   maxPages = SCAN_PAGES,
-): Promise<{ fetchedPages: number; complete: boolean }> {
+): Promise<{ fetchedPages: number; complete: boolean; pending: DaoProposal[] }> {
   const last = await getLastProposalId(daoAccountId);
-  if (last <= 0) return { fetchedPages: 0, complete: true };
+  if (last <= 0) return { fetchedPages: 0, complete: true, pending: [] };
   const cached = await db
     .select({ id: proposalsTable.proposalId })
     .from(proposalsTable)
@@ -425,9 +425,15 @@ export async function syncDaoProposals(
     }
   }
   const todo = pages.slice(0, maxPages);
+  const pending = new Map<number, DaoProposal>();
   for (const from of todo) {
     const end = Math.min(from + SCAN_PAGE, last);
     const fetched = await getProposals(db, daoAccountId, from, Math.min(end + 1, last) - from);
+    for (const proposal of fetched) {
+      if (proposal.status === "InProgress" && proposal.kind.type === "Transfer") {
+        pending.set(proposal.id, proposal);
+      }
+    }
     const returned = new Set(fetched.map((p) => p.id));
     const highestSeen = Math.max(-1, ...returned);
     const removed: DaoProposal[] = [];
@@ -449,7 +455,11 @@ export async function syncDaoProposals(
       ...removed,
     ]);
   }
-  return { fetchedPages: todo.length, complete: pages.length <= maxPages };
+  return {
+    fetchedPages: todo.length,
+    complete: pages.length <= maxPages,
+    pending: [...pending.values()].sort((a, b) => b.id - a.id),
+  };
 }
 
 export async function proposalsSince(

@@ -48,7 +48,7 @@ describe("subcontracting", () => {
       world.directory,
       plugins,
       world.organizations.directory,
-      { syncProposals: async () => {} },
+      { syncProposals: async () => ({ pending: [] }) },
     );
     return {
       agency,
