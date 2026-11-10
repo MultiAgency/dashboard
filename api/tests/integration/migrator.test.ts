@@ -84,6 +84,9 @@ describe("runMigrations — runtime migrator", () => {
     await driver.close();
   });
 
+  const journalOf = (storage: { schema: string; table: string }) =>
+    sql.raw(`"${storage.schema}"."${storage.table}"`);
+
   const migrateBefore = async (tag: string) => {
     const { migrations } = await Effect.runPromise(loadMigrations);
     await Effect.runPromise(
@@ -95,12 +98,11 @@ describe("runMigrations — runtime migrator", () => {
     return migrations;
   };
 
-  test("tracks applied hashes in drizzle.__drizzle_migrations, not public", async () => {
-    await Effect.runPromise(runMigrations(driver.db, [probeTable]));
+  test("tracks applied hashes in the workspace journal, not public", async () => {
+    const report = await Effect.runPromise(runMigrations(driver.db, [probeTable]));
+    expect(report.storage.schema).not.toBe("public");
 
-    const rawTracking = await driver.db.execute(
-      sql`SELECT hash FROM "drizzle"."__drizzle_migrations"`,
-    );
+    const rawTracking = await driver.db.execute(sql`SELECT hash FROM ${journalOf(report.storage)}`);
     const hashes = (rawTracking as unknown as { rows: { hash: string }[] }).rows.map((r) => r.hash);
     expect(hashes).toEqual(["probe-hash-aaaa"]);
 
@@ -113,10 +115,10 @@ describe("runMigrations — runtime migrator", () => {
 
   test("skips a migration whose hash is already applied (idempotent)", async () => {
     await Effect.runPromise(runMigrations(driver.db, [probeTable]));
-    await Effect.runPromise(runMigrations(driver.db, [probeTable]));
+    const report = await Effect.runPromise(runMigrations(driver.db, [probeTable]));
 
     const rawCount = await driver.db.execute(
-      sql`SELECT count(*)::int AS n FROM "drizzle"."__drizzle_migrations"`,
+      sql`SELECT count(*)::int AS n FROM ${journalOf(report.storage)}`,
     );
     const count = (rawCount as unknown as { rows: { n: number }[] }).rows[0]?.n;
     expect(count).toBe(1);
@@ -124,14 +126,14 @@ describe("runMigrations — runtime migrator", () => {
 
   test("applies only new migrations on a subsequent call", async () => {
     await Effect.runPromise(runMigrations(driver.db, [probeTable]));
-    await Effect.runPromise(runMigrations(driver.db, [probeTable, probeInsert]));
+    const report = await Effect.runPromise(runMigrations(driver.db, [probeTable, probeInsert]));
 
     const rawRows = await driver.db.execute(sql`SELECT id FROM "probe"`);
     const ids = (rawRows as unknown as { rows: { id: string }[] }).rows.map((r) => r.id);
     expect(ids).toEqual(["seed"]);
 
     const rawTracking = await driver.db.execute(
-      sql`SELECT hash FROM "drizzle"."__drizzle_migrations" ORDER BY id`,
+      sql`SELECT hash FROM ${journalOf(report.storage)} ORDER BY id`,
     );
     const hashes = (rawTracking as unknown as { rows: { hash: string }[] }).rows.map((r) => r.hash);
     expect(hashes).toEqual(["probe-hash-aaaa", "probe-hash-bbbb"]);
