@@ -591,6 +591,32 @@ describe("reports.generate", () => {
       expect(seen.payouts).toEqual([]);
     });
 
+    test("another agency's billing with the same proposal number doesn't hide this agency's payout", async () => {
+      await assign("project-a", "solo.near");
+      await insertTransfer({
+        proposalId: 12,
+        receiver: "solo.near",
+        amount: "45",
+        submittedAt: oct(4),
+      });
+      await db.insert(billings).values({
+        id: "other-agency-billing",
+        projectId: "other-agency-project",
+        nearAccount: "someone.near",
+        tokenId: "near",
+        amount: "9",
+        proposalId: "12",
+        createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      });
+
+      const result = await Effect.runPromise(buildReports(plugins()).generate(scope, october));
+
+      expect(result.payouts).toEqual([
+        expect.objectContaining({ proposalId: "12", projectSlug: "a", attribution: "assignment" }),
+      ]);
+      expect(result.overview.billedByToken).toEqual([{ tokenId: "near", amount: "45" }]);
+    });
+
     test("a transfer already recorded as a billing is counted once, from the billing", async () => {
       await assign("project-b", "solo.near");
       await db.insert(proposals).values({

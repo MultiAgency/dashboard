@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { Effect } from "effect";
 import type { Database } from "../db";
 import {
@@ -350,24 +350,29 @@ export function createReportsService(
         approvedTransfers.length > 0
           ? yield* Effect.promise(() =>
               db
-                .select({
-                  proposalId: billings.proposalId,
-                  payingDaoAccountId: billings.payingDaoAccountId,
-                })
+                .select({ proposalId: billings.proposalId })
                 .from(billings)
                 .where(
-                  inArray(
-                    billings.proposalId,
-                    approvedTransfers.map((t) => String(t.proposalId)),
+                  and(
+                    inArray(
+                      billings.proposalId,
+                      approvedTransfers.map((t) => String(t.proposalId)),
+                    ),
+                    or(
+                      eq(billings.payingDaoAccountId, agencyDao!),
+                      and(
+                        isNull(billings.payingDaoAccountId),
+                        inArray(
+                          billings.projectId,
+                          allProjects.map((p) => p.id),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
             )
           : [];
-      const linkedIds = new Set(
-        linkedProposals
-          .filter((l) => (l.payingDaoAccountId ?? agencyDao) === agencyDao)
-          .map((l) => l.proposalId),
-      );
+      const linkedIds = new Set(linkedProposals.map((l) => l.proposalId));
 
       const allAssignmentRows =
         allProjects.length > 0
