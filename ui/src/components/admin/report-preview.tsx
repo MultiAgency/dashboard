@@ -86,6 +86,10 @@ export type ReportPayout = {
   status?: "paid" | "pending";
 };
 
+function isAgentPayout(payout: Pick<ReportPayout, "proposalId">): boolean {
+  return payout.proposalId.startsWith("intents:");
+}
+
 function payoutProjectLabel(payout: ReportPayout): string {
   if (payout.projectTitle) return payout.projectTitle;
   if (payout.attribution === "shared") return `Several: ${payout.sharedWith.join(", ")}`;
@@ -100,7 +104,9 @@ const basePayoutColumns: ColumnDef<ReportPayout>[] = [
     cell: ({ row }) => (
       <div className="flex flex-col gap-0.5">
         <span className="whitespace-nowrap tabular-nums">{row.original.paidAt.slice(0, 10)}</span>
-        {row.original.daoAccountId ? (
+        {isAgentPayout(row.original) ? (
+          <span className="whitespace-nowrap text-muted-foreground">Agent payout</span>
+        ) : row.original.daoAccountId ? (
           <a
             className="whitespace-nowrap text-muted-foreground underline underline-offset-4"
             href={trezuProposalUrl(row.original.daoAccountId, row.original.proposalId)}
@@ -115,7 +121,8 @@ const basePayoutColumns: ColumnDef<ReportPayout>[] = [
       </div>
     ),
     meta: {
-      exportValue: (row: ReportPayout) => `${row.paidAt.slice(0, 10)} #${row.proposalId}`,
+      exportValue: (row: ReportPayout) =>
+        `${row.paidAt.slice(0, 10)} ${isAgentPayout(row) ? "agent payout" : `#${row.proposalId}`}`,
     },
   },
   {

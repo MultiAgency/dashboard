@@ -112,7 +112,7 @@ function summaryCsv(report: ShownReport) {
     })),
     ...(report.payouts ?? []).map((p) => ({
       section: "Payout",
-      label: `${p.paidAt.slice(0, 10)} ${p.builderName} #${p.proposalId}`,
+      label: `${p.paidAt.slice(0, 10)} ${p.builderName} ${p.proposalId.startsWith("intents:") ? "(agent payout)" : `#${p.proposalId}`}`,
       value: `${formatTokenAmount(p.amount, p.tokenId)}${p.status === "pending" ? " (awaiting approval)" : ""} → ${p.projectTitle ?? (p.sharedWith.length > 0 ? `several: ${p.sharedWith.join(", ")}` : "no project")}`,
     })),
     ...report.clientBreakdown.map((r) => ({
