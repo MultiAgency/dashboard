@@ -197,6 +197,7 @@ describe("syncDaoProposals", () => {
       removed?: number[];
       raw?: (id: number) => Record<string, unknown>;
       proposalPeriod?: string;
+      nodeLast?: number;
     } = {},
   ) {
     const pagesRequested: number[] = [];
@@ -210,7 +211,7 @@ describe("syncDaoProposals", () => {
       if (params.method_name === "get_proposals") {
         pagesRequested.push(args.from_index);
         const ids = Array.from({ length: args.limit }, (_, i) => args.from_index + i).filter(
-          (id) => !(chain.removed ?? []).includes(id),
+          (id) => !(chain.removed ?? []).includes(id) && id < (chain.nodeLast ?? last),
         );
         return fakeRpcResponse(ids.map(chain.raw ?? rawProposal));
       }
@@ -349,6 +350,46 @@ describe("syncDaoProposals", () => {
     });
 
     await syncDaoProposals(db as never, dao);
+    await syncDaoProposals(db as never, dao);
+    expect(pages).toEqual([100, 100]);
+  });
+
+  test("a proposal a lagging node hasn't seen yet is never recorded as removed", async () => {
+    const dao = uniqueDao();
+    await cache(dao, range(0, 100));
+    const pages = fakeDao(152, { nodeLast: 150 });
+
+    await syncDaoProposals(db as never, dao);
+
+    expect(await cachedIds(dao)).toEqual(range(0, 150));
+    fakeDao(152);
+    await syncDaoProposals(db as never, dao);
+    expect(await cachedIds(dao)).toEqual(range(0, 152));
+    const rows = await db
+      .select({ status: proposalsTable.status })
+      .from(proposalsTable)
+      .where(and(eq(proposalsTable.daoAccountId, dao), eq(proposalsTable.proposalId, 151)));
+    expect(rows).toEqual([{ status: "Approved" }]);
+    expect(pages).toEqual([100]);
+  });
+
+  test("a removed proposal at the end of a full page is confirmed by the next proposal", async () => {
+    const dao = uniqueDao();
+    await cache(dao, [...range(0, 99), ...range(100, 250)]);
+    const pages = fakeDao(250, { removed: [99] });
+
+    await syncDaoProposals(db as never, dao);
+    expect(pages).toEqual([0]);
+    expect(await syncDaoProposals(db as never, dao)).toEqual({ fetchedPages: 0, complete: true });
+  });
+
+  test("a removed newest proposal waits until a later proposal confirms it", async () => {
+    const dao = uniqueDao();
+    await cache(dao, range(0, 100));
+    const pages = fakeDao(150, { removed: [149] });
+
+    await syncDaoProposals(db as never, dao);
+    expect(await cachedIds(dao)).toEqual(range(0, 149));
     await syncDaoProposals(db as never, dao);
     expect(pages).toEqual([100, 100]);
   });

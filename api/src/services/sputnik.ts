@@ -427,10 +427,11 @@ export async function syncDaoProposals(
   const todo = pages.slice(0, maxPages);
   for (const from of todo) {
     const end = Math.min(from + SCAN_PAGE, last);
-    const fetched = await getProposals(db, daoAccountId, from, end - from);
+    const fetched = await getProposals(db, daoAccountId, from, Math.min(end + 1, last) - from);
     const returned = new Set(fetched.map((p) => p.id));
+    const highestSeen = Math.max(-1, ...returned);
     const removed: DaoProposal[] = [];
-    for (let id = from; id < end; id++) {
+    for (let id = from; id < Math.min(end, highestSeen); id++) {
       if (!returned.has(id) && !have.has(id)) {
         removed.push({
           id,
