@@ -1,5 +1,5 @@
 import type { PGlite } from "@electric-sql/pglite";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { proposals as proposalsTable } from "../../src/db/schema";
@@ -191,16 +191,28 @@ describe("syncDaoProposals", () => {
     submission_time: String(1_700_000_000_000_000_000n + BigInt(id)),
   });
 
-  function fakeDao(last: number) {
+  function fakeDao(
+    last: number,
+    chain: {
+      removed?: number[];
+      raw?: (id: number) => Record<string, unknown>;
+      proposalPeriod?: string;
+    } = {},
+  ) {
     const pagesRequested: number[] = [];
     globalThis.fetch = vi.fn(async (_url: unknown, init?: { body?: string }) => {
       const params = JSON.parse(init?.body ?? "{}").params;
       const args = JSON.parse(atob(params.args_base64));
       if (params.method_name === "get_last_proposal_id") return fakeRpcResponse(last);
+      if (params.method_name === "get_policy") {
+        return fakeRpcResponse({ proposal_period: chain.proposalPeriod ?? "604800000000000" });
+      }
       if (params.method_name === "get_proposals") {
         pagesRequested.push(args.from_index);
-        const ids = Array.from({ length: args.limit }, (_, i) => args.from_index + i);
-        return fakeRpcResponse(ids.map(rawProposal));
+        const ids = Array.from({ length: args.limit }, (_, i) => args.from_index + i).filter(
+          (id) => !(chain.removed ?? []).includes(id),
+        );
+        return fakeRpcResponse(ids.map(chain.raw ?? rawProposal));
       }
       throw new Error(`unexpected ${params.method_name}`);
     }) as never;
@@ -284,5 +296,60 @@ describe("syncDaoProposals", () => {
     });
     expect(pages).toEqual([200, 100, 0]);
     expect(await cachedIds(dao)).toEqual(range(0, 250));
+  });
+
+  test("a removed proposal is recorded once, so its page isn't fetched again", async () => {
+    const dao = uniqueDao();
+    await cache(dao, range(0, 100));
+    const pages = fakeDao(150, { removed: [120] });
+
+    await syncDaoProposals(db as never, dao);
+    expect(pages).toEqual([100]);
+    const [row] = await db
+      .select()
+      .from(proposalsTable)
+      .where(and(eq(proposalsTable.daoAccountId, dao), eq(proposalsTable.proposalId, 120)));
+    expect(row).toMatchObject({ status: "Removed", kindType: "Other" });
+
+    expect(await syncDaoProposals(db as never, dao)).toEqual({ fetchedPages: 0, complete: true });
+    expect(pages).toEqual([100]);
+  });
+
+  test("a proposal left in progress past its voting period is recorded as expired", async () => {
+    const dao = uniqueDao();
+    await cache(dao, range(0, 100));
+    const oldSubmission = String(BigInt(Date.now() - 30 * 24 * 3600 * 1000) * 1_000_000n);
+    const pages = fakeDao(110, {
+      raw: (id) =>
+        id === 105
+          ? { ...rawProposal(id), status: "InProgress", submission_time: oldSubmission }
+          : rawProposal(id),
+    });
+
+    await syncDaoProposals(db as never, dao);
+    const [row] = await db
+      .select()
+      .from(proposalsTable)
+      .where(and(eq(proposalsTable.daoAccountId, dao), eq(proposalsTable.proposalId, 105)));
+    expect(row).toMatchObject({ status: "Expired" });
+
+    expect(await syncDaoProposals(db as never, dao)).toEqual({ fetchedPages: 0, complete: true });
+    expect(pages).toEqual([100]);
+  });
+
+  test("a proposal still open for voting keeps its page in the next sync", async () => {
+    const dao = uniqueDao();
+    await cache(dao, range(0, 100));
+    const recent = String(BigInt(Date.now()) * 1_000_000n);
+    const pages = fakeDao(110, {
+      raw: (id) =>
+        id === 105
+          ? { ...rawProposal(id), status: "InProgress", submission_time: recent }
+          : rawProposal(id),
+    });
+
+    await syncDaoProposals(db as never, dao);
+    await syncDaoProposals(db as never, dao);
+    expect(pages).toEqual([100, 100]);
   });
 });

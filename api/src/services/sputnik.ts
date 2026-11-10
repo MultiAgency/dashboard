@@ -426,7 +426,27 @@ export async function syncDaoProposals(
   }
   const todo = pages.slice(0, maxPages);
   for (const from of todo) {
-    await getProposals(db, daoAccountId, from, Math.min(SCAN_PAGE, last - from));
+    const end = Math.min(from + SCAN_PAGE, last);
+    const fetched = await getProposals(db, daoAccountId, from, end - from);
+    const returned = new Set(fetched.map((p) => p.id));
+    const removed: DaoProposal[] = [];
+    for (let id = from; id < end; id++) {
+      if (!returned.has(id) && !have.has(id)) {
+        removed.push({
+          id,
+          proposer: "",
+          description: "",
+          kind: { type: "Other", name: "Removed" },
+          status: "Removed",
+          submissionTime: "0",
+          votes: {},
+        });
+      }
+    }
+    await persistTerminalProposals(db, daoAccountId, [
+      ...fetched.filter((p) => p.status === "Expired"),
+      ...removed,
+    ]);
   }
   return { fetchedPages: todo.length, complete: pages.length <= maxPages };
 }
