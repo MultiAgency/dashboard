@@ -141,11 +141,17 @@ function LinkPayoutToProject({
         note: payout.note?.slice(0, 2000) ?? undefined,
       }),
     onSuccess: async (_data, projectId) => {
-      await refreshAfter(queryClient, { type: "billings" });
-      await onLinked();
       toast.success(
         `Payout #${payout.proposalId} counted toward ${projects.find((p) => p.id === projectId)?.title ?? "the project"}`,
       );
+      try {
+        await refreshAfter(queryClient, { type: "billings" });
+        await onLinked();
+      } catch (err) {
+        toast.error(
+          `Linked, but the preview didn't refresh${err instanceof Error && err.message ? `: ${err.message}` : ""}. Generate the preview again to see it.`,
+        );
+      }
     },
     onError: (err: Error) => toast.error(err.message || "Failed to link payout"),
   });

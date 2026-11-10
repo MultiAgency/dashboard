@@ -402,6 +402,35 @@ export async function getProposals(
 const SCAN_PAGE = 100;
 const SCAN_PAGES = 20;
 
+export async function syncDaoProposals(
+  db: Database,
+  daoAccountId: string,
+  maxPages = SCAN_PAGES,
+): Promise<{ fetchedPages: number; complete: boolean }> {
+  const last = await getLastProposalId(daoAccountId);
+  if (last <= 0) return { fetchedPages: 0, complete: true };
+  const cached = await db
+    .select({ id: proposalsTable.proposalId })
+    .from(proposalsTable)
+    .where(eq(proposalsTable.daoAccountId, daoAccountId));
+  const have = new Set(cached.map((row) => row.id));
+  const pages: number[] = [];
+  for (let from = Math.floor((last - 1) / SCAN_PAGE) * SCAN_PAGE; from >= 0; from -= SCAN_PAGE) {
+    const end = Math.min(from + SCAN_PAGE, last);
+    for (let id = from; id < end; id++) {
+      if (!have.has(id)) {
+        pages.push(from);
+        break;
+      }
+    }
+  }
+  const todo = pages.slice(0, maxPages);
+  for (const from of todo) {
+    await getProposals(db, daoAccountId, from, Math.min(SCAN_PAGE, last - from));
+  }
+  return { fetchedPages: todo.length, complete: pages.length <= maxPages };
+}
+
 export async function proposalsSince(
   db: Database,
   daoAccountId: string,

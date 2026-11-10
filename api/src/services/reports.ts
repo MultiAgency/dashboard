@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { Effect } from "effect";
 import type { Database } from "../db";
 import {
@@ -93,8 +93,6 @@ export function clientSafe<
   };
 }
 
-const RESYNC_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-
 export type PayoutAttribution = "billing" | "assignment" | "shared" | "unassigned";
 
 function nanosToDate(value: string): Date | null {
@@ -134,7 +132,7 @@ export function createReportsService(
   plugins: PluginsClient,
   organizations: Pick<OrganizationDirectory, "get">,
   deps: {
-    syncProposals: (daoAccountId: string, since: Date) => Promise<unknown>;
+    syncProposals: (daoAccountId: string) => Promise<unknown>;
     notifications?: Pick<NotificationsService, "notify">;
   },
 ) {
@@ -276,20 +274,8 @@ export function createReportsService(
             (!input.forClient && b.engagementId === null),
         );
       if (agencyDao && subcontractorDao === undefined) {
-        const since =
-          startAt ??
-          (yield* Effect.promise(async () => {
-            const [row] = await db
-              .select({
-                newest: sql<string | null>`max(${proposals.submissionTime}::numeric)::text`,
-              })
-              .from(proposals)
-              .where(eq(proposals.daoAccountId, agencyDao));
-            const newest = row?.newest ? nanosToDate(row.newest) : null;
-            return newest ? new Date(newest.getTime() - RESYNC_WINDOW_MS) : new Date(0);
-          }));
         yield* Effect.promise(() =>
-          syncProposals(agencyDao, since).catch((err) =>
+          syncProposals(agencyDao).catch((err) =>
             console.warn(
               "[API] DAO proposal sync before report failed:",
               err instanceof Error ? err.message : err,

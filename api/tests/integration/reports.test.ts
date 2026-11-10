@@ -107,7 +107,7 @@ describe("reports.generate", () => {
 
   function buildReports(
     plugins: PluginsClient,
-    syncProposals: (daoAccountId: string, since: Date) => Promise<unknown> = async () => {},
+    syncProposals: (daoAccountId: string) => Promise<unknown> = async () => {},
   ) {
     const directory = createProjectDirectory(() => plugins.projects.client() as ProjectsClient);
     return createReportsService(db as never, directory, plugins, organizations, { syncProposals });
@@ -714,9 +714,9 @@ describe("reports.generate", () => {
       await db
         .insert(projectContributors)
         .values({ projectId: "project-a", nearAccount: "fresh.near" });
-      const calls: Array<[string, string]> = [];
-      const sync = async (dao: string, since: Date) => {
-        calls.push([dao, since.toISOString()]);
+      const calls: string[] = [];
+      const sync = async (dao: string) => {
+        calls.push(dao);
         await db.insert(proposals).values(transfer).onConflictDoNothing();
       };
 
@@ -724,7 +724,7 @@ describe("reports.generate", () => {
         buildReports(plugins(), sync).generate(scope, october),
       );
 
-      expect(calls).toEqual([[AGENCY, "2026-10-01T00:00:00.000Z"]]);
+      expect(calls).toEqual([AGENCY]);
       expect(result.payouts.map((p) => p.proposalId)).toEqual(["90"]);
       expect(result.overview.billedByToken).toEqual([{ tokenId: "near", amount: "70" }]);
     });
@@ -743,17 +743,6 @@ describe("reports.generate", () => {
       );
 
       expect(result.payouts.map((p) => p.proposalId)).toEqual(["90"]);
-    });
-
-    test("an all-time report re-checks only the last 30 days before the newest cached proposal", async () => {
-      await db.insert(proposals).values(transfer);
-      const calls: string[] = [];
-      await Effect.runPromise(
-        buildReports(plugins(), async (_dao, since) => {
-          calls.push(since.toISOString());
-        }).generate(scope, {}),
-      );
-      expect(calls).toEqual(["2026-09-28T00:00:00.000Z"]);
     });
 
     test("a payout linked while its proposal was pending counts in the month it was paid", async () => {
@@ -780,14 +769,14 @@ describe("reports.generate", () => {
       expect(result.overview.billedByToken).toEqual([{ tokenId: "near", amount: "70" }]);
     });
 
-    test("an empty cache syncs the DAO from its first proposal", async () => {
+    test("a subcontractor's report doesn't sync the agency DAO", async () => {
       const calls: string[] = [];
       await Effect.runPromise(
-        buildReports(plugins(), async (_dao, since) => {
-          calls.push(since.toISOString());
-        }).generate(scope, {}),
+        buildReports(plugins(), async (dao) => {
+          calls.push(dao);
+        }).generate(scope, { subcontractorDao: "crew.sputnik-dao.near" }),
       );
-      expect(calls).toEqual(["1970-01-01T00:00:00.000Z"]);
+      expect(calls).toEqual([]);
     });
   });
 
