@@ -568,6 +568,29 @@ describe("reports.generate", () => {
       expect(clientSafe(forClient).payouts).toEqual([]);
     });
 
+    test("a client never sees what was paid to builders shared with other clients' projects", async () => {
+      await insertClient("client-a");
+      await linkProject("client-a", "project-a");
+      await assign("project-a", "both.near");
+      await assign("project-b", "both.near");
+      await insertTransfer({
+        proposalId: 32,
+        receiver: "both.near",
+        amount: "500",
+        submittedAt: oct(9),
+      });
+
+      const forClient = await Effect.runPromise(
+        buildReports(plugins()).generate(scope, { ...october, engagementId: "client-a" }),
+      );
+      expect(forClient.overview.unattributedByToken).toEqual([{ tokenId: "near", amount: "500" }]);
+
+      const seen = clientSafe(forClient);
+      expect(seen.overview).not.toHaveProperty("unattributedByToken");
+      expect(seen.overview.billedByToken).toEqual([]);
+      expect(seen.payouts).toEqual([]);
+    });
+
     test("a transfer already recorded as a billing is counted once, from the billing", async () => {
       await assign("project-b", "solo.near");
       await db.insert(proposals).values({

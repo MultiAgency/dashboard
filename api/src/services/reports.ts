@@ -78,10 +78,13 @@ export function clientSafe<
     contributorStats: unknown[];
     deliveredWork?: { amount: unknown }[];
     payouts?: unknown[];
+    overview: { unattributedByToken?: unknown[] };
   },
 >(report: R): R {
+  const { unattributedByToken: _unattributed, ...overview } = report.overview;
   return {
     ...report,
+    overview,
     contributorStats: [],
     ...(report.payouts ? { payouts: [] } : {}),
     ...(report.deliveredWork
