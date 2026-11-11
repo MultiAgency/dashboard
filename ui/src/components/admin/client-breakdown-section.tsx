@@ -210,17 +210,17 @@ export function ClientBreakdownSection({ breakdown }: ClientBreakdownSectionProp
                       <TableCell className="font-medium">
                         {projectIndex === 0 && lineIndex === 0 ? group.clientName : ""}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
                         {lineIndex === 0 && (
                           <>
-                            <span className="block">{project.projectTitle}</span>
+                            <span className="block font-medium">{project.projectTitle}</span>
                             <span className="block text-muted-foreground">
                               @{project.projectSlug}
                             </span>
                           </>
                         )}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="max-w-80 whitespace-normal text-muted-foreground">
                         {lineIndex === 0 && ((project.builders ?? []).join(", ") || "—")}
                       </TableCell>
                       {tokenId ? (

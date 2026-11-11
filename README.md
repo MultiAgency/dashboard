@@ -51,12 +51,10 @@ Deploy the app, then make yourself a super admin to set up the initial agency.
 
 ```bash
 pnpm install             # Install dependencies
-pnpm run dev:postgres    # Boot docker compose Postgres + start dev (persistent local dev)
-# or:
-pnpm run db:migrate && pnpm run dev   # Use the configured API_DATABASE_URL, or in-memory pglite by default
+pnpm run dev             # Start dev; creates .env on first run
 ```
 
-The API plugin uses PostgreSQL via Drizzle. Without `API_DATABASE_URL` set, it boots against an in-memory `pglite` database — fine for quick exploration but state resets on every restart. For persistent local dev, `pnpm run dev:postgres` boots PostgreSQL instances via `docker-compose.yml` (api/auth/builders/projects on 5432/5433/5434/5435) and starts the dev server. Migrations run automatically on startup; `pnpm run db:migrate` applies them manually against the configured database.
+The API plugin uses PostgreSQL via Drizzle. Without `API_DATABASE_URL` set, `bos dev` uses a persistent per-workspace `pglite` data directory under `.bos/db`, so local state survives restarts. Set `API_DATABASE_URL`, `AUTH_DATABASE_URL`, `PROJECTS_DATABASE_URL` and `BUILDERS_DATABASE_URL` in `.env` to use your own Postgres instead. Migrations run automatically on startup; `pnpm run db:migrate` applies them manually against the configured database.
 
 To inspect databases locally:
 ```bash

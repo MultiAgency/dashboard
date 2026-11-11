@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { Effect } from "effect";
 import type { Database } from "../db";
 import {
@@ -10,6 +10,7 @@ import {
   engagementProjects,
   engagements,
   projectContributors,
+  proposals,
   type ReportSnapshotRow,
   reportSnapshots,
   workOrders,
@@ -21,7 +22,7 @@ import type { NotificationsService } from "./notifications";
 import { type AgencyScope, SHARED_STATUSES } from "./organization-access";
 import { type ProjectDirectory, withoutClientIdeas } from "./project-directory";
 import { sumByToken } from "./report-tokens";
-import { enrichWithChainStatus } from "./sputnik";
+import { type DaoProposal, enrichWithChainStatus } from "./sputnik";
 
 export type ReportInput = {
   engagementId?: string;
@@ -73,15 +74,40 @@ function periodOf(row: Pick<ReportSnapshotRow, "startDate" | "endDate">): string
 }
 
 export function clientSafe<
-  R extends { contributorStats: unknown[]; deliveredWork?: { amount: unknown }[] },
+  R extends {
+    contributorStats: unknown[];
+    deliveredWork?: { amount: unknown }[];
+    payouts?: unknown[];
+    overview: { unattributedByToken?: unknown[] };
+  },
 >(report: R): R {
+  const { unattributedByToken: _unattributed, ...overview } = report.overview;
   return {
     ...report,
+    overview,
     contributorStats: [],
+    ...(report.payouts ? { payouts: [] } : {}),
     ...(report.deliveredWork
       ? { deliveredWork: report.deliveredWork.map((item) => ({ ...item, amount: null })) }
       : {}),
   };
+}
+
+export type PayoutSync = "complete" | "partial" | "unavailable";
+
+export type PayoutAttribution = "billing" | "assignment" | "shared" | "unassigned";
+
+function nanosToDate(value: string): Date | null {
+  if (!/^\d+$/.test(value)) return null;
+  return new Date(Number(BigInt(value) / 1_000_000n));
+}
+
+export function proposalNote(description: string): string | null {
+  const parts = description
+    .split(/<br>|\n/)
+    .map((part) => part.replace(/^\s*\*\s*(Title|Notes|Url):\s*/i, "").trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(" — ") : null;
 }
 
 function agreementTitleOf(payload: string): string | null {
@@ -107,8 +133,12 @@ export function createReportsService(
   directory: ProjectDirectory,
   plugins: PluginsClient,
   organizations: Pick<OrganizationDirectory, "get">,
-  notifications?: Pick<NotificationsService, "notify">,
+  deps: {
+    syncProposals: (daoAccountId: string) => Promise<{ pending: DaoProposal[]; complete: boolean }>;
+    notifications?: Pick<NotificationsService, "notify">;
+  },
 ) {
+  const { syncProposals, notifications } = deps;
   const generate = (scope: AgencyScope, requested: ReportInput) =>
     Effect.gen(function* () {
       const agreement = requested.agreementId
@@ -157,7 +187,6 @@ export function createReportsService(
         if (endAt && at > endAt) return false;
         return true;
       };
-      const inPeriod = <T extends { createdAt: Date }>(row: T) => within(row.createdAt);
       const budgetInPeriod = (row: { effectiveOn: string | null; createdAt: Date }) =>
         within(row.effectiveOn ? new Date(`${row.effectiveOn}T00:00:00.000Z`) : row.createdAt);
 
@@ -216,7 +245,7 @@ export function createReportsService(
       const projectById = new Map(allProjects.map((p) => [p.id, p]));
 
       const budgetRowsAll =
-        projectIds.length > 0 && subcontractorDao === undefined
+        projectIds.length > 0
           ? yield* Effect.promise(() =>
               db.select().from(budgets).where(inArray(budgets.projectId, projectIds)),
             )
@@ -234,8 +263,11 @@ export function createReportsService(
 
       // Allocation plan omitted for now: budget is allocated to the Project, so a shared Project
       // reports all of its Budget entries, not only entries attributed to the Engagement.
-      const budgetRows = budgetRowsAll
-        .filter(agreement ? (b) => b.agreementId === agreement.id : budgetInPeriod)
+      const budgetRowsInScope = budgetRowsAll.filter(
+        agreement ? (b) => b.agreementId === agreement.id : budgetInPeriod,
+      );
+      const budgetRows = budgetRowsInScope
+        .filter(() => subcontractorDao === undefined)
         .filter(
           (b) =>
             !ALLOCATION_PLAN_ENABLED ||
@@ -243,7 +275,59 @@ export function createReportsService(
             b.engagementId === input.engagementId ||
             (!input.forClient && b.engagementId === null),
         );
-      const billingRowsRaw = billingRowsRawAll.filter(inPeriod);
+      const synced: { pending: DaoProposal[]; payoutSync: PayoutSync } =
+        agencyDao && subcontractorDao === undefined
+          ? yield* Effect.promise(async () => {
+              try {
+                const result = await syncProposals(agencyDao);
+                return {
+                  pending: result.pending,
+                  payoutSync: result.complete ? ("complete" as const) : ("partial" as const),
+                };
+              } catch (err) {
+                console.warn(
+                  "[API] DAO proposal sync before report failed:",
+                  err instanceof Error ? err.message : err,
+                );
+                return { pending: [], payoutSync: "unavailable" as const };
+              }
+            })
+          : { pending: [], payoutSync: "complete" };
+      const pendingProposals = synced.pending;
+
+      const billingProposalRows =
+        billingRowsRawAll.length > 0
+          ? yield* Effect.promise(() =>
+              db
+                .select({
+                  daoAccountId: proposals.daoAccountId,
+                  proposalId: proposals.proposalId,
+                  submissionTime: proposals.submissionTime,
+                })
+                .from(proposals)
+                .where(
+                  inArray(
+                    proposals.proposalId,
+                    [...new Set(billingRowsRawAll.map((b) => Number(b.proposalId)))].filter(
+                      Number.isSafeInteger,
+                    ),
+                  ),
+                ),
+            )
+          : [];
+      const proposalTimes = new Map(
+        billingProposalRows.flatMap((row) => {
+          const at = nanosToDate(row.submissionTime);
+          return at && at.getTime() > 0 ? [[`${row.daoAccountId}:${row.proposalId}`, at]] : [];
+        }),
+      );
+      const billedAt = (b: {
+        createdAt: Date;
+        proposalId: string;
+        payingDaoAccountId: string | null;
+      }) =>
+        proposalTimes.get(`${b.payingDaoAccountId ?? agencyDao}:${b.proposalId}`) ?? b.createdAt;
+      const billingRowsRaw = billingRowsRawAll.filter((b) => within(billedAt(b)));
 
       const clientNames = yield* Effect.promise(async () => {
         const ids = [...new Set(reported.map((e) => e.clientOrganizationId))];
@@ -273,6 +357,207 @@ export function createReportsService(
 
       const paidBillings = billingRows.filter((b) => b.status === "Approved");
 
+      const approvedTransfers =
+        agencyDao && subcontractorDao === undefined
+          ? yield* Effect.promise(() =>
+              db
+                .select()
+                .from(proposals)
+                .where(
+                  and(
+                    eq(proposals.daoAccountId, agencyDao),
+                    eq(proposals.kindType, "Transfer"),
+                    eq(proposals.status, "Approved"),
+                  ),
+                ),
+            )
+          : [];
+      const transferIds = [
+        ...approvedTransfers.map((t) => String(t.proposalId)),
+        ...pendingProposals.map((p) => String(p.id)),
+      ];
+      const linkedProposals =
+        transferIds.length > 0
+          ? yield* Effect.promise(() =>
+              db
+                .select({ proposalId: billings.proposalId, projectId: billings.projectId })
+                .from(billings)
+                .where(
+                  and(
+                    inArray(billings.proposalId, transferIds),
+                    or(
+                      eq(billings.payingDaoAccountId, agencyDao!),
+                      and(
+                        isNull(billings.payingDaoAccountId),
+                        inArray(
+                          billings.projectId,
+                          allProjects.map((p) => p.id),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            )
+          : [];
+      const linkedProject = new Map(linkedProposals.map((l) => [l.proposalId, l.projectId]));
+
+      const allAssignmentRows =
+        allProjects.length > 0
+          ? yield* Effect.promise(() =>
+              db
+                .select({
+                  projectId: projectContributors.projectId,
+                  nearAccount: projectContributors.nearAccount,
+                })
+                .from(projectContributors)
+                .where(
+                  inArray(
+                    projectContributors.projectId,
+                    allProjects.map((p) => p.id),
+                  ),
+                ),
+            )
+          : [];
+      const assignmentRows = allAssignmentRows.filter((r) => projectIds.includes(r.projectId));
+      const projectsOfBuilder = (nearAccount: string) => [
+        ...new Set(
+          allAssignmentRows.filter((r) => r.nearAccount === nearAccount).map((r) => r.projectId),
+        ),
+      ];
+      const nameOf = (nearAccount: string) => builderByNear.get(nearAccount) ?? nearAccount;
+      const projectRef = (pid: string) => {
+        const project = projectById.get(pid);
+        return { projectTitle: project?.title ?? pid, projectSlug: project?.slug ?? pid };
+      };
+
+      type Payout = {
+        paidAt: string;
+        daoAccountId: string;
+        proposalId: string;
+        nearAccount: string;
+        builderName: string;
+        tokenId: string;
+        amount: string;
+        note: string | null;
+        projectId: string | null;
+        projectTitle: string | null;
+        projectSlug: string | null;
+        attribution: PayoutAttribution;
+        sharedWith: string[];
+        status: "paid" | "pending";
+      };
+
+      const billedPayouts: Payout[] = paidBillings.map((b) => ({
+        paidAt: billedAt(b).toISOString(),
+        daoAccountId: b.payingDaoAccountId ?? agencyDao ?? "",
+        proposalId: b.proposalId,
+        nearAccount: b.nearAccount ?? "",
+        builderName: b.nearAccount ? nameOf(b.nearAccount) : "—",
+        tokenId: b.tokenId,
+        amount: b.amount,
+        note: b.note ?? null,
+        projectId: b.projectId,
+        ...projectRef(b.projectId),
+        attribution: "billing",
+        sharedWith: [],
+        status: "paid",
+      }));
+
+      const scopedToProjects = Boolean(input.engagementId || input.projectId);
+      const toPayout = (
+        t: {
+          proposalId: number;
+          daoAccountId: string;
+          receiver: string | null;
+          amount: string | null;
+          tokenId: string | null;
+          submissionTime: string;
+          description: string;
+        },
+        status: Payout["status"],
+      ): Payout[] => {
+        if (!t.receiver || !t.amount) return [];
+        const requestedAt = nanosToDate(t.submissionTime);
+        if (!requestedAt || !within(requestedAt)) return [];
+        const billedProject = linkedProject.get(String(t.proposalId));
+        const candidates = billedProject ? [billedProject] : projectsOfBuilder(t.receiver);
+        const inScope = candidates.filter((pid) => projectIds.includes(pid));
+        const only = candidates.length === 1 ? candidates[0]! : null;
+        if (scopedToProjects && (only ? !inScope.includes(only) : inScope.length === 0)) return [];
+        const attribution: PayoutAttribution = billedProject
+          ? "billing"
+          : only
+            ? "assignment"
+            : candidates.length > 1
+              ? "shared"
+              : "unassigned";
+        return [
+          {
+            paidAt: requestedAt.toISOString(),
+            daoAccountId: t.daoAccountId,
+            proposalId: String(t.proposalId),
+            nearAccount: t.receiver,
+            builderName: nameOf(t.receiver),
+            tokenId: t.tokenId || "near",
+            amount: t.amount,
+            note: proposalNote(t.description),
+            projectId: only,
+            ...(only ? projectRef(only) : { projectTitle: null, projectSlug: null }),
+            attribution,
+            sharedWith:
+              attribution === "shared"
+                ? candidates.map((pid) => projectRef(pid).projectTitle).sort()
+                : [],
+            status,
+          },
+        ];
+      };
+
+      const transferPayouts = approvedTransfers.flatMap((t) =>
+        linkedProject.has(String(t.proposalId))
+          ? []
+          : toPayout(
+              {
+                proposalId: t.proposalId,
+                daoAccountId: t.daoAccountId,
+                receiver: t.transferReceiverId,
+                amount: t.transferAmount,
+                tokenId: t.transferTokenId,
+                submissionTime: t.submissionTime,
+                description: t.description,
+              },
+              "paid",
+            ),
+      );
+      const pendingPayouts = pendingProposals.flatMap((p) =>
+        p.kind.type === "Transfer"
+          ? toPayout(
+              {
+                proposalId: p.id,
+                daoAccountId: agencyDao ?? "",
+                receiver: p.kind.receiverId,
+                amount: p.kind.amount,
+                tokenId: p.kind.tokenId,
+                submissionTime: p.submissionTime,
+                description: p.description,
+              },
+              "pending",
+            )
+          : [],
+      );
+
+      const payouts = [...billedPayouts, ...transferPayouts, ...pendingPayouts].sort(
+        (a, b) =>
+          b.paidAt.localeCompare(a.paidAt) ||
+          Number(b.proposalId) - Number(a.proposalId) ||
+          a.builderName.localeCompare(b.builderName),
+      );
+      const paidPayouts = payouts.filter((p) => p.status === "paid");
+      const attributed = paidPayouts.filter((p) => p.projectId !== null);
+      const unattributed = paidPayouts.filter((p) => p.projectId === null);
+      const pendingAttributed = pendingPayouts.filter((p) => p.projectId !== null);
+      const paidFor = (pid: string) => attributed.filter((p) => p.projectId === pid);
+
       const contributorStats = new Map<
         string,
         {
@@ -282,31 +567,18 @@ export function createReportsService(
           count: number;
         }
       >();
-      for (const b of paidBillings) {
-        if (!b.nearAccount) continue;
-        const existing = contributorStats.get(b.nearAccount) ?? {
-          nearAccount: b.nearAccount,
-          name: builderByNear.get(b.nearAccount) ?? b.nearAccount,
+      for (const p of paidPayouts) {
+        if (!p.nearAccount) continue;
+        const existing = contributorStats.get(p.nearAccount) ?? {
+          nearAccount: p.nearAccount,
+          name: p.builderName,
           billedRows: [] as Array<{ tokenId: string; amount: string }>,
           count: 0,
         };
-        existing.billedRows.push({ tokenId: b.tokenId, amount: b.amount });
+        existing.billedRows.push({ tokenId: p.tokenId, amount: p.amount });
         existing.count += 1;
-        contributorStats.set(b.nearAccount, existing);
+        contributorStats.set(p.nearAccount, existing);
       }
-
-      const assignmentRows =
-        projectIds.length > 0
-          ? yield* Effect.promise(() =>
-              db
-                .select({
-                  projectId: projectContributors.projectId,
-                  nearAccount: projectContributors.nearAccount,
-                })
-                .from(projectContributors)
-                .where(inArray(projectContributors.projectId, projectIds)),
-            )
-          : [];
       const buildersOf = (projectId: string) =>
         [
           ...new Set(
@@ -316,67 +588,7 @@ export function createReportsService(
           ),
         ].sort((a, b) => a.localeCompare(b));
 
-      const clientBreakdown: Array<{
-        clientName: string;
-        projectTitle: string;
-        projectSlug: string;
-        budgetByToken: ReturnType<typeof sumByToken>;
-        spentByToken: ReturnType<typeof sumByToken>;
-        builders: string[];
-      }> = [];
-
-      for (const engagement of reported) {
-        const clientName =
-          clientNames.get(engagement.clientOrganizationId) ?? engagement.clientOrganizationId;
-        const pids = links
-          .filter((l) => l.engagementId === engagement.id && projectIds.includes(l.projectId))
-          .map((l) => l.projectId);
-        for (const pid of pids) {
-          const project = projectById.get(pid);
-          clientBreakdown.push({
-            clientName,
-            projectTitle: project?.title ?? pid,
-            projectSlug: project?.slug ?? pid,
-            budgetByToken: sumByToken(
-              budgetRows.filter(
-                (b) =>
-                  b.projectId === pid &&
-                  (!ALLOCATION_PLAN_ENABLED || b.engagementId === engagement.id),
-              ),
-            ),
-            spentByToken: sumByToken(paidBillings.filter((b) => b.projectId === pid)),
-            builders: buildersOf(pid),
-          });
-        }
-      }
-
-      const projectBreakdown = projectIds
-        .map((pid) => {
-          const project = projectById.get(pid);
-          return {
-            projectTitle: project?.title ?? pid,
-            projectSlug: project?.slug ?? pid,
-            budgetByToken: sumByToken(budgetRows.filter((b) => b.projectId === pid)),
-            billedByToken: sumByToken(paidBillings.filter((b) => b.projectId === pid)),
-          };
-        })
-        .filter((p) =>
-          [...p.budgetByToken, ...p.billedByToken].some((t) => BigInt(t.amount) !== 0n),
-        )
-        .sort((a, b) => a.projectTitle.localeCompare(b.projectTitle));
-
-      const period =
-        input.startDate && input.endDate
-          ? `${input.startDate} – ${input.endDate}`
-          : input.startDate
-            ? `from ${input.startDate}`
-            : input.endDate
-              ? `through ${input.endDate}`
-              : "all time";
-
-      const scopedProject = input.projectId ? projectById.get(input.projectId) : undefined;
-
-      const deliveredWork =
+      const deliveredWorkRows =
         projectIds.length > 0 && subcontractorDao === undefined && scope.organizationId
           ? yield* Effect.promise(async () => {
               const rows = await db
@@ -399,6 +611,7 @@ export function createReportsService(
                 .map(({ request, workOrder }) => {
                   const project = projectById.get(workOrder.projectId);
                   return {
+                    projectId: workOrder.projectId,
                     workOrderCode: workOrder.code,
                     workOrderTitle: workOrder.title,
                     projectTitle: project?.title ?? workOrder.projectId,
@@ -426,12 +639,89 @@ export function createReportsService(
             })
           : [];
 
+      const dated = Boolean(agreement || input.startDate || input.endDate);
+      const activeIds = new Set([
+        ...projectIds.filter((pid) =>
+          sumByToken(budgetRows.filter((b) => b.projectId === pid)).some(
+            (t) => BigInt(t.amount) !== 0n,
+          ),
+        ),
+        ...billingRows.map((b) => b.projectId),
+        ...attributed.map((p) => p.projectId!),
+        ...pendingAttributed.map((p) => p.projectId!),
+        ...deliveredWorkRows.map((d) => d.projectId),
+      ]);
+      const reportedIds =
+        dated && !input.projectId ? projectIds.filter((id) => activeIds.has(id)) : projectIds;
+      const deliveredWork = deliveredWorkRows.map(({ projectId: _projectId, ...item }) => item);
+
+      const clientBreakdown: Array<{
+        clientName: string;
+        projectTitle: string;
+        projectSlug: string;
+        budgetByToken: ReturnType<typeof sumByToken>;
+        spentByToken: ReturnType<typeof sumByToken>;
+        builders: string[];
+      }> = [];
+
+      for (const engagement of reported) {
+        const clientName =
+          clientNames.get(engagement.clientOrganizationId) ?? engagement.clientOrganizationId;
+        const pids = links
+          .filter((l) => l.engagementId === engagement.id && reportedIds.includes(l.projectId))
+          .map((l) => l.projectId);
+        for (const pid of pids) {
+          const project = projectById.get(pid);
+          clientBreakdown.push({
+            clientName,
+            projectTitle: project?.title ?? pid,
+            projectSlug: project?.slug ?? pid,
+            budgetByToken: sumByToken(
+              budgetRows.filter(
+                (b) =>
+                  b.projectId === pid &&
+                  (!ALLOCATION_PLAN_ENABLED || b.engagementId === engagement.id),
+              ),
+            ),
+            spentByToken: sumByToken(paidFor(pid)),
+            builders: buildersOf(pid),
+          });
+        }
+      }
+
+      const projectBreakdown = reportedIds
+        .map((pid) => {
+          const project = projectById.get(pid);
+          return {
+            projectTitle: project?.title ?? pid,
+            projectSlug: project?.slug ?? pid,
+            budgetByToken: sumByToken(budgetRows.filter((b) => b.projectId === pid)),
+            billedByToken: sumByToken(paidFor(pid)),
+            builders: buildersOf(pid),
+          };
+        })
+        .sort((a, b) => a.projectTitle.localeCompare(b.projectTitle));
+
+      const period =
+        input.startDate && input.endDate
+          ? `${input.startDate} – ${input.endDate}`
+          : input.startDate
+            ? `from ${input.startDate}`
+            : input.endDate
+              ? `through ${input.endDate}`
+              : "all time";
+
+      const scopedProject = input.projectId ? projectById.get(input.projectId) : undefined;
+
       return {
         project: scopedProject ? { title: scopedProject.title, slug: scopedProject.slug } : null,
         overview: {
-          projectCount: projectIds.length,
+          projectCount: reportedIds.length,
           budgetByToken: sumByToken(budgetRows),
-          billedByToken: sumByToken(paidBillings),
+          billedByToken: sumByToken(attributed),
+          unattributedByToken: sumByToken(unattributed),
+          pendingByToken: sumByToken(pendingAttributed),
+          payoutSync: synced.payoutSync,
           period,
         },
         contributorStats: [...contributorStats.values()].map((s) => ({
@@ -442,6 +732,7 @@ export function createReportsService(
         })),
         projectBreakdown,
         clientBreakdown,
+        payouts: payouts.map(({ projectId: _projectId, ...payout }) => payout),
         deliveredWork,
         agreement: agreement
           ? {
@@ -543,6 +834,17 @@ export function createReportsService(
     generateSaved: (scope: AgencyScope, input: ReportInput, owner: ReportOwner) =>
       Effect.gen(function* () {
         const report = yield* generate(scope, input);
+        if (report.overview.payoutSync !== "complete") {
+          return yield* Effect.fail(
+            new ORPCError("BAD_REQUEST", {
+              message:
+                report.overview.payoutSync === "partial"
+                  ? "The DAO's payout history is still loading, so this report's totals are incomplete. Generate it again in a moment, then save."
+                  : "Couldn't reach the DAO to check its payouts, so this report's totals may be incomplete. Try again in a moment.",
+              data: { reason: "PAYOUT_HISTORY_INCOMPLETE" },
+            }),
+          );
+        }
         const id = crypto.randomUUID();
         yield* Effect.promise(() =>
           db.insert(reportSnapshots).values({

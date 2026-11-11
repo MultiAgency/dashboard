@@ -65,6 +65,7 @@ import {
   getProposalBond,
   getRoles,
   proposalsSince,
+  syncDaoProposals,
 } from "./services/sputnik";
 import { createTokensService } from "./services/tokens";
 import { createTreasuryService } from "./services/treasury";
@@ -204,13 +205,10 @@ const initializeServices = (
     const assignments = createAssignmentsService(db, directory, access, organizationDirectory);
     const budgets = createBudgetsService(db, directory);
     const billings = createBillingsService(db, directory, access);
-    const reports = createReportsService(
-      db,
-      directory,
-      plugins,
-      organizationDirectory,
+    const reports = createReportsService(db, directory, plugins, organizationDirectory, {
       notifications,
-    );
+      syncProposals: (daoAccountId) => syncDaoProposals(db, daoAccountId),
+    });
     const changeOrders = createChangeOrdersService({
       db,
       organizations: organizationDirectory,
