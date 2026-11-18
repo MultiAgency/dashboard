@@ -4,7 +4,6 @@ import {
   ArrowUpRightIcon,
   BuildingsIcon,
   CalendarCheckIcon,
-  FolderSimpleIcon,
   GithubLogoIcon,
   LightbulbIcon,
   ListChecksIcon,
@@ -16,7 +15,6 @@ import {
   WalletIcon,
   XLogoIcon,
 } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useRef } from "react";
 import trezuLogo from "@/assets/brand/trezu.svg";
@@ -31,26 +29,13 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
   Separator,
-  Skeleton,
 } from "@/components";
-import { LoadError } from "@/components/load-error";
 import { SectionHeader } from "@/components/page-header";
-import { useApiClient } from "@/lib/api";
-import { projectsListQueryOptions } from "@/lib/queries";
+import { WorkProjectList } from "@/components/work-project-list";
 import { getRepoUrl } from "@/lib/repo";
 import { cn } from "@/lib/utils";
+import { workDemoProjects } from "@/lib/work-demo-projects";
 import { Route as RootRoute } from "../__root";
 
 const DOT_CELL = 14;
@@ -358,13 +343,6 @@ const TEMPLATE = [
 ];
 
 export const Route = createFileRoute("/_public/")({
-  loader: async ({ context }) => {
-    await context.queryClient
-      .ensureQueryData(projectsListQueryOptions(context.apiClient))
-      .catch(() => null);
-
-    return null;
-  },
   head: () => ({
     meta: [
       { title: `${LANDING.name} — ${LANDING.tagline}` },
@@ -373,13 +351,6 @@ export const Route = createFileRoute("/_public/")({
   }),
   component: Landing,
 });
-
-type LandingProject = {
-  id: string;
-  slug: string;
-  title: string;
-  status: string;
-};
 
 function Landing() {
   const loaderData = RootRoute.useLoaderData();
@@ -637,82 +608,23 @@ function FeatureCard({
 }
 
 function ProjectsSection() {
-  const apiClient = useApiClient();
-  const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
-  const projects = (projectsQuery.data?.data ?? []) as LandingProject[];
-  const visibleProjects = projects.slice(0, 6);
-
   return (
     <section className="flex flex-col gap-6">
       <SectionHeader
         title="Our work"
         description="Projects we are building now."
         actions={
-          projects.length > 0 && (
-            <Button asChild variant="outline">
-              <Link to="/work">
-                Explore work
-                <ArrowRightIcon data-icon="inline-end" aria-hidden />
-              </Link>
-            </Button>
-          )
-        }
-      />
-      {projectsQuery.isLoading ? (
-        <div className="flex flex-col gap-2.5" aria-busy="true">
-          {[0, 1, 2].map((i) => (
-            <ProjectRowSkeleton key={i} />
-          ))}
-        </div>
-      ) : projectsQuery.isError ? (
-        <LoadError title="Could not load Projects" onRetry={() => projectsQuery.refetch()} />
-      ) : projects.length === 0 ? (
-        <Empty variant="outline">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <FolderSimpleIcon aria-hidden />
-            </EmptyMedia>
-            <EmptyTitle>No public Projects yet</EmptyTitle>
-            <EmptyDescription>Check back soon, or apply to contribute.</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <ItemGroup>
-          {visibleProjects.map((p) => (
-            <ProjectRow key={p.id} project={p} />
-          ))}
-        </ItemGroup>
-      )}
-    </section>
-  );
-}
-
-function ProjectRow({ project }: { project: LandingProject }) {
-  return (
-    <li>
-      <Item variant="outline" size="sm">
-        <ItemContent className="min-w-0">
-          <ItemTitle className="break-words">
-            <h3>{project.title}</h3>
-          </ItemTitle>
-          <ItemDescription className="truncate">@{project.slug}</ItemDescription>
-        </ItemContent>
-        <ItemActions>
-          <Badge variant="outline">{project.status}</Badge>
-          <Button asChild size="sm" variant="outline">
-            <Link to="/work/$slug" params={{ slug: project.slug }}>
-              Open
+          <Button asChild variant="outline">
+            <Link to="/work">
+              Explore work
               <ArrowRightIcon data-icon="inline-end" aria-hidden />
             </Link>
           </Button>
-        </ItemActions>
-      </Item>
-    </li>
+        }
+      />
+      <WorkProjectList projects={workDemoProjects.slice(0, 6)} heading="h3" />
+    </section>
   );
-}
-
-function ProjectRowSkeleton() {
-  return <Skeleton className="h-14 w-full" />;
 }
 
 function StackCard({
