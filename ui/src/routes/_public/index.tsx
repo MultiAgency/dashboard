@@ -1,10 +1,10 @@
 import type { Icon } from "@phosphor-icons/react";
 import {
+  ArrowDownIcon,
   ArrowRightIcon,
   ArrowUpRightIcon,
   BuildingsIcon,
   CalendarCheckIcon,
-  FolderSimpleIcon,
   GithubLogoIcon,
   LightbulbIcon,
   ListChecksIcon,
@@ -16,265 +16,32 @@ import {
   WalletIcon,
   XLogoIcon,
 } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type MotionStyle, motion, useScroll, useTransform } from "framer-motion";
+import { type ReactNode, useRef, useSyncExternalStore } from "react";
 import trezuLogo from "@/assets/brand/trezu.svg";
 import trezuSymbol from "@/assets/brand/trezu-symbol.svg";
-import {
-  Badge,
-  Button,
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-  Separator,
-  Skeleton,
-} from "@/components";
-import { LoadError } from "@/components/load-error";
-import { SectionHeader } from "@/components/page-header";
-import { useApiClient } from "@/lib/api";
-import { projectsListQueryOptions } from "@/lib/queries";
+import { DiffusionField } from "@/components/landing/diffusion-field";
+import ScrollStack, { ScrollStackItem } from "@/components/react-bits/scroll-stack";
+import BlurText from "@/components/react-bits/text/BlurText";
+import DecryptedText from "@/components/react-bits/text/DecryptedText";
 import { getRepoUrl } from "@/lib/repo";
-import { cn } from "@/lib/utils";
+import { workDemoProjects } from "@/lib/work-demo-projects";
 import { Route as RootRoute } from "../__root";
+import "@/components/landing/landing.css";
 
-const DOT_CELL = 14;
-const DOT_LEVELS = 6;
-const FIELD_SPEED = 0.00018;
-const RIDGE_AT = 0.9;
-const RIDGE_WIDTH = 0.035;
+const description =
+  "MultiAgency builds open-source software on NEAR. Clients and builders share the plan, track the work, and follow every payout on chain.";
 
-function hash(x: number, y: number): number {
-  const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-  return h - Math.floor(h);
-}
-
-function smoothNoise(x: number, y: number): number {
-  const xi = Math.floor(x);
-  const yi = Math.floor(y);
-  const xf = x - xi;
-  const yf = y - yi;
-  const u = xf * xf * (3 - 2 * xf);
-  const v = yf * yf * (3 - 2 * yf);
-  const a = hash(xi, yi);
-  const b = hash(xi + 1, yi);
-  const c = hash(xi, yi + 1);
-  const d = hash(xi + 1, yi + 1);
-  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
-}
-
-function flowField(x: number, y: number, t: number): number {
-  const warpX = smoothNoise(x * 0.6 + t * 0.7, y * 0.6 - t * 0.4);
-  const warpY = smoothNoise(x * 0.6 - t * 0.5 + 5.2, y * 0.6 + t * 0.6 + 1.3);
-  const base = smoothNoise(x + warpX * 1.6 + t, y + warpY * 1.6 - t * 0.6);
-  const detail = smoothNoise(x * 2.1 - t * 1.3, y * 2.1 + t * 0.9);
-  return base * 0.75 + detail * 0.25;
-}
-
-function DotField({ className }: { className?: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    const probe = document.createElement("canvas");
-    probe.width = probe.height = 1;
-    const probeCtx = probe.getContext("2d", { willReadFrequently: true });
-    const readToken = (varName: string): string => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-      if (!probeCtx || !raw) return "rgb(0 0 0)";
-      probeCtx.clearRect(0, 0, 1, 1);
-      probeCtx.fillStyle = raw;
-      probeCtx.fillRect(0, 0, 1, 1);
-      const [r, g, b] = probeCtx.getImageData(0, 0, 1, 1).data;
-      return `rgb(${r} ${g} ${b})`;
-    };
-    let dotColor = readToken("--muted-foreground");
-    let peakColor = readToken("--primary");
-
-    let dpr = 1;
-    let cols = 0;
-    let rows = 0;
-    let cell = DOT_CELL;
-    let mask = new Float32Array(0);
-    const pointer = { x: -1, y: -1, strength: 0, target: 0 };
-
-    const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const { width, height } = canvas.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.round(width * dpr));
-      canvas.height = Math.max(1, Math.round(height * dpr));
-      cell = DOT_CELL * dpr;
-      cols = Math.ceil(canvas.width / cell);
-      rows = Math.ceil(canvas.height / cell);
-      mask = new Float32Array(cols * rows);
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const nx = c / Math.max(1, cols - 1);
-          const ny = r / Math.max(1, rows - 1);
-          const textFade = Math.min(1, Math.max(0, (nx - 0.18) / 0.5));
-          const edgeX = Math.min(nx, 1 - nx) / 0.05;
-          const edgeY = Math.min(ny, 1 - ny) / 0.1;
-          const edge = Math.min(1, edgeX, edgeY);
-          mask[r * cols + c] = textFade * edge * edge * (3 - 2 * edge);
-        }
-      }
-      if (!running) render(performance.now());
-    };
-
-    const buckets: number[][] = Array.from({ length: DOT_LEVELS }, () => []);
-    const ridges: number[] = [];
-    const render = (now: number) => {
-      const t = reducedMotion ? 12 : now * FIELD_SPEED;
-      pointer.strength += (pointer.target - pointer.strength) * 0.08;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (const bucket of buckets) bucket.length = 0;
-      ridges.length = 0;
-      const radius = 9;
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const m = mask[r * cols + c]!;
-          if (m <= 0.01) continue;
-          let value = flowField(c * 0.085, r * 0.11, t);
-          value = Math.min(1.2, Math.max(0, (value - 0.34) / 0.42));
-          if (pointer.strength > 0.01) {
-            const dx = c - pointer.x;
-            const dy = r - pointer.y;
-            const falloff = Math.max(0, 1 - Math.sqrt(dx * dx + dy * dy) / radius);
-            value += falloff * falloff * 0.55 * pointer.strength;
-          }
-          const vm = value * m;
-          if (Math.abs(vm - RIDGE_AT) < RIDGE_WIDTH) {
-            ridges.push(c, r);
-            continue;
-          }
-          const level = Math.floor(Math.min(0.999, vm * 0.84) * DOT_LEVELS);
-          if (level > 0) buckets[level]!.push(c, r);
-        }
-      }
-      ctx.fillStyle = dotColor;
-      for (let level = 1; level < DOT_LEVELS; level++) {
-        const bucket = buckets[level]!;
-        if (bucket.length === 0) continue;
-        const size = Math.max(dpr, cell * (0.14 + 0.46 * (level / (DOT_LEVELS - 1))));
-        const offset = (cell - size) / 2;
-        ctx.globalAlpha = 0.1 + 0.12 * level;
-        for (let i = 0; i < bucket.length; i += 2) {
-          ctx.fillRect(bucket[i]! * cell + offset, bucket[i + 1]! * cell + offset, size, size);
-        }
-      }
-      if (ridges.length > 0) {
-        const size = cell * 0.5;
-        const offset = (cell - size) / 2;
-        ctx.fillStyle = peakColor;
-        ctx.globalAlpha = 0.95;
-        for (let i = 0; i < ridges.length; i += 2) {
-          ctx.fillRect(ridges[i]! * cell + offset, ridges[i + 1]! * cell + offset, size, size);
-        }
-      }
-      ctx.globalAlpha = 1;
-    };
-
-    const themeObserver = new MutationObserver(() => {
-      dotColor = readToken("--muted-foreground");
-      peakColor = readToken("--primary");
-      if (!running) render(performance.now());
-    });
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "style", "data-theme"],
-    });
-
-    const host = canvas.parentElement ?? canvas;
-    const onPointerMove = (event: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      pointer.x = ((event.clientX - rect.left) * dpr) / cell;
-      pointer.y = ((event.clientY - rect.top) * dpr) / cell;
-      pointer.target = 1;
-    };
-    const onPointerLeave = () => {
-      pointer.target = 0;
-    };
-
-    let running = false;
-    let visible = true;
-    let rafId = 0;
-    const tick = (now: number) => {
-      render(now);
-      rafId = requestAnimationFrame(tick);
-    };
-    const sync = () => {
-      const shouldRun = !reducedMotion && visible && document.visibilityState === "visible";
-      if (shouldRun && !running) {
-        running = true;
-        rafId = requestAnimationFrame(tick);
-      } else if (!shouldRun && running) {
-        running = false;
-        cancelAnimationFrame(rafId);
-      }
-    };
-
-    resize();
-    const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(canvas);
-    const intersectionObserver = new IntersectionObserver(([entry]) => {
-      visible = entry?.isIntersecting ?? true;
-      sync();
-    });
-    intersectionObserver.observe(canvas);
-    document.addEventListener("visibilitychange", sync);
-    if (!reducedMotion) {
-      host.addEventListener("pointermove", onPointerMove);
-      host.addEventListener("pointerleave", onPointerLeave);
-    }
-    sync();
-
-    return () => {
-      running = false;
-      cancelAnimationFrame(rafId);
-      themeObserver.disconnect();
-      resizeObserver.disconnect();
-      intersectionObserver.disconnect();
-      document.removeEventListener("visibilitychange", sync);
-      host.removeEventListener("pointermove", onPointerMove);
-      host.removeEventListener("pointerleave", onPointerLeave);
-    };
-  }, []);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden
-      className={cn(className ?? "pointer-events-none absolute inset-0 size-full")}
-    />
-  );
-}
-
-const LANDING = {
-  name: "MultiAgency",
-  tagline: "Open books for agency work",
-  description:
-    "Agencies run transparent client work on chain. Clients see and steer where their money goes.",
-};
+export const Route = createFileRoute("/_public/")({
+  head: () => ({
+    meta: [
+      { title: "MultiAgency — Open books for agency work" },
+      { name: "description", content: description },
+    ],
+  }),
+  component: Landing,
+});
 
 type Feature = { icon: Icon; title: string; body: string };
 
@@ -334,424 +101,377 @@ const FOR_AGENCIES: Feature[] = [
   },
 ];
 
-const STEPS = [
-  { title: "Create an Organization", body: "Your Agency's home for members, roles and settings." },
+const audiences = [
+  { name: "For clients", heading: "Steer the work.", features: FOR_CLIENTS },
+  { name: "For agencies", heading: "Run the engagement.", features: FOR_AGENCIES },
+];
+
+const selected = [
   {
-    title: "Start an Engagement",
-    body: "Invite a Client and share the Projects you work on together.",
+    slug: "pingpay",
+    kind: "Payments",
+    name: "PingPay",
+    note: "One checkout link for payments across chains.",
   },
   {
-    title: "Allocate budgets",
-    body: "Record each Project's budget for the period you agreed with the Client.",
+    slug: "agent-connect",
+    kind: "Developer tools",
+    name: "Agent Connect",
+    note: "Wallets for AI agents, with spending rules set by their owners.",
   },
   {
-    title: "Work and bill on chain",
-    body: "Each Billing is a transfer proposal from the Agency DAO.",
+    slug: "city-nodes",
+    kind: "Community",
+    name: "City Nodes",
+    note: "A way to find local NEAR chapters and stake with a city’s validators.",
   },
 ];
 
-const TEMPLATE = [
-  { label: "Website", note: "Landing, work and contact pages" },
-  { label: "Treasury", note: "Payouts, permissions and policies" },
-  { label: "Projects", note: "Live work, teams and budgets" },
-  { label: "Dashboard", note: "Clients, contributors and billing" },
-];
-
-export const Route = createFileRoute("/_public/")({
-  loader: async ({ context }) => {
-    await context.queryClient
-      .ensureQueryData(projectsListQueryOptions(context.apiClient))
-      .catch(() => null);
-
-    return null;
-  },
-  head: () => ({
-    meta: [
-      { title: `${LANDING.name} — ${LANDING.tagline}` },
-      { name: "description", content: LANDING.description },
-    ],
-  }),
-  component: Landing,
-});
-
-type LandingProject = {
-  id: string;
-  slug: string;
-  title: string;
-  status: string;
-};
-
-function Landing() {
-  const loaderData = RootRoute.useLoaderData();
-  const assetsUrl = loaderData?.runtimeConfig?.assetsUrl ?? "";
-  const repositoryUrl = getRepoUrl();
-
+const motionQuery = "(prefers-reduced-motion: no-preference)";
+function subscribeMotion(update: () => void) {
+  const query = window.matchMedia(motionQuery);
+  query.addEventListener("change", update);
+  return () => query.removeEventListener("change", update);
+}
+function usePageMotion() {
+  return useSyncExternalStore(
+    subscribeMotion,
+    () => window.matchMedia(motionQuery).matches,
+    () => false,
+  );
+}
+// Measure the stationary wrapper; only its children move as it enters the viewport.
+function ScrollScene({ className, children }: { className: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const animate = usePageMotion();
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start 98%", "start 23%"] });
+  const style = { "--ma-entry": scrollYProgress } as MotionStyle;
   return (
-    <div className="flex animate-fade-in flex-col gap-16">
-      <Hero />
+    <motion.div ref={ref} className={className} style={animate ? style : undefined}>
+      {children}
+    </motion.div>
+  );
+}
+function ScrollTitle({ text, decrypt = false }: { text: string; decrypt?: boolean }) {
+  const animate = usePageMotion();
+  if (!animate) return text;
+  if (decrypt)
+    return (
+      <DecryptedText
+        text={text}
+        animateOn="view"
+        sequential
+        speed={28}
+        maxIterations={5}
+        scrambleColor="var(--gold)"
+      />
+    );
+  return (
+    <BlurText
+      text={text}
+      className="ma-reveal"
+      direction="bottom"
+      trigger="view"
+      delay={50}
+      stepDuration={0.22}
+      threshold={0.18}
+      animationFrom={{ opacity: 0.78, y: 16, filter: "blur(1.5px)" }}
+      animationTo={[{ opacity: 1, y: 0, filter: "blur(0px)" }]}
+    />
+  );
+}
 
-      <section aria-labelledby="audiences" className="flex flex-col gap-6">
-        <SectionHeader
-          id="audiences"
-          title="One workspace, both sides of the work"
-          description="Clients and Agencies share the same Projects, plans and Billings."
-        />
-        <div className="grid gap-4 md:grid-cols-2">
-          <FeatureCard
-            title="For Clients"
-            description="See and steer where your money goes."
-            features={FOR_CLIENTS}
-          />
-          <FeatureCard
-            title="For Agencies"
-            description="Run transparent client work from one place."
-            features={FOR_AGENCIES}
+function ProjectSpread({
+  slug,
+  kind,
+  name,
+  note,
+  image,
+}: (typeof selected)[number] & { image: string }) {
+  const spread = useRef<HTMLDivElement>(null);
+  const animate = usePageMotion();
+  const { scrollYProgress } = useScroll({ target: spread, offset: ["start end", "start 12%"] });
+  const scale = useTransform(scrollYProgress, [0, 1], [1.48, 1.02]);
+  const y = useTransform(scrollYProgress, [0, 1], ["9%", "0%"]);
+  return (
+    <div ref={spread} className="ma-spread">
+      <Link to="/work/$slug" params={{ slug }} className="ma-project">
+        <div className="ma-project-info">
+          <p className="ma-label">{kind}</p>
+          <h3>{name}</h3>
+          <p>{note}</p>
+          <span className="ma-project-action">
+            View project <ArrowUpRightIcon aria-hidden />
+          </span>
+        </div>
+        <div className="ma-preview">
+          <motion.img
+            src={image}
+            alt=""
+            width="1280"
+            height="800"
+            loading="lazy"
+            style={animate ? { scale, y } : undefined}
           />
         </div>
-      </section>
-
-      <section className="flex flex-col gap-6">
-        <SectionHeader
-          title="How it works"
-          description="Four steps from sign-up to verifiable payouts."
-        />
-        <ol className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {STEPS.map((step, index) => (
-            <li key={step.title} className="flex">
-              <Card size="sm" className="w-full">
-                <CardHeader>
-                  <CardDescription>Step {index + 1}</CardDescription>
-                  <CardTitle>
-                    <h3>{step.title}</h3>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-xs/relaxed text-muted-foreground">{step.body}</p>
-                </CardContent>
-              </Card>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="flex flex-col gap-6">
-        <SectionHeader
-          title="Open books"
-          description="Billings are DAO transfer proposals, so every payout is verifiable on chain. Every Client of a Project sees its Billings."
-          actions={
-            <Button asChild variant="outline">
-              <Link to="/treasury">
-                View treasury
-                <ArrowRightIcon data-icon="inline-end" aria-hidden />
-              </Link>
-            </Button>
-          }
-        />
-        <div className="grid gap-4 md:grid-cols-2">
-          <StackCard
-            label="Treasury"
-            tag="On chain"
-            logo={
-              <>
-                <img src={trezuSymbol} alt="" aria-hidden="true" className="size-7 shrink-0" />
-                <img src={trezuLogo} alt="Trezu" className="h-6 w-auto dark:invert" />
-              </>
-            }
-            body="Manage your team's capital from a single dashboard without giving up your keys."
-            url="https://trezu.app/"
-            host="trezu.app"
-          />
-          <StackCard
-            label="Bounties"
-            tag="Live listings"
-            logo={
-              <img
-                src={`${assetsUrl}/static/svg/nearn.svg`}
-                alt="NEARN"
-                className="h-7 w-auto dark:invert"
-              />
-            }
-            body="NEARN connects sponsors with skilled contributors for bounties, projects and tasks in the NEAR ecosystem."
-            url="https://nearn.io/"
-            host="nearn.io"
-          />
-        </div>
-      </section>
-
-      <ProjectsSection />
-
-      <section className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              <h2>For contributors</h2>
-            </CardTitle>
-            <CardDescription>
-              Work assigned to you shows up in My work, and you get paid through DAO proposals.
-            </CardDescription>
-          </CardHeader>
-          <CardFooter className="mt-auto flex-wrap gap-2">
-            <Button asChild>
-              <Link to="/apply">
-                Apply to contribute
-                <ArrowRightIcon data-icon="inline-end" aria-hidden />
-              </Link>
-            </Button>
-            <Button asChild variant="ghost">
-              <Link to="/dashboard">My work</Link>
-            </Button>
-          </CardFooter>
-        </Card>
-
-        <Card variant="highlight">
-          <CardHeader>
-            <CardTitle>
-              <h2>Launch your own Agency</h2>
-            </CardTitle>
-            <CardDescription>
-              Run your own Organization on the same open-source template.
-            </CardDescription>
-            <CardAction>
-              <Badge variant="secondary">Coming soon</Badge>
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            <ul className="flex flex-col gap-2">
-              {TEMPLATE.map((item) => (
-                <li key={item.label} className="flex flex-wrap items-baseline gap-x-2 text-xs">
-                  <span className="font-medium">{item.label}</span>
-                  <span className="text-muted-foreground">{item.note}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-          <CardFooter className="mt-auto">
-            <Button asChild variant="outline">
-              <Link to="/register">
-                Register interest
-                <ArrowRightIcon data-icon="inline-end" aria-hidden />
-              </Link>
-            </Button>
-          </CardFooter>
-        </Card>
-      </section>
-
-      <footer className="flex flex-col gap-6">
-        <Separator />
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <span className="text-xs text-muted-foreground">{LANDING.name}</span>
-          <div className="flex items-center gap-1">
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/docs">Docs</Link>
-            </Button>
-            <Button asChild variant="ghost" size="icon-sm">
-              <a href={repositoryUrl} target="_blank" rel="noopener noreferrer" aria-label="GitHub">
-                <GithubLogoIcon aria-hidden />
-              </a>
-            </Button>
-            <Button asChild variant="ghost" size="icon-sm">
-              <a
-                href="https://x.com/_multiagency"
-                target="_blank"
-                rel="me noopener noreferrer"
-                aria-label="X"
-              >
-                <XLogoIcon aria-hidden />
-              </a>
-            </Button>
-          </div>
-        </div>
-      </footer>
+      </Link>
     </div>
   );
 }
 
-function Hero() {
+function SelectedWork() {
   return (
-    <section className="relative flex min-h-96 flex-col justify-center overflow-hidden border bg-background px-6 py-16 sm:px-10">
-      <DotField />
-      <div className="pointer-events-none absolute inset-0 bg-linear-to-r from-background via-background/80 to-background/10" />
-      <div className="relative flex max-w-2xl flex-col items-start gap-6">
-        <Badge variant="outline">Open books · Open source · Open doors</Badge>
-        <div className="flex flex-col gap-3">
-          <h1 className="font-heading text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-            {LANDING.name}
-          </h1>
-          <p className="max-w-xl text-base text-pretty text-muted-foreground sm:text-lg">
-            {LANDING.description}
-          </p>
+    <section id="selected-work" className="ma-work ma-section" aria-labelledby="ma-work-title">
+      <div className="ma-section-head">
+        <div>
+          <h2 id="ma-work-title">
+            <ScrollTitle text="Portfolio" decrypt />
+            <span className="ma-stop">.</span>
+          </h2>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild size="lg">
-            <Link to="/sign-in">
-              Get started
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
-            </Link>
-          </Button>
-          <Button asChild size="lg" variant="outline">
-            <Link to="/work">Explore work</Link>
-          </Button>
-          <Button asChild size="lg" variant="outline">
-            <Link to="/contact">Hire us</Link>
-          </Button>
+        <Link className="ma-text-link" to="/work">
+          Explore the Work page <ArrowRightIcon />
+        </Link>
+      </div>
+      <ScrollStack
+        className="ma-portfolio-stack"
+        useWindowScroll
+        smoothScroll={false}
+        snap={false}
+        stackPosition={74}
+        itemStackDistance={14}
+        itemDistance={64}
+        itemScale={0.1}
+        baseScale={0.8}
+        dimAmount={0.24}
+        holdDistance={32}
+      >
+        {selected.map(({ slug, kind, name, note }) => {
+          const project = workDemoProjects.find((item) => item.slug === slug);
+          if (!project) return null;
+          return (
+            <ScrollStackItem key={slug} itemClassName={`ma-poster ma-poster-${slug}`}>
+              <ProjectSpread
+                slug={slug}
+                kind={kind}
+                name={name}
+                note={note}
+                image={project.preview.image}
+              />
+            </ScrollStackItem>
+          );
+        })}
+      </ScrollStack>
+      <h3 className="ma-archive-title">More projects</h3>
+      <ul className="ma-project-index" aria-label="More projects">
+        {workDemoProjects
+          .filter((project) => !selected.some((item) => item.slug === project.slug))
+          .map((project) => (
+            <li key={project.slug}>
+              <Link to="/work/$slug" params={{ slug: project.slug }}>
+                {project.title}
+                <ArrowUpRightIcon aria-hidden />
+              </Link>
+            </li>
+          ))}
+      </ul>
+    </section>
+  );
+}
+
+function Workspace() {
+  return (
+    <section
+      id="workspace"
+      className="ma-section ma-workspace"
+      aria-labelledby="ma-workspace-title"
+    >
+      <div className="ma-section-head">
+        <div>
+          <p className="ma-label">The workspace</p>
+          <h2 id="ma-workspace-title">
+            <ScrollTitle text="Both sides of the work." />
+          </h2>
         </div>
+        <Link to="/sign-in" className="ma-text-link">
+          Enter the workspace <ArrowRightIcon />
+        </Link>
+      </div>
+      <div className="ma-audiences">
+        {audiences.map(({ name, heading, features }) => (
+          <ScrollScene className="ma-leaf" key={name}>
+            <article className="ma-perspective">
+              <p className="ma-label">{name}</p>
+              <h3>{heading}</h3>
+              <dl>
+                {features.map(({ icon: FeatureIcon, title, body }) => (
+                  <div key={title}>
+                    <dt>
+                      <FeatureIcon aria-hidden />
+                      {title}
+                    </dt>
+                    <dd>{body}</dd>
+                  </div>
+                ))}
+              </dl>
+            </article>
+          </ScrollScene>
+        ))}
       </div>
     </section>
   );
 }
 
-function FeatureCard({
-  title,
-  description,
-  features,
-}: {
-  title: string;
-  description: string;
-  features: Feature[];
-}) {
+function LandingHero() {
+  const track = useRef<HTMLElement>(null);
+  const animate = usePageMotion();
+  const { scrollYProgress } = useScroll({ target: track, offset: ["start start", "end start"] });
+  const scale = useTransform(scrollYProgress, [0, 0.57], [1, 1.42]);
+  const y = useTransform(scrollYProgress, [0, 0.57], ["0%", "-20%"]);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h3>{title}</h3>
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ul className="flex flex-col gap-4">
-          {features.map(({ icon: FeatureIcon, title: featureTitle, body }) => (
-            <li key={featureTitle} className="flex items-start gap-3">
-              <span className="flex size-8 shrink-0 items-center justify-center bg-muted">
-                <FeatureIcon aria-hidden className="size-4 text-muted-foreground" />
-              </span>
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-xs font-medium">{featureTitle}</span>
-                <span className="text-xs/relaxed text-muted-foreground">{body}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ProjectsSection() {
-  const apiClient = useApiClient();
-  const projectsQuery = useQuery(projectsListQueryOptions(apiClient));
-  const projects = (projectsQuery.data?.data ?? []) as LandingProject[];
-  const visibleProjects = projects.slice(0, 6);
-
-  return (
-    <section className="flex flex-col gap-6">
-      <SectionHeader
-        title="Our work"
-        description="Projects we are building now."
-        actions={
-          projects.length > 0 && (
-            <Button asChild variant="outline">
-              <Link to="/work">
-                Explore work
-                <ArrowRightIcon data-icon="inline-end" aria-hidden />
+    <section ref={track} className="ma-hero" aria-labelledby="ma-title">
+      <div className="ma-hero-stage">
+        <div className="ma-hero-body">
+          <div className="ma-hero-copy">
+            <p className="ma-label ma-signal">Open-source software agency · NEAR ecosystem</p>
+            <motion.h1 id="ma-title" style={animate ? { scale, y, originX: 0 } : undefined}>
+              MultiAgency
+            </motion.h1>
+            <h2 className="ma-hero-line">Open books for agency work.</h2>
+            <p className="ma-intro">
+              We build software on NEAR. From the first brief to the final payout, our clients can
+              see what’s being built and where their money goes.
+            </p>
+            <div className="ma-actions">
+              <Link className="ma-button" to="/contact">
+                Hire us <ArrowUpRightIcon />
               </Link>
-            </Button>
-          )
-        }
-      />
-      {projectsQuery.isLoading ? (
-        <div className="flex flex-col gap-2.5" aria-busy="true">
-          {[0, 1, 2].map((i) => (
-            <ProjectRowSkeleton key={i} />
-          ))}
+              <a className="ma-text-link" href="#selected-work">
+                Explore our work <ArrowDownIcon />
+              </a>
+            </div>
+          </div>
         </div>
-      ) : projectsQuery.isError ? (
-        <LoadError title="Could not load Projects" onRetry={() => projectsQuery.refetch()} />
-      ) : projects.length === 0 ? (
-        <Empty variant="outline">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <FolderSimpleIcon aria-hidden />
-            </EmptyMedia>
-            <EmptyTitle>No public Projects yet</EmptyTitle>
-            <EmptyDescription>Check back soon, or apply to contribute.</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <ItemGroup>
-          {visibleProjects.map((p) => (
-            <ProjectRow key={p.id} project={p} />
-          ))}
-        </ItemGroup>
-      )}
+        <nav aria-label="On this page" className="ma-contents">
+          <a href="#workspace">
+            The workspace <ArrowDownIcon />
+          </a>
+          <a href="#open-books">
+            Open books <ArrowDownIcon />
+          </a>
+          <a href="#selected-work">
+            Portfolio <ArrowDownIcon />
+          </a>
+        </nav>
+      </div>
     </section>
   );
 }
 
-function ProjectRow({ project }: { project: LandingProject }) {
+function Landing() {
+  const assetsUrl = RootRoute.useLoaderData()?.runtimeConfig?.assetsUrl ?? "";
   return (
-    <li>
-      <Item variant="outline" size="sm">
-        <ItemContent className="min-w-0">
-          <ItemTitle className="break-words">
-            <h3>{project.title}</h3>
-          </ItemTitle>
-          <ItemDescription className="truncate">@{project.slug}</ItemDescription>
-        </ItemContent>
-        <ItemActions>
-          <Badge variant="outline">{project.status}</Badge>
-          <Button asChild size="sm" variant="outline">
-            <Link to="/work/$slug" params={{ slug: project.slug }}>
-              Open
-              <ArrowRightIcon data-icon="inline-end" aria-hidden />
+    <div className="ma-landing">
+      <DiffusionField />
+      <LandingHero />
+      <Workspace />
+      <section id="open-books" className="ma-section ma-books" aria-labelledby="ma-books-title">
+        <div className="ma-ledger">
+          <div>
+            <p className="ma-label">How we work</p>
+            <h2 id="ma-books-title">
+              <ScrollTitle text="Open books" decrypt />
+              <span className="ma-stop">.</span>
+            </h2>
+            <ScrollScene className="ma-payment-sequence">
+              <ol className="ma-flow">
+                <li>
+                  <strong>Engagement</strong>
+                  <span>Invite a client into a shared workspace.</span>
+                </li>
+                <li>
+                  <strong>Allocation</strong>
+                  <span>Agree a budget for each project.</span>
+                </li>
+                <li>
+                  <strong>Payout</strong>
+                  <span>Verify each billing through its DAO transfer proposal.</span>
+                </li>
+              </ol>
+            </ScrollScene>
+            <Link className="ma-text-link" to="/treasury">
+              View the treasury <ArrowRightIcon />
             </Link>
-          </Button>
-        </ItemActions>
-      </Item>
-    </li>
-  );
-}
-
-function ProjectRowSkeleton() {
-  return <Skeleton className="h-14 w-full" />;
-}
-
-function StackCard({
-  label,
-  tag,
-  logo,
-  body,
-  url,
-  host,
-}: {
-  label: string;
-  tag: string;
-  logo: ReactNode;
-  body: string;
-  url: string;
-  host: string;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardDescription>{label}</CardDescription>
-        <CardTitle>
-          <h3 className="flex h-8 items-center gap-2">{logo}</h3>
-        </CardTitle>
-        <CardAction>
-          <Badge variant="outline">{tag}</Badge>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        <p className="text-xs/relaxed text-muted-foreground">{body}</p>
-      </CardContent>
-      <CardFooter className="mt-auto">
-        <Button asChild variant="outline" className="w-full">
-          <a href={url} target="_blank" rel="noopener noreferrer">
-            {host}
-            <ArrowUpRightIcon data-icon="inline-end" aria-hidden />
+          </div>
+          <div className="ma-partners">
+            <a href="https://trezu.app/" target="_blank" rel="noreferrer">
+              <div>
+                <p className="ma-label">Treasury</p>
+                <h3 className="ma-logo">
+                  <img src={trezuSymbol} alt="" />
+                  <img src={trezuLogo} alt="Trezu" />
+                </h3>
+                <p>Manage payouts and permissions while keeping custody of your funds.</p>
+              </div>
+              <ArrowUpRightIcon />
+            </a>
+            <a href="https://nearn.io/" target="_blank" rel="noreferrer">
+              <div>
+                <p className="ma-label">Bounties</p>
+                <h3 className="ma-logo">
+                  <img src={`${assetsUrl}/static/svg/nearn.svg`} alt="NEARN" />
+                </h3>
+                <p>Find open bounties, projects, and paid tasks across the NEAR ecosystem.</p>
+              </div>
+              <ArrowUpRightIcon />
+            </a>
+          </div>
+        </div>
+      </section>
+      <section className="ma-invite" aria-labelledby="ma-invite-title">
+        <ScrollScene className="ma-invite-copy">
+          <p className="ma-label">Work with us</p>
+          <h2 id="ma-invite-title">
+            <span className="ma-brief-phrase">Bring us</span>{" "}
+            <span className="ma-brief-phrase">your brief.</span>
+          </h2>
+          <Link className="ma-button" to="/contact">
+            Tell us about your project <ArrowUpRightIcon />
+          </Link>
+        </ScrollScene>
+        <div className="ma-join">
+          <div>
+            <h3>Join as a contributor</h3>
+            <p>Take on project work and get paid through the agency DAO.</p>
+            <Link to="/apply">
+              Apply to contribute <ArrowUpRightIcon />
+            </Link>
+            <Link to="/dashboard">
+              My work <ArrowRightIcon />
+            </Link>
+          </div>
+          <div>
+            <h3>Launch your own agency</h3>
+            <p>Register your interest in the open-source agency template.</p>
+            <Link to="/register">
+              Register interest <ArrowUpRightIcon />
+            </Link>
+          </div>
+        </div>
+      </section>
+      <SelectedWork />
+      <footer className="ma-footer">
+        <span>MultiAgency</span>
+        <nav aria-label="Resources">
+          <Link to="/docs">Docs</Link>
+          <a href={getRepoUrl()} target="_blank" rel="noreferrer">
+            <GithubLogoIcon /> GitHub
           </a>
-        </Button>
-      </CardFooter>
-    </Card>
+          <a href="https://x.com/_multiagency" target="_blank" rel="me noreferrer">
+            <XLogoIcon /> <span className="sr-only">X</span>
+          </a>
+        </nav>
+      </footer>
+    </div>
   );
 }
