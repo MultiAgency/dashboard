@@ -273,7 +273,7 @@ const LANDING = {
   name: "MultiAgency",
   tagline: "Open books for agency work",
   description:
-    "Agencies run transparent client work on chain. Clients see and steer where their money goes.",
+    "Agencies run transparent client work on chain. Clients see and steer where their money goes, and agents only act inside the authority they are given.",
 };
 
 type Feature = { icon: Icon; title: string; body: string };
@@ -352,7 +352,9 @@ const STEPS = [
 
 const TEMPLATE = [
   { label: "Website", note: "Landing, work and contact pages" },
-  { label: "Treasury", note: "Payouts, permissions and policies" },
+  { label: "Platform", note: "Scoped authority for agents: policies, grants, caps and freeze" },
+  { label: "Treasury", note: "Agents propose, owners approve or delegate to autopilot" },
+  { label: "Desk", note: "Signed job terms become a payment agent that pays only what was agreed" },
   { label: "Projects", note: "Live work, teams and budgets" },
   { label: "Dashboard", note: "Clients, contributors and billing" },
 ];
