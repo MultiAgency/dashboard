@@ -1,4 +1,4 @@
-export type DocSection = "operating" | "skills";
+export type DocSection = "operating" | "platform" | "skills";
 
 export type DocSource = "docs" | "skills";
 
@@ -37,6 +37,41 @@ export const DOCS: readonly DocEntry[] = [
     title: "Work order",
     desc: "Per-engagement scope: deliverables, amount, IP terms, payment trigger.",
     section: "operating",
+    source: "docs",
+  },
+  {
+    slug: "platform",
+    title: "Platform",
+    desc: "Scoped authority for agents: policies, grants, caps and freeze, above the NEAR Intents Verifier.",
+    section: "platform",
+    source: "docs",
+  },
+  {
+    slug: "treasury-app",
+    title: "Treasury app",
+    desc: "Agents propose, owners approve or delegate to autopilot.",
+    section: "platform",
+    source: "docs",
+  },
+  {
+    slug: "desk",
+    title: "Desk",
+    desc: "Signed job terms become a payment agent that can only pay what was agreed.",
+    section: "platform",
+    source: "docs",
+  },
+  {
+    slug: "extents",
+    title: "NEAR Extents",
+    desc: "Planned: shared objectives across several parties, settled on the Verifier.",
+    section: "platform",
+    source: "docs",
+  },
+  {
+    slug: "glossary",
+    title: "Glossary",
+    desc: "Policy, grant, cap, freeze, objective and the other terms in one place.",
+    section: "platform",
     source: "docs",
   },
   {
