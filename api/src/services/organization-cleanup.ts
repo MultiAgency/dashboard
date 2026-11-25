@@ -4,6 +4,7 @@ import type { Organization, Organizations } from "../lib/organizations";
 
 export type CleanupReport = {
   removedOrganizations: string[];
+  skippedOrganizations: Array<{ organizationId: string; reason: string }>;
   mappedOrganizations: Array<{ organizationId: string; daoAccountId: string }>;
 };
 
@@ -12,7 +13,11 @@ function oldestFirst(a: Organization, b: Organization): number {
   return byDate !== 0 ? byDate : a.id.localeCompare(b.id);
 }
 
-export function createOrganizationCleanup(deps: { db: Database; organizations: Organizations }) {
+export function createOrganizationCleanup(deps: {
+  db: Database;
+  organizations: Organizations;
+  beforeRemove?: (organizationId: string) => Promise<void>;
+}) {
   const { db, organizations } = deps;
 
   async function agencyOrganizationsByDao(): Promise<Map<string, Organization[]>> {
@@ -45,13 +50,29 @@ export function createOrganizationCleanup(deps: { db: Database; organizations: O
   return {
     run: async (options: { dryRun?: boolean } = {}): Promise<CleanupReport> => {
       const { removals, mappings } = await planOrganizations();
+      if (options.dryRun) {
+        return {
+          removedOrganizations: removals,
+          skippedOrganizations: [],
+          mappedOrganizations: mappings,
+        };
+      }
       const report: CleanupReport = {
-        removedOrganizations: removals,
+        removedOrganizations: [],
+        skippedOrganizations: [],
         mappedOrganizations: mappings,
       };
-      if (options.dryRun) return report;
-
-      for (const organizationId of removals) await organizations.remove(organizationId);
+      for (const organizationId of removals) {
+        try {
+          await deps.beforeRemove?.(organizationId);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          report.skippedOrganizations.push({ organizationId, reason });
+          continue;
+        }
+        await organizations.remove(organizationId);
+        report.removedOrganizations.push(organizationId);
+      }
       if (mappings.length > 0) {
         await db.insert(organizationDaos).values(mappings).onConflictDoNothing();
       }

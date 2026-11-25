@@ -413,6 +413,12 @@ const initializeServices = (
         ? createConsistencyChecker({ apiKey: config.secrets.ANTHROPIC_API_KEY })
         : null,
       payouts: payoutAgents.available ? payoutAgents : null,
+      platformUpkeep: () =>
+        platformAgents.maintain(
+          authPool
+            ? async (organizationId) => (await organizationDirectory.get(organizationId)) !== null
+            : null,
+        ),
       google,
       googleFor: googleConnections.port,
       userEmail,

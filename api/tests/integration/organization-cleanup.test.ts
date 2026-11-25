@@ -76,9 +76,42 @@ describe("organization cleanup", () => {
 
     expect(await cleanup.run()).toEqual({
       removedOrganizations: [],
+      skippedOrganizations: [],
       mappedOrganizations: [],
     });
     expect(await stateOf(fake)).toEqual(cleaned);
+  });
+
+  test("an Organization is removed only after its pre-removal step succeeds", async () => {
+    const fake = inMemoryOrganizations({ organizations: duplicated });
+    const steps: string[] = [];
+    const cleanup = createOrganizationCleanup({
+      db: database.db,
+      organizations: {
+        ...fake.port,
+        remove: async (organizationId) => {
+          steps.push(`remove ${organizationId}`);
+          await fake.port.remove(organizationId);
+        },
+      },
+      beforeRemove: async (organizationId) => {
+        steps.push(`before ${organizationId}`);
+        if (organizationId === "test-copy") throw new Error("its consents couldn't be revoked");
+      },
+    });
+
+    const report = await cleanup.run();
+
+    expect(report.removedOrganizations).toEqual(["another-copy"]);
+    expect(report.skippedOrganizations).toEqual([
+      { organizationId: "test-copy", reason: "its consents couldn't be revoked" },
+    ]);
+    expect(steps).toEqual(
+      expect.arrayContaining(["before test-copy", "before another-copy", "remove another-copy"]),
+    );
+    expect(steps.indexOf("before another-copy")).toBeLessThan(steps.indexOf("remove another-copy"));
+    expect(steps).not.toContain("remove test-copy");
+    expect(fake.ids()).toContain("test-copy");
   });
 
   test("a dry run reports the changes a real run makes without making them", async () => {

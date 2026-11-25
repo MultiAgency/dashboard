@@ -115,6 +115,7 @@ export type WorkOrderDeps = {
   proposalBond: (daoAccountId: string) => Promise<string>;
   prices?: PriceFeed | null;
   esign?: EsignPort | null;
+  platformUpkeep?: () => Promise<{ checked: number; revoked: number; failed: string[] }>;
   payouts?: {
     readiness(
       organizationId: string,
@@ -4936,6 +4937,15 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
                 console.warn("[API] payout permission reminder failed:", error),
               );
           }
+        }
+        const upkept = await deps.platformUpkeep?.().catch((error: unknown) => {
+          console.warn("[API] platform agent upkeep failed", error);
+          return null;
+        });
+        if (upkept) {
+          counts.platformAgentsChecked = upkept.checked;
+          counts.platformAgentsRevoked = upkept.revoked;
+          counts.platformAgentsFailed = upkept.failed.length;
         }
         await followUpPayouts(counts);
         await retryBlockedPayouts(counts);

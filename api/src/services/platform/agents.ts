@@ -751,19 +751,60 @@ export function createPlatformAgents(deps: {
     return view(organizationId);
   }
 
-  async function disconnect(organizationId: string, actorId: string) {
+  async function revokeAll(organizationId: string, reason: RevokedReason) {
     const { app } = requirePlatform();
     const remote = await listConsents(organizationId);
     for (const consent of remote.filter((c) => !c.revoked && c.expiresAt > now().getTime())) {
       const revoked = await app.consents.revoke(consent.id);
       if (!revoked.ok && revoked.kind !== "refused") throw platformError(revoked);
-      await markRevoked(organizationId, consent.id, "dashboard");
+      await markRevoked(organizationId, consent.id, reason);
     }
     for (const consent of (await consentsOf(organizationId)).filter(live)) {
       await markRevoked(organizationId, consent.id, "access_ended");
     }
-    await update(organizationId, { ...CLEAR_PENDING, updatedBy: actorId });
+    await update(organizationId, CLEAR_PENDING);
+  }
+
+  async function disconnect(organizationId: string, actorId: string) {
+    await revokeAll(organizationId, "dashboard");
+    await update(organizationId, { updatedBy: actorId });
     return view(organizationId);
+  }
+
+  async function beforeOrganizationRemoved(organizationId: string) {
+    if (!(await load(organizationId))) return;
+    if (!available) {
+      throw new Error(
+        `${organizationId} has a platform agent, and platform access isn't configured here to revoke its consents`,
+      );
+    }
+    await revokeAll(organizationId, "organization_deleted");
+  }
+
+  async function maintain(
+    organizationExists: ((organizationId: string) => Promise<boolean>) | null,
+  ) {
+    const result = { checked: 0, revoked: 0, failed: [] as string[] };
+    if (!available) return result;
+    const rows = await db.select().from(platformAgents);
+    for (const row of rows) {
+      result.checked += 1;
+      try {
+        if (organizationExists && !(await organizationExists(row.organizationId))) {
+          await revokeAll(row.organizationId, "organization_deleted");
+          await db
+            .delete(platformAgents)
+            .where(eq(platformAgents.organizationId, row.organizationId));
+          result.revoked += 1;
+        } else if (row.pendingSubmission || (await consentsOf(row.organizationId)).some(live)) {
+          await reconcile(row.organizationId);
+        }
+      } catch (error) {
+        console.warn(`[API] platform upkeep for ${row.organizationId} failed:`, error);
+        result.failed.push(row.organizationId);
+      }
+    }
+    return result;
   }
 
   async function connection(organizationId: string) {
@@ -792,6 +833,8 @@ export function createPlatformAgents(deps: {
     submitCreate,
     followCreate,
     disconnect,
+    beforeOrganizationRemoved,
+    maintain,
     connection,
     accessFailed,
   };
