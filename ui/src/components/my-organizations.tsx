@@ -16,21 +16,38 @@ import {
 import { ItemGroup } from "@/components/ui/item";
 import { useLeaveOrganization } from "@/hooks/use-leave-organization";
 import { organizationsQueryOptions } from "@/lib/account";
+import { useApiClient } from "@/lib/api";
 import { sessionQueryOptions } from "@/lib/auth";
-import { isActiveOrganization, nonPersonalOrganizations } from "@/lib/landing";
+import { nonPersonalOrganizations } from "@/lib/landing";
 import { isLastOwner } from "@/lib/membership";
+import { myOrganizationsQueryOptions } from "@/lib/queries";
 
 type MyMembership = {
   organizationId: string;
   name: string;
-  status: string | null;
   role: string | null;
   lastOwner: boolean;
 };
 
+function approvalLabel(
+  approval: { status: "pending" | "rejected"; rejectionReason: string | null } | undefined,
+): string | null {
+  if (!approval) return null;
+  if (approval.status === "pending") return "Waiting for approval";
+  return `Not approved${approval.rejectionReason ? `: ${approval.rejectionReason}` : ""}`;
+}
+
 export function MyOrganizations({ emptyAction }: { emptyAction?: ReactNode }) {
   const authClient = useAuthClient();
+  const apiClient = useApiClient();
   const { data: session } = useQuery(sessionQueryOptions(authClient));
+  const approvalQuery = useQuery(myOrganizationsQueryOptions(apiClient));
+  const awaiting = new Map(
+    (approvalQuery.data?.awaitingApproval ?? []).map((organization) => [
+      organization.id,
+      organization,
+    ]),
+  );
   const userId = session?.user?.id;
   const organizationsQuery = useQuery(organizationsQueryOptions(authClient));
   const organizations = nonPersonalOrganizations(organizationsQuery.data ?? []);
@@ -50,11 +67,6 @@ export function MyOrganizations({ emptyAction }: { emptyAction?: ReactNode }) {
           return {
             organizationId: organization.id,
             name: organization.name,
-            status: isActiveOrganization(organization)
-              ? null
-              : organization.status === "rejected"
-                ? `Not approved${organization.rejectionReason ? `: ${organization.rejectionReason}` : ""}`
-                : "Waiting for approval",
             role: mine?.role ?? null,
             lastOwner: mine ? isLastOwner(members, mine.id) : false,
           };
@@ -66,7 +78,7 @@ export function MyOrganizations({ emptyAction }: { emptyAction?: ReactNode }) {
   const leave = useLeaveOrganization();
   const [leaving, setLeaving] = useState<MyMembership | null>(null);
 
-  if (organizationsQuery.isLoading || membershipsQuery.isLoading) {
+  if (organizationsQuery.isLoading || approvalQuery.isLoading || membershipsQuery.isLoading) {
     return <LoadingCard label="organizations" />;
   }
 
@@ -91,29 +103,32 @@ export function MyOrganizations({ emptyAction }: { emptyAction?: ReactNode }) {
   return (
     <>
       <ItemGroup>
-        {memberships.map((membership) => (
-          <OrganizationRowCard
-            key={membership.organizationId}
-            name={membership.name}
-            role={membership.role}
-            details={
-              membership.status ? (
-                <span>{membership.status}</span>
-              ) : membership.lastOwner ? (
-                <span>Only owner. Make someone else owner to leave.</span>
-              ) : undefined
-            }
-          >
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setLeaving(membership)}
-              disabled={membership.lastOwner || leave.isPending}
+        {memberships.map((membership) => {
+          const approval = approvalLabel(awaiting.get(membership.organizationId));
+          return (
+            <OrganizationRowCard
+              key={membership.organizationId}
+              name={membership.name}
+              role={membership.role}
+              details={
+                approval ? (
+                  <span>{approval}</span>
+                ) : membership.lastOwner ? (
+                  <span>Only owner. Make someone else owner to leave.</span>
+                ) : undefined
+              }
             >
-              Leave
-            </Button>
-          </OrganizationRowCard>
-        ))}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setLeaving(membership)}
+                disabled={membership.lastOwner || leave.isPending}
+              >
+                Leave
+              </Button>
+            </OrganizationRowCard>
+          );
+        })}
       </ItemGroup>
       <ConfirmDialog
         open={!!leaving}

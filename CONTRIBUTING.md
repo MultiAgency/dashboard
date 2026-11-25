@@ -68,11 +68,11 @@ Secrets go in `.env` (see [.env.example](./.env.example) for required variables)
 
 ### Branch Naming
 
-Create feature branches from `main`:
+Create feature branches from `staging`, not `main`: `main` is promoted from `staging`, and production deploys run by hand from it.
 
 ```bash
-git checkout main
-git pull origin main
+git checkout staging
+git pull origin staging
 git checkout -b feature/amazing-feature
 ```
 
@@ -147,7 +147,7 @@ Added new endpoint for user profiles
 
 2. **Create PR from your fork:**
    - Push branch to your fork: `git push origin feature/amazing-feature`
-   - Open PR against `main` branch of upstream repo
+   - Open PR against the `staging` branch of upstream repo, never `main`
    - Use descriptive title following semantic format
    - Fill out PR template if provided
 

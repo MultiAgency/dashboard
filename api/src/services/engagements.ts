@@ -22,6 +22,7 @@ import {
   SHARED_STATUSES,
   type SubcontractedProject,
 } from "./organization-access";
+import type { OrganizationApprovals } from "./organization-approvals";
 import type { Project, ProjectDirectory } from "./project-directory";
 
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -120,6 +121,7 @@ const UNSHARE_BLOCKED: Record<string, string> = {
 export function createEngagementsService(deps: {
   db: Database;
   organizations: OrganizationDirectory;
+  approvals: Pick<OrganizationApprovals, "decide">;
   projects: ProjectDirectory;
   notifications: NotificationsService;
   sendEmail: EmailSender | null;
@@ -432,6 +434,7 @@ export function createEngagementsService(deps: {
         proposedBy: userIdOf(scope),
         decidedAt: now(),
       });
+      await deps.approvals.decide(client.id, { status: "approved" }, userIdOf(scope));
       await shareProjects(row.id, input.projectIds ?? []);
       return view(scope, await invite(scope, row, input.adminEmail));
     },

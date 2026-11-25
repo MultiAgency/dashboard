@@ -118,20 +118,14 @@ function columnResolver(sql: SqlClient) {
     return found;
   };
   const columnsOf = (table: string) => cache.get(table) ?? read(table);
-  const contains = (columns: Set<string>, camel: string) =>
-    columns.has(camel) || columns.has(snakeCase(camel));
-  const resolve = async (
-    table: string,
-  ): Promise<TableColumns & { has(camel: string): boolean }> => {
+  return async (table: string): Promise<TableColumns & { has(camel: string): boolean }> => {
     const columns = await columnsOf(table);
     const name = (camel: string) =>
       quote(columns.has(camel) || !columns.has(snakeCase(camel)) ? camel : snakeCase(camel));
-    return Object.assign(name, { has: (camel: string) => contains(columns, camel) });
+    return Object.assign(name, {
+      has: (camel: string) => columns.has(camel) || columns.has(snakeCase(camel)),
+    });
   };
-  return Object.assign(resolve, {
-    present: async (table: string, camel: string) =>
-      contains(await columnsOf(table), camel) || contains(await read(table), camel),
-  });
 }
 
 export type AuthDirectoryTables = AuthTableNames & { invitation: string };
@@ -200,6 +194,22 @@ export function authDatabaseDirectory(
   return {
     get: (organizationId) => findOrganization("o.id = $1", organizationId),
 
+    all: async () => {
+      const o = await columns(tables.organization);
+      const status = o.has("status") ? "o.status" : "NULL";
+      const rejectionReason = o.has("rejectionReason") ? `o.${o("rejectionReason")}` : "NULL";
+      const { rows } = await sql.query<
+        OrganizationRowShape & { status: string | null; rejectionReason: string | null }
+      >(
+        `SELECT ${await organizationSelect("o")}, ${status} AS status, ${rejectionReason} AS "rejectionReason" FROM ${organization} o ORDER BY o.${o("createdAt")}`,
+      );
+      return rows.map((row) => ({
+        organization: toOrganization(row),
+        status: row.status,
+        rejectionReason: row.rejectionReason,
+      }));
+    },
+
     findBySlug: (slug) => findOrganization("lower(o.slug) = lower($1)", slug.trim()),
 
     managers: async (organizationId) => {
@@ -229,11 +239,8 @@ export function authDatabaseDirectory(
 
     memberships: async (userId) => {
       const m = await columns(tables.member);
-      const activeOnly = (await columns.present(tables.organization, "status"))
-        ? ` AND COALESCE(o.status, 'active') = 'active'`
-        : "";
       const { rows } = await sql.query<OrganizationRowShape & { role: string }>(
-        `SELECT ${await organizationSelect("o")}, m.role FROM ${member} m JOIN ${organization} o ON o.id = m.${m("organizationId")} WHERE m.${m("userId")} = $1${activeOnly}`,
+        `SELECT ${await organizationSelect("o")}, m.role FROM ${member} m JOIN ${organization} o ON o.id = m.${m("organizationId")} WHERE m.${m("userId")} = $1`,
         [userId],
       );
       return rows.map((row) => ({

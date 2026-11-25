@@ -50,7 +50,6 @@ describe("signInDestination", () => {
         error: null,
       }),
       organization: {
-        list: async () => ({ data: [{ id: "studio", metadata: null }] }),
         setActive: async ({ organizationId }: { organizationId: string }) => {
           activated.push(organizationId);
           return { error: null };
@@ -58,7 +57,15 @@ describe("signInDestination", () => {
       },
     } as unknown as AuthClient;
     const apiClient = {
-      me: { roles: async () => ({ capabilities: { hasAgencySections: true } }) },
+      me: {
+        roles: async () => ({ capabilities: { hasAgencySections: true } }),
+        organizations: async () => ({
+          data: [{ id: "studio", name: "Studio", slug: "studio", role: "owner" }],
+          awaitingApproval: [
+            { id: "asked", name: "Asked", status: "pending", rejectionReason: null },
+          ],
+        }),
+      },
     } as unknown as ApiClient;
     return { authClient, apiClient, activated, queryClient: new QueryClient() };
   }
@@ -96,5 +103,13 @@ describe("signInDestination", () => {
 
     expect(await signInDestination(deps, undefined)).toBe("/admin");
     expect(activated).toEqual(["studio"]);
+  });
+
+  test("moves off an active Organization that is still waiting for approval", async () => {
+    const { activated, ...deps } = signedInWithoutActiveOrganization();
+    activated.push("asked");
+
+    expect(await signInDestination(deps, undefined)).toBe("/admin");
+    expect(activated).toEqual(["asked", "studio"]);
   });
 });

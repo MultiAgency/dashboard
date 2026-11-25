@@ -47,6 +47,10 @@ import {
   type OrganizationScope,
   ROLE_MATRIX,
 } from "./services/organization-access";
+import {
+  approvalRecordedByAuth,
+  createOrganizationApprovals,
+} from "./services/organization-approvals";
 import { createOrganizationRequestsService } from "./services/organization-requests";
 import { atomicToNear, nearToAtomic, topUpFor, topUpProposal } from "./services/payouts/policy";
 import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
@@ -175,6 +179,21 @@ const initializeServices = (
     const organizationDirectory = authPool
       ? authDatabaseDirectory(authPool)
       : unconfiguredDirectory();
+    const organizationApprovals = createOrganizationApprovals(db);
+    if (authPool) {
+      const adopted = yield* Effect.promise(() =>
+        organizationApprovals.adopt(async () =>
+          (await organizationDirectory.all())
+            .filter((record) => !record.organization.isPersonal)
+            .map(approvalRecordedByAuth),
+        ),
+      );
+      if (adopted) yield* Effect.logInfo("[API] Adopted Organization approvals from auth");
+    } else {
+      yield* Effect.logWarning(
+        "[API] AUTH_DATABASE_URL is not set: Organization approvals can't be adopted or reviewed, so every Organization stays pending",
+      );
+    }
     const appOrigin = (config.secrets.APP_ORIGIN ?? config.variables.appOrigin).replace(/\/+$/, "");
     const sendEmail = resendEmailSender({
       resendApiKey: config.secrets.RESEND_API_KEY,
@@ -189,6 +208,7 @@ const initializeServices = (
     const access = createOrganizationAccess({
       db,
       organizations: betterAuthOrganizations(() => plugins.auth.client()),
+      approvals: organizationApprovals,
       directory,
       defaultDaoAccountId: config.variables.agencyDaoAccount,
     });
@@ -217,6 +237,7 @@ const initializeServices = (
     const engagements = createEngagementsService({
       db,
       organizations: organizationDirectory,
+      approvals: organizationApprovals,
       projects: directory,
       notifications,
       sendEmail,
@@ -226,6 +247,7 @@ const initializeServices = (
     });
     const organizationRequests = createOrganizationRequestsService({
       organizations: organizationDirectory,
+      approvals: organizationApprovals,
       sendEmail,
       appOrigin,
     });
@@ -417,6 +439,7 @@ const initializeServices = (
       contributors,
       engagements,
       organizationRequests,
+      organizationApprovals,
       prepayments,
       changeOrders,
       ideas,
@@ -599,8 +622,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
     });
 
     const auth = createAuthMiddleware(builder);
-    const asAdmin = (reqHeaders: Headers | undefined) =>
-      plugins.auth.client({ reqHeaders: Object.fromEntries(new Headers(reqHeaders).entries()) });
     type AccessMiddlewares = ReturnType<ApiServicesShape["access"]["middleware"]>;
     const deferredAccess = <K extends keyof AccessMiddlewares>(key: K) =>
       ((
@@ -1253,44 +1274,15 @@ export default createPlugin.withPlugins<PluginsClient>()({
         list: builder.organizationRequests.list
           .use(auth.requireAdmin)
           .handler(async ({ context }) => {
-            const { organizationDirectory } = Context.get(context["effect/context"], ApiServices);
-            const requests = await asAdmin(context.reqHeaders).listOrganizationRequests();
-            return {
-              data: await Promise.all(
-                requests.map(async (request) => ({
-                  id: request.id,
-                  name: request.name,
-                  slug: request.slug,
-                  requestedBy: request.requestedBy ?? null,
-                  requestedByEmail: request.requestedBy
-                    ? ((await organizationDirectory.member(request.id, request.requestedBy))
-                        ?.email ?? null)
-                    : null,
-                  requestedAt: new Date(request.createdAt).toISOString(),
-                })),
-              ),
-            };
+            const { organizationRequests } = Context.get(context["effect/context"], ApiServices);
+            return { data: await organizationRequests.pending() };
           }),
 
         review: builder.organizationRequests.review
           .use(auth.requireAdmin)
           .handler(async ({ context, input }) => {
             const { organizationRequests } = Context.get(context["effect/context"], ApiServices);
-            const adminEmail = input.decision === "approve" ? input.adminEmail : undefined;
-            const reviewed = await asAdmin(context.reqHeaders).reviewOrganization(
-              input.decision === "approve"
-                ? { organizationId: input.organizationId, decision: "approve" }
-                : input,
-            );
-            const adminInvite =
-              adminEmail && reviewed.status === "active"
-                ? await organizationRequests.inviteAdmin({
-                    organizationId: reviewed.id,
-                    email: adminEmail,
-                    inviterId: context.userId,
-                  })
-                : null;
-            return { id: reviewed.id, status: reviewed.status, adminInvite };
+            return organizationRequests.review(input, context.userId);
           }),
       },
 
@@ -2140,18 +2132,40 @@ export default createPlugin.withPlugins<PluginsClient>()({
         organizations: builder.me.organizations
           .use(auth.requireAuth)
           .handler(async ({ context }) => {
-            const { organizationDirectory } = Context.get(context["effect/context"], ApiServices);
-            const memberships = await organizationDirectory.memberships(context.userId);
+            const { organizationDirectory, organizationApprovals } = Context.get(
+              context["effect/context"],
+              ApiServices,
+            );
+            const memberships = (await organizationDirectory.memberships(context.userId))
+              .filter((m) => !m.organization.isPersonal)
+              .sort((a, b) => a.organization.name.localeCompare(b.organization.name));
+            const approvals = await organizationApprovals.of(
+              memberships.map((m) => m.organization.id),
+            );
+            const approvalOf = (id: string) =>
+              approvals.get(id) ?? { status: "pending" as const, rejectionReason: null };
             return {
               data: memberships
-                .filter((m) => !m.organization.isPersonal)
+                .filter((m) => approvalOf(m.organization.id).status === "approved")
                 .map((m) => ({
                   id: m.organization.id,
                   name: m.organization.name,
                   slug: m.organization.slug,
                   role: m.role === "contributor" ? null : m.role,
-                }))
-                .sort((a, b) => a.name.localeCompare(b.name)),
+                })),
+              awaitingApproval: memberships.flatMap((m) => {
+                const approval = approvalOf(m.organization.id);
+                return approval.status === "approved"
+                  ? []
+                  : [
+                      {
+                        id: m.organization.id,
+                        name: m.organization.name,
+                        status: approval.status,
+                        rejectionReason: approval.rejectionReason,
+                      },
+                    ];
+              }),
             };
           }),
       },

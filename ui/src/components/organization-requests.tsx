@@ -56,7 +56,7 @@ export function OrganizationRequests({ onReviewed }: { onReviewed: () => void })
           <h2>Pending approval</h2>
         </CardTitle>
         <CardDescription>
-          New Organizations can't be opened or invite anyone until a site admin approves them.
+          New Organizations can't be opened until a site admin approves them.
         </CardDescription>
         <CardAction>
           <Badge variant="secondary">{requests.length}</Badge>
@@ -167,9 +167,7 @@ function ApproveDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Approve {request?.name}?</DialogTitle>
-          <DialogDescription>
-            Its members can open it and invite others once it's approved.
-          </DialogDescription>
+          <DialogDescription>Its members can open it once it's approved.</DialogDescription>
         </DialogHeader>
         <FieldGroup>
           <Field>

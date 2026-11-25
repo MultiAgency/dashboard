@@ -25,8 +25,7 @@ import { PageHeader } from "@/components/page-header";
 import type { ColumnDef } from "@/components/ui/data-table";
 import type { Organization } from "@/lib/auth";
 import { sessionQueryKey, useAuthClient } from "@/lib/auth";
-import { isActiveOrganization } from "@/lib/landing";
-import { organizationRequestsQueryKey } from "@/lib/queries";
+import { myOrganizationsQueryKey, organizationRequestsQueryKey } from "@/lib/queries";
 import { availableSlug, isOrganizationSlugTaken } from "@/lib/slugify";
 
 export const Route = createFileRoute("/_authenticated/platform/")({
@@ -54,6 +53,7 @@ function PlatformOrgs() {
     queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
     queryClient.invalidateQueries({ queryKey: ["organizations", "list"] });
     queryClient.invalidateQueries({ queryKey: organizationRequestsQueryKey });
+    queryClient.invalidateQueries({ queryKey: myOrganizationsQueryKey });
     queryClient.invalidateQueries({ queryKey: sessionQueryKey });
   };
 
@@ -164,6 +164,7 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
       const org = await authClient.organization.create({
         name: name.trim(),
         slug: finalSlug,
+        keepCurrentActiveOrganization: true,
       });
       if (isOrganizationSlugTaken(org.error?.code)) {
         const isTaken = async (candidate: string) =>
@@ -180,13 +181,9 @@ function CreateAgencyForm({ onCreated }: { onCreated: () => void }) {
       return org.data;
     },
     onSuccess: (org) => {
-      if (isActiveOrganization(org)) {
-        toast.success(`"${org.name}" created. You are its owner.`);
-      } else {
-        toast.info(
-          `"${org.name}" is waiting for approval. Approve it under Pending approval to set its Agency DAO and admin.`,
-        );
-      }
+      toast.info(
+        `"${org.name}" is waiting for approval. Approve it under Pending approval to set its Agency DAO and admin.`,
+      );
       resetForm();
       onCreated();
     },
