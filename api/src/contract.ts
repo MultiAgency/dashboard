@@ -300,6 +300,9 @@ const reportOutput = z.object({
     projectCount: z.number().int().nonnegative(),
     budgetByToken: z.array(tokenAmount),
     billedByToken: z.array(tokenAmount),
+    unattributedByToken: z.array(tokenAmount).optional(),
+    pendingByToken: z.array(tokenAmount).optional(),
+    payoutSync: z.enum(["complete", "partial", "unavailable"]).optional(),
     period: z.string(),
   }),
   project: z.object({ title: z.string(), slug: z.string() }).nullable().optional(),
@@ -310,6 +313,7 @@ const reportOutput = z.object({
         projectSlug: z.string(),
         budgetByToken: z.array(tokenAmount),
         billedByToken: z.array(tokenAmount),
+        builders: z.array(z.string()).optional(),
       }),
     )
     .optional(),
@@ -321,6 +325,25 @@ const reportOutput = z.object({
       billingCount: z.number().int().nonnegative(),
     }),
   ),
+  payouts: z
+    .array(
+      z.object({
+        paidAt: z.string(),
+        daoAccountId: z.string(),
+        proposalId: z.string(),
+        nearAccount: z.string(),
+        builderName: z.string(),
+        tokenId: z.string(),
+        amount: z.string(),
+        note: z.string().nullable(),
+        projectTitle: z.string().nullable(),
+        projectSlug: z.string().nullable(),
+        attribution: z.enum(["billing", "assignment", "shared", "unassigned"]),
+        sharedWith: z.array(z.string()),
+        status: z.enum(["paid", "pending"]).optional(),
+      }),
+    )
+    .optional(),
   clientBreakdown: z.array(
     z.object({
       clientName: z.string(),
@@ -1393,7 +1416,7 @@ export const contract = oc.router({
           }),
         )
         .output(generatedReport)
-        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND }),
+        .errors({ UNAUTHORIZED, FORBIDDEN, NOT_FOUND, BAD_REQUEST }),
 
       delete: oc
         .route({ method: "DELETE", path: "/client/{engagementId}/reports/{id}" })
@@ -1541,7 +1564,7 @@ export const contract = oc.router({
       .output(
         z.object({
           id: z.string(),
-          status: z.enum(["active", "pending", "rejected"]),
+          status: z.enum(["approved", "rejected"]),
           adminInvite: z
             .discriminatedUnion("status", [
               z.object({ status: z.literal("invited"), email: z.string() }),
@@ -2079,6 +2102,14 @@ export const contract = oc.router({
               name: z.string(),
               slug: z.string(),
               role: z.enum(["owner", "admin", "member"]).nullable(),
+            }),
+          ),
+          awaitingApproval: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              status: z.enum(["pending", "rejected"]),
+              rejectionReason: z.string().nullable(),
             }),
           ),
         }),

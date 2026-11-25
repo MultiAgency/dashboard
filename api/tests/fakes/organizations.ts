@@ -109,6 +109,12 @@ export function inMemoryOrganizations(seed: {
 
   const directory: OrganizationDirectory = {
     get: async (organizationId) => organizations.get(organizationId) ?? null,
+    all: async () =>
+      [...organizations.values()].map((organization) => ({
+        organization,
+        status: null,
+        rejectionReason: null,
+      })),
     findBySlug: async (slug) =>
       [...organizations.values()].find((o) => o.slug.toLowerCase() === slug.toLowerCase()) ?? null,
     managers: async (organizationId) =>
@@ -195,6 +201,8 @@ export function signedIn(
   };
 }
 
+export const everyOrganizationApproved = { isApproved: async () => true };
+
 export function inMemoryAccess(
   db: unknown,
   seed: Partial<Parameters<typeof inMemoryOrganizations>[0]> = {},
@@ -205,6 +213,7 @@ export function inMemoryAccess(
   return createOrganizationAccess({
     db: db as Database,
     organizations: port,
+    approvals: everyOrganizationApproved,
     directory,
     defaultDaoAccountId,
   });

@@ -18,6 +18,19 @@ vi.mock("../../src/services/sputnik", async (importOriginal) => ({
   fullAccessKeys: async () => (fake.api ? [fake.api.ownerKey] : []),
 }));
 
+vi.mock("../../src/services/organization-approvals", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/services/organization-approvals")>();
+  return {
+    ...actual,
+    createOrganizationApprovals: (
+      ...args: Parameters<typeof actual.createOrganizationApprovals>
+    ) => ({
+      ...actual.createOrganizationApprovals(...args),
+      isApproved: async () => true,
+    }),
+  };
+});
+
 const PLUGIN = "api";
 const ORG = "studio";
 const DAO = "studio.sputnik-dao.near";

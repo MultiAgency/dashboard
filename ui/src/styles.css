@@ -81,6 +81,26 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@media print {
+  :root,
+  .dark {
+    --page: oklch(1 0 0);
+    --background: oklch(1 0 0);
+    --foreground: oklch(0 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.35 0 0);
+    --secondary: oklch(0.967 0.001 286.375);
+    --secondary-foreground: oklch(0 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0 0 0);
+    --border: oklch(0.85 0 0);
+    --input: oklch(0.85 0 0);
+    color-scheme: light;
+  }
+}
+
 @theme inline {
   --font-sans: "Inter Variable", sans-serif;
   --font-heading: "Geist Variable", sans-serif;

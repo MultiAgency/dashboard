@@ -1,6 +1,13 @@
 import type { Effect } from "effect";
 import { beforeEach, describe, expect, test } from "vitest";
-import { budgets, compensationRequests, reportSnapshots, workOrders } from "../../src/db/schema";
+import {
+  billings,
+  budgets,
+  compensationRequests,
+  proposals,
+  reportSnapshots,
+  workOrders,
+} from "../../src/db/schema";
 import { runEffect } from "../../src/lib/context";
 import { createAgencyService } from "../../src/services/agency";
 import { createBillingsService } from "../../src/services/billings";
@@ -10,7 +17,7 @@ import { createProjectLedgers } from "../../src/services/ledger";
 import { createListingsService } from "../../src/services/listings";
 import type { NotifyInput } from "../../src/services/notifications";
 import { createReportsService, type ReportViewer } from "../../src/services/reports";
-import { clientWorkWorld, refused, STUDIO_DAO } from "../fakes/engagements";
+import { CREW_DAO, clientWorkWorld, refused, STUDIO_DAO } from "../fakes/engagements";
 
 // Skipped while the Allocation plan is omitted for now; see ALLOCATION_PLAN_ENABLED.
 
@@ -36,9 +43,12 @@ describe("saved reports", () => {
       world.plugins,
       world.organizations.directory,
       {
-        notify: async (input: NotifyInput) => {
-          sent.push(input);
-          return { recipients: 1, emailed: 0 };
+        syncProposals: async () => ({ pending: [], complete: true }),
+        notifications: {
+          notify: async (input: NotifyInput) => {
+            sent.push(input);
+            return { recipients: 1, emailed: 0 };
+          },
         },
       },
     );
@@ -401,9 +411,30 @@ describe("saved reports", () => {
       projectIds: ["site"],
     });
 
+    await state.db.insert(proposals).values({
+      daoAccountId: CREW_DAO,
+      proposalId: 3,
+      proposer: "crew-admin.near",
+      description: "",
+      status: "Approved",
+      kindType: "Transfer",
+      submissionTime: "0",
+    });
+    await state.db.insert(billings).values({
+      id: "crew-billing",
+      projectId: "site",
+      nearAccount: "worker.near",
+      tokenId: "near",
+      amount: "40",
+      proposalId: "3",
+      payingDaoAccountId: CREW_DAO,
+      createdAt: new Date(),
+    });
+
     const report = await clientReport("crew-owner", "crew", subcontract.id);
 
     expect(report.overview.budgetByToken).toEqual([]);
+    expect(report.overview.billedByToken).toEqual(near("40"));
     expect(report.clientBreakdown.map((row) => row.clientName)).toEqual(["Crew"]);
   });
 });

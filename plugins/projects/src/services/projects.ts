@@ -410,6 +410,11 @@ export const ProjectServiceLive = Layer.effect(
               forbidden("Projects can only be created for your active Organization"),
             );
           }
+          if (organizationId && !caller.trusted && !caller.platformAdmin) {
+            return yield* Effect.fail(
+              forbidden("Projects for an Organization are created through the dashboard API"),
+            );
+          }
 
           const visibility = input.visibility ?? "private";
           if (visibility === "public" && !canPublish(caller, organizationId)) {

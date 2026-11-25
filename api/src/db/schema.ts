@@ -1006,3 +1006,20 @@ export const agentPayouts = pgTable(
 );
 
 export type AgentPayoutRow = typeof agentPayouts.$inferSelect;
+
+export const ORGANIZATION_APPROVAL_STATUSES = ["pending", "approved", "rejected"] as const;
+
+export const organizationApprovals = pgTable("organization_approvals", {
+  organizationId: text("organization_id").primaryKey(),
+  status: text("status", { enum: ORGANIZATION_APPROVAL_STATUSES }).notNull(),
+  rejectionReason: text("rejection_reason"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: false }),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
+
+export const organizationApprovalsAdoption = pgTable("organization_approvals_adoption", {
+  id: integer("id").primaryKey(),
+  cutoff: timestamp("cutoff", { withTimezone: true }).notNull().default(sql`now()`),
+  adoptedAt: timestamp("adopted_at", { withTimezone: true }),
+});

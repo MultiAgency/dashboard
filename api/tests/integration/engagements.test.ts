@@ -186,6 +186,7 @@ describe("engagements", () => {
         ["Newco", ["p1"]],
       ]);
       expect(withNewco.projectIds).toEqual(["p1"]);
+      expect(await world.approvals.isApproved(withNewco.client.id)).toBe(true);
     });
 
     test("unsharing is refused while the Project holds budget attributed to the Engagement", async () => {

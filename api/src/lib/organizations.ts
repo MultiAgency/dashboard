@@ -22,7 +22,6 @@ export type PluginContext = {
       name?: string;
       slug?: string;
       metadata?: unknown;
-      status?: string;
     } | null;
     member?: { role?: string | null } | null;
   } | null;
@@ -56,6 +55,12 @@ export type Membership = {
   role: OrganizationRole | null;
 };
 
+export type AuthOrganizationRecord = {
+  organization: Organization;
+  status: string | null;
+  rejectionReason: string | null;
+};
+
 export type Organizations = {
   activeMembership(context: PluginContext): Promise<Membership | null>;
   list(): Promise<Organization[]>;
@@ -86,6 +91,7 @@ export type UserMembership = {
 
 export type OrganizationDirectory = {
   get(organizationId: string): Promise<Organization | null>;
+  all(): Promise<AuthOrganizationRecord[]>;
   findBySlug(slug: string): Promise<Organization | null>;
   managers(organizationId: string): Promise<OrganizationManager[]>;
   member(organizationId: string, userId: string): Promise<OrganizationManager | null>;
@@ -183,8 +189,6 @@ export function betterAuthOrganizations(
       const active = context.organization;
       const id = active?.activeOrganizationId ?? active?.organization?.id;
       if (!context.userId || !id || !active?.organization) return null;
-      const status = active.organization.status;
-      if (status && status !== "active") return null;
       return {
         organization: toOrganization({ ...active.organization, id }),
         role: toOrganizationRole(active.member?.role),
@@ -205,6 +209,7 @@ export function unconfiguredDirectory(): OrganizationDirectory {
   };
   return {
     get: async () => null,
+    all: unavailable,
     findBySlug: async () => null,
     managers: async () => [],
     member: async () => null,

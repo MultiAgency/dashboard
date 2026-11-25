@@ -83,7 +83,7 @@ describe("projects plugin permissions", () => {
   });
 
   const createAs = (caller: Caller, input: Record<string, unknown> = {}) =>
-    clientFor(caller).createProject({
+    trustedClientFor(caller).createProject({
       kind: "project",
       title: "Project",
       slug: nextSlug(),
@@ -98,6 +98,10 @@ describe("projects plugin permissions", () => {
     () =>
       createAs(caller, input);
   const update =
+    (caller: Caller, patch: Record<string, unknown>): Action =>
+    (t) =>
+      trustedClientFor(caller).updateProject({ id: t.id, ...patch });
+  const updateDirectly =
     (caller: Caller, patch: Record<string, unknown>): Action =>
     (t) =>
       clientFor(caller).updateProject({ id: t.id, ...patch });
@@ -125,6 +129,17 @@ describe("projects plugin permissions", () => {
       { organizationId: null },
     ],
     [
+      "lets anyone signed in create a personal Project directly",
+      () =>
+        clientFor(soloOwner).createProject({
+          kind: "project",
+          title: "Mine",
+          slug: nextSlug(),
+          repository: "https://github.com/example/repo",
+        }),
+      { organizationId: null, ownerId: "solo" },
+    ],
+    [
       "lets platform admins choose the owner on create",
       create(platformAdmin, { ownerId: "x.near" }),
       { ownerId: "x.near" },
@@ -144,6 +159,11 @@ describe("projects plugin permissions", () => {
       "lets members edit the Projects they created",
       update(acmeOtherMember, { title: "New" }),
       { title: "New" },
+    ],
+    [
+      "lets members edit the Projects they created directly",
+      updateDirectly(acmeOtherMember, { title: "Mine" }),
+      { title: "Mine" },
     ],
     ["lets owners make a Project public", update(acmeOwner, publish), publish],
     [
@@ -169,6 +189,11 @@ describe("projects plugin permissions", () => {
   });
 
   test.each<[string, Action]>([
+    [
+      "create in an Organization without going through the API",
+      () =>
+        clientFor(acmeAdmin).createProject({ kind: "project", title: "Direct", slug: nextSlug() }),
+    ],
     ["create in another Organization", create(acmeAdmin, { organizationId: "rival" })],
     ["create in a personal Organization", create(soloOwner, { organizationId: "solo-personal" })],
     ["let a non-platform admin choose the owner", create(acmeAdmin, { ownerId: "x.near" })],
@@ -180,6 +205,14 @@ describe("projects plugin permissions", () => {
     ["let a member delete another member's Project", remove(acmeMember)],
     ["give a personal Organization's owner rights over its Projects", remove(personalOwnerOfAcme)],
     ["let a non-platform admin change the owner", update(acmeAdmin, { ownerId: "acme-admin" })],
+    [
+      "let an Organization admin edit without going through the API",
+      updateDirectly(acmeAdmin, { title: "Direct" }),
+    ],
+    [
+      "let an Organization owner publish without going through the API",
+      updateDirectly(acmeOwner, publish),
+    ],
     ["let a plain member make a Project public", update(acmeMember, publish)],
     ["let another Organization's owner make a Project public", update(rivalOwner, publish)],
   ])("refuses to %s", async (_, action) => {

@@ -82,7 +82,7 @@ export function canManage(caller: Caller, project: OwnedRecord): boolean {
   return (
     caller.platformAdmin ||
     isProjectOwner(caller, project) ||
-    isManagerOf(caller, project.organizationId)
+    (caller.trusted && isManagerOf(caller, project.organizationId))
   );
 }
 
@@ -106,5 +106,5 @@ export function isTrustedIdeaCreate(
 }
 
 export function canPublish(caller: Caller, organizationId: string | null): boolean {
-  return caller.platformAdmin || isManagerOf(caller, organizationId);
+  return caller.platformAdmin || (caller.trusted && isManagerOf(caller, organizationId));
 }

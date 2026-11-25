@@ -2,11 +2,8 @@ import { readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { QueryClient } from "@tanstack/react-query";
 import { type AnyRoute, createMemoryHistory, createRouter } from "@tanstack/react-router";
-import {
-  constructTree,
-  type PluginManifest,
-  type RouteOptionsBundle,
-} from "every-plugin/ui/manifest";
+import type { PluginManifest, RouteOptionsBundle } from "every-plugin/ui/manifest";
+import { constructTree } from "everything-dev/ui/compose";
 import { describe, expect, test } from "vitest";
 import { sessionQueryKey } from "@/lib/auth";
 import manifest from "../src/manifest.gen.json";
@@ -135,7 +132,11 @@ async function navigate(path: string, cachedSession: unknown) {
   const router = createRouter({
     routeTree: await compose(routes),
     history: createMemoryHistory({ initialEntries: [path] }),
-    context: { queryClient, session: null } as never,
+    context: {
+      queryClient,
+      session: null,
+      authClient: { getSession: async () => ({ data: cachedSession ?? null, error: null }) },
+    } as never,
   });
   await router.load();
   return router.state.location;

@@ -17,6 +17,7 @@ import type {
   Organizations,
   PluginContext,
 } from "../lib/organizations";
+import type { OrganizationApprovals } from "./organization-approvals";
 import type { Project, ProjectDirectory } from "./project-directory";
 
 export type AgencyScope = {
@@ -128,13 +129,23 @@ export async function agencyDaoOf(db: Database, organizationId: string): Promise
 export function createOrganizationAccess(deps: {
   db: Database;
   organizations: Organizations;
+  approvals: Pick<OrganizationApprovals, "isApproved">;
   directory: ProjectDirectory;
   defaultDaoAccountId?: string;
 }) {
-  const { db, organizations, directory, defaultDaoAccountId } = deps;
+  const { db, organizations, approvals, directory, defaultDaoAccountId } = deps;
+
+  async function usableMembership(context: PluginContext) {
+    const membership = context.userId ? await organizations.activeMembership(context) : null;
+    if (!membership) return null;
+    const { organization } = membership;
+    return organization.isPersonal || (await approvals.isApproved(organization.id))
+      ? membership
+      : null;
+  }
 
   async function resolve(context: PluginContext): Promise<OrganizationAccess> {
-    const membership = context.userId ? await organizations.activeMembership(context) : null;
+    const membership = await usableMembership(context);
     const organization = membership?.organization ?? null;
     const role = organization && !organization.isPersonal ? (membership?.role ?? null) : null;
     const agencyDao =

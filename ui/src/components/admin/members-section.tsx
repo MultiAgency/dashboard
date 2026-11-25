@@ -22,6 +22,7 @@ import { ChoiceSelect } from "@/components/admin-form";
 import type { ColumnDef } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { useLeaveOrganization } from "@/hooks/use-leave-organization";
+import { useApiClient } from "@/lib/api";
 import { type AuthClient, useAuthClient } from "@/lib/auth";
 import {
   isLastOwner,
@@ -94,6 +95,7 @@ function invitationStatus(invitation: Invitation): "pending" | "expired" | strin
 
 export function MembersAdminSection() {
   const authClient = useAuthClient();
+  const apiClient = useApiClient();
   const queryClient = useQueryClient();
 
   const sessionQuery = useQuery({
@@ -110,9 +112,11 @@ export function MembersAdminSection() {
     queryKey: ["members", activeOrgId],
     queryFn: async () => {
       if (!activeOrgId) return [];
-      const { data, error } = await authClient.organization.listMembers({ query: { limit: 100 } });
-      if (error) throw new Error(error.message ?? "Failed to load members");
-      return unwrapMembers(data);
+      const { members } = await apiClient.auth.listMembers({
+        organizationId: activeOrgId,
+        limit: 100,
+      });
+      return unwrapMembers(members);
     },
     enabled: !!activeOrgId,
   });

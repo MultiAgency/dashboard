@@ -402,6 +402,66 @@ export async function getProposals(
 const SCAN_PAGE = 100;
 const SCAN_PAGES = 20;
 
+export async function syncDaoProposals(
+  db: Database,
+  daoAccountId: string,
+  maxPages = SCAN_PAGES,
+): Promise<{ fetchedPages: number; complete: boolean; pending: DaoProposal[] }> {
+  const last = await getLastProposalId(daoAccountId);
+  if (last <= 0) return { fetchedPages: 0, complete: true, pending: [] };
+  const cached = await db
+    .select({ id: proposalsTable.proposalId })
+    .from(proposalsTable)
+    .where(eq(proposalsTable.daoAccountId, daoAccountId));
+  const have = new Set(cached.map((row) => row.id));
+  const pages: number[] = [];
+  for (let from = Math.floor((last - 1) / SCAN_PAGE) * SCAN_PAGE; from >= 0; from -= SCAN_PAGE) {
+    const end = Math.min(from + SCAN_PAGE, last);
+    for (let id = from; id < end; id++) {
+      if (!have.has(id)) {
+        pages.push(from);
+        break;
+      }
+    }
+  }
+  const todo = pages.slice(0, maxPages);
+  const pending = new Map<number, DaoProposal>();
+  for (const from of todo) {
+    const end = Math.min(from + SCAN_PAGE, last);
+    const fetched = await getProposals(db, daoAccountId, from, Math.min(end + 1, last) - from);
+    for (const proposal of fetched) {
+      if (proposal.status === "InProgress" && proposal.kind.type === "Transfer") {
+        pending.set(proposal.id, proposal);
+      }
+    }
+    const returned = new Set(fetched.map((p) => p.id));
+    const highestSeen = Math.max(-1, ...returned);
+    const removed: DaoProposal[] = [];
+    for (let id = from; id < Math.min(end, highestSeen); id++) {
+      if (!returned.has(id) && !have.has(id)) {
+        removed.push({
+          id,
+          proposer: "",
+          description: "",
+          kind: { type: "Other", name: "Removed" },
+          status: "Removed",
+          submissionTime: "0",
+          votes: {},
+        });
+      }
+    }
+    await persistTerminalProposals(db, daoAccountId, [
+      ...fetched.filter((p) => p.status === "Expired"),
+      ...removed,
+    ]);
+  }
+  return {
+    fetchedPages: todo.length,
+    complete: pages.length <= maxPages,
+    pending: [...pending.values()].sort((a, b) => b.id - a.id),
+  };
+}
+
 export async function proposalsSince(
   db: Database,
   daoAccountId: string,

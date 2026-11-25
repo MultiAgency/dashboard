@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuthClient } from "@/app";
@@ -7,11 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { landingDestination, refreshAccountQueries } from "@/lib/account";
-import { useApiClient } from "@/lib/api";
-import { isActiveOrganization } from "@/lib/landing";
+import { refreshAccountQueries } from "@/lib/account";
 import { availableSlug, isOrganizationSlugTaken, isValidSlug, slugify } from "@/lib/slugify";
-import { announceWorkspace } from "@/lib/workspace";
 
 class SlugTakenError extends Error {
   constructor(readonly suggestion: string | null) {
@@ -21,9 +17,7 @@ class SlugTakenError extends Error {
 
 export function CreateOrganizationForm({ onCreated }: { onCreated?: () => void }) {
   const authClient = useAuthClient();
-  const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
@@ -45,32 +39,18 @@ export function CreateOrganizationForm({ onCreated }: { onCreated?: () => void }
       const { data, error } = await authClient.organization.create({
         name: name.trim(),
         slug: slugTrimmed,
+        keepCurrentActiveOrganization: true,
       });
       if (isOrganizationSlugTaken(error?.code)) {
         throw new SlugTakenError(await availableSlug(slugTrimmed, isTaken));
       }
       if (error || !data?.id)
         throw new Error(error?.message ?? "Could not create the Organization");
-      if (!isActiveOrganization(data)) {
-        await refreshAccountQueries(queryClient);
-        return null;
-      }
-      const { error: activeError } = await authClient.organization.setActive({
-        organizationId: data.id,
-      });
-      if (activeError) throw new Error(activeError.message ?? "Could not open the Organization");
-      announceWorkspace(data.id);
       await refreshAccountQueries(queryClient);
-      return landingDestination({ authClient, apiClient, queryClient });
     },
-    onSuccess: (destination) => {
+    onSuccess: () => {
       onCreated?.();
-      if (destination === null) {
-        setWaiting(name.trim());
-        return;
-      }
-      toast.success(`Organization "${name.trim()}" created`);
-      navigate({ to: destination, replace: true });
+      setWaiting(name.trim());
     },
     onError: (e: Error) => {
       if (e instanceof SlugTakenError) {

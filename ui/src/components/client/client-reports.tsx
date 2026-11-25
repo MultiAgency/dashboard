@@ -154,7 +154,7 @@ export function ClientReports({
       ]),
       {
         section: "Overview",
-        label: "Total billed",
+        label: "Total paid",
         value: overview.billed,
       },
     ];

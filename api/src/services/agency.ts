@@ -249,7 +249,7 @@ export function createAgencyService(
             : mention;
         }
 
-        const projectsPlugin = plugins.projects.client(scope.pluginContext);
+        const projectsPlugin = plugins.projects.client({ ...scope.pluginContext, trusted: true });
         const created = yield* Effect.promise(() =>
           projectsPlugin.createProject({
             kind: input.kind ?? "project",
@@ -303,7 +303,7 @@ export function createAgencyService(
         const updated = hasProjectChanges
           ? toProject(
               yield* Effect.promise(() =>
-                plugins.projects.client(scope.pluginContext).updateProject({
+                plugins.projects.client({ ...scope.pluginContext, trusted: true }).updateProject({
                   id,
                   title: projectPatch.title,
                   description: projectPatch.description === null ? "" : projectPatch.description,

@@ -8,6 +8,7 @@ import {
   meRolesQueryKey,
   meRolesQueryOptions,
   myOrganizationsQueryKey,
+  myOrganizationsQueryOptions,
   setActiveOrganizationKey,
 } from "./queries";
 import { clearAllWorkOrderDrafts } from "./work-order-draft";
@@ -27,13 +28,22 @@ export type UserInvitation = {
   expiresAt: Date | string;
 };
 
-export function userInvitationsQueryOptions(authClient: AuthClient, enabled: boolean) {
+export function userInvitationsQueryOptions(apiClient: ApiClient, enabled: boolean) {
   return queryOptions({
     queryKey: userInvitationsQueryKey,
     queryFn: async (): Promise<UserInvitation[]> => {
-      const { data, error } = await authClient.organization.listUserInvitations();
-      if (error || !Array.isArray(data)) return [];
-      return pendingInvitations(data as UserInvitation[], new Date());
+      const data = await apiClient.auth.listUserInvitations().catch(() => []);
+      const invitations: UserInvitation[] = data.map((invitation) => ({
+        id: invitation.id,
+        organizationId: invitation.organizationId,
+        organizationName:
+          invitation.organizationName ?? invitation.organizationSlug ?? invitation.organizationId,
+        email: invitation.email ?? invitation.nearAccountId ?? "",
+        role: invitation.role,
+        status: invitation.status,
+        expiresAt: invitation.expiresAt,
+      }));
+      return pendingInvitations(invitations, new Date());
     },
     enabled,
     staleTime: 60_000,
@@ -43,15 +53,10 @@ export function userInvitationsQueryOptions(authClient: AuthClient, enabled: boo
 
 export const organizationsQueryKey = ["organizations", "list"] as const;
 
-export type AuthOrganization = Organization & {
-  status?: "active" | "pending" | "rejected";
-  rejectionReason?: string | null;
-};
-
 export function organizationsQueryOptions(authClient: AuthClient) {
   return queryOptions({
     queryKey: organizationsQueryKey,
-    queryFn: async (): Promise<AuthOrganization[]> => {
+    queryFn: async (): Promise<Organization[]> => {
       const res = await authClient.organization.list();
       return res.data ?? [];
     },
@@ -94,14 +99,15 @@ type AccountDeps = {
 
 async function activateOrganization({
   authClient,
+  apiClient,
   queryClient,
-}: Pick<AccountDeps, "authClient" | "queryClient">): Promise<string | null> {
+}: AccountDeps): Promise<string | null> {
   const [session, organizations] = await Promise.all([
     queryClient.fetchQuery({ ...sessionQueryOptions(authClient), staleTime: 0 }),
-    queryClient.fetchQuery({ ...organizationsQueryOptions(authClient), staleTime: 0 }),
+    queryClient.fetchQuery({ ...myOrganizationsQueryOptions(apiClient), staleTime: 0 }),
   ]);
   const activeId = session?.session?.activeOrganizationId ?? null;
-  const target = organizationToActivate(activeId, organizations);
+  const target = organizationToActivate(activeId, organizations.data);
   if (target && target !== activeId) {
     if (!(await switchWorkspace(authClient, target))) {
       throw new Error("Could not open your Organization");

@@ -162,7 +162,7 @@ function SortHeader({
       ) : sorted === "desc" ? (
         <ArrowUpIcon data-icon="inline-end" aria-hidden />
       ) : (
-        <ArrowsDownUpIcon data-icon="inline-end" aria-hidden className="opacity-50" />
+        <ArrowsDownUpIcon data-icon="inline-end" aria-hidden className="opacity-50 print:hidden" />
       )}
     </Button>
   );
@@ -278,7 +278,7 @@ export function DataTable<TData extends RowData, TValue>({
   return (
     <div data-slot="data-table" className="flex min-w-0 flex-col gap-3">
       {showToolbar && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 print:hidden">
           {enableSearch ? (
             <InputGroup className="w-full sm:w-64">
               <InputGroupAddon>

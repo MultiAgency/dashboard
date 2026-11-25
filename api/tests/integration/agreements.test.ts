@@ -71,7 +71,9 @@ describe("client agreements", () => {
 
   function reportsService() {
     const plugins = { ...world.plugins, ...builders } as PluginsClient;
-    return createReportsService(db, world.directory, plugins, world.organizations.directory);
+    return createReportsService(db, world.directory, plugins, world.organizations.directory, {
+      syncProposals: async () => ({ pending: [], complete: true }),
+    });
   }
 
   function portal() {
