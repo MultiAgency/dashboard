@@ -303,7 +303,7 @@ export function createAgencyService(
         const updated = hasProjectChanges
           ? toProject(
               yield* Effect.promise(() =>
-                plugins.projects.client(scope.pluginContext).updateProject({
+                plugins.projects.client({ ...scope.pluginContext, trusted: true }).updateProject({
                   id,
                   title: projectPatch.title,
                   description: projectPatch.description === null ? "" : projectPatch.description,

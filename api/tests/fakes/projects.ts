@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import type { PluginContext } from "../../src/lib/organizations";
+import { type PluginContext, parseOrgMetadata } from "../../src/lib/organizations";
 import type { PluginsClient } from "../../src/lib/plugins-types.gen";
 import type { AgencyScope, TreasuryScope } from "../../src/services/organization-access";
 import {
@@ -80,7 +80,8 @@ export function inMemoryProjectsPlugin(seed: PluginProject[]) {
   const forContext = (context: PluginContext) => ({
     ...client,
     createProject: async (input: CreateInput): Promise<PluginProject> => {
-      if (context.organization?.activeOrganizationId && !context.trusted) {
+      const personal = parseOrgMetadata(context.organization?.organization?.metadata).isPersonal;
+      if (context.organization?.activeOrganizationId && !personal && !context.trusted) {
         throw new ORPCError("FORBIDDEN", {
           message: "Projects for an Organization are created through the dashboard API",
         });

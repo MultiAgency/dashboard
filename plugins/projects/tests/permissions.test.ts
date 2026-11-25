@@ -100,6 +100,10 @@ describe("projects plugin permissions", () => {
   const update =
     (caller: Caller, patch: Record<string, unknown>): Action =>
     (t) =>
+      trustedClientFor(caller).updateProject({ id: t.id, ...patch });
+  const updateDirectly =
+    (caller: Caller, patch: Record<string, unknown>): Action =>
+    (t) =>
       clientFor(caller).updateProject({ id: t.id, ...patch });
   const remove =
     (caller: Caller): Action =>
@@ -156,6 +160,11 @@ describe("projects plugin permissions", () => {
       update(acmeOtherMember, { title: "New" }),
       { title: "New" },
     ],
+    [
+      "lets members edit the Projects they created directly",
+      updateDirectly(acmeOtherMember, { title: "Mine" }),
+      { title: "Mine" },
+    ],
     ["lets owners make a Project public", update(acmeOwner, publish), publish],
     [
       "lets platform admins edit any Project",
@@ -196,6 +205,14 @@ describe("projects plugin permissions", () => {
     ["let a member delete another member's Project", remove(acmeMember)],
     ["give a personal Organization's owner rights over its Projects", remove(personalOwnerOfAcme)],
     ["let a non-platform admin change the owner", update(acmeAdmin, { ownerId: "acme-admin" })],
+    [
+      "let an Organization admin edit without going through the API",
+      updateDirectly(acmeAdmin, { title: "Direct" }),
+    ],
+    [
+      "let an Organization owner publish without going through the API",
+      updateDirectly(acmeOwner, publish),
+    ],
     ["let a plain member make a Project public", update(acmeMember, publish)],
     ["let another Organization's owner make a Project public", update(rivalOwner, publish)],
   ])("refuses to %s", async (_, action) => {
