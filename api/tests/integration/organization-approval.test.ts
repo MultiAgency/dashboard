@@ -1,11 +1,22 @@
 import type { PGlite } from "@electric-sql/pglite";
+import { eq } from "drizzle-orm";
 import { createPluginRuntime } from "every-plugin";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { organizationApprovals } from "../../src/db/schema";
 import { authDatabaseDirectory } from "../../src/lib/auth-database";
 import type { EmailMessage } from "../../src/services/notify";
+import { createOrganizationAccess, ROLE_MATRIX } from "../../src/services/organization-access";
+import {
+  approvalRecordedByAuth,
+  createOrganizationApprovals,
+} from "../../src/services/organization-approvals";
 import { createOrganizationRequestsService } from "../../src/services/organization-requests";
+import { createProjectDirectory } from "../../src/services/project-directory";
+import { inMemoryOrganizations, signedIn } from "../fakes/organizations";
+import { inMemoryProjects } from "../fakes/projects";
+import { migratedDatabase } from "./_pg";
 
-async function authDatabase(withStatus: boolean) {
+async function authDatabase(options: { status: boolean } = { status: true }) {
   const { PGlite } = await import("@electric-sql/pglite");
   const pg = new PGlite("memory://");
   await pg.exec(`
@@ -13,7 +24,7 @@ async function authDatabase(withStatus: boolean) {
     CREATE TABLE "organization" (
       id text PRIMARY KEY, name text NOT NULL, slug text NOT NULL UNIQUE, logo text, metadata text,
       created_at timestamp NOT NULL
-      ${withStatus ? `, status text DEFAULT 'active' NOT NULL` : ""}
+      ${options.status ? `, status text DEFAULT 'active' NOT NULL, rejection_reason text` : ""}
     );
     CREATE TABLE "member" (
       id text PRIMARY KEY,
@@ -22,20 +33,25 @@ async function authDatabase(withStatus: boolean) {
       role text NOT NULL,
       created_at timestamp NOT NULL
     );
-    INSERT INTO "user" VALUES ('ada', 'Ada', 'ada@example.com');
+    INSERT INTO "user" VALUES ('ada', 'Ada', 'ada@example.com'), ('bo', 'Bo', 'bo@near.email');
     INSERT INTO "organization" (id, name, slug, metadata, created_at) VALUES
-      ('live', 'Live', 'live', '{}', now()),
-      ('asked', 'Asked', 'asked', '{}', now()),
-      ('refused', 'Refused', 'refused', '{}', now());
+      ('live', 'Live', 'live', '{}', now() - interval '60 days'),
+      ('asked', 'Asked', 'asked', '{}', now() - interval '30 days'),
+      ('refused', 'Refused', 'refused', '{}', now() - interval '29 days'),
+      ('fresh', 'Fresh', 'fresh', '{}', now() + interval '1 second'),
+      ('ada-home', 'Ada', 'ada-home', '{"isPersonal":true}', now() - interval '61 days');
     INSERT INTO "member" VALUES
       ('m1', 'live', 'ada', 'owner', now()),
       ('m2', 'asked', 'ada', 'owner', now()),
-      ('m3', 'refused', 'ada', 'owner', now());
+      ('m3', 'refused', 'ada', 'owner', now()),
+      ('m4', 'fresh', 'bo', 'owner', now()),
+      ('m5', 'fresh', 'ada', 'member', now()),
+      ('m6', 'ada-home', 'ada', 'owner', now());
   `);
-  if (withStatus) {
+  if (options.status) {
     await pg.exec(`
       UPDATE "organization" SET status = 'pending' WHERE id = 'asked';
-      UPDATE "organization" SET status = 'rejected' WHERE id = 'refused';
+      UPDATE "organization" SET status = 'rejected', rejection_reason = 'Duplicate of Live' WHERE id = 'refused';
     `);
   }
   return pg;
@@ -46,108 +62,245 @@ const sqlOf = (pg: PGlite) => ({
     pg.query<T>(text, params as never[]) as Promise<{ rows: T[] }>,
 });
 
-describe("memberships offered for activation", () => {
+describe("approvals adopted from the auth plugin", () => {
+  const api = migratedDatabase({ perTest: true });
   let pg: PGlite;
 
   afterEach(async () => {
     await pg.close();
   });
 
-  test("leave out Organizations waiting for approval or rejected", async () => {
-    pg = await authDatabase(true);
-    const directory = authDatabaseDirectory(sqlOf(pg) as never);
-    const ids = (await directory.memberships("ada")).map((m) => m.organization.id);
-    expect(ids).toEqual(["live"]);
-  });
+  const adopt = async () => {
+    const directory = authDatabaseDirectory(sqlOf(pg));
+    return createOrganizationApprovals(api.db).adopt(async () =>
+      (await directory.all())
+        .filter((record) => !record.organization.isPersonal)
+        .map(approvalRecordedByAuth),
+    );
+  };
 
-  test("include an Organization once it is approved", async () => {
-    pg = await authDatabase(true);
-    await pg.exec(`UPDATE "organization" SET status = 'active' WHERE id = 'asked'`);
-    const directory = authDatabaseDirectory(sqlOf(pg) as never);
-    const ids = (await directory.memberships("ada")).map((m) => m.organization.id).sort();
-    expect(ids).toEqual(["asked", "live"]);
-  });
-
-  test("are unchanged on an auth database without approval", async () => {
-    pg = await authDatabase(false);
-    const directory = authDatabaseDirectory(sqlOf(pg) as never);
-    const ids = (await directory.memberships("ada")).map((m) => m.organization.id).sort();
-    expect(ids).toEqual(["asked", "live", "refused"]);
-  });
-
-  test("count an Organization without a status as active", async () => {
-    pg = await authDatabase(false);
-    await pg.exec(`
-      ALTER TABLE "organization" ADD COLUMN status text;
-      UPDATE "organization" SET status = 'pending' WHERE id = 'asked';
-    `);
-    const directory = authDatabaseDirectory(sqlOf(pg) as never);
-    const ids = (await directory.memberships("ada")).map((m) => m.organization.id).sort();
-    expect(ids).toEqual(["live", "refused"]);
-  });
-
-  test("filter by status once the auth migration adds it, without a restart", async () => {
-    pg = await authDatabase(false);
-    const directory = authDatabaseDirectory(sqlOf(pg) as never);
-    expect((await directory.memberships("ada")).map((m) => m.organization.id).sort()).toEqual([
-      "asked",
+  test("keep each earlier Organization's decision, and leave one created since the upgrade waiting", async () => {
+    pg = await authDatabase();
+    expect(await adopt()).toBe(true);
+    const approvals = await createOrganizationApprovals(api.db).of([
       "live",
+      "asked",
       "refused",
+      "fresh",
     ]);
-    await pg.exec(`
-      ALTER TABLE "organization" ADD COLUMN status text DEFAULT 'active' NOT NULL;
-      UPDATE "organization" SET status = 'pending' WHERE id = 'asked';
-      UPDATE "organization" SET status = 'rejected' WHERE id = 'refused';
-    `);
-    expect((await directory.memberships("ada")).map((m) => m.organization.id)).toEqual(["live"]);
+    expect(Object.fromEntries(approvals)).toEqual({
+      live: { status: "approved", rejectionReason: null },
+      asked: { status: "pending", rejectionReason: null },
+      refused: { status: "rejected", rejectionReason: "Duplicate of Live" },
+      fresh: { status: "pending", rejectionReason: null },
+    });
+  });
+
+  test("count every Organization as approved on an auth database without approval", async () => {
+    pg = await authDatabase({ status: false });
+    await adopt();
+    const approvals = await createOrganizationApprovals(api.db).of(["asked", "refused"]);
+    expect([...approvals.values()].map((a) => a.status)).toEqual(["approved", "approved"]);
+  });
+
+  test("happen once, so Organizations created later wait for review", async () => {
+    pg = await authDatabase();
+    await adopt();
+    await pg.exec(
+      `INSERT INTO "organization" (id, name, slug, metadata, created_at) VALUES ('later', 'Later', 'later', '{}', now())`,
+    );
+    expect(await adopt()).toBe(false);
+    const approvals = createOrganizationApprovals(api.db);
+    expect(await approvals.isApproved("later")).toBe(false);
+    expect((await approvals.of(["later"])).get("later")).toEqual({
+      status: "pending",
+      rejectionReason: null,
+    });
+  });
+
+  test("happen once when two instances boot together", async () => {
+    pg = await authDatabase();
+    const results = await Promise.all([adopt(), adopt()]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const rows = await api.db.select().from(organizationApprovals);
+    expect(rows.map((r) => r.organizationId).sort()).toEqual(["asked", "live", "refused"]);
+  });
+
+  test("record only earlier Organizations, leaving personal ones out", async () => {
+    pg = await authDatabase();
+    await adopt();
+    const rows = await api.db.select().from(organizationApprovals);
+    expect(rows.map((r) => r.organizationId).sort()).toEqual(["asked", "live", "refused"]);
+  });
+});
+
+describe("Organization routes behind approval", () => {
+  const api = migratedDatabase({ perTest: true });
+  const seed = {
+    organizations: [
+      { id: "studio", name: "Studio" },
+      { id: "ada-home", name: "Ada", isPersonal: true },
+    ],
+    members: [
+      { userId: "ada", organizationId: "studio", role: "owner" as const },
+      { userId: "ada", organizationId: "ada-home", role: "owner" as const },
+    ],
+  };
+
+  const accessWith = () =>
+    createOrganizationAccess({
+      db: api.db,
+      organizations: inMemoryOrganizations(seed).port,
+      approvals: createOrganizationApprovals(api.db),
+      directory: createProjectDirectory(() => inMemoryProjects([]).client),
+    });
+
+  test("refuse an Organization that no site admin has approved, even created by its own owner", async () => {
+    const access = accessWith();
+    await expect(
+      access.agencyScope(signedIn("ada", "studio"), ROLE_MATRIX.work),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect((await access.resolve(signedIn("ada", "studio"))).organization).toBeNull();
+  });
+
+  test("serve it once approved", async () => {
+    await createOrganizationApprovals(api.db).decide(
+      "studio",
+      { status: "approved" },
+      "site-admin",
+    );
+    const scope = await accessWith().agencyScope(signedIn("ada", "studio"), ROLE_MATRIX.work);
+    expect(scope.organizationId).toBe("studio");
+  });
+
+  test("refuse it again once rejected", async () => {
+    const approvals = createOrganizationApprovals(api.db);
+    await approvals.decide("studio", { status: "approved" }, "site-admin");
+    await approvals.decide("studio", { status: "rejected", reason: "Spam" }, "site-admin");
+    await expect(
+      accessWith().agencyScope(signedIn("ada", "studio"), ROLE_MATRIX.work),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  test("leave a personal Organization as it was, with no role and nothing to approve", async () => {
+    const access = await accessWith().resolve(signedIn("ada", "ada-home"));
+    expect(access.organization?.id).toBe("ada-home");
+    expect(access.role).toBeNull();
+  });
+});
+
+describe("the review queue", () => {
+  const api = migratedDatabase({ perTest: true });
+  let pg: PGlite;
+
+  beforeEach(async () => {
+    pg = await authDatabase();
+  });
+
+  afterEach(async () => {
+    await pg.close();
+  });
+
+  const createdAt = async (id: string) => {
+    const { rows } = await pg.query<{ created_at: Date }>(
+      `SELECT created_at FROM "organization" WHERE id = $1`,
+      [id],
+    );
+    return new Date(rows[0]!.created_at).toISOString();
+  };
+
+  const service = () =>
+    createOrganizationRequestsService({
+      organizations: authDatabaseDirectory(sqlOf(pg)),
+      approvals: createOrganizationApprovals(api.db, () => new Date("2026-11-27T12:00:00Z")),
+      sendEmail: null,
+      appOrigin: "https://dev.multiagency.example",
+    });
+
+  const approved = (...ids: string[]) =>
+    Promise.all(
+      ids.map((id) =>
+        createOrganizationApprovals(api.db).decide(id, { status: "approved" }, "site-admin"),
+      ),
+    );
+
+  test("lists every Organization without a decision, with its owner and when it was made", async () => {
+    await approved("live");
+    await createOrganizationApprovals(api.db).decide(
+      "refused",
+      { status: "rejected", reason: "No" },
+      "site-admin",
+    );
+    expect(await service().pending()).toEqual([
+      {
+        id: "asked",
+        name: "Asked",
+        slug: "asked",
+        requestedBy: "ada",
+        requestedByEmail: "ada@example.com",
+        requestedAt: await createdAt("asked"),
+      },
+      {
+        id: "fresh",
+        name: "Fresh",
+        slug: "fresh",
+        requestedBy: "bo",
+        requestedByEmail: null,
+        requestedAt: await createdAt("fresh"),
+      },
+    ]);
+  });
+
+  test("approving takes an Organization off the queue and records who approved it", async () => {
+    await approved("live", "asked", "refused");
+    expect(
+      await service().review({ organizationId: "fresh", decision: "approve" }, "site-admin"),
+    ).toEqual({ id: "fresh", status: "approved", adminInvite: null });
+    expect(await service().pending()).toEqual([]);
+    const [row] = await api.db
+      .select()
+      .from(organizationApprovals)
+      .where(eq(organizationApprovals.organizationId, "fresh"));
+    expect(row).toMatchObject({
+      status: "approved",
+      reviewedBy: "site-admin",
+      reviewedAt: new Date("2026-11-27T12:00:00Z"),
+    });
+  });
+
+  test("rejecting keeps the reason for the people who asked", async () => {
+    expect(
+      await service().review(
+        { organizationId: "fresh", decision: "reject", reason: "Duplicate of Live" },
+        "site-admin",
+      ),
+    ).toEqual({ id: "fresh", status: "rejected", adminInvite: null });
+    expect((await createOrganizationApprovals(api.db).of(["fresh"])).get("fresh")).toEqual({
+      status: "rejected",
+      rejectionReason: "Duplicate of Live",
+    });
+  });
+
+  test.each([
+    "missing",
+    "ada-home",
+  ])("refuses to review %s, which is not an Organization to approve", async (id) => {
+    await expect(
+      service().review({ organizationId: id, decision: "approve" }, "site-admin"),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await api.db.select().from(organizationApprovals)).toEqual([]);
   });
 });
 
 describe("organization approval routes", () => {
   const ID = "api";
-  const reviews: Array<{ input: unknown; cookie: string | null }> = [];
-  const lists: Array<string | null> = [];
   let runtime: ReturnType<typeof createPluginRuntime>;
   let clientFor: (context: object) => any;
-
-  const fakeAuth = {
-    client: (context: { reqHeaders?: Record<string, string> }) => ({
-      listOrganizationRequests: async () => {
-        lists.push(context.reqHeaders?.cookie ?? null);
-        return [
-          {
-            id: "asked",
-            name: "Asked",
-            slug: "asked",
-            status: "pending",
-            requestedBy: "ada",
-            createdAt: new Date("2026-10-27T10:00:00Z"),
-          },
-        ];
-      },
-      reviewOrganization: async (input: { organizationId: string; decision: string }) => {
-        reviews.push({ input, cookie: context.reqHeaders?.cookie ?? null });
-        return {
-          id: input.organizationId,
-          status: input.decision === "approve" ? "active" : "rejected",
-        };
-      },
-    }),
-  };
 
   const caller = (role: "admin" | "user") => ({
     userId: `${role}-1`,
     user: { id: `${role}-1`, role },
     reqHeaders: new Headers({ cookie: `session=${role}` }),
-  });
-
-  const memberOf = (role: "owner" | "member", status: string) => ({
-    ...caller("user"),
-    organization: {
-      activeOrganizationId: "studio",
-      organization: { id: "studio", name: "Studio", slug: "studio", metadata: null, status },
-      member: { id: "m-studio", role },
-    },
   });
 
   beforeAll(async () => {
@@ -157,7 +310,7 @@ describe("organization approval routes", () => {
     const plugin = await (runtime as any).usePlugin(
       ID,
       { variables: {}, secrets: { API_DATABASE_URL: ":memory:" } },
-      { auth: fakeAuth },
+      { auth: { client: () => ({}) } },
     );
     clientFor = (context) => plugin.createClient(context);
   }, 120_000);
@@ -166,108 +319,54 @@ describe("organization approval routes", () => {
     await runtime?.shutdown();
   });
 
-  beforeEach(() => {
-    reviews.length = 0;
-    lists.length = 0;
-  });
-
   test("refuse a caller who isn't signed in", async () => {
     await expect(clientFor({}).organizationRequests.list()).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
   });
 
-  test("refuse a signed-in user who isn't a site admin, without asking the auth plugin", async () => {
+  test("refuse a signed-in user who isn't a site admin", async () => {
     const user = clientFor(caller("user"));
     await expect(user.organizationRequests.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       user.organizationRequests.review({ organizationId: "asked", decision: "approve" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(lists).toEqual([]);
-    expect(reviews).toEqual([]);
-  });
-
-  test("list pending requests for a site admin, with who asked and when", async () => {
-    const { data } = await clientFor(caller("admin")).organizationRequests.list();
-    expect(data).toEqual([
-      {
-        id: "asked",
-        name: "Asked",
-        slug: "asked",
-        requestedBy: "ada",
-        requestedByEmail: null,
-        requestedAt: "2026-10-27T10:00:00.000Z",
-      },
-    ]);
-    expect(lists).toEqual(["session=admin"]);
-  });
-
-  test("approve as the site admin's own session", async () => {
-    const admin = clientFor(caller("admin"));
-    expect(
-      await admin.organizationRequests.review({ organizationId: "asked", decision: "approve" }),
-    ).toEqual({ id: "asked", status: "active", adminInvite: null });
-    expect(reviews).toEqual([
-      { input: { organizationId: "asked", decision: "approve" }, cookie: "session=admin" },
-    ]);
-  });
-
-  test("invite the admin from the server after approving, without handing the email to the auth plugin", async () => {
-    const admin = clientFor(caller("admin"));
-    const reviewed = await admin.organizationRequests.review({
-      organizationId: "asked",
-      decision: "approve",
-      adminEmail: "lead@client.example",
-    });
-    expect(reviewed).toMatchObject({ id: "asked", status: "active" });
-    expect(reviewed.adminInvite).toMatchObject({ status: "failed" });
-    expect(reviews.map((r) => r.input)).toEqual([{ organizationId: "asked", decision: "approve" }]);
   });
 
   test("refuse an invalid admin email before approving anything", async () => {
-    const admin = clientFor(caller("admin"));
     await expect(
-      admin.organizationRequests.review({
+      clientFor(caller("admin")).organizationRequests.review({
         organizationId: "asked",
         decision: "approve",
         adminEmail: "not-an-email",
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(reviews).toEqual([]);
-  });
-
-  test.each([
-    "pending",
-    "rejected",
-  ])("refuse Organization routes while the active Organization is %s", async (status) => {
-    const owner = clientFor(memberOf("owner", status));
-    await expect(owner.workOrders.payoutAgent({})).rejects.toMatchObject({ code: "FORBIDDEN" });
-  });
-
-  test("serve Organization routes once the active Organization is active", async () => {
-    const owner = clientFor(memberOf("owner", "active"));
-    await expect(owner.workOrders.payoutAgent({})).resolves.toMatchObject({ settings: null });
   });
 
   test("reject only with a reason", async () => {
-    const admin = clientFor(caller("admin"));
     await expect(
-      admin.organizationRequests.review({ organizationId: "asked", decision: "reject" }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(
-      await admin.organizationRequests.review({
+      clientFor(caller("admin")).organizationRequests.review({
         organizationId: "asked",
         decision: "reject",
-        reason: "Duplicate of Live",
       }),
-    ).toEqual({ id: "asked", status: "rejected", adminInvite: null });
-    expect(reviews.map((r) => r.input)).toEqual([
-      { organizationId: "asked", decision: "reject", reason: "Duplicate of Live" },
-    ]);
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  test("refuse Organization routes for an owner whose Organization isn't approved", async () => {
+    const owner = clientFor({
+      ...caller("user"),
+      organization: {
+        activeOrganizationId: "studio",
+        organization: { id: "studio", name: "Studio", slug: "studio", metadata: null },
+        member: { id: "m-studio", role: "owner" },
+      },
+    });
+    await expect(owner.workOrders.payoutAgent({})).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
 
 describe("the admin invite sent on approval", () => {
+  const api = migratedDatabase();
   let pg: PGlite;
   const sent: EmailMessage[] = [];
 
@@ -310,6 +409,7 @@ describe("the admin invite sent on approval", () => {
   const service = (sendEmail: ((message: EmailMessage) => Promise<void>) | null) =>
     createOrganizationRequestsService({
       organizations: authDatabaseDirectory(sqlOf(pg)),
+      approvals: createOrganizationApprovals(api.db),
       sendEmail,
       appOrigin: "https://dev.multiagency.example",
       now: () => new Date("2026-10-30T12:00:00Z"),

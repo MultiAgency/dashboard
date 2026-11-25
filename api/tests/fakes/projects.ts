@@ -80,6 +80,11 @@ export function inMemoryProjectsPlugin(seed: PluginProject[]) {
   const forContext = (context: PluginContext) => ({
     ...client,
     createProject: async (input: CreateInput): Promise<PluginProject> => {
+      if (context.organization?.activeOrganizationId && !context.trusted) {
+        throw new ORPCError("FORBIDDEN", {
+          message: "Projects for an Organization are created through the dashboard API",
+        });
+      }
       if (projects.some((p) => p.slug === input.slug)) {
         throw new ORPCError("BAD_REQUEST", {
           message: "A project with this slug already exists",

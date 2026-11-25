@@ -83,7 +83,7 @@ describe("projects plugin permissions", () => {
   });
 
   const createAs = (caller: Caller, input: Record<string, unknown> = {}) =>
-    clientFor(caller).createProject({
+    trustedClientFor(caller).createProject({
       kind: "project",
       title: "Project",
       slug: nextSlug(),
@@ -123,6 +123,17 @@ describe("projects plugin permissions", () => {
       "never binds a Project to a personal Organization",
       create(soloOwner),
       { organizationId: null },
+    ],
+    [
+      "lets anyone signed in create a personal Project directly",
+      () =>
+        clientFor(soloOwner).createProject({
+          kind: "project",
+          title: "Mine",
+          slug: nextSlug(),
+          repository: "https://github.com/example/repo",
+        }),
+      { organizationId: null, ownerId: "solo" },
     ],
     [
       "lets platform admins choose the owner on create",
@@ -169,6 +180,11 @@ describe("projects plugin permissions", () => {
   });
 
   test.each<[string, Action]>([
+    [
+      "create in an Organization without going through the API",
+      () =>
+        clientFor(acmeAdmin).createProject({ kind: "project", title: "Direct", slug: nextSlug() }),
+    ],
     ["create in another Organization", create(acmeAdmin, { organizationId: "rival" })],
     ["create in a personal Organization", create(soloOwner, { organizationId: "solo-personal" })],
     ["let a non-platform admin choose the owner", create(acmeAdmin, { ownerId: "x.near" })],

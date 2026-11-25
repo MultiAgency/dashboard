@@ -249,7 +249,7 @@ export function createAgencyService(
             : mention;
         }
 
-        const projectsPlugin = plugins.projects.client(scope.pluginContext);
+        const projectsPlugin = plugins.projects.client({ ...scope.pluginContext, trusted: true });
         const created = yield* Effect.promise(() =>
           projectsPlugin.createProject({
             kind: input.kind ?? "project",

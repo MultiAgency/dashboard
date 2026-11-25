@@ -11,11 +11,13 @@ import { createListingsService } from "../../src/services/listings";
 import { createNotifications } from "../../src/services/notifications";
 import type { EmailMessage } from "../../src/services/notify";
 import { createOrganizationAccess, ROLE_MATRIX } from "../../src/services/organization-access";
+import { createOrganizationApprovals } from "../../src/services/organization-approvals";
 import { createPrepaymentsService } from "../../src/services/prepayments";
 import type { PluginProject } from "../../src/services/project-directory";
 import { createReportsService } from "../../src/services/reports";
 import { migratedDatabase } from "../integration/_pg";
 import {
+  everyOrganizationApproved,
   type FakeMember,
   type FakeOrganization,
   type FakeUser,
@@ -90,7 +92,13 @@ export async function engagementWorld(
   });
   const projectsPlugin = inMemoryProjectsPlugin(seed.projects);
   const directory = projectsPlugin.directory;
-  const access = createOrganizationAccess({ db, organizations: organizations.port, directory });
+  const access = createOrganizationAccess({
+    db,
+    organizations: organizations.port,
+    approvals: everyOrganizationApproved,
+    directory,
+  });
+  const approvals = createOrganizationApprovals(db);
   const emails: EmailMessage[] = [];
   const sendEmail = async (message: EmailMessage) => {
     emails.push(message);
@@ -112,6 +120,7 @@ export async function engagementWorld(
   const engagements = createEngagementsService({
     db,
     organizations: organizations.directory,
+    approvals,
     projects: directory,
     notifications,
     sendEmail,
@@ -156,6 +165,7 @@ export async function engagementWorld(
     plugins: projectsPlugin.plugins,
     upstreamProjects: projectsPlugin.projects,
     access,
+    approvals,
     directory,
     notifications,
     engagements,

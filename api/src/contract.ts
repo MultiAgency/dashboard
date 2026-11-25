@@ -1564,7 +1564,7 @@ export const contract = oc.router({
       .output(
         z.object({
           id: z.string(),
-          status: z.enum(["active", "pending", "rejected"]),
+          status: z.enum(["approved", "rejected"]),
           adminInvite: z
             .discriminatedUnion("status", [
               z.object({ status: z.literal("invited"), email: z.string() }),
@@ -2102,6 +2102,14 @@ export const contract = oc.router({
               name: z.string(),
               slug: z.string(),
               role: z.enum(["owner", "admin", "member"]).nullable(),
+            }),
+          ),
+          awaitingApproval: z.array(
+            z.object({
+              id: z.string(),
+              name: z.string(),
+              status: z.enum(["pending", "rejected"]),
+              rejectionReason: z.string().nullable(),
             }),
           ),
         }),
