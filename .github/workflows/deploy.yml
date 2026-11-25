@@ -69,4 +69,4 @@ jobs:
 
       - name: Deploy production (preflight, build, upload, publish, image, smoke, Railway)
         timeout-minutes: 35
-        run: pnpm run bos deploy${{ inputs.verbose == true && ' --verbose' || '' }}${{ inputs.smoke == true && ' --smoke' || '' }}
+        run: pnpm run bos deploy --service app${{ inputs.verbose == true && ' --verbose' || '' }}${{ inputs.smoke == true && ' --smoke' || '' }}

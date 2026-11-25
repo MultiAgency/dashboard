@@ -25,7 +25,7 @@ import { PageHeader } from "@/components/page-header";
 import type { ColumnDef } from "@/components/ui/data-table";
 import type { Organization } from "@/lib/auth";
 import { sessionQueryKey, useAuthClient } from "@/lib/auth";
-import { organizationRequestsQueryKey } from "@/lib/queries";
+import { myOrganizationsQueryKey, organizationRequestsQueryKey } from "@/lib/queries";
 import { availableSlug, isOrganizationSlugTaken } from "@/lib/slugify";
 
 export const Route = createFileRoute("/_authenticated/platform/")({
@@ -53,6 +53,7 @@ function PlatformOrgs() {
     queryClient.invalidateQueries({ queryKey: ["platform", "orgs"] });
     queryClient.invalidateQueries({ queryKey: ["organizations", "list"] });
     queryClient.invalidateQueries({ queryKey: organizationRequestsQueryKey });
+    queryClient.invalidateQueries({ queryKey: myOrganizationsQueryKey });
     queryClient.invalidateQueries({ queryKey: sessionQueryKey });
   };
 
