@@ -4,12 +4,14 @@ import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { createPlatformAgents } from "../../src/services/platform/agents";
 import { createPlatformApp, platformSettings } from "../../src/services/platform/client";
+import { createPlatformOwnerActions } from "../../src/services/platform/owner-actions";
 import { createPlatformReads } from "../../src/services/platform/reads";
 import { migratedDatabase } from "../integration/_pg";
 
 const statePath = process.env.PLATFORM_STACK_STATE;
 const ORG = `orgStack${Date.now()}`;
 const OWNER = "owner.near";
+const PAYEE = "payee.near";
 const ACTOR = "stack-admin";
 
 type Signed = { publicKey: string; signature: string };
@@ -135,6 +137,65 @@ describe.skipIf(!statePath)("the dashboard's server on the platform's local stac
       .startSetup(ORG, ACTOR, { ownerAccountId: OWNER })
       .catch((e: Error) => e);
     expect(again).toBeInstanceOf(Error);
+
+    const owner = createPlatformOwnerActions({
+      db: database.db,
+      app,
+      agents,
+      payees: async () => [PAYEE],
+    });
+    const signAndSubmit = async (prepared: Awaited<ReturnType<typeof owner.prepare>>) => {
+      if (!prepared.intent) {
+        throw new Error(
+          `${prepared.action.kind} came back for the confirm page: ${prepared.action.confirmUrl}`,
+        );
+      }
+      const signedOwner = await ownerSigns(prepared.intent.payload);
+      return owner.submit(ORG, {
+        correlationId: prepared.action.correlationId,
+        signedData: {
+          ...prepared.intent,
+          public_key: signedOwner.publicKey,
+          signature: signedOwner.signature,
+        },
+      });
+    };
+    const waitFor = async (correlationId: string) => {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const followed = await owner.follow(ORG, correlationId);
+        if (followed.status === "SUCCESS") return followed;
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+      throw new Error(`${correlationId} never succeeded`);
+    };
+
+    const saved = await owner.saveRules(ORG, ACTOR, {
+      asset: "usdc",
+      maxPerPayout: "5",
+      monthlyBudgetUsd: "100",
+    });
+    expect(saved.pending).toContain(`Pay ${PAYEE} by confidential transfer`);
+    const rules = await owner.prepare(ORG, ACTOR, { kind: "rules" });
+    expect(rules.preview?.after).toBeTruthy();
+    await waitFor((await signAndSubmit(rules)).correlationId);
+    expect((await owner.view(ORG)).pending).toEqual([]);
+    expect((await reads.overview(ORG)).agreed).toContain(PAYEE);
+
+    const grant = await owner.prepare(ORG, ACTOR, { kind: "grant" });
+    await waitFor((await signAndSubmit(grant)).correlationId);
+    expect((await owner.view(ORG)).grant).toMatchObject({ expiringSoon: false });
+
+    await owner.saveRules(ORG, ACTOR, {
+      asset: "wnear",
+      maxPerPayout: "2",
+      monthlyBudgetUsd: "100",
+    });
+    const toWnear = await owner.prepare(ORG, ACTOR, { kind: "rules" });
+    await waitFor((await signAndSubmit(toWnear)).correlationId);
+    const switched = await reads.overview(ORG);
+    expect(switched.assets).toEqual(["nep141:wrap.near"]);
+    expect(switched.destinations).toEqual([{ action: "withdraw", address: PAYEE, chain: "near" }]);
+    expect((await owner.view(ORG)).pending).toEqual([]);
 
     const ended = await agents.disconnect(ORG, ACTOR);
     expect(ended.state).toBe("ended");

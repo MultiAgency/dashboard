@@ -39,7 +39,13 @@ export class FakePlatformApp {
   consents = new Map<string, Consent>();
   opened = new Map<
     string,
-    { agent: string; publicKey: string; submitted: boolean; intent: Record<string, unknown> }
+    {
+      agent: string;
+      type: string;
+      submitted: boolean;
+      intent: Record<string, unknown>;
+      apply: () => void;
+    }
   >();
   private failures = new Map<string, Failure[]>();
   private lost = new Set<string>();
@@ -65,6 +71,53 @@ export class FakePlatformApp {
 
   reserve(reservation: Omit<Reservation, "setupKey"> & { setupKey?: string | null }) {
     this.reservations.set(reservation.agent, { setupKey: null, ...reservation });
+  }
+
+  confirm(correlationId: string) {
+    const open = this.opened.get(correlationId);
+    if (!open || open.submitted) throw new Error(`nothing open for ${correlationId}`);
+    open.submitted = true;
+    open.apply();
+  }
+
+  private applyPolicy(changes: Record<string, unknown>) {
+    const policy = this.overview.policy.policy as Record<string, unknown> & {
+      actions: string[];
+      destinations: { mode: string; list: Array<Record<string, unknown>> };
+    };
+    const { withdrawals, destinations, ...fields } = changes as {
+      withdrawals?: Array<{ address: string }>;
+      destinations?: Array<{ address: string; confidential: boolean }>;
+    };
+    Object.assign(policy, fields);
+    const list = policy.destinations.list;
+    const transfers = destinations
+      ? destinations.map((d) => ({ action: "transfer", ...d }))
+      : list.filter((d) => d.action === "transfer");
+    const toNear = withdrawals
+      ? withdrawals.map(({ address }) => ({
+          action: "withdraw",
+          chain: "near",
+          address,
+          memo: null,
+        }))
+      : list.filter((d) => d.action === "withdraw");
+    policy.destinations = { mode: "only", list: [...transfers, ...toNear] };
+    policy.actions = [
+      ...(transfers.length ? ["transfer"] : []),
+      ...(toNear.length ? ["withdraw"] : []),
+    ];
+    this.overview.policy.revision += 1;
+    this.overview.digest = `d${this.overview.policy.revision}`;
+  }
+
+  private readable(changes: Record<string, unknown>) {
+    const withdrawing = (this.overview.policy.policy as { actions: string[] }).actions.includes(
+      "withdraw",
+    );
+    return Object.keys(changes).every(
+      (key) => key === "destinations" || key === "budget" || (key === "withdrawals" && withdrawing),
+    );
   }
 
   confirmCreate(agent: string) {
@@ -375,45 +428,87 @@ export class FakePlatformApp {
         const action = (input?.action ?? {}) as {
           type: string;
           owner?: { public_key: string };
-          role?: string;
+          expectedPolicy?: { revision: number; digest: string };
+          changes?: Record<string, unknown>;
+          grantId?: string;
+          expiresAt?: string;
         };
-        if (action.type !== "agent_create") throw new Error(`unexpected ${action.type}`);
-        if (action.owner?.public_key !== reservation?.setupKey) {
+        if (action.type === "agent_create" && action.owner?.public_key !== reservation?.setupKey) {
           return { ok: false, kind: "refused", code: "setup_key", error: "not the setup key" };
+        }
+        if (
+          action.type === "policy_update" &&
+          (action.expectedPolicy?.revision !== this.overview.policy.revision ||
+            action.expectedPolicy?.digest !== this.overview.digest)
+        ) {
+          return { ok: false, kind: "refused", error: "The policy changed since review." };
         }
         const correlationId = `corr-${this.opened.size + 1}`;
         const intent = {
           standard: "nep413",
           payload: {
-            message: `create ${agent}`,
+            message: `${action.type} ${agent}`,
             recipient: "outlayer.near",
             nonce: randomBytes(32).toString("base64"),
           },
         };
+        const grants = this.overview.grants as Array<Record<string, unknown>>;
+        const applies: Record<string, () => void> = {
+          agent_create: () => this.confirmCreate(agent),
+          policy_update: () => this.applyPolicy(action.changes ?? {}),
+          grant_issue: () =>
+            grants.push({
+              grant_id: `grant-${grants.length + 1}`,
+              agent_id: "a",
+              wallet_id: "w",
+              label: "payout",
+              issued_at: new Date(this.now()).toISOString(),
+              expires_at: action.expiresAt,
+              revoked_at: null,
+              owner_epoch: 1,
+              owner_message: null,
+            }),
+          grant_revoke: () => {
+            const grant = grants.find((g) => g.grant_id === action.grantId);
+            if (grant) grant.revoked_at = new Date(this.now()).toISOString();
+          },
+          agent_freeze: () => {
+            (this.overview.policy.policy as { frozen: boolean }).frozen = true;
+          },
+          agent_unfreeze: () => {
+            (this.overview.policy.policy as { frozen: boolean }).frozen = false;
+          },
+        };
+        const apply = applies[action.type];
+        if (!apply) throw new Error(`unexpected ${action.type}`);
         this.opened.set(correlationId, {
           agent,
-          publicKey: action.owner?.public_key ?? "",
+          type: action.type,
           submitted: false,
           intent,
+          apply,
         });
+        const viaConfirm =
+          action.type === "agent_create"
+            ? this.createMode === "confirm"
+            : action.type === "agent_freeze" ||
+              action.type === "agent_unfreeze" ||
+              (action.type === "policy_update" && !this.readable(action.changes ?? {}));
         const expiresAt = new Date(this.now() + 600_000).toISOString();
-        return ok(
-          this.createMode === "confirm"
-            ? {
-                correlationId,
-                preview: { summary: "create" },
-                expiresAt,
-                digest: null,
-                confirm: { url: `https://${this.host}/confirm/${correlationId}`, expiresAt },
-              }
-            : {
-                correlationId,
-                preview: { summary: "create" },
-                expiresAt,
-                digest: null,
-                intent,
-              },
-        );
+        const policyPreview =
+          action.type === "policy_update"
+            ? { policy: { current: this.overview.policy.policy, requested: { ...action.changes } } }
+            : {};
+        return ok({
+          correlationId,
+          preview: { summary: action.type },
+          expiresAt,
+          digest: null,
+          ...policyPreview,
+          ...(viaConfirm
+            ? { confirm: { url: `https://${this.host}/confirm/${correlationId}`, expiresAt } }
+            : { intent }),
+        });
       }
       if (path === "owner/submit") {
         const open = this.opened.get(String(input?.correlationId));
@@ -421,7 +516,7 @@ export class FakePlatformApp {
           return { ok: false, kind: "refused", code: "not_open", error: "not open" };
         }
         open.submitted = true;
-        this.confirmCreate(open.agent);
+        open.apply();
         return ok({ status: "SUCCESS" });
       }
       if (path === "owner/status") {
@@ -438,7 +533,7 @@ export class FakePlatformApp {
             .filter(([, o]) => o.agent === agent)
             .map(([correlationId, open]) => ({
               correlationId,
-              type: "agent_create",
+              type: open.type,
               expiresAt: new Date(this.now() + 600_000).toISOString(),
               signer: "wallet",
               stage: open.submitted ? "submitted" : "prepared",

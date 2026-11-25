@@ -813,7 +813,12 @@ export function createPlatformAgents(deps: {
     if (!row?.agent || !row.agentId) return null;
     const current = liveConsent(row, await consentsOf(organizationId));
     if (!current) return null;
-    return { agent: row.agent, agentId: row.agentId, consentId: current.id };
+    return {
+      agent: row.agent,
+      agentId: row.agentId,
+      consentId: current.id,
+      scopes: current.scopes.split(","),
+    };
   }
 
   async function accessFailed(organizationId: string, consentId: string, failure: Failure) {

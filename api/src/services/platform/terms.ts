@@ -29,3 +29,12 @@ export const nep413Intent = z.object({
   standard: z.literal("nep413"),
   payload: z.object({ message: z.string(), recipient: z.string(), nonce: z.string() }),
 });
+
+export const PAYOUT_ASSETS = ["wnear", "usdc"] as const;
+export type PayoutAsset = (typeof PAYOUT_ASSETS)[number];
+
+export const OWNER_ACTION_KINDS = ["rules", "grant", "grant_revoke", "freeze", "unfreeze"] as const;
+export type OwnerActionKind = (typeof OWNER_ACTION_KINDS)[number];
+
+export const GRANT_DAYS = 90;
+export const GRANT_RENEW_DAYS = 14;
