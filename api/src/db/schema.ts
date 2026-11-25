@@ -10,6 +10,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { PLATFORM_REVOKED_REASONS, PLATFORM_SIGNING_KINDS } from "../services/platform/terms";
 
 export const applications = pgTable(
   "applications",
@@ -939,6 +940,56 @@ export const payoutAgents = pgTable("payout_agents", {
 });
 
 export type PayoutAgentRow = typeof payoutAgents.$inferSelect;
+
+export const platformAgents = pgTable("platform_agents", {
+  organizationId: text("organization_id").primaryKey(),
+  ownerAccountId: text("owner_account_id").notNull(),
+  area: text("area").notNull(),
+  host: text("host").notNull(),
+  deployment: text("deployment").notNull(),
+  agent: text("agent"),
+  agentId: text("agent_id"),
+  setupPublicKey: text("setup_public_key"),
+  pendingKind: text("pending_kind", { enum: PLATFORM_SIGNING_KINDS }),
+  pendingMessage: text("pending_message"),
+  pendingNonce: text("pending_nonce"),
+  pendingExpiresAt: timestamp("pending_expires_at", { withTimezone: false }),
+  pendingSubmission: text("pending_submission"),
+  createCorrelationId: text("create_correlation_id"),
+  createConfirmUrl: text("create_confirm_url"),
+  createIntent: text("create_intent"),
+  createExpiresAt: timestamp("create_expires_at", { withTimezone: false }),
+  createStatus: text("create_status"),
+  updatedBy: text("updated_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
+
+export type PlatformAgentRow = typeof platformAgents.$inferSelect;
+
+export const platformConsents = pgTable(
+  "platform_consents",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    agent: text("agent").notNull(),
+    agentId: text("agent_id").notNull(),
+    kind: text("kind", { enum: PLATFORM_SIGNING_KINDS }).notNull(),
+    scopes: text("scopes").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: false }).notNull(),
+    publicKey: text("public_key").notNull(),
+    message: text("message").notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: false }),
+    revokedReason: text("revoked_reason", { enum: PLATFORM_REVOKED_REASONS }),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    byOrganization: index("platform_consents_organization").on(t.organizationId),
+  }),
+);
+
+export type PlatformConsentRow = typeof platformConsents.$inferSelect;
 
 export const PAYOUT_ACTIONS = [
   "create_agent",

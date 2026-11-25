@@ -27,6 +27,7 @@ import { AdminError } from "@/components/admin-error";
 import { Empty, Loading } from "@/components/admin-form";
 import { AgencyNamePrompt, useActiveOrganization } from "@/components/agency-name-prompt";
 import { PageHeader } from "@/components/page-header";
+import { PlatformAgentSection } from "@/components/platform-agent/platform-agent-settings";
 import { SettingsSection } from "@/components/settings-section";
 import { WorkOrderIntegrationSettings } from "@/components/work-orders/integration-settings";
 import { PayoutAgentSettings } from "@/components/work-orders/payout-agent-settings";
@@ -120,6 +121,7 @@ function AdminSettingsPage() {
       >
         <PayoutAgentSettings />
       </SettingsSection>
+      <PlatformAgentSection />
       <SettingsSection id="agency" title="Agency details" description="Your public profile.">
         <AdminSettings />
       </SettingsSection>

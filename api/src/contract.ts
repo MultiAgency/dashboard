@@ -8,6 +8,7 @@ import {
   UNAUTHORIZED,
 } from "every-plugin/errors";
 import { z } from "zod";
+import { platformAgentContract } from "./platform-contract";
 import { myWorkOrdersContract, workOrdersContract } from "./work-orders-contract";
 
 const tokenList = z.object({
@@ -710,6 +711,8 @@ export const contract = oc.router({
   workOrders: workOrdersContract,
 
   myWorkOrders: myWorkOrdersContract,
+
+  platformAgent: platformAgentContract,
 
   ping: oc.route({ method: "GET", path: "/ping" }).output(
     z.object({
