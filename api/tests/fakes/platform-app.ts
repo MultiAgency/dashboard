@@ -36,6 +36,7 @@ export class FakePlatformApp {
   calls: Array<{ route: string; body?: unknown }> = [];
   createMode: "confirm" | "nep413" = "confirm";
   settleLater = false;
+  voteLink = true;
   reservations = new Map<string, Reservation>();
   consents = new Map<string, Consent>();
   opened = new Map<
@@ -541,15 +542,18 @@ export class FakePlatformApp {
           action.type === "policy_update"
             ? { policy: { current: this.overview.policy.policy, requested: { ...action.changes } } }
             : {};
+        const confirm = { url: `https://${this.host}/confirm/${correlationId}`, expiresAt };
         return ok({
           correlationId,
           preview: { summary: action.type },
           expiresAt,
           digest: null,
           ...policyPreview,
-          ...(viaConfirm
-            ? { confirm: { url: `https://${this.host}/confirm/${correlationId}`, expiresAt } }
-            : { intent }),
+          ...(action.type === "approval_vote"
+            ? { intent, ...(this.voteLink ? { confirm } : {}) }
+            : viaConfirm
+              ? { confirm }
+              : { intent }),
         });
       }
       if (path === "owner/submit") {

@@ -318,6 +318,34 @@ describe.skipIf(!statePath)("the dashboard's server on the platform's local stac
       });
     };
 
+    const voteOnConfirmPage = async (
+      prepared: Awaited<ReturnType<typeof owner.prepare>>,
+      terms: { recipient: string; amount: string } | null,
+    ) => {
+      expect(prepared.intent).toBeNull();
+      const link = new URL(prepared.action.confirmUrl ?? "");
+      const api = `${link.origin}/confirm/v1/${link.pathname.split("/").pop()}`;
+      const page = (await (await fetch(api)).json()) as {
+        state: string;
+        payment: { terms?: { recipient: string; amount: string } } | null;
+        intent: {
+          standard: string;
+          payload: { message: string; recipient: string; nonce: string };
+        };
+      };
+      expect(page.state).toBe("open");
+      if (terms) expect(page.payment?.terms).toMatchObject(terms);
+      const signed = await ownerSigns(page.intent.payload);
+      const posted = await fetch(api, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          signedData: { ...page.intent, public_key: signed.publicKey, signature: signed.signature },
+        }),
+      });
+      expect(posted.status, await posted.clone().text()).toBeLessThan(300);
+    };
+
     await owner.saveRules(org, ACTOR, {
       asset: "usdc",
       maxPerPayout: "5",
@@ -350,7 +378,7 @@ describe.skipIf(!statePath)("the dashboard's server on the platform's local stac
       approvalId: heldFirst.approvalId,
       verdict: "reject",
     });
-    await signAndSubmit(reject);
+    await voteOnConfirmPage(reject, null);
     expect(await settle(reject.action.correlationId)).toMatchObject({
       status: "FAILED",
       open: false,
@@ -368,7 +396,7 @@ describe.skipIf(!statePath)("the dashboard's server on the platform's local stac
       approvalId: heldSecond.approvalId,
       verdict: "approve",
     });
-    await signAndSubmit(approve);
+    await voteOnConfirmPage(approve, { recipient: PAYEE, amount: "2000000" });
     await control("settle", { correlation: second.correlationId });
     expect((await settle(approve.action.correlationId)).status).toBe("SUCCESS");
     let paid = await payouts.refresh(second);

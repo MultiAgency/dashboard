@@ -200,7 +200,11 @@ describe("platform owner actions", () => {
   test("a held payout shows its payee, amount and work order beside the owner's vote", async () => {
     ownerView.mockResolvedValue({ ...view, pending: [], held: [heldPayout] });
     prepareAction.mockResolvedValue({
-      action: action({ kind: "payout_vote", summary: "Approve paying 2 wNEAR to dave.near" }),
+      action: action({
+        kind: "payout_vote",
+        summary: "Reject paying 2 wNEAR to dave.near",
+        confirmUrl: `https://${HOST}/confirm/vote-1`,
+      }),
       intent: null,
       preview: null,
     });
@@ -220,6 +224,9 @@ describe("platform owner actions", () => {
         verdict: "reject",
       }),
     );
+    const open = await screen.findByRole("link", { name: "Open the confirm page" });
+    expect(open.getAttribute("href")).toBe(`https://${HOST}/confirm/vote-1`);
+    expect(screen.queryByRole("button", { name: /Sign with/ })).toBeNull();
   });
 
   test("a held payout that isn't one of the dashboard's says so", async () => {

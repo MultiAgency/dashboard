@@ -323,26 +323,25 @@ describe("owner actions through the platform", () => {
       correlationId: "held-1",
     });
     expect(vote.action.summary).toMatch(/^Approve paying .+ to carol\.near for "Site build"$/);
-    expect(vote.intent).not.toBeNull();
+    expect(vote.intent).toBeNull();
+    expect(vote.action.confirmUrl).toBe(`https://${HOST}/confirm/${vote.action.correlationId}`);
+    await expect(
+      actions.submit(ORG, { correlationId: vote.action.correlationId, signedData: {} }),
+    ).rejects.toThrow(/confirm page/);
 
-    await actions.submit(ORG, { correlationId: vote.action.correlationId, signedData: {} });
+    platform.confirm(vote.action.correlationId);
     expect(platform.votes).toEqual([{ approvalId: "appr-1", verdict: "approve" }]);
     expect((await actions.view(ORG)).held).toEqual([]);
   });
 
-  test("a signed vote still processing is followed until the platform settles it", async () => {
-    platform.settleLater = true;
+  test("a vote signed on the confirm page is followed until the platform settles it", async () => {
     const vote = await actions.prepare(ORG, ACTOR, {
       kind: "payout_vote",
       approvalId: "appr-1",
       verdict: "reject",
     });
-    const submitted = await actions.submit(ORG, {
-      correlationId: vote.action.correlationId,
-      signedData: {},
-    });
     expect(vote.action.summary).toMatch(/^Reject paying /);
-    expect(submitted).toMatchObject({ status: "PROCESSING", open: true });
+    platform.confirm(vote.action.correlationId, false);
 
     const before = platform.count("agent:owner/status");
     expect((await actions.view(ORG)).actions[0]).toMatchObject({
@@ -370,20 +369,31 @@ describe("owner actions through the platform", () => {
     expect((await actions.view(ORG)).actions[0]).toMatchObject({ status: "SUCCESS", open: false });
   });
 
-  test("the scheduled run follows signed actions with nobody watching", async () => {
-    platform.settleLater = true;
+  test("the scheduled run follows actions signed on the confirm page with nobody watching", async () => {
     const vote = await actions.prepare(ORG, ACTOR, {
       kind: "payout_vote",
       approvalId: "appr-1",
       verdict: "reject",
     });
-    await actions.submit(ORG, { correlationId: vote.action.correlationId, signedData: {} });
+    platform.confirm(vote.action.correlationId, false);
     expect(await actions.followUnsettled()).toBe(1);
     expect((await actions.view(ORG)).actions[0]).toMatchObject({ open: true });
 
     platform.settle(vote.action.correlationId);
     expect(await actions.followUnsettled()).toBe(1);
     expect(await actions.followUnsettled()).toBe(0);
+  });
+
+  test("without a confirm link from the platform, the vote isn't offered for a blind signature", async () => {
+    platform.voteLink = false;
+    await expect(
+      actions.prepare(ORG, ACTOR, {
+        kind: "payout_vote",
+        approvalId: "appr-1",
+        verdict: "approve",
+      }),
+    ).rejects.toThrow(/couldn't show this payout's terms/);
+    expect((await actions.view(ORG)).actions).toEqual([]);
   });
 
   test("a vote is only for a payout that's waiting for one, and says how", async () => {

@@ -389,7 +389,13 @@ export function createPlatformOwnerActions(deps: {
       throw platformError(prepared);
     }
     const { correlationId, confirm, intent, expiresAt, preview, policy } = prepared.value;
-    const readable = intent?.standard === "nep413" ? intent : null;
+    const vote = input.kind === "payout_vote";
+    if (vote && !confirm) {
+      throw badRequest(
+        "The platform couldn't show this payout's terms on its confirm page, so the vote isn't offered. Try again shortly.",
+      );
+    }
+    const readable = !vote && intent?.standard === "nep413" ? intent : null;
     if (!confirm && !readable) {
       throw badRequest("The platform answered with something your wallet can't sign here");
     }
@@ -502,7 +508,7 @@ export function createPlatformOwnerActions(deps: {
     let followed = 0;
     if (!deps.app) return followed;
     const rows = await db.select().from(platformOwnerActions);
-    for (const action of rows.filter(inFlight)) {
+    for (const action of rows.filter(isOpen)) {
       const connection = await deps.agents.connection(action.organizationId);
       if (!connection) continue;
       const status = await deps.app
