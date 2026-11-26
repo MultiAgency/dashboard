@@ -109,7 +109,7 @@ describe("work-order payouts through the platform", () => {
   });
 
   const pay = (requestId = "req-1", amount = (2n * NEAR).toString()) =>
-    payouts.send(ORG, { requestId, recipient: CAROL, amount });
+    payouts.send(ORG, { requestId, recipient: CAROL, amount, tokenId: "near" });
 
   const holdEach = () => double.setPolicy(wnearPolicy({ owner_approval: true }));
 
@@ -173,6 +173,7 @@ describe("work-order payouts through the platform", () => {
       requestId: "req-1",
       recipient: CAROL,
       amount: NEAR.toString(),
+      tokenId: "near",
     });
     expect(dropped).toBe(true);
     expect(sent).toMatchObject({ id: "req-1-1", status: "paid" });
@@ -214,6 +215,62 @@ describe("work-order payouts through the platform", () => {
       status: "refused",
       provenUnsent: true,
       reason: "recipient_not_found",
+    });
+  });
+
+  describe("an Organization whose rules pay in USDC", () => {
+    const USDC_TOKEN = ASSETS.USDC.replace(/^nep141:/, "");
+    const USDC = 1_000_000n;
+    const usdcPolicy = () =>
+      wnearPolicy({
+        actions: ["transfer" as const],
+        assets: [ASSETS.USDC],
+        limits: { per_transaction: { [ASSETS.USDC]: (5n * USDC).toString() } },
+        destinations: {
+          mode: "only" as const,
+          list: [{ action: "transfer" as const, address: CAROL, confidential: true }],
+        },
+      });
+
+    beforeEach(async () => {
+      await database.db.update(platformAgents).set({ payoutAsset: "usdc" });
+      double.setPolicy(usdcPolicy());
+      double.setBalance(ASSETS.USDC, (20n * USDC).toString());
+    });
+
+    test("builders are paid in USDC by confidential transfer", async () => {
+      expect(await payouts.payoutToken(ORG)).toBe(USDC_TOKEN);
+      expect(await payouts.readiness(ORG, CAROL, 2n * USDC)).toEqual({
+        ready: true,
+        code: null,
+        reason: null,
+      });
+      const sent = await payouts.send(ORG, {
+        requestId: "req-1",
+        recipient: CAROL,
+        amount: (2n * USDC).toString(),
+        tokenId: USDC_TOKEN,
+      });
+      expect(sent).toMatchObject({ status: "paid", assetId: ASSETS.USDC });
+      expect(double.requests()).toMatchObject([
+        { requestId: "req-1-1", method: "transfer", request: { asset: ASSETS.USDC } },
+      ]);
+      expect(await payouts.fundingCheck(ORG, { near: 1n, priceUsd: null })).toBeNull();
+    });
+
+    test("readiness speaks in USDC, and a withdrawal payee isn't one for transfers", async () => {
+      expect(await payouts.readiness(ORG, CAROL, 6n * USDC)).toMatchObject({
+        code: "over_cap",
+        reason: "6 USDC is over the 5 USDC cap per payout",
+      });
+      double.setPolicy(wnearPolicy({ assets: [ASSETS.USDC] }));
+      expect(await payouts.readiness(ORG, CAROL)).toMatchObject({ code: "payee_not_allowed" });
+    });
+
+    test("a payout priced in another token is refused before anything is recorded", async () => {
+      await expect(pay()).rejects.toThrow(/now pays in USDC/);
+      expect(await payouts.latest("req-1")).toBeNull();
+      expect(double.requests()).toEqual([]);
     });
   });
 
@@ -354,6 +411,7 @@ describe("work-order payouts through the platform", () => {
       txUrl: null,
       reason: null,
       provenUnsent: false,
+      assetId: ASSETS.wNEAR,
       createdAt: new Date(clock.getTime() + 60_000),
     };
     const legacy = {
@@ -366,7 +424,12 @@ describe("work-order payouts through the platform", () => {
     expect(await routed.latest("req-1")).toMatchObject({ id: "legacy-1" });
     double.setBalance(ASSETS.wNEAR, (100n * NEAR).toString());
     expect(
-      await routed.send(ORG, { requestId: "req-1", recipient: CAROL, amount: NEAR.toString() }),
+      await routed.send(ORG, {
+        requestId: "req-1",
+        recipient: CAROL,
+        amount: NEAR.toString(),
+        tokenId: "near",
+      }),
     ).toMatchObject({ id: "legacy-1" });
     expect(double.requests().map((r) => r.requestId)).toEqual(["req-1-1"]);
   });
@@ -400,6 +463,22 @@ describe("work-order payouts through the platform", () => {
     await expect(payouts.setRoute(ORG, "platform")).rejects.toThrow(/includes payouts/);
   });
 
+  test("the old payout path is only ever asked to pay in NEAR", async () => {
+    const legacy = {
+      readiness: vi.fn(),
+      send: vi.fn(),
+      refresh: vi.fn(),
+      latest: vi.fn(async () => null),
+    };
+    const routed = routePayouts(legacy, payouts);
+    await database.db.update(platformAgents).set({ payoutRoute: "legacy", payoutAsset: "usdc" });
+    expect(await routed.payoutToken?.(ORG)).toBe("near");
+    await expect(
+      routed.send(ORG, { requestId: "req-1", recipient: CAROL, amount: "1", tokenId: "usdc" }),
+    ).rejects.toThrow(/only in NEAR/);
+    expect(legacy.send).not.toHaveBeenCalled();
+  });
+
   test("the router sends each Organization's payouts its own way and finds each record where it is", async () => {
     const legacy = {
       readiness: vi.fn(async () => ({ ready: true, code: null, reason: null })),
@@ -417,6 +496,7 @@ describe("work-order payouts through the platform", () => {
       requestId: "req-1",
       recipient: CAROL,
       amount: NEAR.toString(),
+      tokenId: "near",
     });
     expect(legacy.send).not.toHaveBeenCalled();
     expect(await routed.latest("req-1")).toMatchObject({ id: sent.id });

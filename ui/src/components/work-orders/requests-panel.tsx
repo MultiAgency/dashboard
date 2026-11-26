@@ -294,7 +294,8 @@ function RequestItem({
         {request.agentPayout && request.status !== "approved" && (
           <span className="text-sm text-muted-foreground">
             {request.agentPayout.status === "paid" ? "Paid " : "Paying "}
-            {formatTokenAmount(request.agentPayout.amount, "near")} through the payout agent
+            {formatTokenAmount(request.agentPayout.amount, request.agentPayout.tokenId)} through the
+            payout agent
             {request.agentPayout.txUrl || request.agentPayout.accountUrl ? (
               <>
                 {" · "}
