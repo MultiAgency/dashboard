@@ -41,8 +41,6 @@ type Held = OwnerOutput<"held">[number];
 type Built = {
   action: AppOwnerAction;
   summary: string;
-  subject?: string;
-  verdict?: PayoutVerdict;
 };
 export type PrepareInput = {
   kind: OwnerActionKind;
@@ -66,7 +64,6 @@ export function createPlatformOwnerActions(deps: {
     organizationId: string,
     correlationIds: string[],
   ) => Promise<Map<string, PayoutTerms>>;
-  payoutRejected: (organizationId: string, correlationId: string) => Promise<void>;
   now?: () => Date;
 }) {
   const { db } = deps;
@@ -311,8 +308,6 @@ export function createPlatformOwnerActions(deps: {
         correlationId: held.correlationId,
       },
       summary: `${input.verdict === "approve" ? "Approve" : "Reject"} paying ${amount} to ${held.recipient ?? "an unknown payee"}${purpose}`,
-      subject: held.correlationId,
-      verdict: input.verdict,
     };
   }
 
@@ -352,8 +347,6 @@ export function createPlatformOwnerActions(deps: {
     await record(organizationId, connection.agent, kind, {
       correlationId: open.correlationId,
       summary: `${built.summary} (its answer was lost; recovered from the platform)`,
-      subject: built.subject ?? null,
-      verdict: built.verdict ?? null,
       expiresAt: new Date(open.expiresAt),
       status: open.stage === "prepared" ? "adopted" : "submitted",
       requestedBy: actorId,
@@ -406,8 +399,6 @@ export function createPlatformOwnerActions(deps: {
       summary,
       confirmUrl: confirm?.url ?? null,
       intent: readable ? JSON.stringify(readable) : null,
-      subject: built.subject ?? null,
-      verdict: built.verdict ?? null,
       expiresAt: new Date(confirm?.expiresAt ?? expiresAt),
       status: "prepared",
       requestedBy: actorId,
@@ -443,14 +434,10 @@ export function createPlatformOwnerActions(deps: {
   }
 
   async function setStatus(correlationId: string, status: string, phase?: OwnerActionPhase) {
-    const [action] = await db
+    await db
       .update(platformOwnerActions)
       .set({ status, ...(phase ? { phase } : {}), updatedAt: now() })
-      .where(eq(platformOwnerActions.correlationId, correlationId))
-      .returning();
-    if (action?.kind === "payout_vote" && action.verdict === "reject" && action.subject) {
-      if (status === "SUCCESS") await deps.payoutRejected(action.organizationId, action.subject);
-    }
+      .where(eq(platformOwnerActions.correlationId, correlationId));
   }
 
   async function ownAction(organizationId: string, correlationId: string) {

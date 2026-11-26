@@ -16,7 +16,6 @@ import {
   OWNER_ACTION_PHASES,
   PAYOUT_ASSETS,
   PAYOUT_ROUTES,
-  PAYOUT_VERDICTS,
   PLATFORM_REVOKED_REASONS,
   PLATFORM_SIGNING_KINDS,
 } from "../services/platform/terms";
@@ -1016,8 +1015,6 @@ export const platformOwnerActions = pgTable(
     summary: text("summary").notNull(),
     confirmUrl: text("confirm_url"),
     intent: text("intent"),
-    subject: text("subject"),
-    verdict: text("verdict", { enum: PAYOUT_VERDICTS }),
     expiresAt: timestamp("expires_at", { withTimezone: false }).notNull(),
     status: text("status").notNull(),
     phase: text("phase", { enum: OWNER_ACTION_PHASES }),
