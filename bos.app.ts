@@ -66,6 +66,9 @@ export default App({
       email: {
         from: "noreply@multiagency.ai",
       },
+      ipAddress: {
+        ipAddressHeaders: ["x-real-ip"],
+      },
       siwn: {
         recipients: {
           mainnet: "multiagency.sputnik-dao.near",
