@@ -176,6 +176,16 @@ export function adminContributorsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const oldPayoutPathQueryKey = ["platform", "old-payout-path"] as const;
+
+export function oldPayoutPathQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: oldPayoutPathQueryKey,
+    queryFn: () => apiClient.platformAgent.oldPayoutPath({}),
+    retry: false,
+  });
+}
+
 export const platformMembersQueryKey = ["platform", "members"] as const;
 
 export function platformMembersQueryOptions(apiClient: ApiClient) {
