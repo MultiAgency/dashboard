@@ -47,6 +47,18 @@ async function authDatabase(options: { status: boolean } = { status: true }) {
       ('m4', 'fresh', 'bo', 'owner', now()),
       ('m5', 'fresh', 'ada', 'member', now()),
       ('m6', 'ada-home', 'ada', 'owner', now());
+    CREATE TABLE "near_account" (
+      id text PRIMARY KEY,
+      user_id text NOT NULL REFERENCES "user"(id),
+      account_id text NOT NULL,
+      network text NOT NULL,
+      public_key text NOT NULL,
+      is_primary boolean DEFAULT false,
+      created_at timestamptz NOT NULL
+    );
+    INSERT INTO "near_account" VALUES
+      ('n1', 'bo', 'bo-old.near', 'mainnet', 'ed25519:x', false, now()),
+      ('n2', 'bo', 'bo.near', 'mainnet', 'ed25519:y', true, now());
   `);
   if (options.status) {
     await pg.exec(`
@@ -237,7 +249,9 @@ describe("the review queue", () => {
         name: "Asked",
         slug: "asked",
         requestedBy: "ada",
+        requestedByName: "Ada",
         requestedByEmail: "ada@example.com",
+        requestedByNearAccount: null,
         requestedAt: await createdAt("asked"),
       },
       {
@@ -245,10 +259,18 @@ describe("the review queue", () => {
         name: "Fresh",
         slug: "fresh",
         requestedBy: "bo",
+        requestedByName: "Bo",
         requestedByEmail: null,
+        requestedByNearAccount: "bo.near",
         requestedAt: await createdAt("fresh"),
       },
     ]);
+  });
+
+  test("names the requester by their primary NEAR account on an auth database without one, falling back cleanly", async () => {
+    await pg.exec(`DROP TABLE "near_account"`);
+    const fresh = (await service().pending()).find((r) => r.id === "fresh");
+    expect(fresh).toMatchObject({ requestedByName: "Bo", requestedByNearAccount: null });
   });
 
   test("approving takes an Organization off the queue and records who approved it", async () => {

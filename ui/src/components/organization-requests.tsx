@@ -32,9 +32,21 @@ type OrganizationRequest = {
   name: string;
   slug: string;
   requestedBy: string | null;
+  requestedByName: string | null;
   requestedByEmail: string | null;
+  requestedByNearAccount: string | null;
   requestedAt: string;
 };
+
+function requesterLabel(request: OrganizationRequest): string {
+  return (
+    request.requestedByEmail ??
+    request.requestedByNearAccount ??
+    request.requestedByName ??
+    request.requestedBy ??
+    "unknown"
+  );
+}
 
 export function OrganizationRequests({ onReviewed }: { onReviewed: () => void }) {
   const apiClient = useApiClient();
@@ -83,8 +95,7 @@ export function OrganizationRequests({ onReviewed }: { onReviewed: () => void })
                 <div className="min-w-0">
                   <p className="font-medium break-words">{request.name}</p>
                   <p className="text-sm text-muted-foreground break-words">
-                    {request.slug} · asked by{" "}
-                    {request.requestedByEmail ?? request.requestedBy ?? "unknown"} ·{" "}
+                    {request.slug} · asked by {requesterLabel(request)} ·{" "}
                     {new Date(request.requestedAt).toLocaleString()}
                   </p>
                 </div>
