@@ -420,6 +420,20 @@ export function payoutFundingQueryOptions(apiClient: ApiClient) {
   });
 }
 
+export const platformAgentQueryKey = ["admin", "platform-agent"] as const;
+
+export function platformAgentQueryOptions(apiClient: ApiClient) {
+  return queryOptions({
+    queryKey: [...platformAgentQueryKey, ...workspaceKey()] as const,
+    queryFn: () => apiClient.platformAgent.view({}),
+    retry: false,
+  });
+}
+
+export function platformAgentReadKey(read: keyof ApiClient["platformAgent"]) {
+  return [...platformAgentQueryKey, read, ...workspaceKey()] as const;
+}
+
 export const myWorkOrdersQueryKey = ["me", "work-orders"] as const;
 
 export function myWorkOrdersQueryOptions(apiClient: ApiClient) {

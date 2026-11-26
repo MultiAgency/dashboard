@@ -55,6 +55,9 @@ export default App({
       "DOCUMENSO_API_KEY",
       "DOCUMENSO_API_URL",
       "PAYOUTS_SECRET_KEY",
+      "PLATFORM_URL",
+      "PLATFORM_APP_CREDENTIAL",
+      "PLATFORM_DEPLOYMENT",
     ],
   },
   auth: {
@@ -62,6 +65,9 @@ export default App({
       trustedOrigins: ["http://localhost:3000"],
       email: {
         from: "noreply@multiagency.ai",
+      },
+      ipAddress: {
+        ipAddressHeaders: ["x-real-ip"],
       },
       siwn: {
         recipients: {

@@ -26,6 +26,7 @@ import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
 import { atomicToNear } from "../payouts/policy";
 import { type FundingCheck, noUnsettledPayout, payoutRetryable } from "../payouts/service";
+import { noUnsettledPlatformPayout } from "../platform/payouts";
 import type { Project, ProjectDirectory } from "../project-directory";
 import { type DaoProposal, proposalDescription } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
@@ -115,6 +116,12 @@ export type WorkOrderDeps = {
   proposalBond: (daoAccountId: string) => Promise<string>;
   prices?: PriceFeed | null;
   esign?: EsignPort | null;
+  platformUpkeep?: () => Promise<{
+    checked: number;
+    revoked: number;
+    failed: string[];
+    grantReminders: Array<{ organizationId: string; expiresAt: Date }>;
+  }>;
   payouts?: {
     readiness(
       organizationId: string,
@@ -4471,6 +4478,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
                 eq(compensationRequests.id, request.id),
                 eq(compensationRequests.status, "approved"),
                 noUnsettledPayout(compensationRequests.id),
+                noUnsettledPlatformPayout(compensationRequests.id),
               ),
             )
             .returning();
@@ -4519,6 +4527,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             eq(compensationRequests.status, "approved"),
             isNull(compensationRequests.daoPaymentStartedAt),
             noUnsettledPayout(compensationRequests.id),
+            noUnsettledPlatformPayout(compensationRequests.id),
           ),
         )
         .returning();
@@ -4921,21 +4930,37 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           console.warn("[API] payout agent upkeep failed", error);
           return null;
         });
+        const remindGrant = ({
+          organizationId,
+          expiresAt,
+        }: {
+          organizationId: string;
+          expiresAt: Date;
+        }) =>
+          deps.notifications
+            .notify({
+              organizationId,
+              kind: "payout_grant_expiring",
+              payload: { expiresOn: expiresAt.toISOString().slice(0, 10) },
+              link: "/admin/settings",
+              email: true,
+            })
+            .catch((error: unknown) =>
+              console.warn("[API] payout permission reminder failed:", error),
+            );
         if (maintained) {
           counts.intentsSettled = maintained.intentsSettled;
-          for (const { organizationId, expiresAt } of maintained.grantReminders) {
-            await deps.notifications
-              .notify({
-                organizationId,
-                kind: "payout_grant_expiring",
-                payload: { expiresOn: expiresAt.toISOString().slice(0, 10) },
-                link: "/admin/settings",
-                email: true,
-              })
-              .catch((error: unknown) =>
-                console.warn("[API] payout permission reminder failed:", error),
-              );
-          }
+          for (const reminder of maintained.grantReminders) await remindGrant(reminder);
+        }
+        const upkept = await deps.platformUpkeep?.().catch((error: unknown) => {
+          console.warn("[API] platform agent upkeep failed", error);
+          return null;
+        });
+        if (upkept) {
+          counts.platformAgentsChecked = upkept.checked;
+          counts.platformAgentsRevoked = upkept.revoked;
+          counts.platformAgentsFailed = upkept.failed.length;
+          for (const reminder of upkept.grantReminders) await remindGrant(reminder);
         }
         await followUpPayouts(counts);
         await retryBlockedPayouts(counts);

@@ -54,6 +54,12 @@ import {
 import { createOrganizationRequestsService } from "./services/organization-requests";
 import { atomicToNear, nearToAtomic, topUpFor, topUpProposal } from "./services/payouts/policy";
 import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
+import { createPlatformAgents } from "./services/platform/agents";
+import { createPlatformApp, platformSettings } from "./services/platform/client";
+import { createPlatformOwnerActions } from "./services/platform/owner-actions";
+import { routePayouts } from "./services/platform/payout-router";
+import { createPlatformPayouts } from "./services/platform/payouts";
+import { createPlatformReads } from "./services/platform/reads";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
 import { createProposalsService } from "./services/proposals";
@@ -155,6 +161,9 @@ const secrets = z.object({
   DOCUMENSO_API_KEY: z.string().optional(),
   DOCUMENSO_API_URL: z.string().optional(),
   PAYOUTS_SECRET_KEY: z.string().optional(),
+  PLATFORM_URL: z.string().optional(),
+  PLATFORM_APP_CREDENTIAL: z.string().optional(),
+  PLATFORM_DEPLOYMENT: z.string().optional(),
   BETTER_AUTH_SECRET: z.string().default(""),
 });
 
@@ -343,6 +352,22 @@ const initializeServices = (
       payees: workOrderPayees(db),
       fullAccessKeys,
     });
+    const platform = platformSettings(config.secrets);
+    const platformApp = platform ? createPlatformApp(platform) : null;
+    const platformAgents = createPlatformAgents({ db, app: platformApp, settings: platform });
+    const platformReads = createPlatformReads({ app: platformApp, agents: platformAgents });
+    const platformOwnerActions = createPlatformOwnerActions({
+      db,
+      app: platformApp,
+      agents: platformAgents,
+      payees: workOrderPayees(db),
+    });
+    const platformPayouts = createPlatformPayouts({
+      db,
+      app: platformApp,
+      agents: platformAgents,
+      pendingPayees: platformOwnerActions.pendingPayees,
+    });
     const signedInNearKeys = async (userId: string | null | undefined) => {
       if (!authPool || !userId) return {};
       const { rows } = await authPool.query<{ account_id: string; public_key: string }>(
@@ -402,7 +427,18 @@ const initializeServices = (
       consistency: config.secrets.ANTHROPIC_API_KEY
         ? createConsistencyChecker({ apiKey: config.secrets.ANTHROPIC_API_KEY })
         : null,
-      payouts: payoutAgents.available ? payoutAgents : null,
+      payouts:
+        payoutAgents.available || platformApp
+          ? routePayouts(payoutAgents.available ? payoutAgents : null, platformPayouts)
+          : null,
+      platformUpkeep: async () => ({
+        ...(await platformAgents.maintain(
+          authPool
+            ? async (organizationId) => (await organizationDirectory.get(organizationId)) !== null
+            : null,
+        )),
+        grantReminders: await platformOwnerActions.grantReminders(),
+      }),
       google,
       googleFor: googleConnections.port,
       userEmail,
@@ -471,6 +507,10 @@ const initializeServices = (
       googleFor,
       googleSetup,
       payoutAgents,
+      platformAgents,
+      platformReads,
+      platformOwnerActions,
+      platformPayouts,
       signedInNearKeys,
       workOrderTimers,
     };
@@ -1306,6 +1346,153 @@ export default createPlugin.withPlugins<PluginsClient>()({
           const { assignments } = Context.get(context["effect/context"], ApiServices);
           return runEffect(assignments.delete(context.scope, input));
         }),
+      },
+
+      platformAgent: {
+        view: builder.platformAgent.view.use(agencyManager).handler(async ({ context }) => {
+          const { platformAgents } = Context.get(context["effect/context"], ApiServices);
+          return platformAgents.view(context.scope.organizationId);
+        }),
+        startSetup: builder.platformAgent.startSetup
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformAgents } = Context.get(context["effect/context"], ApiServices);
+            return platformAgents.startSetup(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+          }),
+        startConsent: builder.platformAgent.startConsent
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformAgents } = Context.get(context["effect/context"], ApiServices);
+            return platformAgents.startConsent(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+          }),
+        submitSigned: builder.platformAgent.submitSigned
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformAgents } = Context.get(context["effect/context"], ApiServices);
+            return platformAgents.submitSigned(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+          }),
+        retry: builder.platformAgent.retry.use(agencyManager).handler(async ({ context }) => {
+          const { platformAgents } = Context.get(context["effect/context"], ApiServices);
+          return platformAgents.retry(context.scope.organizationId, context.scope.actorId);
+        }),
+        prepareCreate: builder.platformAgent.prepareCreate
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { platformAgents } = Context.get(context["effect/context"], ApiServices);
+            return platformAgents.prepareCreate(
+              context.scope.organizationId,
+              context.scope.actorId,
+            );
+          }),
+        submitCreate: builder.platformAgent.submitCreate
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformAgents } = Context.get(context["effect/context"], ApiServices);
+            return platformAgents.submitCreate(context.scope.organizationId, input);
+          }),
+        followCreate: builder.platformAgent.followCreate
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { platformAgents } = Context.get(context["effect/context"], ApiServices);
+            return platformAgents.followCreate(context.scope.organizationId);
+          }),
+        disconnect: builder.platformAgent.disconnect
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { platformAgents } = Context.get(context["effect/context"], ApiServices);
+            return platformAgents.disconnect(context.scope.organizationId, context.scope.actorId);
+          }),
+        overview: builder.platformAgent.overview.use(agencyManager).handler(async ({ context }) => {
+          const { platformReads } = Context.get(context["effect/context"], ApiServices);
+          return platformReads.overview(context.scope.organizationId);
+        }),
+        unresolved: builder.platformAgent.unresolved
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { platformReads } = Context.get(context["effect/context"], ApiServices);
+            return platformReads.unresolved(context.scope.organizationId);
+          }),
+        held: builder.platformAgent.held.use(agencyManager).handler(async ({ context }) => {
+          const { platformReads } = Context.get(context["effect/context"], ApiServices);
+          return platformReads.held(context.scope.organizationId);
+        }),
+        activity: builder.platformAgent.activity.use(agencyManager).handler(async ({ context }) => {
+          const { platformReads } = Context.get(context["effect/context"], ApiServices);
+          return platformReads.activity(context.scope.organizationId);
+        }),
+        ledger: builder.platformAgent.ledger.use(agencyManager).handler(async ({ context }) => {
+          const { platformReads } = Context.get(context["effect/context"], ApiServices);
+          return platformReads.ledger(context.scope.organizationId);
+        }),
+        policyHistory: builder.platformAgent.policyHistory
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { platformReads } = Context.get(context["effect/context"], ApiServices);
+            return platformReads.policyHistory(context.scope.organizationId);
+          }),
+        ownerActions: builder.platformAgent.ownerActions
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { platformReads } = Context.get(context["effect/context"], ApiServices);
+            return platformReads.ownerActions(context.scope.organizationId);
+          }),
+        setPayoutRoute: builder.platformAgent.setPayoutRoute
+          .use(auth.requireAdmin)
+          .handler(async ({ context, input }) => {
+            const { platformPayouts } = Context.get(context["effect/context"], ApiServices);
+            return platformPayouts.setRoute(input.organizationId, input.route);
+          }),
+
+        ownerView: builder.platformAgent.ownerView
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.view(context.scope.organizationId);
+          }),
+        saveRules: builder.platformAgent.saveRules
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.saveRules(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+          }),
+        prepareAction: builder.platformAgent.prepareAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.prepare(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+          }),
+        submitAction: builder.platformAgent.submitAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.submit(context.scope.organizationId, input);
+          }),
+        followAction: builder.platformAgent.followAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.follow(context.scope.organizationId, input.correlationId);
+          }),
       },
 
       workOrders: {

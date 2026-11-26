@@ -10,6 +10,13 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import {
+  OWNER_ACTION_KINDS,
+  PAYOUT_ASSETS,
+  PAYOUT_ROUTES,
+  PLATFORM_REVOKED_REASONS,
+  PLATFORM_SIGNING_KINDS,
+} from "../services/platform/terms";
 
 export const applications = pgTable(
   "applications",
@@ -939,6 +946,114 @@ export const payoutAgents = pgTable("payout_agents", {
 });
 
 export type PayoutAgentRow = typeof payoutAgents.$inferSelect;
+
+export const platformAgents = pgTable("platform_agents", {
+  organizationId: text("organization_id").primaryKey(),
+  ownerAccountId: text("owner_account_id").notNull(),
+  area: text("area").notNull(),
+  host: text("host").notNull(),
+  deployment: text("deployment").notNull(),
+  agent: text("agent"),
+  agentId: text("agent_id"),
+  setupPublicKey: text("setup_public_key"),
+  pendingKind: text("pending_kind", { enum: PLATFORM_SIGNING_KINDS }),
+  pendingMessage: text("pending_message"),
+  pendingNonce: text("pending_nonce"),
+  pendingExpiresAt: timestamp("pending_expires_at", { withTimezone: false }),
+  pendingSubmission: text("pending_submission"),
+  createCorrelationId: text("create_correlation_id"),
+  createConfirmUrl: text("create_confirm_url"),
+  createIntent: text("create_intent"),
+  createExpiresAt: timestamp("create_expires_at", { withTimezone: false }),
+  createStatus: text("create_status"),
+  payoutAsset: text("payout_asset", { enum: PAYOUT_ASSETS }),
+  maxPerPayout: text("max_per_payout"),
+  monthlyBudgetUsd: text("monthly_budget_usd"),
+  grantRemindedFor: timestamp("grant_reminded_for", { withTimezone: false }),
+  payoutRoute: text("payout_route", { enum: PAYOUT_ROUTES }).notNull().default("legacy"),
+  updatedBy: text("updated_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+});
+
+export type PlatformAgentRow = typeof platformAgents.$inferSelect;
+
+export const platformConsents = pgTable(
+  "platform_consents",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    agent: text("agent").notNull(),
+    agentId: text("agent_id").notNull(),
+    kind: text("kind", { enum: PLATFORM_SIGNING_KINDS }).notNull(),
+    scopes: text("scopes").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: false }).notNull(),
+    publicKey: text("public_key").notNull(),
+    message: text("message").notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: false }),
+    revokedReason: text("revoked_reason", { enum: PLATFORM_REVOKED_REASONS }),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    byOrganization: index("platform_consents_organization").on(t.organizationId),
+  }),
+);
+
+export type PlatformConsentRow = typeof platformConsents.$inferSelect;
+
+export const platformOwnerActions = pgTable(
+  "platform_owner_actions",
+  {
+    correlationId: text("correlation_id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    agent: text("agent").notNull(),
+    kind: text("kind", { enum: OWNER_ACTION_KINDS }).notNull(),
+    summary: text("summary").notNull(),
+    confirmUrl: text("confirm_url"),
+    intent: text("intent"),
+    expiresAt: timestamp("expires_at", { withTimezone: false }).notNull(),
+    status: text("status").notNull(),
+    requestedBy: text("requested_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    byOrganization: index("platform_owner_actions_organization").on(t.organizationId),
+  }),
+);
+
+export type PlatformOwnerActionRow = typeof platformOwnerActions.$inferSelect;
+
+export const platformPayouts = pgTable(
+  "platform_payouts",
+  {
+    requestId: text("request_id").primaryKey(),
+    compensationRequestId: text("compensation_request_id").notNull(),
+    attempt: integer("attempt").notNull(),
+    organizationId: text("organization_id").notNull(),
+    agent: text("agent").notNull(),
+    asset: text("asset").notNull(),
+    chain: text("chain").notNull(),
+    recipient: text("recipient").notNull(),
+    amount: text("amount").notNull(),
+    expectedRevision: integer("expected_revision").notNull(),
+    expectedDigest: text("expected_digest").notNull(),
+    state: text("state").notNull(),
+    status: text("status"),
+    code: text("code"),
+    failureCode: text("failure_code"),
+    neverExecuted: boolean("never_executed").notNull().default(false),
+    correlationId: text("correlation_id"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    attemptOnce: uniqueIndex("platform_payouts_attempt").on(t.compensationRequestId, t.attempt),
+  }),
+);
+
+export type PlatformPayoutRow = typeof platformPayouts.$inferSelect;
 
 export const PAYOUT_ACTIONS = [
   "create_agent",
