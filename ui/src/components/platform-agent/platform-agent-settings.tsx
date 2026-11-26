@@ -29,6 +29,10 @@ import { signPlatformText } from "@/lib/platform-agent-signing";
 import { platformAgentQueryKey, platformAgentQueryOptions } from "@/lib/queries";
 
 type View = Awaited<ReturnType<ApiClient["platformAgent"]["view"]>>;
+type Creation = {
+  correlationId: string;
+  intent: NonNullable<Awaited<ReturnType<ApiClient["platformAgent"]["prepareCreate"]>>["intent"]>;
+};
 type Days = View["consentDays"][number];
 
 export function PlatformAgentSection() {
@@ -56,6 +60,7 @@ export function PlatformAgentSettings() {
   const [withPayouts, setWithPayouts] = useState(false);
   const { data: session } = useQuery(sessionQueryOptions(authClient));
   const isSiteAdmin = session?.user?.role === "admin";
+  const [creation, setCreation] = useState<Creation | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const query = useQuery({
     ...platformAgentQueryOptions(apiClient),
@@ -108,28 +113,49 @@ export function PlatformAgentSettings() {
   const retry = useMutation({
     mutationFn: () => apiClient.platformAgent.retry({}),
     onSuccess: setData,
-    onError: failed("The platform still didn't answer"),
+    onError: failed("The platform still didn't take it"),
   });
 
-  const create = useMutation({
+  const setupKeyConnected = async (view: View) => {
+    if (!view.ownerAccountId || !view.setupPublicKey) throw new Error("Set up the agent first");
+    const key = await ownerWalletKey(authClient, view.ownerAccountId);
+    if (key !== view.setupPublicKey) {
+      throw new Error(
+        `Use the wallet key that signed the setup (${view.setupPublicKey}); this wallet uses ${key ?? "another key"}.`,
+      );
+    }
+    return view.ownerAccountId;
+  };
+
+  const prepareCreate = useMutation({
     mutationFn: async (view: View) => {
-      if (!view.ownerAccountId || !view.setupPublicKey) throw new Error("Set up the agent first");
-      const key = await ownerWalletKey(authClient, view.ownerAccountId);
-      if (key !== view.setupPublicKey) {
-        throw new Error(
-          `Use the wallet key that signed the setup (${view.setupPublicKey}); this wallet uses ${key ?? "another key"}.`,
-        );
-      }
-      const prepared = await apiClient.platformAgent.prepareCreate({});
+      await setupKeyConnected(view);
+      return apiClient.platformAgent.prepareCreate({});
+    },
+    onSuccess: (prepared) => {
       setData(prepared.view);
-      if (!prepared.intent || !prepared.view.create) return prepared.view;
-      const signedData = await signAgentIntent(authClient, prepared.intent, view.ownerAccountId);
+      setCreation(
+        prepared.intent && prepared.view.create
+          ? { correlationId: prepared.view.create.correlationId, intent: prepared.intent }
+          : null,
+      );
+    },
+    onError: failed("Couldn't prepare the agent's creation"),
+  });
+
+  const signCreate = useMutation({
+    mutationFn: async ({ view, ready }: { view: View; ready: Creation }) => {
+      const owner = await setupKeyConnected(view);
+      const signedData = await signAgentIntent(authClient, ready.intent, owner);
       return apiClient.platformAgent.submitCreate({
-        correlationId: prepared.view.create.correlationId,
+        correlationId: ready.correlationId,
         signedData,
       });
     },
-    onSuccess: setData,
+    onSuccess: (view) => {
+      setCreation(null);
+      setData(view);
+    },
     onError: failed("Couldn't create the agent"),
   });
 
@@ -172,7 +198,8 @@ export function PlatformAgentSettings() {
     startConsent.isPending ||
     sign.isPending ||
     retry.isPending ||
-    create.isPending ||
+    prepareCreate.isPending ||
+    signCreate.isPending ||
     follow.isPending ||
     disconnect.isPending;
   const ownerValue = owner ?? data.ownerAccountId ?? "";
@@ -284,6 +311,7 @@ export function PlatformAgentSettings() {
                 message={data.signing.message}
                 recipient={data.signing.recipient}
                 expiresAt={data.signing.expiresAt}
+                host={data.host ?? data.signing.recipient}
               />
               <Button
                 size="sm"
@@ -298,10 +326,12 @@ export function PlatformAgentSettings() {
 
           {data.retryable && (
             <Alert>
-              <AlertTitle>The platform didn't answer</AlertTitle>
+              <AlertTitle>Signed, not stored yet</AlertTitle>
               <AlertDescription className="flex flex-col gap-2">
                 <span>
-                  Your signature is kept. Send it again; you won't be asked to sign again.
+                  The MultiAgency platform didn't take it: it didn't answer, was busy, or this
+                  server's access to it isn't working. Your signature is kept. Send it again; you
+                  won't be asked to sign again.
                 </span>
                 <Button
                   size="sm"
@@ -334,6 +364,34 @@ export function PlatformAgentSettings() {
                     </a>
                   </Button>
                 </>
+              ) : creation && data.create?.correlationId === creation.correlationId ? (
+                <div className="flex flex-col gap-3">
+                  <SigningText
+                    message={creation.intent.payload.message}
+                    recipient={creation.intent.payload.recipient}
+                    expiresAt={data.create.expiresAt ?? new Date().toISOString()}
+                    host={data.host ?? creation.intent.payload.recipient}
+                  />
+                  <Button
+                    size="sm"
+                    className="self-start"
+                    disabled={busy}
+                    onClick={() => signCreate.mutate({ view: data, ready: creation })}
+                  >
+                    {signCreate.isPending
+                      ? "Waiting for the wallet…"
+                      : `Sign the creation with ${data.ownerAccountId}`}
+                  </Button>
+                </div>
+              ) : data.create?.status === "prepared" ? (
+                <Button
+                  size="sm"
+                  className="self-start"
+                  disabled={busy}
+                  onClick={() => prepareCreate.mutate(data)}
+                >
+                  Show the creation text to sign
+                </Button>
               ) : data.create ? (
                 <p className="text-sm text-muted-foreground">
                   A creation is already open
@@ -348,9 +406,9 @@ export function PlatformAgentSettings() {
                   size="sm"
                   className="self-start"
                   disabled={busy}
-                  onClick={() => create.mutate(data)}
+                  onClick={() => prepareCreate.mutate(data)}
                 >
-                  {create.isPending ? "Waiting for the wallet…" : "Create the agent"}
+                  {prepareCreate.isPending ? "Preparing…" : "Prepare the agent's creation"}
                 </Button>
               )}
               {data.create && (

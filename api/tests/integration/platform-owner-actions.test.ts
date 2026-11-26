@@ -150,7 +150,7 @@ describe("owner actions through the platform", () => {
       correlationId: grant.action.correlationId,
       signedData: { signature: "x" },
     });
-    expect(followed.status).toBe("PENDING_SIGNATURE");
+    expect(followed.status).toBe("submitting");
     expect(platform.count("agent:owner/status")).toBe(1);
     await expect(
       actions.submit(ORG, { correlationId: grant.action.correlationId, signedData: {} }),
@@ -217,5 +217,58 @@ describe("owner actions through the platform", () => {
     await expect(
       actions.submit(OTHER, { correlationId: grant.action.correlationId, signedData: {} }),
     ).rejects.toThrow(/no connected platform agent/);
+  });
+
+  test("checking an action before it's signed keeps it open and signable", async () => {
+    const grant = await actions.prepare(ORG, ACTOR, { kind: "grant" });
+    expect(await actions.follow(ORG, grant.action.correlationId)).toMatchObject({
+      status: "prepared",
+      open: true,
+    });
+    expect(
+      await actions.submit(ORG, { correlationId: grant.action.correlationId, signedData: {} }),
+    ).toMatchObject({ status: "SUCCESS" });
+  });
+
+  test("an open action is reused only for the same request; another one supersedes it", async () => {
+    for (const _ of [1, 2]) {
+      const grant = await actions.prepare(ORG, ACTOR, { kind: "grant" });
+      await actions.submit(ORG, { correlationId: grant.action.correlationId, signedData: {} });
+    }
+    const live = (platform.overview.grants as Array<{ grant_id: string }>).map((g) => g.grant_id);
+    expect(live).toHaveLength(2);
+    const revokeA = await actions.prepare(ORG, ACTOR, { kind: "grant_revoke", grantId: live[0] });
+    expect(
+      (await actions.prepare(ORG, ACTOR, { kind: "grant_revoke", grantId: live[0] })).action
+        .correlationId,
+    ).toBe(revokeA.action.correlationId);
+    const revokeB = await actions.prepare(ORG, ACTOR, { kind: "grant_revoke", grantId: live[1] });
+    expect(revokeB.action.correlationId).not.toBe(revokeA.action.correlationId);
+    expect(prepareBody()).toEqual({ type: "grant_revoke", grantId: live[1] });
+    const listed = (await actions.view(ORG)).actions;
+    expect(listed.find((a) => a.correlationId === revokeA.action.correlationId)).toMatchObject({
+      status: "superseded",
+      open: false,
+    });
+
+    await actions.saveRules(ORG, ACTOR, WNEAR_RULES);
+    const first = await actions.prepare(ORG, ACTOR, { kind: "rules" });
+    await actions.saveRules(ORG, ACTOR, { ...WNEAR_RULES, monthlyBudgetUsd: "900" });
+    const changed = await actions.prepare(ORG, ACTOR, { kind: "rules" });
+    expect(changed.action.correlationId).not.toBe(first.action.correlationId);
+    expect(prepareBody()).toMatchObject({ changes: { budget: { monthly_usd: "900" } } });
+  });
+
+  test("another open action of the kind is reported, not adopted in place of this one", async () => {
+    platform.failNext("agent:owner/prepare", {
+      ok: false,
+      kind: "refused",
+      code: "owner_action_open",
+      error: "open",
+    });
+    await expect(actions.prepare(ORG, ACTOR, { kind: "freeze" })).rejects.toThrow(
+      /still open on the platform/,
+    );
+    expect((await actions.view(ORG)).actions).toEqual([]);
   });
 });

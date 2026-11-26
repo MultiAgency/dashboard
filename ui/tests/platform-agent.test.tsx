@@ -8,6 +8,9 @@ const view = vi.fn();
 const startConsent = vi.fn();
 const setPayoutRoute = vi.fn();
 const session = vi.fn(async () => ({ user: { role: "user" } }));
+const prepareCreate = vi.fn();
+const submitCreate = vi.fn();
+const owner = vi.hoisted(() => ({ client: {} as unknown }));
 
 vi.mock("@/lib/api", () => ({
   useApiClient: () => ({
@@ -15,6 +18,8 @@ vi.mock("@/lib/api", () => ({
       view,
       startConsent,
       setPayoutRoute,
+      prepareCreate,
+      submitCreate,
       overview: async () => {
         throw new Error("not connected");
       },
@@ -24,7 +29,7 @@ vi.mock("@/lib/api", () => ({
   }),
 }));
 vi.mock("@/lib/auth", () => ({
-  useAuthClient: () => ({}),
+  useAuthClient: () => owner.client,
   sessionQueryOptions: () => ({ queryKey: ["session"], queryFn: session }),
 }));
 vi.mock("@/hooks/use-me-roles", () => ({
@@ -74,6 +79,9 @@ afterEach(() => {
   startConsent.mockReset();
   setPayoutRoute.mockReset();
   session.mockImplementation(async () => ({ user: { role: "user" } }));
+  prepareCreate.mockReset();
+  submitCreate.mockReset();
+  owner.client = {};
 });
 
 function renderWith(node: React.ReactNode) {
@@ -242,5 +250,83 @@ describe("platform agent settings", () => {
         route: "platform",
       }),
     );
+  });
+
+  test("a readable creation is shown first, and signed only on a second click", async () => {
+    const key = generateKey();
+    const signMessage = vi.fn(
+      async (params: { message: string; recipient: string; nonce: Uint8Array }) =>
+        key.signNep413Message("rita.near", params),
+    );
+    owner.client = {
+      near: {
+        ensureConnected: vi.fn(async () => true),
+        getState: () => ({ accountId: "rita.near", publicKey: key.publicKey.toString() }),
+        getNearClient: () => ({ signMessage }),
+      },
+    };
+    const creating = {
+      ...baseView,
+      agentId: null,
+      setupPublicKey: key.publicKey.toString(),
+      state: "creating",
+      signing: null,
+    };
+    const intent = {
+      standard: "nep413",
+      payload: {
+        message: "Create the payout agent own-abc",
+        recipient: "outlayer.near",
+        nonce: NONCE,
+      },
+    };
+    view.mockResolvedValue(creating);
+    prepareCreate.mockResolvedValue({
+      view: {
+        ...creating,
+        create: {
+          correlationId: "corr-1",
+          confirmUrl: null,
+          expiresAt: "2026-11-25T12:10:00Z",
+          status: "prepared",
+        },
+      },
+      intent,
+    });
+    submitCreate.mockResolvedValue({ ...creating, state: "needs_consent", agentId: "agent-1" });
+    renderWith(<PlatformAgentSettings />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Prepare the agent's creation" }));
+    expect(await screen.findByText("Create the payout agent own-abc")).toBeTruthy();
+    expect(screen.getAllByText("outlayer.near").length).toBeGreaterThan(0);
+    expect(signMessage).not.toHaveBeenCalled();
+    expect(submitCreate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign the creation with rita.near" }));
+    await vi.waitFor(() => expect(submitCreate).toHaveBeenCalledTimes(1));
+    expect(signMessage).toHaveBeenCalledTimes(1);
+    expect(submitCreate.mock.calls[0]?.[0]).toMatchObject({ correlationId: "corr-1" });
+  });
+
+  test("a creation from another wallet key is refused before anything is prepared", async () => {
+    const key = generateKey();
+    owner.client = {
+      near: {
+        ensureConnected: vi.fn(async () => true),
+        getState: () => ({ accountId: "rita.near", publicKey: generateKey().publicKey.toString() }),
+        getNearClient: () => ({ signMessage: vi.fn() }),
+      },
+    };
+    view.mockResolvedValue({
+      ...baseView,
+      agentId: null,
+      setupPublicKey: key.publicKey.toString(),
+      state: "creating",
+      signing: null,
+    });
+    renderWith(<PlatformAgentSettings />);
+    fireEvent.click(await screen.findByRole("button", { name: "Prepare the agent's creation" }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(prepareCreate).not.toHaveBeenCalled();
   });
 });

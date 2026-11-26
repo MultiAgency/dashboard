@@ -17,7 +17,7 @@ const ACTION_TYPES: Record<OwnerActionKind, AppOwnerAction["type"]> = {
 };
 const SUMMARIES: Record<Exclude<OwnerActionKind, "rules">, string> = {
   grant: `Let MultiAgency pay within these rules for ${GRANT_DAYS} days`,
-  grant_revoke: "Stop MultiAgency paying under this permission",
+  grant_revoke: "Stop MultiAgency paying under permission",
   freeze: "Freeze the agent: it pays nothing until unfrozen",
   unfreeze: "Unfreeze the agent",
 };
@@ -177,7 +177,7 @@ export function createPlatformOwnerActions(deps: {
       if (!grant) throw badRequest("That payout permission isn't live on the agent");
       return {
         action: { type: "grant_revoke", grantId: grant.grant_id },
-        summary: SUMMARIES.grant_revoke,
+        summary: `${SUMMARIES.grant_revoke} ${grant.grant_id}`,
       };
     }
     const rules = await settingsOf(organizationId);
@@ -206,7 +206,7 @@ export function createPlatformOwnerActions(deps: {
   ) {
     await db
       .insert(platformOwnerActions)
-      .values({ ...fields, organizationId, agent, kind })
+      .values({ ...fields, organizationId, agent, kind, createdAt: now(), updatedAt: now() })
       .onConflictDoNothing();
   }
 
@@ -215,27 +215,29 @@ export function createPlatformOwnerActions(deps: {
     connection: Connection,
     calls: AgentCalls,
     kind: OwnerActionKind,
+    summary: string,
     actorId: string,
   ) {
     const actions = await answer(organizationId, connection, await calls.call("owner/actions"));
     const known = new Set((await actionsOf(organizationId)).map((a) => a.correlationId));
-    const open = actions.find(
-      (a) =>
-        a.type === ACTION_TYPES[kind] &&
-        a.signer === "wallet" &&
-        (a.stage === "prepared" || a.stage === "submitted") &&
-        Date.parse(a.expiresAt) > now().getTime(),
-    );
+    const open = actions
+      .filter(
+        (a) =>
+          !known.has(a.correlationId) &&
+          a.type === ACTION_TYPES[kind] &&
+          a.signer === "wallet" &&
+          (a.stage === "prepared" || a.stage === "submitted") &&
+          Date.parse(a.expiresAt) > now().getTime(),
+      )
+      .sort((a, b) => Date.parse(b.expiresAt) - Date.parse(a.expiresAt))[0];
     if (!open) return null;
-    if (!known.has(open.correlationId)) {
-      await record(organizationId, connection.agent, kind, {
-        correlationId: open.correlationId,
-        summary: "An action prepared earlier whose answer was lost",
-        expiresAt: new Date(open.expiresAt),
-        status: open.stage === "prepared" ? "adopted" : "submitted",
-        requestedBy: actorId,
-      });
-    }
+    await record(organizationId, connection.agent, kind, {
+      correlationId: open.correlationId,
+      summary: `${summary} (its answer was lost; recovered from the platform)`,
+      expiresAt: new Date(open.expiresAt),
+      status: open.stage === "prepared" ? "adopted" : "submitted",
+      requestedBy: actorId,
+    });
     return open.correlationId;
   }
 
@@ -245,26 +247,36 @@ export function createPlatformOwnerActions(deps: {
     input: { kind: OwnerActionKind; grantId?: string },
   ) {
     const { calls, connection } = await connected(organizationId, "owner");
-    const already = (await actionsOf(organizationId)).find(
+    const { action, summary } = await build(organizationId, connection, calls, input);
+    const open = (await actionsOf(organizationId)).filter(
       (a) => a.kind === input.kind && isOpen(a),
     );
-    if (already)
-      return { action: actionView(already), intent: storedIntent(already), preview: null };
-    const { action, summary } = await build(organizationId, connection, calls, input);
+    const same = open.find((a) => a.summary === summary);
+    if (same) return { action: actionView(same), intent: storedIntent(same), preview: null };
     const prepared = await calls.call("owner/prepare", { action, signer: "wallet" });
     if (!prepared.ok) {
-      const maybeOpen =
-        prepared.kind === "unknown" ||
-        (prepared.kind === "refused" && prepared.code === "owner_action_open");
-      if (maybeOpen && (await adopt(organizationId, connection, calls, input.kind, actorId))) {
-        const adopted = (await actionsOf(organizationId)).find(
-          (a) => a.kind === input.kind && isOpen(a),
-        );
-        if (adopted) return { action: actionView(adopted), intent: null, preview: null };
-      }
       if (prepared.kind === "unknown") {
+        const adopted = await adopt(
+          organizationId,
+          connection,
+          calls,
+          input.kind,
+          summary,
+          actorId,
+        );
+        if (adopted)
+          return {
+            action: actionView(await ownAction(organizationId, adopted)),
+            intent: null,
+            preview: null,
+          };
         throw badRequest(
           "The MultiAgency platform's answer was lost and it shows nothing waiting. Try again.",
+        );
+      }
+      if (prepared.kind === "refused" && prepared.code === "owner_action_open") {
+        throw badRequest(
+          "Another action of this kind is still open on the platform. Sign it or let it expire, then try again.",
         );
       }
       await deps.agents.accessFailed(organizationId, connection.consentId, prepared);
@@ -275,6 +287,7 @@ export function createPlatformOwnerActions(deps: {
     if (!confirm && !readable) {
       throw badRequest("The platform answered with something your wallet can't sign here");
     }
+    for (const stale of open) await setStatus(stale.correlationId, "superseded");
     await record(organizationId, connection.agent, input.kind, {
       correlationId,
       summary,
@@ -367,7 +380,9 @@ export function createPlatformOwnerActions(deps: {
       connection,
       await calls.call("owner/status", { correlationId }),
     );
-    await setStatus(action.correlationId, status.status ?? status.stage);
+    if (status.phase !== "open") {
+      await setStatus(action.correlationId, status.status ?? status.stage);
+    }
     return actionView(await ownAction(organizationId, correlationId));
   }
 

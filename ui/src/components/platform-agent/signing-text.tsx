@@ -24,10 +24,12 @@ export function SigningText({
   message,
   recipient,
   expiresAt,
+  host,
 }: {
   message: string;
   recipient: string;
   expiresAt: string;
+  host: string;
 }) {
   const fields = platformTextFields(message);
   const scopes = Array.isArray(fields?.scopes) ? fields.scopes.map(String) : [];
@@ -62,7 +64,7 @@ export function SigningText({
       )}
       <p className="text-xs text-muted-foreground">
         Sign before {new Date(expiresAt).toLocaleTimeString()}. The dashboard never asks you to sign
-        "Sign in to {recipient}".
+        "Sign in to {host}".
       </p>
     </div>
   );
