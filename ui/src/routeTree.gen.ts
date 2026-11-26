@@ -34,6 +34,7 @@ import { Route as AuthenticatedClientEngagementIdRouteImport } from './routes/_a
 import { Route as AuthenticatedClientReportsRouteImport } from './routes/_authenticated/client/reports'
 import { Route as AuthenticatedPlatformIndexRouteImport } from './routes/_authenticated/platform/index'
 import { Route as AuthenticatedPlatformMembersRouteImport } from './routes/_authenticated/platform/members'
+import { Route as AuthenticatedPlatformOldPayoutsRouteImport } from './routes/_authenticated/platform/old-payouts'
 import { Route as AuthenticatedPlatformWalletCheckRouteImport } from './routes/_authenticated/platform/wallet-check'
 import { Route as AuthenticatedWorkOrdersIdRouteImport } from './routes/_authenticated/work-orders/$id'
 import { Route as PublicAcceptInvitationIdRouteImport } from './routes/_public/accept-invitation/$id'
@@ -193,6 +194,12 @@ const AuthenticatedPlatformMembersRoute =
   AuthenticatedPlatformMembersRouteImport.update({
     id: '/members',
     path: '/members',
+    getParentRoute: () => AuthenticatedPlatformRoute,
+  } as any)
+const AuthenticatedPlatformOldPayoutsRoute =
+  AuthenticatedPlatformOldPayoutsRouteImport.update({
+    id: '/old-payouts',
+    path: '/old-payouts',
     getParentRoute: () => AuthenticatedPlatformRoute,
   } as any)
 const AuthenticatedPlatformWalletCheckRoute =
@@ -387,6 +394,7 @@ export interface FileRoutesByFullPath {
   '/client/$engagementId': typeof AuthenticatedClientEngagementIdRouteWithChildren
   '/client/reports': typeof AuthenticatedClientReportsRoute
   '/platform/members': typeof AuthenticatedPlatformMembersRoute
+  '/platform/old-payouts': typeof AuthenticatedPlatformOldPayoutsRoute
   '/platform/wallet-check': typeof AuthenticatedPlatformWalletCheckRoute
   '/work-orders/$id': typeof AuthenticatedWorkOrdersIdRoute
   '/accept-invitation/$id': typeof PublicAcceptInvitationIdRoute
@@ -437,6 +445,7 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AuthenticatedAdminSettingsRoute
   '/client/reports': typeof AuthenticatedClientReportsRoute
   '/platform/members': typeof AuthenticatedPlatformMembersRoute
+  '/platform/old-payouts': typeof AuthenticatedPlatformOldPayoutsRoute
   '/platform/wallet-check': typeof AuthenticatedPlatformWalletCheckRoute
   '/work-orders/$id': typeof AuthenticatedWorkOrdersIdRoute
   '/accept-invitation/$id': typeof PublicAcceptInvitationIdRoute
@@ -494,6 +503,7 @@ export interface FileRoutesById {
   '/_authenticated/client/$engagementId': typeof AuthenticatedClientEngagementIdRouteWithChildren
   '/_authenticated/client/reports': typeof AuthenticatedClientReportsRoute
   '/_authenticated/platform/members': typeof AuthenticatedPlatformMembersRoute
+  '/_authenticated/platform/old-payouts': typeof AuthenticatedPlatformOldPayoutsRoute
   '/_authenticated/platform/wallet-check': typeof AuthenticatedPlatformWalletCheckRoute
   '/_authenticated/work-orders/$id': typeof AuthenticatedWorkOrdersIdRoute
   '/_public/accept-invitation/$id': typeof PublicAcceptInvitationIdRoute
@@ -550,6 +560,7 @@ export interface FileRouteTypes {
     | '/client/$engagementId'
     | '/client/reports'
     | '/platform/members'
+    | '/platform/old-payouts'
     | '/platform/wallet-check'
     | '/work-orders/$id'
     | '/accept-invitation/$id'
@@ -600,6 +611,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/client/reports'
     | '/platform/members'
+    | '/platform/old-payouts'
     | '/platform/wallet-check'
     | '/work-orders/$id'
     | '/accept-invitation/$id'
@@ -656,6 +668,7 @@ export interface FileRouteTypes {
     | '/_authenticated/client/$engagementId'
     | '/_authenticated/client/reports'
     | '/_authenticated/platform/members'
+    | '/_authenticated/platform/old-payouts'
     | '/_authenticated/platform/wallet-check'
     | '/_authenticated/work-orders/$id'
     | '/_public/accept-invitation/$id'
@@ -870,6 +883,13 @@ declare module '@tanstack/react-router' {
       path: '/members'
       fullPath: '/platform/members'
       preLoaderRoute: typeof AuthenticatedPlatformMembersRouteImport
+      parentRoute: typeof AuthenticatedPlatformRoute
+    }
+    '/_authenticated/platform/old-payouts': {
+      id: '/_authenticated/platform/old-payouts'
+      path: '/old-payouts'
+      fullPath: '/platform/old-payouts'
+      preLoaderRoute: typeof AuthenticatedPlatformOldPayoutsRouteImport
       parentRoute: typeof AuthenticatedPlatformRoute
     }
     '/_authenticated/platform/wallet-check': {
@@ -1182,12 +1202,14 @@ const AuthenticatedClientRouteWithChildren =
 
 interface AuthenticatedPlatformRouteChildren {
   AuthenticatedPlatformMembersRoute: typeof AuthenticatedPlatformMembersRoute
+  AuthenticatedPlatformOldPayoutsRoute: typeof AuthenticatedPlatformOldPayoutsRoute
   AuthenticatedPlatformWalletCheckRoute: typeof AuthenticatedPlatformWalletCheckRoute
   AuthenticatedPlatformIndexRoute: typeof AuthenticatedPlatformIndexRoute
 }
 
 const AuthenticatedPlatformRouteChildren: AuthenticatedPlatformRouteChildren = {
   AuthenticatedPlatformMembersRoute: AuthenticatedPlatformMembersRoute,
+  AuthenticatedPlatformOldPayoutsRoute: AuthenticatedPlatformOldPayoutsRoute,
   AuthenticatedPlatformWalletCheckRoute: AuthenticatedPlatformWalletCheckRoute,
   AuthenticatedPlatformIndexRoute: AuthenticatedPlatformIndexRoute,
 }

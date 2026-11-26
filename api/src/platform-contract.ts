@@ -412,6 +412,29 @@ export const platformAgentContract = {
     .output(deposit)
     .errors(errors),
 
+  oldPayoutPath: oc
+    .route({ method: "GET", path: "/platform/old-payout-path" })
+    .input(z.object({}))
+    .output(
+      z.object({
+        drained: z.boolean(),
+        organizations: z.array(
+          z.object({
+            organizationId: z.string(),
+            name: z.string().nullable(),
+            route: z.enum(PAYOUT_ROUTES),
+            oldAgentId: z.string().nullable(),
+            ownerAccountId: z.string().nullable(),
+            unsettledPayouts: z.number(),
+            ownerActionsInFlight: z.number(),
+            grantLiveUntil: z.string().nullable(),
+            blockers: z.array(z.string()),
+          }),
+        ),
+      }),
+    )
+    .errors(errors),
+
   setPayoutRoute: oc
     .route({ method: "POST", path: "/platform/payout-route" })
     .input(z.object({ organizationId: z.string().min(1), route: z.enum(PAYOUT_ROUTES) }))

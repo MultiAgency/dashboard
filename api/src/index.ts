@@ -57,6 +57,7 @@ import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./servic
 import { createPlatformAgents } from "./services/platform/agents";
 import { createPlatformApp, platformSettings } from "./services/platform/client";
 import { createPlatformDeposits } from "./services/platform/deposits";
+import { createOldPayoutPath } from "./services/platform/old-payout-path";
 import { createPlatformOwnerActions } from "./services/platform/owner-actions";
 import { routePayouts } from "./services/platform/payout-router";
 import { createPlatformPayouts, platformPayoutTerms } from "./services/platform/payouts";
@@ -367,6 +368,11 @@ const initializeServices = (
       payees: workOrderPayees(db),
       payoutTerms: platformPayoutTerms(db),
     });
+    const oldPayoutPath = createOldPayoutPath({
+      db,
+      organizationName: async (organizationId) =>
+        (await organizationDirectory.get(organizationId))?.name ?? null,
+    });
     const platformDeposits = createPlatformDeposits({
       db,
       app: platformApp,
@@ -523,6 +529,7 @@ const initializeServices = (
       platformOwnerActions,
       platformPayouts,
       platformDeposits,
+      oldPayoutPath,
       signedInNearKeys,
       workOrderTimers,
     };
@@ -1465,6 +1472,12 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context }) => {
             const { platformDeposits } = Context.get(context["effect/context"], ApiServices);
             return platformDeposits.fund(context.scope.organizationId, context.scope.actorId);
+          }),
+        oldPayoutPath: builder.platformAgent.oldPayoutPath
+          .use(auth.requireAdmin)
+          .handler(async ({ context }) => {
+            const { oldPayoutPath } = Context.get(context["effect/context"], ApiServices);
+            return oldPayoutPath();
           }),
         setPayoutRoute: builder.platformAgent.setPayoutRoute
           .use(auth.requireAdmin)

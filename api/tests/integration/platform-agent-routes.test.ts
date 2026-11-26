@@ -113,6 +113,7 @@ const calls: Array<[string, (client: any) => Promise<unknown>]> = [
   ["followAction", (c) => c.platformAgent.followAction({ correlationId: "x" })],
   ["deposit", (c) => c.platformAgent.deposit({})],
   ["fundAgent", (c) => c.platformAgent.fundAgent({})],
+  ["oldPayoutPath", (c) => c.platformAgent.oldPayoutPath({})],
   [
     "setPayoutRoute",
     (c) => c.platformAgent.setPayoutRoute({ organizationId: "studio", route: "platform" }),
@@ -218,6 +219,13 @@ describe("platform agent routes", () => {
     );
     expect(connected.state).toBe("connected");
     keep(await owner.platformAgent.overview({}));
+    expect(await clientFor(caller(null, true)).platformAgent.oldPayoutPath({})).toEqual({
+      drained: true,
+      organizations: [],
+    });
+    await expect(owner.platformAgent.oldPayoutPath({})).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
     keep(await owner.platformAgent.ownerView({}));
     expect(JSON.stringify(answers)).not.toContain("tap_");
 

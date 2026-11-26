@@ -92,9 +92,14 @@ function PlatformOrgs() {
         title="Workspaces"
         description="Create Organizations and approve the ones people ask for. You become the owner of those you create."
         actions={
-          <Button asChild variant="outline" size="sm">
-            <Link to="/platform/members">Members</Link>
-          </Button>
+          <div className="flex gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link to="/platform/members">Members</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/platform/old-payouts">Old payout path</Link>
+            </Button>
+          </div>
         }
       />
 
