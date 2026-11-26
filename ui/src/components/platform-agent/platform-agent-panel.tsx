@@ -15,9 +15,19 @@ import { type ApiClient, useApiClient } from "@/lib/api";
 import { formatTokenAmount } from "@/lib/format-amount";
 import { platformAgentReadKey } from "@/lib/queries";
 
+type Units = { asset: string; symbol: string; decimals: number };
+
 const tokenOf = (asset: string) => asset.replace(/^nep141:/, "");
-const amountOf = (amount: string | null, asset: string | null) =>
-  amount && asset ? formatTokenAmount(amount, tokenOf(asset)) : (amount ?? "?");
+const formatAsset = (amount: string, asset: string, book: Units[]) =>
+  formatTokenAmount(
+    amount,
+    tokenOf(asset),
+    book.find((h) => h.asset === asset),
+  );
+const usd = (value: string) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : value;
+};
 const when = (at: string | null) => (at ? new Date(at).toLocaleString() : "—");
 
 function Stale({ query }: { query: UseQueryResult<unknown, Error> }) {
@@ -84,6 +94,9 @@ export function PlatformAgentPanel() {
   );
 
   const o = overview.data;
+  const book = o?.book ?? [];
+  const amountOf = (amount: string | null, asset: string | null) =>
+    amount && asset ? formatAsset(amount, asset, book) : (amount ?? "?");
   return (
     <Card>
       <CardHeader>
@@ -130,7 +143,8 @@ export function PlatformAgentPanel() {
               </Badge>
               {o.monthly && (
                 <Badge variant="outline">
-                  ${o.monthly.spentUsd} of ${o.monthly.limitUsd ?? "no limit"} this month
+                  {usd(o.monthly.spentUsd)} of{" "}
+                  {o.monthly.limitUsd === null ? "no limit" : usd(o.monthly.limitUsd)} this month
                   {o.monthly.resetsAt &&
                     ` · resets ${new Date(o.monthly.resetsAt).toLocaleDateString()}`}
                 </Badge>
@@ -142,9 +156,10 @@ export function PlatformAgentPanel() {
                 ? o.book
                     .map(
                       (h) =>
-                        `${formatTokenAmount(
+                        `${formatAsset(
                           (BigInt(h.public) + BigInt(h.confidential)).toString(),
-                          tokenOf(h.asset),
+                          h.asset,
+                          book,
                         )}${h.usd !== null ? ` (~$${h.usd.toFixed(2)})` : ""}`,
                     )
                     .join(", ")
@@ -163,7 +178,7 @@ export function PlatformAgentPanel() {
               <p>
                 Per payout at most:{" "}
                 {Object.entries(o.perTransaction)
-                  .map(([asset, cap]) => formatTokenAmount(cap, tokenOf(asset)))
+                  .map(([asset, cap]) => formatAsset(cap, asset, book))
                   .join(", ")}
                 .
               </p>

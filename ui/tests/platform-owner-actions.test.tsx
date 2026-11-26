@@ -97,6 +97,8 @@ describe("platform owner actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Prepare the updated rules" }));
     await vi.waitFor(() => expect(prepareAction).toHaveBeenCalledWith({ kind: "rules" }));
     expect(await screen.findByText("The platform prepared: Update the payees")).toBeTruthy();
+    expect(screen.getByText("policy text")).toBeTruthy();
+    expect(screen.getByText("outlayer.near")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Sign with rita.near" }));
     await vi.waitFor(() => expect(submitAction).toHaveBeenCalledTimes(1));
@@ -128,6 +130,30 @@ describe("platform owner actions", () => {
     expect(link.getAttribute("href")).toBe(`https://${HOST}/confirm/t`);
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
     expect(screen.queryByRole("button", { name: /Sign with/ })).toBeNull();
+  });
+
+  test("while an action is open the view is read again every 15 seconds, and not once none is", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      ownerView.mockResolvedValue({ ...view, pending: [], actions: [action({})] });
+      renderActions();
+      await screen.findByText("Pay dave.near by withdrawal to their NEAR account");
+      expect(ownerView).toHaveBeenCalledTimes(1);
+
+      ownerView.mockResolvedValue({
+        ...view,
+        pending: [],
+        actions: [action({ status: "SUCCESS", open: false })],
+      });
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(ownerView).toHaveBeenCalledTimes(2);
+      expect(await screen.findByText("success")).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(ownerView).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("rules can't be prepared while the agent's current rules aren't applied", async () => {

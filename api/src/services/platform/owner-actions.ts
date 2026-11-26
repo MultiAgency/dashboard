@@ -8,6 +8,7 @@ import { GRANT_DAYS, GRANT_RENEW_DAYS, nep413Intent, type OwnerActionKind } from
 
 const DAY_MS = 86_400_000;
 const OPEN = new Set(["prepared", "adopted", "submitting", "submitted"]);
+const FOLLOWED_PER_VIEW = 5;
 const ACTION_TYPES: Record<OwnerActionKind, AppOwnerAction["type"]> = {
   rules: "policy_update",
   grant: "grant_issue",
@@ -118,6 +119,13 @@ export function createPlatformOwnerActions(deps: {
     const grant = payoutGrants(overview).sort((a, b) =>
       b.expires_at.localeCompare(a.expires_at),
     )[0];
+    const unsettled = (await actionsOf(organizationId))
+      .filter((a) => OPEN.has(a.status))
+      .slice(0, FOLLOWED_PER_VIEW);
+    for (const action of unsettled) {
+      const status = await calls.call("owner/status", { correlationId: action.correlationId });
+      if (status.ok) await noteStatus(action.correlationId, status.value);
+    }
     return {
       rules,
       pending,
@@ -319,6 +327,13 @@ export function createPlatformOwnerActions(deps: {
     return parsed.success ? parsed.data : null;
   }
 
+  async function noteStatus(
+    correlationId: string,
+    status: { stage: string; status?: string; phase?: string },
+  ) {
+    if (status.phase !== "open") await setStatus(correlationId, status.status ?? status.stage);
+  }
+
   async function setStatus(correlationId: string, status: string) {
     await db
       .update(platformOwnerActions)
@@ -380,9 +395,7 @@ export function createPlatformOwnerActions(deps: {
       connection,
       await calls.call("owner/status", { correlationId }),
     );
-    if (status.phase !== "open") {
-      await setStatus(action.correlationId, status.status ?? status.stage);
-    }
+    await noteStatus(action.correlationId, status);
     return actionView(await ownAction(organizationId, correlationId));
   }
 
