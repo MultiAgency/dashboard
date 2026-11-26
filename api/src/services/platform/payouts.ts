@@ -6,6 +6,7 @@ import {
   platformAgents,
   platformPayouts,
 } from "../../db/schema";
+import { atomicToNear, topUpFor } from "../payouts/policy";
 import type { FundingCheck } from "../payouts/service";
 import type { AgentPayoutView } from "../work-orders/service";
 import { badRequest, type PlatformAgents } from "./agents";
@@ -15,7 +16,6 @@ import type { PayoutRoute } from "./terms";
 const UNAVAILABLE = "Platform access isn't turned on for this server";
 
 const WNEAR = ASSETS.wNEAR;
-const WNEAR_DECIMALS = 24;
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const UNSETTLED = ["sending", "processing", "held", "unknown"];
 
@@ -24,14 +24,6 @@ type PayoutAnswer = OwnerOutput<"payouts/request">;
 
 export function noUnsettledPlatformPayout(compensationRequestId: AnyColumn) {
   return sql`not exists (select 1 from ${platformPayouts} where ${platformPayouts.compensationRequestId} = ${compensationRequestId} and not (${platformPayouts.state} = 'refused' or (${platformPayouts.state} = 'failed' and ${platformPayouts.neverExecuted})))`;
-}
-
-function nearOf(atomic: bigint, digits = 4) {
-  const unit = 10n ** BigInt(WNEAR_DECIMALS);
-  const scale = 10n ** BigInt(digits);
-  const scaled = (atomic * scale) / unit;
-  const fraction = (scaled % scale).toString().padStart(digits, "0").replace(/0+$/, "");
-  return fraction ? `${scaled / scale}.${fraction}` : `${scaled / scale}`;
 }
 
 function provenUnsent(row: PlatformPayoutRow) {
@@ -154,14 +146,14 @@ export function createPlatformPayouts(deps: {
     if (cap !== undefined && amount > BigInt(cap)) {
       return refuse(
         "over_cap",
-        `${nearOf(amount)} NEAR is over the ${nearOf(BigInt(cap))} NEAR cap per payout`,
+        `${atomicToNear(amount)} NEAR is over the ${atomicToNear(BigInt(cap))} NEAR cap per payout`,
       );
     }
     const held = overview.book.find((h) => h.asset === WNEAR);
     const monthly = overview.policy.usage?.budget.monthly;
     const price = held?.price ?? null;
     if (monthly?.remaining_usd != null && price != null) {
-      const amountUsd = Number(nearOf(amount, 6)) * price;
+      const amountUsd = Number(atomicToNear(amount, 6)) * price;
       if (amountUsd > Number(monthly.remaining_usd)) {
         return refuse(
           "over_monthly_budget",
@@ -173,7 +165,7 @@ export function createPlatformPayouts(deps: {
     if (balance !== null && balance < amount) {
       return refuse(
         "insufficient_balance",
-        `The agent holds ${nearOf(balance)} NEAR; this payout needs ${nearOf(amount)} NEAR`,
+        `The agent holds ${atomicToNear(balance)} NEAR; this payout needs ${atomicToNear(amount)} NEAR`,
       );
     }
     return { ready: true, code: null, reason: null };
@@ -187,21 +179,19 @@ export function createPlatformPayouts(deps: {
     if (typeof overview === "string") return null;
     const held = overview.book.find((h) => h.asset === WNEAR);
     const balance = held ? held.confidential + held.public : null;
-    const step = 10n ** BigInt(WNEAR_DECIMALS - 2);
-    const missing = balance !== null && needs.near > balance ? needs.near - balance : 0n;
-    const shortfall = ((missing + step - 1n) / step) * step;
+    const shortfall = balance === null ? 0n : topUpFor(needs.near, balance);
     const price = needs.priceUsd != null ? Number(needs.priceUsd) : (held?.price ?? null);
     const neededUsd =
-      price != null && Number.isFinite(price) ? Number(nearOf(needs.near, 6)) * price : null;
+      price != null && Number.isFinite(price) ? Number(atomicToNear(needs.near, 6)) * price : null;
     const monthly = overview.policy.usage?.budget.monthly ?? null;
     const monthlyBudgetUsd =
       monthly?.limit_usd ?? overview.policy.policy?.budget.monthly_usd ?? null;
     const budgetTooLow =
       neededUsd !== null && monthlyBudgetUsd !== null && neededUsd > Number(monthlyBudgetUsd);
     return {
-      balanceNear: balance === null ? null : nearOf(balance),
-      neededNear: nearOf(needs.near),
-      shortfallNear: nearOf(shortfall),
+      balanceNear: balance === null ? null : atomicToNear(balance),
+      neededNear: atomicToNear(needs.near),
+      shortfallNear: atomicToNear(shortfall),
       monthlyBudgetUsd,
       monthlyRemainingUsd: monthly?.remaining_usd ?? null,
       monthlyNeededUsd: neededUsd === null ? null : neededUsd.toFixed(2),
