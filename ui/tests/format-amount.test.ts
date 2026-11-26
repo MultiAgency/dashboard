@@ -67,6 +67,12 @@ describe("formatTokenAmount", () => {
     ).toBe("1.5 USDC");
   });
 
+  test("uses the given units for a token outside the list, and the list's own for a known one", () => {
+    const units = { symbol: "ETH", decimals: 18 };
+    expect(formatTokenAmount("1500000000000000000", "eth.omft.near", units)).toBe("1.5 ETH");
+    expect(formatTokenAmount(ONE_NEAR, "wrap.near", { symbol: "X", decimals: 6 })).toBe("1 wNEAR");
+  });
+
   test("falls back to raw for invalid amount string", () => {
     expect(formatTokenAmount("not-a-number", "near")).toBe("not-a-number near");
   });

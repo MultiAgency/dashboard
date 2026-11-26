@@ -15,6 +15,7 @@ import {
   Input,
 } from "@/components";
 import { Field } from "@/components/admin-form";
+import { SigningText } from "@/components/platform-agent/signing-text";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { useAuthClient } from "@/lib/auth";
 import { signAgentIntent } from "@/lib/payout-agent-signing";
@@ -41,6 +42,7 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
     queryKey: platformAgentReadKey("ownerView"),
     queryFn: () => apiClient.platformAgent.ownerView({}),
     retry: false,
+    refetchInterval: (q) => (q.state.data?.actions.some((a) => a.open) ? 15_000 : false),
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: platformAgentQueryKey });
@@ -256,10 +258,12 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
                   )}
                 </>
               )}
-              <span>
-                Sign before {new Date(prepared.action.expiresAt).toLocaleTimeString()}, and check
-                your wallet shows the same text.
-              </span>
+              <SigningText
+                message={prepared.intent.payload.message}
+                recipient={prepared.intent.payload.recipient}
+                expiresAt={prepared.action.expiresAt}
+                host={host ?? prepared.intent.payload.recipient}
+              />
               <div className="flex gap-2">
                 <Button size="sm" disabled={busy} onClick={() => sign.mutate(prepared)}>
                   {sign.isPending ? "Waiting for the wallet…" : `Sign with ${owner}`}

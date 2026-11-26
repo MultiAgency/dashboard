@@ -47,28 +47,29 @@ export function formatUsd(amount: string): string {
   }
 }
 
-export function formatTokenAmount(amount: string, tokenId: string): string {
+export function formatTokenAmount(
+  amount: string,
+  tokenId: string,
+  fallback?: { symbol: string; decimals: number },
+): string {
   if (tokenId === "usd") return formatUsd(amount);
-  const known = KNOWN_TOKENS[tokenId];
-  if (!known) return `${amount} ${tokenId}`;
+  const units = KNOWN_TOKENS[tokenId] ?? fallback;
+  if (!units) return `${amount} ${tokenId}`;
+  const { symbol, decimals } = units;
 
   try {
     const n = BigInt(amount);
     const negative = n < 0n;
     const absVal = negative ? -n : n;
-    const factor = 10n ** BigInt(known.decimals);
+    const factor = 10n ** BigInt(decimals);
     const wholePart = absVal / factor;
     const fracPart = absVal % factor;
-    const fracStr = fracPart
-      .toString()
-      .padStart(known.decimals, "0")
-      .slice(0, 6)
-      .replace(/0+$/, "");
+    const fracStr = fracPart.toString().padStart(decimals, "0").slice(0, 6).replace(/0+$/, "");
     const sign = negative ? "-" : "";
     const wholeFormatted = withThousandsSeparator(wholePart.toString());
     return fracStr.length > 0
-      ? `${sign}${wholeFormatted}.${fracStr} ${known.symbol}`
-      : `${sign}${wholeFormatted} ${known.symbol}`;
+      ? `${sign}${wholeFormatted}.${fracStr} ${symbol}`
+      : `${sign}${wholeFormatted} ${symbol}`;
   } catch {
     return `${amount} ${tokenId}`;
   }
