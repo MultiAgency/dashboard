@@ -28,6 +28,12 @@ export function routePayouts(legacy: Payouts | null, platform: PlatformPayouts):
     },
     fundingCheck: async (organizationId, needs) =>
       (await (await pick(organizationId))?.fundingCheck?.(organizationId, needs)) ?? null,
+    configured: async (organizationId) => {
+      const payouts = await pick(organizationId);
+      return payouts === platform
+        ? platform.configured(organizationId)
+        : ((await payouts?.configured?.(organizationId)) ?? false);
+    },
     payoutToken: async (organizationId) =>
       (await platform.routeOf(organizationId)) === "platform"
         ? platform.payoutToken(organizationId)

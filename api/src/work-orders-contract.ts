@@ -355,6 +355,7 @@ export const workOrderDetail = workOrder.extend({
   activity,
   requests: z.array(compensationRequest),
   repoOwners: z.array(repoOwner),
+  autoPay: z.object({ tokenId: z.string() }).nullable(),
 });
 
 const fields = {

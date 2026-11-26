@@ -154,6 +154,11 @@ export function createPlatformPayouts(deps: {
     return PAYOUT_ASSET_TERMS[row?.asset ?? "wnear"];
   }
 
+  async function configured(organizationId: string) {
+    if ((await routeOf(organizationId)) !== "platform") return false;
+    return !!(await deps.agents.connection(organizationId))?.scopes.includes("payout");
+  }
+
   async function payoutToken(organizationId: string) {
     return tokenOfAsset((await termsOf(organizationId)).id);
   }
@@ -484,6 +489,7 @@ export function createPlatformPayouts(deps: {
 
   return {
     routeOf,
+    configured,
     payoutToken,
     setRoute,
     isPlatformPayout,

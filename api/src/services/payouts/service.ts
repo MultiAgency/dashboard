@@ -969,6 +969,9 @@ export function createPayoutAgents(deps: {
       }
     },
 
+    configured: async (organizationId: string) =>
+      available && !!(await settings(organizationId))?.agentId,
+
     latest: async (requestId: string) => {
       const [row] = await db
         .select()

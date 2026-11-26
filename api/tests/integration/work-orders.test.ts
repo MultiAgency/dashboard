@@ -1496,6 +1496,22 @@ describe("work orders", () => {
     });
   });
   describe("signing without Google", () => {
+    test("a USD work order's terms say it's paid in USDC at par or in NEAR, whichever the agent pays", async () => {
+      const created = await service.create(
+        await studio(),
+        fields({
+          tokenId: "usd",
+          representativeName: "Rita Rep",
+          contractorEmail: "carol@example.com",
+        }),
+      );
+      await service.offer(await studio(), { id: created.id });
+      const doc = await service.myDocument(carol(), { id: created.id });
+      const text = (await pdfText(fromBase64(doc.pdfBase64))).replace(/\s+/g, " ");
+      expect(text).toContain("in US dollars, paid in USDC at par or in NEAR at the price");
+      expect(text).not.toContain(", paid in NEAR at the price");
+    });
+
     test("the work order PDF is generated from the terms", async () => {
       const created = await service.create(
         await studio(),

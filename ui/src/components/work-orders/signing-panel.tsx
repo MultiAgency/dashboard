@@ -294,10 +294,32 @@ function SignatureStatus({
     );
   }
   if (wo.status === "offered") {
+    const link = `${window.location.origin}/work-orders/${wo.id}`;
     return (
-      <span className="text-muted-foreground">
-        Sent to the builder on {day(wo.offeredAt)}; waiting for their signature.
-      </span>
+      <div className="flex flex-col gap-2">
+        <span className="text-muted-foreground">
+          Sent to the builder on {day(wo.offeredAt)}; waiting for their signature.
+        </span>
+        <span className="text-sm">
+          Send the builder this link. They open it signed in with {wo.builder.nearAccount} to read
+          and sign.
+        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="break-all font-mono text-xs">{link}</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(link)
+                .then(() => toast.success("Link copied"))
+                .catch(() => toast.error("Couldn't copy the link"));
+            }}
+          >
+            Copy the link
+          </Button>
+        </div>
+      </div>
     );
   }
   if (wo.signature.method === "in_app" && wo.acceptedAt) {

@@ -39,7 +39,6 @@ import { proposalIdOf } from "@/lib/proposal-id";
 import {
   adminWorkOrdersQueryKey,
   payoutAgentQueryKey,
-  payoutAgentQueryOptions,
   payoutReadinessQueryOptions,
 } from "@/lib/queries";
 import { ReportMarkdown } from "./report-markdown";
@@ -151,9 +150,8 @@ function RequestItem({
     if (canManage && request.status === "submitted") setOpen("approve");
     onApproveOpened?.();
   }, [approve, canManage, request.status, onApproveOpened]);
-  const payoutAgent = useQuery({ ...payoutAgentQueryOptions(apiClient), enabled: canManage }).data;
-  const autoPays =
-    !!payoutAgent?.ready && (workOrder.tokenId === "usd" || workOrder.tokenId === "near");
+  const autoPays = !!workOrder.autoPay;
+  const paidIn = workOrder.autoPay ? tokenSymbol(workOrder.autoPay.tokenId) : null;
   const payNow = useMutation({
     mutationFn: () => apiClient.workOrders.payNow({ requestId: request.id }),
     onSuccess: async (updated) => {
@@ -343,7 +341,7 @@ function RequestItem({
         open={confirmingPay}
         onOpenChange={setConfirmingPay}
         title={`Pay ${amount(request.approvedAmount)} to ${workOrder.builder.nearAccount}?`}
-        description="Your payout agent sends it in NEAR now. A payment that went out can't be taken back."
+        description={`Your payout agent sends it in ${paidIn ?? "its token"} now. A payment that went out can't be taken back.`}
         confirmLabel="Pay now"
         onConfirm={() => payNow.mutateAsync().then(() => undefined)}
       />
@@ -362,9 +360,8 @@ function ApproveForm({
 }) {
   const apiClient = useApiClient();
   const queryClient = useQueryClient();
-  const payoutAgent = useQuery(payoutAgentQueryOptions(apiClient)).data;
-  const autoPays =
-    !!payoutAgent?.ready && (workOrder.tokenId === "usd" || workOrder.tokenId === "near");
+  const autoPays = !!workOrder.autoPay;
+  const paidIn = workOrder.autoPay ? tokenSymbol(workOrder.autoPay.tokenId) : null;
   const decimals = tokenDecimals(workOrder.tokenId);
   const toDecimal = (value: string) =>
     decimals === undefined ? value : baseToDecimal(value, decimals);
@@ -416,7 +413,9 @@ function ApproveForm({
             ? `${updated.code} approved; the payout is on its way`
             : updated.note
               ? `${updated.code} approved. ${updated.note}`
-              : `${updated.code} approved. Pay it through a DAO proposal.`,
+              : autoPays
+                ? `${updated.code} approved; the payout agent is paying it`
+                : `${updated.code} approved. Pay it through a DAO proposal.`,
       );
       onDone();
     },
@@ -436,8 +435,8 @@ function ApproveForm({
           Up to {formatTokenAmount(workOrder.remainingAmount, workOrder.tokenId)} remains.{" "}
           {autoPays
             ? hold
-              ? "Approving queues it for your payout agent, which pays it in NEAR."
-              : "Approving pays it right away in NEAR through your payout agent."
+              ? `Approving queues it for your payout agent, which pays it in ${paidIn}.`
+              : `Approving pays it right away in ${paidIn} through your payout agent.`
             : "Approving reserves it; the money moves once the DAO approves the transfer proposal."}
         </DialogDescription>
       </DialogHeader>

@@ -1,7 +1,7 @@
 import { ASSETS, appClient } from "@multiagency/sdk";
 import { type PayoutDouble, payoutDouble } from "@multiagency/sdk/testing";
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Database } from "../../src/db";
 import {
   billings,
@@ -66,6 +66,7 @@ describe("work-order payouts through the platform agent", () => {
   let double: PayoutDouble;
   let verdict: ConsistencyResult | null | Error;
   let service: ReturnType<typeof createWorkOrdersService>;
+  let deps: Parameters<typeof createWorkOrdersService>[0];
 
   beforeEach(async () => {
     db = database.db;
@@ -122,7 +123,7 @@ describe("work-order payouts through the platform agent", () => {
     const builders = new Map<string, BuilderProfile>([
       [CAROL, { nearAccount: CAROL, name: "Carol", githubLogin: "carol-gh", userId: "carol" }],
     ]);
-    service = createWorkOrdersService({
+    deps = {
       db,
       directory: world.directory,
       scopeOfOrganization: (organizationId) => world.access.readScopeOfAgency({}, organizationId),
@@ -148,7 +149,8 @@ describe("work-order payouts through the platform agent", () => {
         },
       },
       now: () => clock,
-    });
+    };
+    service = createWorkOrdersService(deps);
   });
 
   const studio = () => world.manager("studio-admin", "studio");
@@ -382,6 +384,57 @@ describe("work-order payouts through the platform agent", () => {
     expect(dao instanceof Error ? dao.message : "").not.toMatch(/automatic payout/);
   });
 
+  test("a work order says whether approved requests pay automatically, and in which token", async () => {
+    clock = new Date("2026-11-05T12:00:00.000Z");
+    const wo = await active();
+    expect((await service.get(await studio(), { id: wo.id })).autoPay).toEqual({
+      tokenId: "near",
+    });
+    await db.update(platformConsents).set({ scopes: "owner,read" });
+    expect((await service.get(await studio(), { id: wo.id })).autoPay).toBeNull();
+  });
+
+  test("a manual approval answers before a slow payout finishes, and the payout carries on", async () => {
+    clock = new Date("2026-11-05T12:00:00.000Z");
+    const wo = await active();
+    const { submitted } = await submit(wo.id);
+    expect(submitted.status).toBe("submitted");
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const payouts = deps.payouts;
+    if (!payouts) throw new Error("payouts are wired in beforeEach");
+    const slow = createWorkOrdersService({
+      ...deps,
+      approvalPayoutWaitMs: 20,
+      payouts: {
+        ...payouts,
+        send: async (organizationId, input) => {
+          await gate;
+          return payouts.send(organizationId, input);
+        },
+      },
+    });
+    const approved = await slow.approveRequest(await studio(), {
+      requestId: submitted.id,
+      amount: "600000000",
+      allowWithoutEvidence: true,
+    });
+    expect(approved.status).toBe("paying");
+    expect(double.requests()).toEqual([]);
+
+    release();
+    await vi.waitFor(async () => {
+      const [paid] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, submitted.id));
+      expect(paid?.status).toBe("paid");
+    });
+    expect(double.requests()).toHaveLength(1);
+  });
+
   describe("an Organization whose agent pays in USDC", () => {
     const USDC_TOKEN = ASSETS.USDC.replace(/^nep141:/, "");
 
@@ -442,6 +495,16 @@ describe("work-order payouts through the platform agent", () => {
         .from(billings)
         .where(eq(billings.id, paid?.billingId ?? ""));
       expect(billing).toMatchObject({ tokenId: USDC_TOKEN, amount: "600000000" });
+    });
+
+    test("its USD work orders pay automatically in USDC, and its NEAR ones don't", async () => {
+      clock = new Date("2026-11-05T12:00:00.000Z");
+      const usd = await active();
+      expect((await service.get(await studio(), { id: usd.id })).autoPay).toEqual({
+        tokenId: USDC_TOKEN,
+      });
+      const near = await active({ tokenId: "near", budgetAmount: (100n * NEAR).toString() });
+      expect((await service.get(await studio(), { id: near.id })).autoPay).toBeNull();
     });
 
     test("a NEAR-priced request isn't paid automatically, and says to use a DAO proposal", async () => {
