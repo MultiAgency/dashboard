@@ -394,7 +394,21 @@ export function createPlatformOwnerActions(deps: {
     return reminders;
   }
 
-  return { view, saveRules, prepare, submit, follow, grantReminders };
+  async function pendingPayees(organizationId: string) {
+    const rules = await settingsOf(organizationId);
+    if (!rules) return [];
+    const { calls, connection } = await connected(organizationId, "read");
+    const overview = await answer(organizationId, connection, await calls.call("overview"));
+    const signed = overview.policy.policy;
+    if (!signed) return [];
+    const added = rulesChanges(rules, await deps.payees(organizationId), signed).changes;
+    const agreed = new Set(signed.destinations.list.map((d) => d.address.toLowerCase()));
+    return [...(added.withdrawals ?? []), ...(added.destinations ?? [])]
+      .map((d) => d.address)
+      .filter((address) => !agreed.has(address));
+  }
+
+  return { view, saveRules, prepare, submit, follow, grantReminders, pendingPayees };
 }
 
 export type PlatformOwnerActions = ReturnType<typeof createPlatformOwnerActions>;

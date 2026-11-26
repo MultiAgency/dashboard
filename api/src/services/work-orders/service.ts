@@ -26,6 +26,7 @@ import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
 import { atomicToNear } from "../payouts/policy";
 import { type FundingCheck, noUnsettledPayout, payoutRetryable } from "../payouts/service";
+import { noUnsettledPlatformPayout } from "../platform/payouts";
 import type { Project, ProjectDirectory } from "../project-directory";
 import { type DaoProposal, proposalDescription } from "../sputnik";
 import { baseUnitsToDisplay, getTokenMetadata, NATIVE_TOKEN_ID } from "../tokens";
@@ -4477,6 +4478,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
                 eq(compensationRequests.id, request.id),
                 eq(compensationRequests.status, "approved"),
                 noUnsettledPayout(compensationRequests.id),
+                noUnsettledPlatformPayout(compensationRequests.id),
               ),
             )
             .returning();
@@ -4525,6 +4527,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             eq(compensationRequests.status, "approved"),
             isNull(compensationRequests.daoPaymentStartedAt),
             noUnsettledPayout(compensationRequests.id),
+            noUnsettledPlatformPayout(compensationRequests.id),
           ),
         )
         .returning();

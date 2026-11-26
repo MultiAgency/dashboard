@@ -6,6 +6,7 @@ import {
   nep413Intent,
   OWNER_ACTION_KINDS,
   PAYOUT_ASSETS,
+  PAYOUT_ROUTES,
   PLATFORM_AGENT_STATES,
   PLATFORM_SIGNING_KINDS,
 } from "./services/platform/terms";
@@ -66,6 +67,7 @@ const platformAgentView = z.object({
     }),
   ),
   consentDays: z.array(z.literal(CONSENT_DAYS)),
+  payoutRoute: z.enum(PAYOUT_ROUTES),
   error: z.string().nullable(),
 });
 
@@ -118,7 +120,7 @@ export const platformAgentContract = {
 
   startConsent: oc
     .route({ method: "POST", path: "/admin/platform-agent/consent" })
-    .input(z.object({ days: z.literal(CONSENT_DAYS) }))
+    .input(z.object({ days: z.literal(CONSENT_DAYS), payout: z.boolean().optional() }))
     .output(platformAgentView)
     .errors(errors),
 
@@ -370,5 +372,11 @@ export const platformAgentContract = {
     .route({ method: "POST", path: "/admin/platform-agent/actions/status" })
     .input(z.object({ correlationId: z.string().min(1).max(200) }))
     .output(ownerAction)
+    .errors(errors),
+
+  setPayoutRoute: oc
+    .route({ method: "POST", path: "/platform/payout-route" })
+    .input(z.object({ organizationId: z.string().min(1), route: z.enum(PAYOUT_ROUTES) }))
+    .output(z.object({ organizationId: z.string(), route: z.enum(PAYOUT_ROUTES) }))
     .errors(errors),
 };

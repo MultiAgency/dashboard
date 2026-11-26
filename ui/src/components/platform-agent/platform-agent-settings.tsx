@@ -23,7 +23,7 @@ import { SigningText } from "@/components/platform-agent/signing-text";
 import { SettingsSection } from "@/components/settings-section";
 import { useMeRoles } from "@/hooks/use-me-roles";
 import { type ApiClient, useApiClient } from "@/lib/api";
-import { useAuthClient } from "@/lib/auth";
+import { sessionQueryOptions, useAuthClient } from "@/lib/auth";
 import { ownerWalletKey, signAgentIntent } from "@/lib/payout-agent-signing";
 import { signPlatformText } from "@/lib/platform-agent-signing";
 import { platformAgentQueryKey, platformAgentQueryOptions } from "@/lib/queries";
@@ -50,9 +50,12 @@ export function PlatformAgentSettings() {
   const apiClient = useApiClient();
   const authClient = useAuthClient();
   const queryClient = useQueryClient();
-  const { agencyDao } = useMeRoles();
+  const { agencyDao, organizationId } = useMeRoles();
   const [owner, setOwner] = useState<string | null>(null);
   const [days, setDays] = useState<Days>(90);
+  const [withPayouts, setWithPayouts] = useState(false);
+  const { data: session } = useQuery(sessionQueryOptions(authClient));
+  const isSiteAdmin = session?.user?.role === "admin";
   const [disconnecting, setDisconnecting] = useState(false);
   const query = useQuery({
     ...platformAgentQueryOptions(apiClient),
@@ -73,7 +76,8 @@ export function PlatformAgentSettings() {
   });
 
   const startConsent = useMutation({
-    mutationFn: (chosen: Days) => apiClient.platformAgent.startConsent({ days: chosen }),
+    mutationFn: (chosen: { days: Days; payout: boolean }) =>
+      apiClient.platformAgent.startConsent(chosen),
     onSuccess: setData,
     onError: failed("Couldn't prepare the consent"),
   });
@@ -135,6 +139,22 @@ export function PlatformAgentSettings() {
     onError: failed("Couldn't read the creation's status"),
   });
 
+  const switchRoute = useMutation({
+    mutationFn: (route: View["payoutRoute"]) => {
+      if (!organizationId) throw new Error("No active Organization");
+      return apiClient.platformAgent.setPayoutRoute({ organizationId, route });
+    },
+    onSuccess: ({ route }) => {
+      toast.success(
+        route === "platform"
+          ? "Approved compensation now pays through the platform agent"
+          : "Approved compensation pays through the old payout agent again",
+      );
+      queryClient.invalidateQueries({ queryKey: platformAgentQueryKey });
+    },
+    onError: failed("Couldn't switch payouts"),
+  });
+
   const disconnect = useMutation({
     mutationFn: () => apiClient.platformAgent.disconnect({}),
     onSuccess: (view) => {
@@ -174,7 +194,19 @@ export function PlatformAgentSettings() {
           ))}
         </div>
       </Field>
-      <Button size="sm" disabled={busy} onClick={() => startConsent.mutate(days)}>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={withPayouts}
+          onChange={(e) => setWithPayouts(e.target.checked)}
+        />
+        Also let it request payouts to agreed builders, within the signed rules
+      </label>
+      <Button
+        size="sm"
+        disabled={busy}
+        onClick={() => startConsent.mutate({ days, payout: withPayouts })}
+      >
         {label}
       </Button>
     </div>
@@ -355,6 +387,35 @@ export function PlatformAgentSettings() {
                 Access: {data.consent.scopes.join(", ")}, until{" "}
                 {new Date(data.consent.expiresAt).toLocaleDateString()}.
               </p>
+              <p className="text-sm">
+                Approved compensation pays through{" "}
+                {data.payoutRoute === "platform"
+                  ? "this platform agent."
+                  : "the old payout agent (Automatic payouts), not this one."}
+              </p>
+              {!data.consent.scopes.includes("payout") && !data.signing && (
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    To pay through this agent, the owner signs a consent that includes payouts.
+                  </span>
+                  {consentPicker("Prepare a consent")}
+                </div>
+              )}
+              {isSiteAdmin && data.consent.scopes.includes("payout") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="self-start"
+                  disabled={busy || switchRoute.isPending}
+                  onClick={() =>
+                    switchRoute.mutate(data.payoutRoute === "platform" ? "legacy" : "platform")
+                  }
+                >
+                  {data.payoutRoute === "platform"
+                    ? "Site admin: pay through the old payout agent"
+                    : "Site admin: pay through this platform agent"}
+                </Button>
+              )}
               {data.consent.expiringSoon && !data.signing && (
                 <Alert>
                   <AlertTitle>Access ends soon</AlertTitle>

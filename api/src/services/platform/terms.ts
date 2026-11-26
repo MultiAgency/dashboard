@@ -38,3 +38,6 @@ export type OwnerActionKind = (typeof OWNER_ACTION_KINDS)[number];
 
 export const GRANT_DAYS = 90;
 export const GRANT_RENEW_DAYS = 14;
+
+export const PAYOUT_ROUTES = ["legacy", "platform"] as const;
+export type PayoutRoute = (typeof PAYOUT_ROUTES)[number];
