@@ -40,7 +40,7 @@ export function PayoutCoveragePrompt({ workOrder }: { workOrder: WorkOrderDetail
         </span>
         <span className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" asChild>
-            <Link to="/admin/settings" hash="payouts">
+            <Link to="/admin/settings" hash="platform-agent">
               {coverage.lowBalance ? "Fund the agent" : "Open the payout settings"}
             </Link>
           </Button>

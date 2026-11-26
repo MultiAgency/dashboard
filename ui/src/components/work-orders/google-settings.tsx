@@ -199,8 +199,8 @@ export function GoogleDriveSettings({
           {!oauth.canConnect && (
             <p className="text-sm text-muted-foreground">
               <OperatorHint>
-                Set PAYOUTS_SECRET_KEY or GOOGLE_TOKENS_SECRET_KEY on the server so the connection
-                can be stored encrypted.
+                Set GOOGLE_TOKENS_SECRET_KEY on the server so the connection can be stored
+                encrypted.
               </OperatorHint>
             </p>
           )}

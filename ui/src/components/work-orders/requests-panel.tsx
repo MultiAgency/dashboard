@@ -38,8 +38,8 @@ import { dateTime } from "@/lib/format-date";
 import { proposalIdOf } from "@/lib/proposal-id";
 import {
   adminWorkOrdersQueryKey,
-  payoutAgentQueryKey,
   payoutReadinessQueryOptions,
+  platformAgentQueryKey,
 } from "@/lib/queries";
 import { ReportMarkdown } from "./report-markdown";
 import { RequestTrust } from "./request-trust";
@@ -157,7 +157,7 @@ function RequestItem({
     onSuccess: async (updated) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey }),
-        queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey }),
+        queryClient.invalidateQueries({ queryKey: platformAgentQueryKey }),
       ]);
       toast.success(
         updated.status === "paid" ? `${updated.code} is paid` : "Payout sent; it settles shortly",
@@ -404,7 +404,7 @@ function ApproveForm({
     onSuccess: async (updated) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: adminWorkOrdersQueryKey }),
-        queryClient.invalidateQueries({ queryKey: payoutAgentQueryKey }),
+        queryClient.invalidateQueries({ queryKey: platformAgentQueryKey }),
       ]);
       toast.success(
         updated.status === "paid"
@@ -468,7 +468,7 @@ function ApproveForm({
               </span>
               <span className="flex flex-wrap gap-2">
                 <Button size="sm" variant="outline" asChild>
-                  <Link to="/admin/settings" hash="payouts">
+                  <Link to="/admin/settings" hash="platform-agent">
                     {hold.code === "insufficient_balance"
                       ? "Fund the agent"
                       : "Open the payout settings"}

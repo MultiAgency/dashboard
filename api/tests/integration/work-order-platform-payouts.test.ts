@@ -13,6 +13,7 @@ import {
   workOrders,
 } from "../../src/db/schema";
 import { requireTreasury } from "../../src/services/organization-access";
+import { oldPayoutLatest } from "../../src/services/payouts/history";
 import { createPlatformAgents } from "../../src/services/platform/agents";
 import { routePayouts } from "../../src/services/platform/payout-router";
 import { createPlatformPayouts } from "../../src/services/platform/payouts";
@@ -105,7 +106,6 @@ describe("work-order payouts through the platform agent", () => {
       deployment: SETTINGS.deployment,
       agent: AGENT,
       agentId: "agent-id",
-      payoutRoute: "platform",
       updatedBy: "studio-admin",
     });
     await db.insert(platformConsents).values({
@@ -141,7 +141,7 @@ describe("work-order payouts through the platform agent", () => {
       summarizer: { draftReport: async () => null },
       notifications: world.notifications,
       thresholds: DEFAULT_RENEWAL,
-      payouts: routePayouts(null, platform),
+      payouts: routePayouts(oldPayoutLatest(db), platform),
       consistency: {
         check: async () => {
           if (verdict instanceof Error) throw verdict;

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, lt } from "drizzle-orm";
 import type { Database } from "../../db";
 import { googleOauthStates, workOrderIntegrations } from "../../db/schema";
-import { open, seal } from "../payouts/crypto";
+import { open, seal } from "../crypto";
 import { createGoogle, GoogleError, type GooglePort } from "./google";
 
 export const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
@@ -83,7 +83,7 @@ export function createGoogleConnections(deps: {
     if (!config) throw new GoogleConnectError("Google sign-in isn't set up on this server");
     if (!config.secretKey) {
       throw new GoogleConnectError(
-        "Set PAYOUTS_SECRET_KEY (or GOOGLE_TOKENS_SECRET_KEY) on the server so MultiAgency can store the Google connection encrypted",
+        "Set GOOGLE_TOKENS_SECRET_KEY on the server so MultiAgency can store the Google connection encrypted",
       );
     }
     return { ...config, secretKey: config.secretKey };

@@ -19,7 +19,6 @@
     "@better-auth/core": "catalog:",
     "@electric-sql/pglite": "catalog:",
     "@multiagency/sdk": "catalog:",
-    "@near-intents-agent-api/sdk": "catalog:",
     "@orpc/client": "catalog:",
     "@orpc/contract": "catalog:",
     "@orpc/openapi": "catalog:",

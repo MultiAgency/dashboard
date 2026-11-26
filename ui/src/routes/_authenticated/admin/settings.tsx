@@ -30,7 +30,6 @@ import { PageHeader } from "@/components/page-header";
 import { PlatformAgentSection } from "@/components/platform-agent/platform-agent-settings";
 import { SettingsSection } from "@/components/settings-section";
 import { WorkOrderIntegrationSettings } from "@/components/work-orders/integration-settings";
-import { PayoutAgentSettings } from "@/components/work-orders/payout-agent-settings";
 import { WorkOrderRepresentativeSettings } from "@/components/work-orders/representative-settings";
 import { SetupChecklist } from "@/components/work-orders/setup-checklist";
 import { WorkOrderTrustSettings } from "@/components/work-orders/trust-settings";
@@ -113,13 +112,6 @@ function AdminSettingsPage() {
         description="When requests skip your approval."
       >
         <WorkOrderTrustSettings />
-      </SettingsSection>
-      <SettingsSection
-        id="payouts"
-        title="Automatic payouts (NEAR Intents)"
-        description="Rules, monthly budget, balance and top-ups."
-      >
-        <PayoutAgentSettings />
       </SettingsSection>
       <PlatformAgentSection />
       <SettingsSection id="agency" title="Agency details" description="Your public profile.">

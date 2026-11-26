@@ -436,7 +436,6 @@ export function createPlatformAgents(deps: {
           createdAt: c.createdAt.toISOString(),
         })),
       consentDays: [...CONSENT_DAYS],
-      payoutRoute: row?.payoutRoute ?? "legacy",
       error: readError,
     };
   }

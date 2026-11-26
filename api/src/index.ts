@@ -1,5 +1,4 @@
 import { timingSafeEqual } from "node:crypto";
-import { AgentApi } from "@near-intents-agent-api/sdk";
 import { ORPCError } from "@orpc/server";
 import { Context, Effect, Layer } from "effect";
 import { buildScoped, createPlugin, type PluginInitializeInput } from "every-plugin";
@@ -52,12 +51,10 @@ import {
   createOrganizationApprovals,
 } from "./services/organization-approvals";
 import { createOrganizationRequestsService } from "./services/organization-requests";
-import { atomicToNear, nearToAtomic, topUpFor, topUpProposal } from "./services/payouts/policy";
-import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
+import { oldPayoutLatest, workOrderPayees } from "./services/payouts/history";
 import { createPlatformAgents } from "./services/platform/agents";
 import { createPlatformApp, platformSettings } from "./services/platform/client";
 import { createPlatformDeposits } from "./services/platform/deposits";
-import { createOldPayoutPath } from "./services/platform/old-payout-path";
 import { createPlatformOwnerActions } from "./services/platform/owner-actions";
 import { routePayouts } from "./services/platform/payout-router";
 import { createPlatformPayouts, platformPayoutTerms } from "./services/platform/payouts";
@@ -73,7 +70,6 @@ import {
 } from "./services/settings-admin";
 import {
   findProposal,
-  fullAccessKeys,
   getProposalBond,
   getRoles,
   proposalsSince,
@@ -158,8 +154,6 @@ const secrets = z.object({
   GOOGLE_CLOUD_PROJECT_NUMBER: z.string().optional(),
   GOOGLE_STARTER_TEMPLATE_ID: z.string().optional(),
   GOOGLE_TOKENS_SECRET_KEY: z.string().optional(),
-  NEAR_INTENTS_AGENT_API_KEY: z.string().optional(),
-  NEAR_INTENTS_AGENT_API_URL: z.string().optional(),
   DOCUMENSO_API_KEY: z.string().optional(),
   DOCUMENSO_API_URL: z.string().optional(),
   PAYOUTS_SECRET_KEY: z.string().optional(),
@@ -316,6 +310,13 @@ const initializeServices = (
     const google = serviceAccount ? createGoogle(serviceAccount) : null;
     const googleClientId = config.secrets.GOOGLE_OAUTH_CLIENT_ID?.trim();
     const googleClientSecret = config.secrets.GOOGLE_OAUTH_CLIENT_SECRET?.trim();
+    const googleTokensKey =
+      config.secrets.GOOGLE_TOKENS_SECRET_KEY ?? config.secrets.PAYOUTS_SECRET_KEY ?? null;
+    if (!config.secrets.GOOGLE_TOKENS_SECRET_KEY && config.secrets.PAYOUTS_SECRET_KEY) {
+      console.warn(
+        "[API] Google tokens are encrypted with PAYOUTS_SECRET_KEY: set GOOGLE_TOKENS_SECRET_KEY to the same value, then remove PAYOUTS_SECRET_KEY",
+      );
+    }
     const googleConnections = createGoogleConnections({
       db,
       config:
@@ -324,10 +325,7 @@ const initializeServices = (
               clientId: googleClientId,
               clientSecret: googleClientSecret,
               redirectUri: `${appOrigin}/api/work-orders/google/callback`,
-              secretKey:
-                config.secrets.GOOGLE_TOKENS_SECRET_KEY ??
-                config.secrets.PAYOUTS_SECRET_KEY ??
-                null,
+              secretKey: googleTokensKey,
               pickerApiKey: config.secrets.GOOGLE_PICKER_API_KEY?.trim() || null,
               projectNumber: config.secrets.GOOGLE_CLOUD_PROJECT_NUMBER?.trim() || null,
             }
@@ -341,22 +339,6 @@ const initializeServices = (
       finder: createFieldsFinder({ apiKey: config.secrets.ANTHROPIC_API_KEY }),
       starterTemplateId: googleIdOf(config.secrets.GOOGLE_STARTER_TEMPLATE_ID),
     });
-    const agentApiKey = config.secrets.NEAR_INTENTS_AGENT_API_KEY;
-    const payoutAgents = createPayoutAgents({
-      db,
-      api: agentApiKey
-        ? (new AgentApi({
-            apiKey: agentApiKey,
-            ...(config.secrets.NEAR_INTENTS_AGENT_API_URL
-              ? { baseUrl: config.secrets.NEAR_INTENTS_AGENT_API_URL }
-              : {}),
-            timeoutMs: 180_000,
-          }) as unknown as AgentApiPort)
-        : null,
-      secretKey: config.secrets.PAYOUTS_SECRET_KEY ?? null,
-      payees: workOrderPayees(db),
-      fullAccessKeys,
-    });
     const platform = platformSettings(config.secrets);
     const platformApp = platform ? createPlatformApp(platform) : null;
     const platformAgents = createPlatformAgents({ db, app: platformApp, settings: platform });
@@ -367,11 +349,6 @@ const initializeServices = (
       agents: platformAgents,
       payees: workOrderPayees(db),
       payoutTerms: platformPayoutTerms(db),
-    });
-    const oldPayoutPath = createOldPayoutPath({
-      db,
-      organizationName: async (organizationId) =>
-        (await organizationDirectory.get(organizationId))?.name ?? null,
     });
     const platformDeposits = createPlatformDeposits({
       db,
@@ -443,10 +420,7 @@ const initializeServices = (
       consistency: config.secrets.ANTHROPIC_API_KEY
         ? createConsistencyChecker({ apiKey: config.secrets.ANTHROPIC_API_KEY })
         : null,
-      payouts:
-        payoutAgents.available || platformApp
-          ? routePayouts(payoutAgents.available ? payoutAgents : null, platformPayouts)
-          : null,
+      payouts: platformApp ? routePayouts(oldPayoutLatest(db), platformPayouts) : null,
       platformUpkeep: async () => ({
         ...(await platformAgents.maintain(
           authPool
@@ -473,7 +447,15 @@ const initializeServices = (
         connection: googleConnections.status,
         settings: workOrderIntegrations.settings,
       },
-      payouts: payoutAgents,
+      payouts: platformApp
+        ? {
+            connected: async (organizationId) =>
+              (await platformAgents.connection(organizationId)) !== null,
+            configured: platformPayouts.configured,
+            readiness: platformPayouts.readiness,
+            fundingCheck: platformPayouts.fundingCheck,
+          }
+        : null,
       fundingNeeds: workOrders.fundingNeeds,
     });
     const workOrderTimers = scheduleWorkOrders(workOrders, config.variables.workOrderSchedule);
@@ -523,13 +505,11 @@ const initializeServices = (
       googleConnections,
       googleFor,
       googleSetup,
-      payoutAgents,
       platformAgents,
       platformReads,
       platformOwnerActions,
       platformPayouts,
       platformDeposits,
-      oldPayoutPath,
       signedInNearKeys,
       workOrderTimers,
     };
@@ -1473,19 +1453,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
             const { platformDeposits } = Context.get(context["effect/context"], ApiServices);
             return platformDeposits.fund(context.scope.organizationId, context.scope.actorId);
           }),
-        oldPayoutPath: builder.platformAgent.oldPayoutPath
-          .use(auth.requireAdmin)
-          .handler(async ({ context }) => {
-            const { oldPayoutPath } = Context.get(context["effect/context"], ApiServices);
-            return oldPayoutPath();
-          }),
-        setPayoutRoute: builder.platformAgent.setPayoutRoute
-          .use(auth.requireAdmin)
-          .handler(async ({ context, input }) => {
-            const { platformPayouts } = Context.get(context["effect/context"], ApiServices);
-            return platformPayouts.setRoute(input.organizationId, input.route);
-          }),
-
         ownerView: builder.platformAgent.ownerView
           .use(agencyManager)
           .handler(async ({ context }) => {
@@ -1746,116 +1713,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context }) => {
             const { workOrderSetup } = Context.get(context["effect/context"], ApiServices);
             return workOrderSetup.checks(context.scope);
-          }),
-
-        payoutAgent: builder.workOrders.payoutAgent
-          .use(agencyManager)
-          .handler(async ({ context }) => {
-            const { payoutAgents } = Context.get(context["effect/context"], ApiServices);
-            return payoutAgents.view(context.scope.organizationId);
-          }),
-
-        savePayoutAgent: builder.workOrders.savePayoutAgent
-          .use(agencyManager)
-          .handler(async ({ context, input }) => {
-            const { payoutAgents } = Context.get(context["effect/context"], ApiServices);
-            return payoutAgents.saveSettings(
-              context.scope.organizationId,
-              context.scope.actorId,
-              input,
-            );
-          }),
-
-        preparePayoutAction: builder.workOrders.preparePayoutAction
-          .use(agencyManager)
-          .handler(async ({ context, input }) => {
-            const { payoutAgents, signedInNearKeys } = Context.get(
-              context["effect/context"],
-              ApiServices,
-            );
-            return payoutAgents.prepare(context.scope.organizationId, {
-              ...input,
-              signedInKeys:
-                input.action === "create_agent"
-                  ? await signedInNearKeys(context.userId)
-                  : undefined,
-            });
-          }),
-
-        submitPayoutAction: builder.workOrders.submitPayoutAction
-          .use(agencyManager)
-          .handler(async ({ context, input }) => {
-            const { payoutAgents } = Context.get(context["effect/context"], ApiServices);
-            return payoutAgents.submit(context.scope.organizationId, input);
-          }),
-
-        allowPayees: builder.workOrders.allowPayees
-          .use(agencyManager)
-          .handler(async ({ context }) => {
-            const { payoutAgents } = Context.get(context["effect/context"], ApiServices);
-            const result = await payoutAgents.ensurePayees(context.scope.organizationId);
-            return { ...result, view: await payoutAgents.view(context.scope.organizationId) };
-          }),
-
-        payoutFunding: builder.workOrders.payoutFunding
-          .use(treasuryManager)
-          .handler(async ({ context }) => {
-            const { workOrders, payoutAgents } = Context.get(
-              context["effect/context"],
-              ApiServices,
-            );
-            const [needs, agent] = await Promise.all([
-              workOrders.fundingNeeds(context.scope),
-              payoutAgents.view(context.scope.organizationId),
-            ]);
-            const bufferPercent = needs.priceUsd ? 2 : 0;
-            const needed = needs.near + (needs.near * BigInt(bufferPercent)) / 100n;
-            const balance = agent.balance ? BigInt(nearToAtomic(agent.balance.near)) : null;
-            const check = await payoutAgents.fundingCheck(context.scope.organizationId, {
-              near: needed,
-              priceUsd: needs.priceUsd,
-            });
-            return {
-              items: needs.items.map((item) => ({
-                ...item,
-                near: atomicToNear(BigInt(item.near)),
-              })),
-              priceUsd: needs.priceUsd,
-              bufferPercent,
-              neededNear: atomicToNear(needed),
-              balanceNear: agent.balance?.near ?? null,
-              topUpNear: atomicToNear(topUpFor(needed, balance ?? 0n)),
-              lowBalance: check?.lowBalance ?? false,
-              monthlyBudgetUsd: check?.monthlyBudgetUsd ?? null,
-              monthlyNeededUsd: check?.monthlyNeededUsd ?? null,
-              suggestedBudgetUsd: check?.suggestedBudgetUsd ?? null,
-              budgetTooLow: check?.budgetTooLow ?? false,
-            };
-          }),
-
-        payoutTopUp: builder.workOrders.payoutTopUp
-          .use(treasuryManager)
-          .handler(async ({ context, input }) => {
-            const { payoutAgents } = Context.get(context["effect/context"], ApiServices);
-            const deposit = await payoutAgents.depositAddress(context.scope.organizationId);
-            return {
-              address: deposit.address,
-              memo: deposit.memo,
-              minAmount: deposit.minAmount,
-              daoAccountId: context.scope.agencyDao,
-              method: "add_proposal" as const,
-              args: {
-                proposal: topUpProposal({
-                  daoAccountId: context.scope.agencyDao,
-                  depositAddress: deposit.address,
-                  memo: deposit.memo,
-                  amount: BigInt(nearToAtomic(input.amountNear)),
-                  amountNear: input.amountNear,
-                }),
-              },
-              deposit: await getProposalBond(context.scope.agencyDao),
-              gas: "100000000000000",
-            };
           }),
 
         refreshPayment: builder.workOrders.refreshPayment

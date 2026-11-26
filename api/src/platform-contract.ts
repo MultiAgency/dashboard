@@ -7,7 +7,6 @@ import {
   nep413Intent,
   OWNER_ACTION_KINDS,
   PAYOUT_ASSETS,
-  PAYOUT_ROUTES,
   PAYOUT_VERDICTS,
   PLATFORM_AGENT_STATES,
   PLATFORM_SIGNING_KINDS,
@@ -69,7 +68,6 @@ const platformAgentView = z.object({
     }),
   ),
   consentDays: z.array(z.literal(CONSENT_DAYS)),
-  payoutRoute: z.enum(PAYOUT_ROUTES),
   error: z.string().nullable(),
 });
 
@@ -410,34 +408,5 @@ export const platformAgentContract = {
     .route({ method: "POST", path: "/admin/platform-agent/deposit" })
     .input(z.object({}))
     .output(deposit)
-    .errors(errors),
-
-  oldPayoutPath: oc
-    .route({ method: "GET", path: "/platform/old-payout-path" })
-    .input(z.object({}))
-    .output(
-      z.object({
-        drained: z.boolean(),
-        organizations: z.array(
-          z.object({
-            organizationId: z.string(),
-            name: z.string().nullable(),
-            route: z.enum(PAYOUT_ROUTES),
-            oldAgentId: z.string().nullable(),
-            ownerAccountId: z.string().nullable(),
-            unsettledPayouts: z.number(),
-            ownerActionsInFlight: z.number(),
-            grantLiveUntil: z.string().nullable(),
-            blockers: z.array(z.string()),
-          }),
-        ),
-      }),
-    )
-    .errors(errors),
-
-  setPayoutRoute: oc
-    .route({ method: "POST", path: "/platform/payout-route" })
-    .input(z.object({ organizationId: z.string().min(1), route: z.enum(PAYOUT_ROUTES) }))
-    .output(z.object({ organizationId: z.string(), route: z.enum(PAYOUT_ROUTES) }))
     .errors(errors),
 };

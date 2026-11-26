@@ -38,7 +38,6 @@ import {
 import { ActivityTimeline } from "@/components/work-orders/activity-timeline";
 import { EvidenceList } from "@/components/work-orders/evidence-list";
 import { type InPageAction, NextStepCard } from "@/components/work-orders/next-step-card";
-import { PayeePayoutsPrompt } from "@/components/work-orders/payee-payouts-prompt";
 import { PayoutCoveragePrompt } from "@/components/work-orders/payout-coverage-prompt";
 import { ProgressStepper } from "@/components/work-orders/progress-stepper";
 import { RenewalPanel } from "@/components/work-orders/renewal-panel";
@@ -271,7 +270,6 @@ function WorkOrderPage() {
         busy={act.isPending}
         onAction={onAction}
       >
-        {canManage && <PayeePayoutsPrompt workOrder={wo} />}
         {canManage && <PayoutCoveragePrompt workOrder={wo} />}
       </NextStepCard>
 

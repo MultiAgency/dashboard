@@ -1,22 +1,18 @@
 import { type AnyColumn, and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../../db";
 import {
-  agentPayouts,
   compensationRequests,
   type PlatformPayoutRow,
   platformAgents,
   platformPayouts,
   workOrders,
 } from "../../db/schema";
-import { atomicToDecimal, atomicToNear, tokenOfAsset, topUpFor } from "../payouts/policy";
-import type { FundingCheck } from "../payouts/service";
+import { atomicToDecimal, atomicToNear, tokenOfAsset, topUpFor } from "../payouts/amounts";
+import type { FundingCheck } from "../payouts/history";
 import type { AgentPayoutView } from "../work-orders/service";
 import { badRequest, type PlatformAgents } from "./agents";
 import { ASSETS, type OwnerOutput, type OwnerResult, type PlatformApp } from "./client";
 import { PAYOUT_ASSET_TERMS, type PayoutAssetTerms } from "./rules";
-import type { PayoutRoute } from "./terms";
-
-const UNAVAILABLE = "Platform access isn't turned on for this server";
 
 const WNEAR = ASSETS.wNEAR;
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -136,15 +132,6 @@ export function createPlatformPayouts(deps: {
   const { db } = deps;
   const now = () => deps.now?.() ?? new Date();
 
-  async function routeOf(organizationId: string): Promise<PayoutRoute> {
-    const [row] = await db
-      .select({ route: platformAgents.payoutRoute })
-      .from(platformAgents)
-      .where(eq(platformAgents.organizationId, organizationId))
-      .limit(1);
-    return deps.app && row?.route === "platform" ? "platform" : "legacy";
-  }
-
   async function termsOf(organizationId: string): Promise<PayoutAssetTerms> {
     const [row] = await db
       .select({ asset: platformAgents.payoutAsset })
@@ -155,7 +142,7 @@ export function createPlatformPayouts(deps: {
   }
 
   async function configured(organizationId: string) {
-    if ((await routeOf(organizationId)) !== "platform") return false;
+    if (!deps.app) return false;
     return !!(await deps.agents.connection(organizationId))?.scopes.includes("payout");
   }
 
@@ -426,14 +413,6 @@ export function createPlatformPayouts(deps: {
       : { ok: false, reason: `Sign the updated rules to allow paying ${missing.join(", ")}` };
   }
 
-  async function unsettled(organizationId: string) {
-    const rows = await db
-      .select()
-      .from(platformPayouts)
-      .where(eq(platformPayouts.organizationId, organizationId));
-    return rows.filter((row) => row.state !== "succeeded" && !provenUnsent(row)).length;
-  }
-
   async function isPlatformPayout(id: string) {
     const [row] = await db
       .select({ requestId: platformPayouts.requestId })
@@ -442,56 +421,9 @@ export function createPlatformPayouts(deps: {
     return !!row;
   }
 
-  async function legacyUnsettled(organizationId: string) {
-    const rows = await db
-      .select({ status: agentPayouts.status, provenUnsent: agentPayouts.provenUnsent })
-      .from(agentPayouts)
-      .where(eq(agentPayouts.organizationId, organizationId));
-    return rows.filter(
-      (row) =>
-        row.status !== "paid" &&
-        row.status !== "refused" &&
-        !(row.status === "failed" && row.provenUnsent),
-    ).length;
-  }
-
-  async function setRoute(organizationId: string, route: PayoutRoute) {
-    if (!deps.app) throw badRequest(UNAVAILABLE);
-    if (route === "platform") {
-      const connection = await deps.agents.connection(organizationId);
-      if (!connection?.scopes.includes("payout")) {
-        throw badRequest(
-          "The owner signs a consent that includes payouts before payouts can switch",
-        );
-      }
-      const open = await legacyUnsettled(organizationId);
-      if (open > 0) {
-        throw badRequest(
-          `${open} payout${open === 1 ? "" : "s"} on the current payout agent aren't settled yet. Let them finish first.`,
-        );
-      }
-    } else {
-      const open = await unsettled(organizationId);
-      if (open > 0) {
-        throw badRequest(
-          `${open} platform payout${open === 1 ? "" : "s"} aren't settled yet. Let them finish first.`,
-        );
-      }
-    }
-    const [updated] = await db
-      .update(platformAgents)
-      .set({ payoutRoute: route, updatedAt: now() })
-      .where(eq(platformAgents.organizationId, organizationId))
-      .returning({ route: platformAgents.payoutRoute });
-    if (!updated) throw badRequest("This Organization has no platform agent");
-    return { organizationId, route: updated.route };
-  }
-
   return {
-    routeOf,
     configured,
     payoutToken,
-    setRoute,
     isPlatformPayout,
     readiness,
     fundingCheck,
@@ -499,7 +431,6 @@ export function createPlatformPayouts(deps: {
     refresh,
     latest,
     ensurePayees,
-    unsettled,
   };
 }
 

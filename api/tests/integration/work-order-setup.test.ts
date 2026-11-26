@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, test } from "vitest";
 import { workOrderIntegrations } from "../../src/db/schema";
 import type { OrganizationScope } from "../../src/services/organization-access";
-import { createPayoutAgents, type PayoutAgents } from "../../src/services/payouts/service";
+import type { FundingCheck } from "../../src/services/payouts/history";
 import { createGoogleConnections } from "../../src/services/work-orders/google-oauth";
 import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
 import {
@@ -10,7 +10,6 @@ import {
   type SetupCheck,
   type SetupStatusDeps,
 } from "../../src/services/work-orders/setup-status";
-import { FakeAgentApi } from "../fakes/agent-api";
 import { type EngagementWorld, engagementWorld } from "../fakes/engagements";
 import { migratedDatabase } from "./_pg";
 
@@ -20,25 +19,28 @@ const NEAR = 10n ** 24n;
 describe("work order setup status", () => {
   const database = migratedDatabase({ perTest: true });
   let world: EngagementWorld;
-  let agent: FakeAgentApi;
   let integrations: ReturnType<typeof createWorkOrderIntegrations>;
-  let payouts: PayoutAgents;
+  let agent: {
+    connected: boolean;
+    configured: boolean;
+    readiness: { ready: boolean; code: string | null; reason: string | null };
+    funding: FundingCheck | null;
+    asked: { near: bigint; priceUsd: string | null } | null;
+  };
   let name: string;
   let needs: { near: bigint; priceUsd: string | null };
   let scope: OrganizationScope;
 
   beforeEach(async () => {
     world = await engagementWorld(database.db);
-    agent = new FakeAgentApi();
     integrations = createWorkOrderIntegrations({ db: database.db });
-    payouts = createPayoutAgents({
-      db: database.db,
-      api: agent,
-      secretKey: "test-secret",
-      payees: async () => ["carol.near"],
-      fullAccessKeys: async () => ["ed25519:owner"],
-      now: () => new Date("2026-09-20T12:00:00.000Z"),
-    });
+    agent = {
+      connected: false,
+      configured: false,
+      readiness: { ready: true, code: null, reason: null },
+      funding: null,
+      asked: null,
+    };
     name = "test";
     needs = { near: 0n, priceUsd: null };
     scope = await world.manager("studio-admin", ORG);
@@ -55,7 +57,15 @@ describe("work order setup status", () => {
         connection: createGoogleConnections({ db: database.db, config: null }).status,
         settings: integrations.settings,
       },
-      payouts,
+      payouts: {
+        connected: async () => agent.connected,
+        configured: async () => agent.configured,
+        readiness: async () => agent.readiness,
+        fundingCheck: async (_organizationId, asked) => {
+          agent.asked = asked;
+          return agent.funding;
+        },
+      },
       fundingNeeds: async () => needs,
       ...over,
     });
@@ -80,25 +90,24 @@ describe("work order setup status", () => {
       }),
     ) as Record<(typeof KEYS)[number], SetupCheck>;
 
-  async function createAgent() {
-    await payouts.saveSettings(ORG, "studio-admin", {
-      ownerAccountId: "rita.near",
-      monthlyBudgetUsd: "5000",
-      maxPayoutNear: "500",
-    });
-    const create = await payouts.prepare(ORG, {
-      action: "create_agent",
-      publicKey: `ed25519:${"1".repeat(44)}`,
-    });
-    await payouts.submit(ORG, {
-      correlationId: create.correlationId,
-      signedData: await agent.sign(create.intent),
-    });
-    const grant = await payouts.prepare(ORG, { action: "issue_grant" });
-    await payouts.submit(ORG, {
-      correlationId: grant.correlationId,
-      signedData: await agent.sign(grant.intent),
-    });
+  const funding = (over: Partial<FundingCheck> = {}): FundingCheck => ({
+    balanceNear: "100",
+    neededNear: "10.2",
+    shortfallNear: "0",
+    monthlyBudgetUsd: "5000",
+    monthlyRemainingUsd: "5000",
+    monthlyNeededUsd: "20.40",
+    suggestedBudgetUsd: null,
+    budgetTooLow: false,
+    lowBalance: false,
+    ...over,
+  });
+
+  function connectAgent() {
+    agent.connected = true;
+    agent.configured = true;
+    agent.readiness = { ready: false, code: "payee_not_allowed", reason: "no payee" };
+    agent.funding = funding();
   }
 
   async function connectDrive(choose: { template: boolean; folders: boolean }) {
@@ -137,7 +146,7 @@ describe("work order setup status", () => {
       "E-signature is off on this server. Builders accept the terms in MultiAgency.",
     );
     expect(check.google.fixHref).toBe("/admin/settings#work-orders");
-    expect(check.payouts_agent.fixHref).toBe("/admin/settings#payouts");
+    expect(check.payouts_agent.fixHref).toBe("/admin/settings#platform-agent");
   });
 
   test("a fully set-up agency is all ok", async () => {
@@ -147,8 +156,7 @@ describe("work order setup status", () => {
       email: "rita@studio.dev",
     });
     await connectDrive({ template: true, folders: true });
-    await createAgent();
-    agent.balanceRaw = (100n * NEAR).toString();
+    connectAgent();
     needs = { near: 10n * NEAR, priceUsd: "2" };
 
     const checks = await setup().checks(scope);
@@ -163,6 +171,7 @@ describe("work order setup status", () => {
     expect(check.payouts_funding.detail).toBe(
       "Holds 100 NEAR, enough for the ≈10.2 NEAR active work orders need",
     );
+    expect(agent.asked).toEqual({ near: (102n * NEAR) / 10n, priceUsd: "2" });
   });
 
   test("a placeholder email, half-chosen Drive and a nearly empty agent are flagged", async () => {
@@ -172,9 +181,14 @@ describe("work order setup status", () => {
       email: "rita.near@near.email",
     });
     await connectDrive({ template: true, folders: false });
-    await createAgent();
-    agent.balanceRaw = (148n * 10n ** 20n).toString();
-    agent.monthlySpentUsd = "4990";
+    connectAgent();
+    agent.funding = funding({
+      balanceNear: "0.0148",
+      neededNear: "51",
+      lowBalance: true,
+      monthlyRemainingUsd: "10.00",
+      monthlyNeededUsd: "102.00",
+    });
     needs = { near: 50n * NEAR, priceUsd: "2" };
 
     const check = byKey(await setup().checks(scope));
@@ -191,22 +205,55 @@ describe("work order setup status", () => {
       state: "warning",
       detail:
         "Holds 0.0148 NEAR, active work orders need ≈51 NEAR. $10.00 left of this month's payout limit, active work orders need ≈$102.00",
-      fixHref: "/admin/settings#payouts",
+      fixHref: "/admin/settings#platform-agent",
     });
   });
 
   test("an agent whose rules aren't applied is a warning", async () => {
-    await createAgent();
-    agent.policy = null;
+    connectAgent();
+    agent.readiness = {
+      ready: false,
+      code: "not_applied",
+      reason: "The agent's rules aren't applied",
+    };
     const check = byKey(await setup().checks(scope));
     expect(check.payouts_agent).toMatchObject({
       state: "warning",
-      detail: "The agent's rules aren't applied yet",
+      detail: "The agent's rules aren't applied",
+    });
+  });
+
+  test("a connected agent without payouts in the consent is a warning, and its funding isn't checked", async () => {
+    agent.connected = true;
+    const check = byKey(await setup().checks(scope));
+    expect(check.payouts_agent).toMatchObject({
+      state: "warning",
+      detail: "Connected, but the owner's consent doesn't include payouts",
+    });
+    expect(check.payouts_funding.state).toBe("optional");
+    expect(agent.asked).toBeNull();
+  });
+
+  test("an agent paying in USDC leaves its funding to the platform card", async () => {
+    connectAgent();
+    agent.funding = null;
+    const check = byKey(await setup().checks(scope));
+    expect(check.payouts_funding).toMatchObject({
+      state: "optional",
+      detail: "Its balance is shown on the platform agent's card",
+    });
+  });
+
+  test("a server without the platform pays by DAO proposal", async () => {
+    const check = byKey(await setup({ payouts: null }).checks(scope));
+    expect(check.payouts_agent).toMatchObject({
+      state: "optional",
+      detail: "Not on this server; requests are paid by DAO proposal",
     });
   });
 
   test("one failing check doesn't break the others", async () => {
-    await createAgent();
+    connectAgent();
     const checks = await setup({
       organizationName: async () => {
         throw new Error("directory down");

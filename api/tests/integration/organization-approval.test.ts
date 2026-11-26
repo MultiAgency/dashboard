@@ -383,7 +383,7 @@ describe("organization approval routes", () => {
         member: { id: "m-studio", role: "owner" },
       },
     });
-    await expect(owner.workOrders.payoutAgent({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(owner.workOrders.setupStatus({})).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
 

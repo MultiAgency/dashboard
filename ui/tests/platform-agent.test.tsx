@@ -6,7 +6,6 @@ import type { AuthClient } from "../src/lib/auth";
 
 const view = vi.fn();
 const startConsent = vi.fn();
-const setPayoutRoute = vi.fn();
 const session = vi.fn(async () => ({ user: { role: "user" } }));
 const prepareCreate = vi.fn();
 const submitCreate = vi.fn();
@@ -17,7 +16,6 @@ vi.mock("@/lib/api", () => ({
     platformAgent: {
       view,
       startConsent,
-      setPayoutRoute,
       prepareCreate,
       submitCreate,
       overview: async () => {
@@ -76,7 +74,6 @@ afterEach(() => {
   cleanup();
   view.mockReset();
   startConsent.mockReset();
-  setPayoutRoute.mockReset();
   session.mockImplementation(async () => ({ user: { role: "user" } }));
   prepareCreate.mockReset();
   submitCreate.mockReset();
@@ -101,7 +98,6 @@ const baseView = {
   consent: null,
   consents: [],
   consentDays: [30, 90, 365],
-  payoutRoute: "legacy",
   error: null,
 };
 
@@ -224,31 +220,25 @@ describe("platform agent settings", () => {
     consent: { id: "c1", scopes, expiresAt: "2027-02-23T12:00:00Z", expiringSoon: false },
   });
 
-  test("a consent can include payouts, and only a site admin sees the switch", async () => {
+  test("a consent can include payouts, and with them approved compensation pays through the agent", async () => {
     view.mockResolvedValue(connected(["owner", "read"]));
     startConsent.mockResolvedValue(connected(["owner", "read"]));
     renderWith(<PlatformAgentSettings />);
-    expect(await screen.findByText(/pays through/)).toBeTruthy();
+    expect(await screen.findByText(/the owner signs a consent that includes payouts/)).toBeTruthy();
+    expect(screen.queryByText(/pays through this platform agent/)).toBeNull();
     fireEvent.click(screen.getByLabelText(/request payouts/));
     fireEvent.click(screen.getByRole("button", { name: "Prepare a consent" }));
     await vi.waitFor(() => expect(startConsent).toHaveBeenCalledWith({ days: 90, payout: true }));
-    expect(screen.queryByRole("button", { name: /Site admin/ })).toBeNull();
   });
 
-  test("a site admin switches an Organization with a payout consent to the platform", async () => {
+  test("with payouts in the consent, approved compensation pays through the agent, with no switch", async () => {
     session.mockImplementation(async () => ({ user: { role: "admin" } }));
     view.mockResolvedValue(connected(["owner", "payout", "read"]));
-    setPayoutRoute.mockResolvedValue({ organizationId: "orgStudio", route: "platform" });
     renderWith(<PlatformAgentSettings />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Site admin: pay through this platform agent" }),
-    );
-    await vi.waitFor(() =>
-      expect(setPayoutRoute).toHaveBeenCalledWith({
-        organizationId: "orgStudio",
-        route: "platform",
-      }),
-    );
+    expect(
+      await screen.findByText("Approved compensation pays through this platform agent."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Site admin/ })).toBeNull();
   });
 
   test("a readable creation is shown first, and signed only on a second click", async () => {
