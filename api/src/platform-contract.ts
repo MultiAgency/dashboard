@@ -4,6 +4,8 @@ import { z } from "zod";
 import {
   CONSENT_DAYS,
   nep413Intent,
+  OWNER_ACTION_KINDS,
+  PAYOUT_ASSETS,
   PLATFORM_AGENT_STATES,
   PLATFORM_SIGNING_KINDS,
 } from "./services/platform/terms";
@@ -68,6 +70,38 @@ const platformAgentView = z.object({
 });
 
 const usd = z.string().nullable();
+const decimal = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,6})?$/);
+
+const payoutRules = z.object({
+  asset: z.enum(PAYOUT_ASSETS),
+  maxPerPayout: decimal,
+  monthlyBudgetUsd: decimal,
+});
+
+const ownerAction = z.object({
+  correlationId: z.string(),
+  kind: z.enum(OWNER_ACTION_KINDS),
+  summary: z.string(),
+  status: z.string(),
+  open: z.boolean(),
+  confirmUrl: z.string().nullable(),
+  expiresAt: z.string(),
+  createdAt: z.string(),
+});
+
+const ownerView = z.object({
+  rules: payoutRules.nullable(),
+  pending: z.array(z.string()),
+  applied: z.boolean(),
+  frozen: z.boolean().nullable(),
+  grant: z
+    .object({ grantId: z.string(), expiresAt: z.string(), expiringSoon: z.boolean() })
+    .nullable(),
+  actions: z.array(ownerAction),
+});
 
 export const platformAgentContract = {
   view: oc
@@ -289,5 +323,52 @@ export const platformAgentContract = {
         }),
       ),
     )
+    .errors(errors),
+
+  ownerView: oc
+    .route({ method: "GET", path: "/admin/platform-agent/owner" })
+    .input(z.object({}))
+    .output(ownerView)
+    .errors(errors),
+
+  saveRules: oc
+    .route({ method: "PUT", path: "/admin/platform-agent/rules" })
+    .input(payoutRules)
+    .output(ownerView)
+    .errors(errors),
+
+  prepareAction: oc
+    .route({ method: "POST", path: "/admin/platform-agent/actions" })
+    .input(z.object({ kind: z.enum(OWNER_ACTION_KINDS), grantId: z.string().max(200).optional() }))
+    .output(
+      z.object({
+        action: ownerAction,
+        intent: nep413Intent.nullable(),
+        preview: z
+          .object({
+            summary: z.string(),
+            before: z.record(z.string(), z.unknown()).nullable(),
+            after: z.record(z.string(), z.unknown()).nullable(),
+          })
+          .nullable(),
+      }),
+    )
+    .errors(errors),
+
+  submitAction: oc
+    .route({ method: "POST", path: "/admin/platform-agent/actions/submit" })
+    .input(
+      z.object({
+        correlationId: z.string().min(1).max(200),
+        signedData: z.record(z.string(), z.unknown()),
+      }),
+    )
+    .output(ownerAction)
+    .errors(errors),
+
+  followAction: oc
+    .route({ method: "POST", path: "/admin/platform-agent/actions/status" })
+    .input(z.object({ correlationId: z.string().min(1).max(200) }))
+    .output(ownerAction)
     .errors(errors),
 };

@@ -18,6 +18,7 @@ import { AdminError } from "@/components/admin-error";
 import { Field, Loading } from "@/components/admin-form";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PlatformAgentPanel } from "@/components/platform-agent/platform-agent-panel";
+import { PlatformOwnerActions } from "@/components/platform-agent/platform-owner-actions";
 import { SigningText } from "@/components/platform-agent/signing-text";
 import { SettingsSection } from "@/components/settings-section";
 import { useMeRoles } from "@/hooks/use-me-roles";
@@ -438,6 +439,9 @@ export function PlatformAgentSettings() {
       </Card>
 
       {data.state === "connected" && <PlatformAgentPanel />}
+      {data.state === "connected" && data.ownerAccountId && (
+        <PlatformOwnerActions owner={data.ownerAccountId} host={data.host} />
+      )}
 
       <ConfirmDialog
         open={disconnecting}

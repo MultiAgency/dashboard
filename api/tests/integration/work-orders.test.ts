@@ -803,16 +803,26 @@ describe("work orders", () => {
   });
 
   describe("the scheduled run: period end, auto draft, monthly renewal", () => {
-    test("records the platform agents' upkeep, and a failing upkeep doesn't stop the run", async () => {
+    test("records the platform agents' upkeep and its grant reminders, and a failing upkeep doesn't stop the run", async () => {
       service = createWorkOrdersService({
         ...serviceDeps,
-        platformUpkeep: async () => ({ checked: 3, revoked: 1, failed: ["orgX"] }),
+        platformUpkeep: async () => ({
+          checked: 3,
+          revoked: 1,
+          failed: ["orgX"],
+          grantReminders: [
+            { organizationId: "studio", expiresAt: new Date("2026-12-01T00:00:00Z") },
+          ],
+        }),
       });
       expect((await service.run()).counts).toMatchObject({
         platformAgentsChecked: 3,
         platformAgentsRevoked: 1,
         platformAgentsFailed: 1,
       });
+      expect((await notificationsOf("studio-admin")).map((n) => n.kind)).toContain(
+        "payout_grant_expiring",
+      );
 
       service = createWorkOrdersService({
         ...serviceDeps,

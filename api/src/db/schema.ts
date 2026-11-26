@@ -10,7 +10,12 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { PLATFORM_REVOKED_REASONS, PLATFORM_SIGNING_KINDS } from "../services/platform/terms";
+import {
+  OWNER_ACTION_KINDS,
+  PAYOUT_ASSETS,
+  PLATFORM_REVOKED_REASONS,
+  PLATFORM_SIGNING_KINDS,
+} from "../services/platform/terms";
 
 export const applications = pgTable(
   "applications",
@@ -960,6 +965,10 @@ export const platformAgents = pgTable("platform_agents", {
   createIntent: text("create_intent"),
   createExpiresAt: timestamp("create_expires_at", { withTimezone: false }),
   createStatus: text("create_status"),
+  payoutAsset: text("payout_asset", { enum: PAYOUT_ASSETS }),
+  maxPerPayout: text("max_per_payout"),
+  monthlyBudgetUsd: text("monthly_budget_usd"),
+  grantRemindedFor: timestamp("grant_reminded_for", { withTimezone: false }),
   updatedBy: text("updated_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
@@ -990,6 +999,29 @@ export const platformConsents = pgTable(
 );
 
 export type PlatformConsentRow = typeof platformConsents.$inferSelect;
+
+export const platformOwnerActions = pgTable(
+  "platform_owner_actions",
+  {
+    correlationId: text("correlation_id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    agent: text("agent").notNull(),
+    kind: text("kind", { enum: OWNER_ACTION_KINDS }).notNull(),
+    summary: text("summary").notNull(),
+    confirmUrl: text("confirm_url"),
+    intent: text("intent"),
+    expiresAt: timestamp("expires_at", { withTimezone: false }).notNull(),
+    status: text("status").notNull(),
+    requestedBy: text("requested_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    byOrganization: index("platform_owner_actions_organization").on(t.organizationId),
+  }),
+);
+
+export type PlatformOwnerActionRow = typeof platformOwnerActions.$inferSelect;
 
 export const PAYOUT_ACTIONS = [
   "create_agent",

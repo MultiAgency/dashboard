@@ -98,6 +98,15 @@ const calls: Array<[string, (client: any) => Promise<unknown>]> = [
   ["ledger", (c) => c.platformAgent.ledger({})],
   ["policyHistory", (c) => c.platformAgent.policyHistory({})],
   ["ownerActions", (c) => c.platformAgent.ownerActions({})],
+  ["ownerView", (c) => c.platformAgent.ownerView({})],
+  [
+    "saveRules",
+    (c) =>
+      c.platformAgent.saveRules({ asset: "wnear", maxPerPayout: "50", monthlyBudgetUsd: "500" }),
+  ],
+  ["prepareAction", (c) => c.platformAgent.prepareAction({ kind: "grant" })],
+  ["submitAction", (c) => c.platformAgent.submitAction({ correlationId: "x", signedData: {} })],
+  ["followAction", (c) => c.platformAgent.followAction({ correlationId: "x" })],
 ];
 
 describe("platform agent routes, turned off", () => {

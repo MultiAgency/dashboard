@@ -56,6 +56,7 @@ import { atomicToNear, nearToAtomic, topUpFor, topUpProposal } from "./services/
 import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
 import { createPlatformAgents } from "./services/platform/agents";
 import { createPlatformApp, platformSettings } from "./services/platform/client";
+import { createPlatformOwnerActions } from "./services/platform/owner-actions";
 import { createPlatformReads } from "./services/platform/reads";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
@@ -353,6 +354,12 @@ const initializeServices = (
     const platformApp = platform ? createPlatformApp(platform) : null;
     const platformAgents = createPlatformAgents({ db, app: platformApp, settings: platform });
     const platformReads = createPlatformReads({ app: platformApp, agents: platformAgents });
+    const platformOwnerActions = createPlatformOwnerActions({
+      db,
+      app: platformApp,
+      agents: platformAgents,
+      payees: workOrderPayees(db),
+    });
     const signedInNearKeys = async (userId: string | null | undefined) => {
       if (!authPool || !userId) return {};
       const { rows } = await authPool.query<{ account_id: string; public_key: string }>(
@@ -413,12 +420,14 @@ const initializeServices = (
         ? createConsistencyChecker({ apiKey: config.secrets.ANTHROPIC_API_KEY })
         : null,
       payouts: payoutAgents.available ? payoutAgents : null,
-      platformUpkeep: () =>
-        platformAgents.maintain(
+      platformUpkeep: async () => ({
+        ...(await platformAgents.maintain(
           authPool
             ? async (organizationId) => (await organizationDirectory.get(organizationId)) !== null
             : null,
-        ),
+        )),
+        grantReminders: await platformOwnerActions.grantReminders(),
+      }),
       google,
       googleFor: googleConnections.port,
       userEmail,
@@ -489,6 +498,7 @@ const initializeServices = (
       payoutAgents,
       platformAgents,
       platformReads,
+      platformOwnerActions,
       signedInNearKeys,
       workOrderTimers,
     };
@@ -1425,6 +1435,44 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context }) => {
             const { platformReads } = Context.get(context["effect/context"], ApiServices);
             return platformReads.ownerActions(context.scope.organizationId);
+          }),
+        ownerView: builder.platformAgent.ownerView
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.view(context.scope.organizationId);
+          }),
+        saveRules: builder.platformAgent.saveRules
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.saveRules(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+          }),
+        prepareAction: builder.platformAgent.prepareAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.prepare(
+              context.scope.organizationId,
+              context.scope.actorId,
+              input,
+            );
+          }),
+        submitAction: builder.platformAgent.submitAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.submit(context.scope.organizationId, input);
+          }),
+        followAction: builder.platformAgent.followAction
+          .use(agencyManager)
+          .handler(async ({ context, input }) => {
+            const { platformOwnerActions } = Context.get(context["effect/context"], ApiServices);
+            return platformOwnerActions.follow(context.scope.organizationId, input.correlationId);
           }),
       },
 
