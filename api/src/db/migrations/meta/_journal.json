@@ -295,6 +295,13 @@
       "when": 1795996800000,
       "tag": "0043_platform_payout_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1796083200000,
+      "tag": "0044_platform_owner_action_phase",
+      "breakpoints": true
     }
   ]
 }

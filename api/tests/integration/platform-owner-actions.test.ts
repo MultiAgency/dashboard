@@ -348,6 +348,64 @@ describe("owner actions through the platform", () => {
     expect(rejected).toEqual([[ORG, "held-1"]]);
   });
 
+  test("a signed vote still processing is followed until it settles; only then is a rejection recorded", async () => {
+    platform.settleLater = true;
+    const vote = await actions.prepare(ORG, ACTOR, {
+      kind: "payout_vote",
+      approvalId: "appr-1",
+      verdict: "reject",
+    });
+    const submitted = await actions.submit(ORG, {
+      correlationId: vote.action.correlationId,
+      signedData: {},
+    });
+    expect(submitted).toMatchObject({ status: "PROCESSING", open: true });
+    expect(rejected).toEqual([]);
+
+    const before = platform.count("agent:owner/status");
+    expect((await actions.view(ORG)).actions[0]).toMatchObject({
+      status: "PROCESSING",
+      open: true,
+    });
+    expect(platform.count("agent:owner/status")).toBe(before + 1);
+
+    platform.settle(vote.action.correlationId);
+    expect((await actions.view(ORG)).actions[0]).toMatchObject({ status: "SUCCESS", open: false });
+    expect(rejected).toEqual([[ORG, "held-1"]]);
+    await actions.view(ORG);
+    expect(platform.count("agent:owner/status")).toBe(before + 2);
+  });
+
+  test("an action signed on the confirm page stays followed, without its link, until it settles", async () => {
+    const freeze = await actions.prepare(ORG, ACTOR, { kind: "freeze" });
+    expect(freeze.action.confirmUrl).toMatch(/\/confirm\//);
+    platform.confirm(freeze.action.correlationId, false);
+    expect((await actions.view(ORG)).actions[0]).toMatchObject({
+      status: "PROCESSING",
+      open: true,
+      confirmUrl: null,
+    });
+    platform.settle(freeze.action.correlationId);
+    expect((await actions.view(ORG)).actions[0]).toMatchObject({ status: "SUCCESS", open: false });
+  });
+
+  test("the scheduled run follows signed actions with nobody watching", async () => {
+    platform.settleLater = true;
+    const vote = await actions.prepare(ORG, ACTOR, {
+      kind: "payout_vote",
+      approvalId: "appr-1",
+      verdict: "reject",
+    });
+    await actions.submit(ORG, { correlationId: vote.action.correlationId, signedData: {} });
+    expect(await actions.followUnsettled()).toBe(1);
+    expect(rejected).toEqual([]);
+
+    platform.settle(vote.action.correlationId);
+    expect(await actions.followUnsettled()).toBe(1);
+    expect(rejected).toEqual([[ORG, "held-1"]]);
+    expect(await actions.followUnsettled()).toBe(0);
+  });
+
   test("a vote is only for a payout that's waiting for one, and says how", async () => {
     const before = platform.count("agent:owner/prepare");
     await expect(

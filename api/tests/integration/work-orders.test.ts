@@ -810,6 +810,7 @@ describe("work orders", () => {
           checked: 3,
           revoked: 1,
           failed: ["orgX"],
+          followed: 2,
           grantReminders: [
             { organizationId: "studio", expiresAt: new Date("2026-12-01T00:00:00Z") },
           ],
@@ -819,6 +820,7 @@ describe("work orders", () => {
         platformAgentsChecked: 3,
         platformAgentsRevoked: 1,
         platformAgentsFailed: 1,
+        platformOwnerActionsFollowed: 2,
       });
       expect((await notificationsOf("studio-admin")).map((n) => n.kind)).toContain(
         "payout_grant_expiring",

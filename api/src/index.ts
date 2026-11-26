@@ -452,6 +452,7 @@ const initializeServices = (
             ? async (organizationId) => (await organizationDirectory.get(organizationId)) !== null
             : null,
         )),
+        followed: await platformOwnerActions.followUnsettled(),
         grantReminders: await platformOwnerActions.grantReminders(),
       }),
       google,

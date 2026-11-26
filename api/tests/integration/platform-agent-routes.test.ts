@@ -161,11 +161,19 @@ describe("platform agent routes", () => {
       PLATFORM_URL: `https://${HOST}`,
       PLATFORM_DEPLOYMENT: "multiagency-dashboard",
       PLATFORM_APP_CREDENTIAL: CREDENTIAL,
+      WORK_ORDERS_RUN_SECRET: "run-secret",
     }));
   }, 120_000);
 
   afterAll(async () => {
     await runtime?.shutdown();
+  });
+
+  test("the scheduled run follows signed owner actions as part of the platform upkeep", async () => {
+    const run = await clientFor({
+      reqHeaders: new Headers({ authorization: "Bearer run-secret" }),
+    }).workOrders.run({});
+    expect(run).toMatchObject({ ran: true, counts: { platformOwnerActionsFollowed: 0 } });
   });
 
   test.each(calls)("%s refuses a caller who isn't signed in", async (_name, call) => {

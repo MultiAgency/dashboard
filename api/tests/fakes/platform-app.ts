@@ -35,6 +35,7 @@ export class FakePlatformApp {
   readonly deployment: string;
   calls: Array<{ route: string; body?: unknown }> = [];
   createMode: "confirm" | "nep413" = "confirm";
+  settleLater = false;
   reservations = new Map<string, Reservation>();
   consents = new Map<string, Consent>();
   opened = new Map<
@@ -43,6 +44,7 @@ export class FakePlatformApp {
       agent: string;
       type: string;
       submitted: boolean;
+      settled?: boolean;
       intent: Record<string, unknown>;
       apply: () => void;
     }
@@ -95,10 +97,19 @@ export class FakePlatformApp {
     this.reservations.set(reservation.agent, { setupKey: null, ...reservation });
   }
 
-  confirm(correlationId: string) {
+  confirm(correlationId: string, settle = true) {
     const open = this.opened.get(correlationId);
     if (!open || open.submitted) throw new Error(`nothing open for ${correlationId}`);
     open.submitted = true;
+    if (!settle) return;
+    open.settled = true;
+    open.apply();
+  }
+
+  settle(correlationId: string) {
+    const open = this.opened.get(correlationId);
+    if (!open?.submitted || open.settled) throw new Error(`nothing in flight for ${correlationId}`);
+    open.settled = true;
     open.apply();
   }
 
@@ -547,15 +558,19 @@ export class FakePlatformApp {
           return { ok: false, kind: "refused", code: "not_open", error: "not open" };
         }
         open.submitted = true;
+        if (this.settleLater) return ok({ status: "PROCESSING" });
+        open.settled = true;
         open.apply();
         return ok({ status: "SUCCESS" });
       }
       if (path === "owner/status") {
         const open = this.opened.get(String(input?.correlationId));
         return ok(
-          open?.submitted
+          open?.settled
             ? { stage: "submitted", status: "SUCCESS", phase: "settled" }
-            : { stage: "unknown", phase: "open" },
+            : open?.submitted
+              ? { stage: "submitted", status: "PROCESSING", phase: "submitted" }
+              : { stage: "unknown", phase: "open" },
         );
       }
       if (path === "owner/pending") return ok([]);

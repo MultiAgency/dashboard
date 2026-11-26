@@ -13,6 +13,7 @@ import {
 import {
   DEPOSIT_STATES,
   OWNER_ACTION_KINDS,
+  OWNER_ACTION_PHASES,
   PAYOUT_ASSETS,
   PAYOUT_ROUTES,
   PAYOUT_VERDICTS,
@@ -1019,6 +1020,7 @@ export const platformOwnerActions = pgTable(
     verdict: text("verdict", { enum: PAYOUT_VERDICTS }),
     expiresAt: timestamp("expires_at", { withTimezone: false }).notNull(),
     status: text("status").notNull(),
+    phase: text("phase", { enum: OWNER_ACTION_PHASES }),
     requestedBy: text("requested_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
