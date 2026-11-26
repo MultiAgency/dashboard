@@ -84,6 +84,13 @@ export type OrganizationManager = {
   email: string | null;
 };
 
+export type OrganizationOwner = {
+  userId: string;
+  name: string | null;
+  email: string | null;
+  nearAccountId: string | null;
+};
+
 export type UserMembership = {
   organization: Organization;
   role: OrganizationRole | null;
@@ -94,6 +101,7 @@ export type OrganizationDirectory = {
   all(): Promise<AuthOrganizationRecord[]>;
   findBySlug(slug: string): Promise<Organization | null>;
   managers(organizationId: string): Promise<OrganizationManager[]>;
+  owner(organizationId: string): Promise<OrganizationOwner | null>;
   member(organizationId: string, userId: string): Promise<OrganizationManager | null>;
   memberships(userId: string): Promise<UserMembership[]>;
   create(input: { name: string; slug: string }): Promise<Organization>;
@@ -212,6 +220,7 @@ export function unconfiguredDirectory(): OrganizationDirectory {
     all: unavailable,
     findBySlug: async () => null,
     managers: async () => [],
+    owner: async () => null,
     member: async () => null,
     memberships: async () => [],
     create: unavailable,

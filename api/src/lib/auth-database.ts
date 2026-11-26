@@ -128,7 +128,7 @@ function columnResolver(sql: SqlClient) {
   };
 }
 
-export type AuthDirectoryTables = AuthTableNames & { invitation: string };
+export type AuthDirectoryTables = AuthTableNames & { invitation: string; nearAccount: string };
 
 type OrganizationRowShape = {
   id: string;
@@ -165,13 +165,18 @@ function managerRole(raw: string): OrganizationRole | null {
 
 export function authDatabaseDirectory(
   sql: SqlClient,
-  tables: AuthDirectoryTables = { ...DEFAULT_TABLES, invitation: "invitation" },
+  tables: AuthDirectoryTables = {
+    ...DEFAULT_TABLES,
+    invitation: "invitation",
+    nearAccount: "near_account",
+  },
 ): OrganizationDirectory {
   const columns = columnResolver(sql);
   const user = quote(tables.user);
   const organization = quote(tables.organization);
   const member = quote(tables.member);
   const invitation = quote(tables.invitation);
+  const nearAccount = quote(tables.nearAccount);
 
   async function organizationSelect(alias: string) {
     const o = await columns(tables.organization);
@@ -222,6 +227,34 @@ export function authDatabaseDirectory(
         const role = managerRole(row.role);
         return role ? [{ userId: row.userId, role, email: deliverableEmail(row.email) }] : [];
       });
+    },
+
+    owner: async (organizationId) => {
+      const m = await columns(tables.member);
+      const n = await columns(tables.nearAccount);
+      const withNear = n.has("accountId") && n.has("userId");
+      const near = withNear
+        ? `, (SELECT na.${n("accountId")} FROM ${nearAccount} na WHERE na.${n("userId")} = u.id ORDER BY ${n.has("isPrimary") ? `na.${n("isPrimary")} DESC NULLS LAST, ` : ""}na.${n("accountId")} LIMIT 1) AS "nearAccountId"`
+        : `, NULL AS "nearAccountId"`;
+      const { rows } = await sql.query<{
+        userId: string;
+        role: string;
+        name: string | null;
+        email: string | null;
+        nearAccountId: string | null;
+      }>(
+        `SELECT u.id AS "userId", m.role, u.name, u.email${near} FROM ${member} m JOIN ${user} u ON u.id = m.${m("userId")} WHERE m.${m("organizationId")} = $1 ORDER BY m.${m("createdAt")}`,
+        [organizationId],
+      );
+      const row = rows.find((r) => r.role.split(",").some((role) => role.trim() === "owner"));
+      if (!row) return null;
+      const name = row.name?.trim();
+      return {
+        userId: row.userId,
+        name: name ? name : null,
+        email: deliverableEmail(row.email),
+        nearAccountId: row.nearAccountId,
+      };
     },
 
     member: async (organizationId, userId) => {
