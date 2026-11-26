@@ -271,8 +271,11 @@ export function createPlatformPayouts(deps: {
       return settle(row, { state: "conflict", code: failure.code });
     }
     if (failure.kind === "refused" && failure.code === "recipient_unchecked") return row;
-    if (failure.kind === "refused" || failure.kind === "session" || failure.kind === "forbidden") {
+    if (failure.kind === "session" || failure.kind === "forbidden") {
       await deps.agents.accessFailed(row.organizationId, consentId, failure);
+      return row;
+    }
+    if (failure.kind === "refused") {
       return settle(row, { state: "refused", code: failure.code ?? failure.kind });
     }
     return status(row);
@@ -305,6 +308,8 @@ export function createPlatformPayouts(deps: {
       throw badRequest("The agent's rules can't be read to pay against them. Try again shortly.");
     }
     await db.insert(platformPayouts).values({
+      createdAt: now(),
+      updatedAt: now(),
       requestId,
       compensationRequestId: input.requestId,
       attempt,
@@ -331,10 +336,6 @@ export function createPlatformPayouts(deps: {
   async function latest(compensationRequestId: string) {
     const [last] = await attemptsOf(compensationRequestId);
     return last ? payoutView(last) : null;
-  }
-
-  async function owns(compensationRequestId: string) {
-    return (await attemptsOf(compensationRequestId)).length > 0;
   }
 
   async function ensurePayees(organizationId: string) {
@@ -414,7 +415,6 @@ export function createPlatformPayouts(deps: {
     send,
     refresh,
     latest,
-    owns,
     ensurePayees,
     unsettled,
   };

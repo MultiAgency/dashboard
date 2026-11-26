@@ -1,4 +1,5 @@
-import type { WorkOrderDeps } from "../work-orders/service";
+import { payoutRetryable } from "../payouts/service";
+import type { AgentPayoutView, WorkOrderDeps } from "../work-orders/service";
 import { badRequest } from "./agents";
 import type { PlatformPayouts } from "./payouts";
 
@@ -10,6 +11,15 @@ export function routePayouts(legacy: Payouts | null, platform: PlatformPayouts):
   const pick = async (organizationId: string) =>
     (await platform.routeOf(organizationId)) === "platform" ? platform : legacy;
 
+  const latest = async (requestId: string): Promise<AgentPayoutView | null> => {
+    const [onPlatform, onLegacy] = await Promise.all([
+      platform.latest(requestId),
+      legacy ? legacy.latest(requestId) : null,
+    ]);
+    if (!onPlatform || !onLegacy) return onPlatform ?? onLegacy;
+    return onPlatform.createdAt >= onLegacy.createdAt ? onPlatform : onLegacy;
+  };
+
   return {
     readiness: async (organizationId, payee, amountAtomic, priceUsd) => {
       const payouts = await pick(organizationId);
@@ -20,6 +30,8 @@ export function routePayouts(legacy: Payouts | null, platform: PlatformPayouts):
     send: async (organizationId, input) => {
       const payouts = await pick(organizationId);
       if (!payouts) throw badRequest("Automatic payouts aren't set up for this Organization");
+      const last = await latest(input.requestId);
+      if (last && !payoutRetryable(last)) return last;
       return payouts.send(organizationId, input);
     },
     refresh: async (payout) =>
@@ -28,10 +40,7 @@ export function routePayouts(legacy: Payouts | null, platform: PlatformPayouts):
         : legacy
           ? legacy.refresh(payout)
           : payout,
-    latest: async (requestId) =>
-      (await platform.owns(requestId))
-        ? platform.latest(requestId)
-        : ((await legacy?.latest(requestId)) ?? null),
+    latest,
     ensurePayees: async (organizationId) =>
       (await (await pick(organizationId))?.ensurePayees?.(organizationId)) ?? {
         ok: true,

@@ -294,6 +294,74 @@ describe("work-order payouts through the platform", () => {
     expect(await payouts.setRoute(ORG, "legacy")).toMatchObject({ route: "legacy" });
   });
 
+  test("after a switch back, the old path's newer payout is the one that counts, and blocks a platform send", async () => {
+    double.setBalance(ASSETS.wNEAR, "0");
+    expect(await pay()).toMatchObject({ id: "req-1-1", status: "refused" });
+    await database.db.insert(agentPayouts).values({
+      id: "legacy-1",
+      organizationId: ORG,
+      requestId: "req-1",
+      attempt: 1,
+      status: "processing",
+      idempotencyKey: "k",
+      requestBody: "{}",
+      recipient: CAROL,
+      amount: "1",
+      assetId: ASSETS.wNEAR,
+      createdAt: new Date(clock.getTime() + 60_000),
+    } as typeof agentPayouts.$inferInsert);
+    const legacyView = {
+      id: "legacy-1",
+      organizationId: ORG,
+      requestId: "req-1",
+      status: "processing" as const,
+      amount: "1",
+      correlationId: null,
+      txHash: null,
+      txUrl: null,
+      reason: null,
+      provenUnsent: false,
+      createdAt: new Date(clock.getTime() + 60_000),
+    };
+    const legacy = {
+      readiness: vi.fn(),
+      send: vi.fn(),
+      refresh: vi.fn(),
+      latest: vi.fn(async (requestId: string) => (requestId === "req-1" ? legacyView : null)),
+    };
+    const routed = routePayouts(legacy, payouts);
+    expect(await routed.latest("req-1")).toMatchObject({ id: "legacy-1" });
+    double.setBalance(ASSETS.wNEAR, (100n * NEAR).toString());
+    expect(
+      await routed.send(ORG, { requestId: "req-1", recipient: CAROL, amount: NEAR.toString() }),
+    ).toMatchObject({ id: "legacy-1" });
+    expect(double.requests().map((r) => r.requestId)).toEqual(["req-1-1"]);
+  });
+
+  test("a gateway refusal while asking again leaves the payout in flight, never a new ID", async () => {
+    await database.db.insert(platformPayouts).values({
+      requestId: "req-1-1",
+      compensationRequestId: "req-1",
+      attempt: 1,
+      organizationId: ORG,
+      agent: AGENT,
+      asset: ASSETS.wNEAR,
+      chain: "near",
+      recipient: CAROL,
+      amount: NEAR.toString(),
+      expectedRevision: 1,
+      expectedDigest: "d",
+      state: "sending",
+      createdAt: clock,
+    });
+    double.revokeConsent();
+    const view = await payouts.refresh((await payouts.latest("req-1"))!);
+    expect(view).toMatchObject({ status: "sending", provenUnsent: false });
+    await expect(pay()).rejects.toThrow(/can't be asked to pay/);
+    expect(await payouts.latest("req-1")).toMatchObject({ id: "req-1-1", status: "sending" });
+    expect(double.requests()).toHaveLength(0);
+  });
+
   test("the switch needs a consent that includes payouts", async () => {
     await database.db.update(platformConsents).set({ scopes: "owner,read" });
     await expect(payouts.setRoute(ORG, "platform")).rejects.toThrow(/includes payouts/);
