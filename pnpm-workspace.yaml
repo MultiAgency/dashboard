@@ -41,6 +41,7 @@ catalog:
   "@module-federation/runtime-core": ^2.9.2
   "@module-federation/runtime-tools": ^2.9.2
   "@module-federation/sdk": ^2.9.2
+  "@multiagency/sdk": 0.6.0
   "@near-intents-agent-api/sdk": ^0.4.1
   "@opentelemetry/api": ^1.9.0
   "@orpc/client": 2.0.0-beta.45

@@ -267,6 +267,13 @@
       "when": 1795651200000,
       "tag": "0039_organization_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1795737600000,
+      "tag": "0040_platform_agents",
+      "breakpoints": true
     }
   ]
 }
