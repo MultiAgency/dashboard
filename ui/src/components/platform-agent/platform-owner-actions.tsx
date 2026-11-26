@@ -257,7 +257,8 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
           <div className="flex flex-col gap-2 border-t pt-4">
             <span className="text-sm font-medium">Waiting for the owner's vote</span>
             <p className="text-sm text-muted-foreground">
-              The platform's vote text doesn't name the payee or the amount. They're shown here.
+              Each vote is signed on the MultiAgency platform's confirm page, which shows the payee
+              and amount as the payment provider recorded them.
             </p>
             <ul className="flex flex-col gap-3 text-sm">
               {data.held.map((h) => (
@@ -389,6 +390,28 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
             </Button>
           )}
         </div>
+
+        {prepared && !prepared.intent && prepared.action.confirmUrl && (
+          <Alert>
+            <AlertTitle>Sign: {prepared.action.summary}</AlertTitle>
+            <AlertDescription className="flex flex-col gap-2">
+              <span>
+                This is signed on the MultiAgency platform's confirm page, which shows its terms.
+                Check that the page is on https://{host}/confirm/ before your wallet signs.
+              </span>
+              <div className="flex gap-2">
+                <Button size="sm" asChild>
+                  <a href={prepared.action.confirmUrl} target="_blank" rel="noopener noreferrer">
+                    Open the confirm page
+                  </a>
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setPrepared(null)}>
+                  Not now
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {prepared?.intent && (
           <Alert>
