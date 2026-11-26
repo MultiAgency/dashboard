@@ -24,7 +24,6 @@ vi.mock("@/lib/api", () => ({
         throw new Error("not connected");
       },
       unresolved: async () => [],
-      held: async () => [],
     },
   }),
 }));

@@ -33,8 +33,21 @@ export const nep413Intent = z.object({
 export const PAYOUT_ASSETS = ["wnear", "usdc"] as const;
 export type PayoutAsset = (typeof PAYOUT_ASSETS)[number];
 
-export const OWNER_ACTION_KINDS = ["rules", "grant", "grant_revoke", "freeze", "unfreeze"] as const;
+export const OWNER_ACTION_KINDS = [
+  "rules",
+  "grant",
+  "grant_revoke",
+  "freeze",
+  "unfreeze",
+  "payout_vote",
+] as const;
 export type OwnerActionKind = (typeof OWNER_ACTION_KINDS)[number];
+
+export const PAYOUT_VERDICTS = ["approve", "reject"] as const;
+export type PayoutVerdict = (typeof PAYOUT_VERDICTS)[number];
+
+export const DEPOSIT_STATES = ["requesting", "ready", "refused", "unknown"] as const;
+export type DepositState = (typeof DEPOSIT_STATES)[number];
 
 export const GRANT_DAYS = 90;
 export const GRANT_RENEW_DAYS = 14;

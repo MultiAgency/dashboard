@@ -93,7 +93,6 @@ const calls: Array<[string, (client: any) => Promise<unknown>]> = [
   ["disconnect", (c) => c.platformAgent.disconnect({})],
   ["overview", (c) => c.platformAgent.overview({})],
   ["unresolved", (c) => c.platformAgent.unresolved({})],
-  ["held", (c) => c.platformAgent.held({})],
   ["activity", (c) => c.platformAgent.activity({})],
   ["ledger", (c) => c.platformAgent.ledger({})],
   ["policyHistory", (c) => c.platformAgent.policyHistory({})],
@@ -102,11 +101,18 @@ const calls: Array<[string, (client: any) => Promise<unknown>]> = [
   [
     "saveRules",
     (c) =>
-      c.platformAgent.saveRules({ asset: "wnear", maxPerPayout: "50", monthlyBudgetUsd: "500" }),
+      c.platformAgent.saveRules({
+        asset: "wnear",
+        maxPerPayout: "50",
+        monthlyBudgetUsd: "500",
+        ownerApproval: false,
+      }),
   ],
   ["prepareAction", (c) => c.platformAgent.prepareAction({ kind: "grant" })],
   ["submitAction", (c) => c.platformAgent.submitAction({ correlationId: "x", signedData: {} })],
   ["followAction", (c) => c.platformAgent.followAction({ correlationId: "x" })],
+  ["deposit", (c) => c.platformAgent.deposit({})],
+  ["fundAgent", (c) => c.platformAgent.fundAgent({})],
   [
     "setPayoutRoute",
     (c) => c.platformAgent.setPayoutRoute({ organizationId: "studio", route: "platform" }),
@@ -204,7 +210,7 @@ describe("platform agent routes", () => {
     );
     expect(connected.state).toBe("connected");
     keep(await owner.platformAgent.overview({}));
-    keep(await owner.platformAgent.held({}));
+    keep(await owner.platformAgent.ownerView({}));
     expect(JSON.stringify(answers)).not.toContain("tap_");
 
     const other = clientFor(caller("owner", false, OTHER_ORG));

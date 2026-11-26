@@ -27,7 +27,7 @@ const signedFor = (changes: Partial<SignedPolicy>): SignedPolicy => ({
 describe("payout rules on a platform agent", () => {
   test("a new agent paid in wNEAR: withdrawals to builders, wNEAR only, one cap, a monthly budget, no vote", () => {
     const { changes, summary } = rulesChanges(
-      { asset: "wnear", maxPerPayout: "50", monthlyBudgetUsd: "500" },
+      { asset: "wnear", maxPerPayout: "50", monthlyBudgetUsd: "500", ownerApproval: false },
       ["Carol.near", "dave.near", "carol.near"],
       payoutTemplate,
     );
@@ -44,7 +44,7 @@ describe("payout rules on a platform agent", () => {
 
   test("a new agent paid in USDC: confidential transfers to builders and a USDC cap", () => {
     const { changes } = rulesChanges(
-      { asset: "usdc", maxPerPayout: "12.5", monthlyBudgetUsd: "1000" },
+      { asset: "usdc", maxPerPayout: "12.5", monthlyBudgetUsd: "1000", ownerApproval: false },
       ["carol.near"],
       payoutTemplate,
     );
@@ -68,7 +68,7 @@ describe("payout rules on a platform agent", () => {
     });
     expect(
       rulesChanges(
-        { asset: "wnear", maxPerPayout: "50", monthlyBudgetUsd: "500" },
+        { asset: "wnear", maxPerPayout: "50", monthlyBudgetUsd: "500", ownerApproval: false },
         ["carol.near"],
         signed,
       ),
@@ -88,7 +88,7 @@ describe("payout rules on a platform agent", () => {
       budget: { daily_usd: null, weekly_usd: null, monthly_usd: "500" },
     });
     const { changes, summary } = rulesChanges(
-      { asset: "wnear", maxPerPayout: "50", monthlyBudgetUsd: "500" },
+      { asset: "wnear", maxPerPayout: "50", monthlyBudgetUsd: "500", ownerApproval: false },
       ["dave.near"],
       signed,
     );
@@ -97,6 +97,18 @@ describe("payout rules on a platform agent", () => {
       "Pay dave.near by withdrawal to their NEAR account",
       "Stop paying carol.near by withdrawal to their NEAR account",
     ]);
+  });
+
+  test("the owner's vote on each payout is signed on or off as chosen", () => {
+    const rules = { asset: "usdc", maxPerPayout: "25", monthlyBudgetUsd: "500" } as const;
+    const held = rulesChanges({ ...rules, ownerApproval: true }, [], payoutTemplate);
+    expect(held.changes.owner_approval).toBeUndefined();
+    expect(held.summary).not.toContain("Hold each payout for the owner's vote");
+
+    const unheld = signedFor({ owner_approval: false });
+    const voted = rulesChanges({ ...rules, ownerApproval: true }, [], unheld);
+    expect(voted.changes.owner_approval).toBe(true);
+    expect(voted.summary).toContain("Hold each payout for the owner's vote");
   });
 
   test("switching from wNEAR to USDC moves the builders from withdrawals to transfers", () => {
@@ -108,7 +120,7 @@ describe("payout rules on a platform agent", () => {
       },
     });
     const { changes } = rulesChanges(
-      { asset: "usdc", maxPerPayout: "25", monthlyBudgetUsd: "500" },
+      { asset: "usdc", maxPerPayout: "25", monthlyBudgetUsd: "500", ownerApproval: false },
       ["carol.near"],
       signed,
     );

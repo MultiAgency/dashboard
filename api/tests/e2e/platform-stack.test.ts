@@ -124,7 +124,6 @@ describe.skipIf(!statePath)("the dashboard's server on the platform's local stac
     expect(overview.agentId).toBe(view.agentId);
     for (const read of [
       "unresolved",
-      "held",
       "activity",
       "ledger",
       "policyHistory",
@@ -143,6 +142,8 @@ describe.skipIf(!statePath)("the dashboard's server on the platform's local stac
       app,
       agents,
       payees: async () => [PAYEE],
+      payoutTerms: async () => new Map(),
+      payoutRejected: async () => undefined,
     });
     const signAndSubmit = async (prepared: Awaited<ReturnType<typeof owner.prepare>>) => {
       if (!prepared.intent) {
@@ -173,6 +174,7 @@ describe.skipIf(!statePath)("the dashboard's server on the platform's local stac
       asset: "usdc",
       maxPerPayout: "5",
       monthlyBudgetUsd: "100",
+      ownerApproval: false,
     });
     expect(saved.pending).toContain(`Pay ${PAYEE} by confidential transfer`);
     const rules = await owner.prepare(ORG, ACTOR, { kind: "rules" });
@@ -189,6 +191,7 @@ describe.skipIf(!statePath)("the dashboard's server on the platform's local stac
       asset: "wnear",
       maxPerPayout: "2",
       monthlyBudgetUsd: "100",
+      ownerApproval: false,
     });
     const toWnear = await owner.prepare(ORG, ACTOR, { kind: "rules" });
     await waitFor((await signAndSubmit(toWnear)).correlationId);

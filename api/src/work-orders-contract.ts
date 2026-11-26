@@ -305,6 +305,7 @@ export const compensationRequest = z.object({
         "refused",
         "uncertain",
         "needs_review",
+        "rejected",
       ]),
       amount: z.string(),
       txUrl: z.string().nullable(),

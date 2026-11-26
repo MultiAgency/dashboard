@@ -288,6 +288,13 @@
       "when": 1795910400000,
       "tag": "0042_platform_payouts",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1795996800000,
+      "tag": "0043_platform_payout_approval",
+      "breakpoints": true
     }
   ]
 }

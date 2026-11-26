@@ -25,7 +25,12 @@ import { rememberedLogin, rememberLogin } from "../builder-logins";
 import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
 import { atomicToNear } from "../payouts/policy";
-import { type FundingCheck, noUnsettledPayout, payoutRetryable } from "../payouts/service";
+import {
+  type FundingCheck,
+  noUnsettledPayout,
+  payoutRetryable,
+  payoutSettledUnsent,
+} from "../payouts/service";
 import { noUnsettledPlatformPayout } from "../platform/payouts";
 import type { Project, ProjectDirectory } from "../project-directory";
 import { type DaoProposal, proposalDescription } from "../sputnik";
@@ -177,7 +182,8 @@ export type AgentPayoutView = {
     | "failed"
     | "refused"
     | "uncertain"
-    | "needs_review";
+    | "needs_review"
+    | "rejected";
   amount: string;
   correlationId: string | null;
   txHash: string | null;
@@ -269,6 +275,7 @@ function unsettledPayoutReason(payout: AgentPayoutView): string {
 
 const NOT_PAYING_NOW = new Set(["unavailable", "no_agent"]);
 const NEEDS_REVIEW = "needs_review";
+const OWNER_REJECTED = "owner_rejected";
 
 const nearAccountUrl = (account: string) =>
   `https://nearblocks.io/address/${encodeURIComponent(account)}`;
@@ -2786,6 +2793,29 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     payout: AgentPayoutView,
   ): Promise<CompensationRequestRow> {
     if (payout.status === "paid") return markPaidByAgent(request, row, payout);
+    if (payout.status === "rejected") {
+      if (request.status === "approved" && request.autoPayBlockedCode === OWNER_REJECTED) {
+        return request;
+      }
+      const reason = payout.reason ?? "The agent's owner rejected this payout";
+      const rejected = await updateUnpaid(request.id, {
+        status: "approved",
+        note: `${reason}. It isn't sent again automatically: pay it through a DAO proposal, or reject the request so the builder can request it again.`,
+        autoPayBlockedReason: reason,
+        autoPayBlockedCode: OWNER_REJECTED,
+        autoPayBlockedAt: null,
+      });
+      await notifyManagers(
+        row,
+        "compensation_request_payout_failed",
+        await payloadOf(row, {
+          requestCode: `${row.code}-R${request.seq}`,
+          approved: display(request.approvedAmount ?? "0", row.tokenId),
+          reason,
+        }),
+      );
+      return rejected;
+    }
     if (payoutRetryable(payout)) {
       const reason = payout.reason ?? payout.status;
       return blockPayout(
@@ -2839,6 +2869,10 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     }
     if (request.daoPaymentStartedAt) return { request, reason: DAO_PAYMENT_NOTE };
     const last = await payouts.latest(request.id);
+    if (last?.status === "rejected") {
+      const settled = await settleAgentPayout(request, row, last);
+      return { request: settled, reason: settled.autoPayBlockedReason };
+    }
     if (last && !payoutRetryable(last)) {
       return {
         request,
@@ -3080,7 +3114,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
   async function requireSettledPayout(requestId: string) {
     const unsettled = await deps.payouts?.latest(requestId);
-    if (unsettled && !payoutRetryable(unsettled)) {
+    if (unsettled && !payoutSettledUnsent(unsettled)) {
       throw badRequest("AGENT_PAYOUT_UNSETTLED", unsettledPayoutReason(unsettled));
     }
   }

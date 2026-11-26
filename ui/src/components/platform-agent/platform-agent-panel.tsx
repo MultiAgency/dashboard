@@ -83,7 +83,6 @@ export function PlatformAgentPanel() {
 
   const overview = useQuery(read("overview", () => platform.overview({})));
   const unresolved = useQuery(read("unresolved", () => platform.unresolved({})));
-  const held = useQuery(read("held", () => platform.held({})));
   const activity = useQuery(read("activity", () => platform.activity({}), !!opened.activity));
   const ledger = useQuery(read("ledger", () => platform.ledger({}), !!opened.ledger));
   const policyHistory = useQuery(
@@ -195,24 +194,6 @@ export function PlatformAgentPanel() {
             </p>
           </div>
         )}
-
-        <div className="flex flex-col gap-2 border-t pt-3">
-          <span className="text-sm font-medium">Held for the owner's vote</span>
-          <Stale query={held} />
-          {held.data &&
-            (held.data.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nothing is held.</p>
-            ) : (
-              <ul className="flex flex-col gap-1 text-sm">
-                {held.data.map((h) => (
-                  <li key={h.correlationId}>
-                    {amountOf(h.amount, h.asset)} to {h.recipient ?? "?"}
-                    {h.chain ? ` (public withdrawal on ${h.chain})` : ""} · {when(h.at)}
-                  </li>
-                ))}
-              </ul>
-            ))}
-        </div>
 
         <Section title="Activity" onOpen={open("activity")}>
           <Stale query={activity} />

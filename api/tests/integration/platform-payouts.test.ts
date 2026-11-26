@@ -14,6 +14,7 @@ import {
   createPlatformPayouts,
   noUnsettledPlatformPayout,
   type PlatformPayouts,
+  platformPayoutRejected,
 } from "../../src/services/platform/payouts";
 import { migratedDatabase } from "./_pg";
 
@@ -229,7 +230,39 @@ describe("work-order payouts through the platform", () => {
     double.setPolicy(wnearPolicy({ frozen: true }));
     expect(await payouts.readiness(ORG, CAROL)).toMatchObject({ code: "frozen" });
     double.setPolicy(wnearPolicy({ owner_approval: true }));
-    expect(await payouts.readiness(ORG, CAROL)).toMatchObject({ code: "owner_approval" });
+    expect(await payouts.readiness(ORG, CAROL)).toMatchObject({ code: "no_grant" });
+    double.setGrant({ label: "payout", expiresAt: "2027-02-01T00:00:00Z" });
+    expect(await payouts.readiness(ORG, CAROL)).toEqual({ ready: true, code: null, reason: null });
+  });
+
+  test("a payout the owner rejected stays unsent: no new attempt, and a DAO proposal may pay it", async () => {
+    holdEach();
+    const held = await pay();
+    double.vote("req-1-1", "reject");
+    await platformPayoutRejected(database.db)(ORG, held.correlationId ?? "");
+    expect(await payouts.refresh(held)).toMatchObject({
+      status: "rejected",
+      provenUnsent: true,
+      reason: "The agent's owner rejected this payout",
+    });
+    expect((await pay()).id).toBe("req-1-1");
+    expect(double.requests().map((r) => r.requestId)).toEqual(["req-1-1"]);
+    expect(await payouts.unsettled(ORG)).toBe(0);
+    const free = await database.db
+      .select({ id: platformPayouts.requestId })
+      .from(platformPayouts)
+      .where(sql`${noUnsettledPlatformPayout(platformPayouts.compensationRequestId)}`);
+    expect(free).toEqual([{ id: "req-1-1" }]);
+  });
+
+  test("payouts of the same terms are each held for a vote, since their IDs already tell them apart", async () => {
+    holdEach();
+    expect(await pay("req-1")).toMatchObject({ status: "processing" });
+    expect(await pay("req-2")).toMatchObject({ status: "processing" });
+    expect(double.requests().map((r) => [r.requestId, r.refused])).toEqual([
+      ["req-1-1", null],
+      ["req-2-1", null],
+    ]);
   });
 
   test("without payout in the consent nothing is asked for", async () => {
