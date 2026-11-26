@@ -51,6 +51,7 @@
     "includes": [
       "**",
       "!!repos",
+      "!!ui/src/components/react-bits",
       "!!**/ui/src/routeTree.gen.ts",
       "!!**/plugins/**/types/**/*.d.ts",
       "!!**/env.d.ts",
