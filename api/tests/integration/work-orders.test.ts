@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { ASSETS, appClient } from "@multiagency/sdk";
+import { type PayoutDouble, payoutDouble } from "@multiagency/sdk/testing";
 import { and, eq } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib/dist/pdf-lib.esm.js";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -8,6 +10,8 @@ import {
   compensationRequests,
   notifications,
   organizationBuilderLogins,
+  platformAgents,
+  platformConsents,
   workOrderDocuments,
   workOrderDriveFiles,
   workOrderIntegrations,
@@ -17,12 +21,11 @@ import {
 } from "../../src/db/schema";
 import { rememberedLogin } from "../../src/services/builder-logins";
 import { requireTreasury } from "../../src/services/organization-access";
-import { atomicToNear, topUpFor } from "../../src/services/payouts/policy";
-import {
-  createPayoutAgents,
-  type PayoutAgents,
-  workOrderPayees,
-} from "../../src/services/payouts/service";
+import { atomicToNear } from "../../src/services/payouts/amounts";
+import { oldPayoutLatest } from "../../src/services/payouts/history";
+import { createPlatformAgents } from "../../src/services/platform/agents";
+import { routePayouts } from "../../src/services/platform/payout-router";
+import { createPlatformPayouts } from "../../src/services/platform/payouts";
 import type { DaoProposal } from "../../src/services/sputnik";
 import { enrichWithChainStatus } from "../../src/services/sputnik";
 import {
@@ -41,11 +44,11 @@ import {
   type BuilderProfile,
   createWorkOrdersService,
   repoOf,
+  type WorkOrderDeps,
 } from "../../src/services/work-orders/service";
 import { fromBase64 } from "../../src/services/work-orders/signing";
 import type { ReportDraft } from "../../src/services/work-orders/summarizer";
 import { DEFAULT_RENEWAL } from "../../src/services/work-orders/types";
-import { FakeAgentApi } from "../fakes/agent-api";
 import { FakeDocumenso } from "../fakes/documenso";
 import { type EngagementWorld, engagementWorld, refused } from "../fakes/engagements";
 import { FakeGitHub } from "../fakes/github";
@@ -57,6 +60,41 @@ const DAO = "studio.sputnik-dao.testnet";
 const REPO = "studio/app";
 const USDC = "usdc.fakes.testnet";
 const CAROL = "carol.near";
+const AGENT = "own-studio";
+const NEAR = 10n ** 24n;
+const WNEAR = ASSETS.wNEAR;
+const BALANCE = (1000n * NEAR).toString();
+const PAYOUT_POLICY = {
+  frozen: false,
+  actions: ["withdraw" as const],
+  confidential: true,
+  owner_approval: false,
+  assets: [WNEAR],
+  limits: { per_transaction: { [WNEAR]: (500n * NEAR).toString() } },
+  max_actions_per_hour: 10,
+  destinations: {
+    mode: "only" as const,
+    list: [{ action: "withdraw" as const, chain: "near", address: CAROL, memo: null }],
+  },
+  budget: { daily_usd: null, weekly_usd: null, monthly_usd: "5000" },
+  timelock_ms: 0,
+};
+const NO_PAYEES = {
+  ...PAYOUT_POLICY,
+  destinations: { mode: "only" as const, list: [] },
+};
+const capped = (near: bigint) => ({
+  ...PAYOUT_POLICY,
+  limits: { per_transaction: { [WNEAR]: (near * NEAR).toString() } },
+});
+const PLATFORM = {
+  base: "https://platform.test",
+  host: "platform.test",
+  deployment: "multiagency-dashboard",
+  credential: "tap_x.y",
+} as const;
+
+type Payouts = NonNullable<WorkOrderDeps["payouts"]>;
 
 describe("work orders", () => {
   const database = migratedDatabase({ perTest: true });
@@ -222,6 +260,52 @@ describe("work orders", () => {
 
   async function notificationsOf(userId: string) {
     return db.select().from(notifications).where(eq(notifications.recipientUserId, userId));
+  }
+
+  function platformPayouts(
+    pendingPayees: (organizationId: string) => Promise<string[]> = async () => [],
+  ) {
+    const double = payoutDouble({
+      organization: "studio",
+      agent: AGENT,
+      policy: PAYOUT_POLICY,
+      grant: { label: "payout", expiresAt: "2027-06-01T00:00:00Z" },
+      balances: { [WNEAR]: BALANCE },
+      scopes: ["owner", "payout", "read"],
+    });
+    const app = appClient({
+      base: double.base,
+      credential: double.credential,
+      fetch: double.fetch,
+    });
+    const agents = createPlatformAgents({ db, app, settings: PLATFORM, now: () => clock });
+    const platform = createPlatformPayouts({ db, app, agents, pendingPayees, now: () => clock });
+    return { double, payouts: routePayouts(oldPayoutLatest(db), platform) };
+  }
+
+  async function connectAgent() {
+    await db.insert(platformAgents).values({
+      organizationId: "studio",
+      ownerAccountId: "rita.near",
+      area: "payables",
+      host: PLATFORM.host,
+      deployment: PLATFORM.deployment,
+      agent: AGENT,
+      agentId: "agent-id",
+      updatedBy: "studio-admin",
+    });
+    await db.insert(platformConsents).values({
+      id: "consent-1",
+      organizationId: "studio",
+      agent: AGENT,
+      agentId: "agent-id",
+      kind: "consent",
+      scopes: "owner,payout,read",
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      publicKey: "ed25519:x",
+      message: "{}",
+      createdBy: "studio-admin",
+    });
   }
 
   describe("lifecycle", () => {
@@ -2240,42 +2324,29 @@ describe("work orders", () => {
       expect(detail.remainingAmount).toBe("400000000");
     });
   });
-  describe("automatic payouts through the NEAR Intents agent", () => {
+  describe("automatic payouts through the platform agent", () => {
     const usdFields = { tokenId: "usd", budgetAmount: "1000000000" };
-    let agent: FakeAgentApi;
-    let payouts: PayoutAgents;
+    const amount = "120240480961923847695390781";
+    let double: PayoutDouble;
+    let payouts: Payouts;
 
     beforeEach(() => {
-      agent = new FakeAgentApi();
-      payouts = createPayoutAgents({
-        db,
-        api: agent,
-        secretKey: "test-secret",
-        payees: workOrderPayees(db),
-        now: () => clock,
-      });
+      ({ double, payouts } = platformPayouts());
       service = createWorkOrdersService({ ...serviceDeps, payouts });
     });
 
-    async function setUpAgent() {
-      await payouts.saveSettings("studio", "studio-admin", {
-        ownerAccountId: "rita.near",
-        monthlyBudgetUsd: "5000",
-        maxPayoutNear: "500",
-      });
-      const create = await payouts.prepare("studio", {
-        action: "create_agent",
-        publicKey: `ed25519:${"1".repeat(44)}`,
-      });
-      await payouts.submit("studio", {
-        correlationId: create.correlationId,
-        signedData: await agent.sign(create.intent),
-      });
-      const grant = await payouts.prepare("studio", { action: "issue_grant" });
-      await payouts.submit("studio", {
-        correlationId: grant.correlationId,
-        signedData: await agent.sign(grant.intent),
-      });
+    function holdForOwner() {
+      double.setPolicy({ ...PAYOUT_POLICY, owner_approval: true });
+    }
+
+    function payoutOf(requestId: string, attempt = 1) {
+      return `${requestId}-${attempt}`;
+    }
+
+    function correlationOf(requestId: string, attempt = 1) {
+      const sent = double.requests().find((r) => r.requestId === payoutOf(requestId, attempt));
+      if (!sent?.correlationId) throw new Error("payout not accepted");
+      return sent.correlationId;
     }
 
     async function approvedRequest() {
@@ -2288,90 +2359,36 @@ describe("work orders", () => {
       return { wo, draft };
     }
 
-    test("the agent's rules allow only active builders, pay automatically and cap each payout", async () => {
-      const { wo } = await approvedRequest();
-      await setUpAgent();
-      expect(agent.policy).toMatchObject({
-        owner_approval: false,
-        assets: ["nep141:wrap.near"],
-        actions: ["withdraw"],
-        budget: { monthly_usd: "5000" },
-        limits: { per_transaction: { "nep141:wrap.near": `500${"0".repeat(24)}` } },
-        destinations: {
-          mode: "only",
-          list: [{ action: "withdraw", chain: "near", address: CAROL, memo: null }],
-        },
-      });
-      const view = await payouts.view("studio");
-      expect(view).toMatchObject({
-        ready: true,
-        blockers: [],
-        grantValid: true,
-        agentId: "agent-1",
-      });
-      expect(view.policy?.payees).toEqual([CAROL]);
-      expect(view.balance).toEqual({ near: "0", usd: "0.00" });
-      agent.balanceRaw = `12345${"0".repeat(20)}`;
-      expect((await payouts.view("studio")).balance).toEqual({ near: "1.2345", usd: "2.47" });
-      expect(wo.status).toBe("active");
-    });
-
-    test("the top-up covers the unpaid budget of active work orders, less the agent's balance", async () => {
-      const { wo, draft } = await approvedRequest();
-      await setUpAgent();
-      const before = await service.fundingNeeds(await studio());
-      expect(before.items).toEqual([
-        expect.objectContaining({ code: wo.code, unpaid: "$1,000", builderNearAccount: CAROL }),
-      ]);
-      expect(before.near).toBe(usdToTokens(1_000_000_000n, "4.99", 24));
-      await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
-      const after = await service.fundingNeeds(await studio());
-      expect(after.items[0]?.unpaid).toBe("$400");
-      expect(after.near).toBe(usdToTokens(400_000_000n, "4.99", 24));
-      const near = 10n ** 24n;
-      expect(topUpFor(80n * near, 0n)).toBe(80n * near);
-      expect(topUpFor(80n * near + 1n, 0n)).toBe(8001n * 10n ** 22n);
-      expect(topUpFor(80n * near, 100n * near)).toBe(0n);
-    });
-
     test("approving pays the builder in NEAR right away and records the billing", async () => {
       const { wo, draft } = await approvedRequest();
-      await setUpAgent();
+      await connectAgent();
       const paid = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
       });
       expect(paid.status).toBe("paid");
-      expect(agent.withdrawals).toEqual([
+      expect(double.requests()).toMatchObject([
         {
-          grant: expect.any(String),
-          key: `multiagency:${draft.id}:a1`,
-          body: {
-            asset: "nep141:wrap.near",
-            amount: "120240480961923847695390781",
-            chain: "near",
-            recipient: CAROL,
-          },
+          requestId: payoutOf(draft.id),
+          method: "withdraw",
+          request: { asset: WNEAR, amount, chain: "near", recipient: CAROL },
         },
       ]);
       expect(paid.agentPayout).toMatchObject({
         status: "paid",
-        txUrl: "https://nearblocks.io/txns/TXHASH1",
+        txUrl: null,
+        accountUrl: `https://nearblocks.io/address/${CAROL}`,
       });
       const [billing] = await db
         .select()
         .from(billings)
-        .where(eq(billings.proposalId, "intents:TXHASH1"));
-      expect(billing).toMatchObject({
-        tokenId: "near",
-        amount: "120240480961923847695390781",
-        nearAccount: CAROL,
-      });
+        .where(eq(billings.proposalId, `intents:${correlationOf(draft.id)}`));
+      expect(billing).toMatchObject({ tokenId: "near", amount, nearAccount: CAROL });
       expect((await enrichWithChainStatus(db, billing!, DAO)).status).toBe("Approved");
       const released = events.find((e) => e.type === "request.payout_released");
       expect(released?.payout).toEqual({
         near: CAROL,
-        txUrl: "https://nearblocks.io/txns/TXHASH1",
+        txUrl: null,
         accountUrl: `https://nearblocks.io/address/${CAROL}`,
       });
       expect((await service.get(await studio(), { id: wo.id })).paidAmount).toBe("600000000");
@@ -2379,14 +2396,15 @@ describe("work orders", () => {
 
     test("a payout still processing is followed up by the scheduled run", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { status: "PROCESSING" };
+      await connectAgent();
+      holdForOwner();
       const paying = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
       });
       expect(paying.status).toBe("paying");
-      agent.statuses.set("pay-1", { status: "SUCCESS", details: { intent_hash: "IH1" } });
+      double.vote(payoutOf(draft.id), "approve");
+      double.settle(payoutOf(draft.id));
       await service.run("job");
       const detail = await service.get(await studio(), { id: paying.workOrderId });
       const request = detail.requests.find((r) => r.id === draft.id);
@@ -2402,15 +2420,21 @@ describe("work orders", () => {
 
     test("a request can't be rejected while its payout is going out", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { status: "PROCESSING" };
-      agent.onWithdraw = async () => {
-        agent.onWithdraw = null;
-        await refused(
-          service.rejectRequest(await studio(), { requestId: draft.id, note: "Too late" }),
-          "NOT_SUBMITTED",
-        );
-      };
+      await connectAgent();
+      holdForOwner();
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        payouts: {
+          ...payouts,
+          send: async (organizationId, input) => {
+            await refused(
+              service.rejectRequest(await studio(), { requestId: draft.id, note: "Too late" }),
+              "NOT_SUBMITTED",
+            );
+            return payouts.send(organizationId, input);
+          },
+        },
+      });
       const paying = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
@@ -2420,48 +2444,44 @@ describe("work orders", () => {
         service.rejectRequest(await studio(), { requestId: draft.id, note: "Still too late" }),
         "NOT_SUBMITTED",
       );
-      agent.statuses.set("pay-1", { status: "SUCCESS", details: { tx_hash: "TX9" } });
+      double.vote(payoutOf(draft.id), "approve");
+      double.settle(payoutOf(draft.id));
       await service.run("job");
       const detail = await service.get(await studio(), { id: paying.workOrderId });
       expect(detail.requests.find((r) => r.id === draft.id)?.status).toBe("paid");
     });
 
-    test("a refused payout leaves the request approved, and Pay now retries with a new key", async () => {
+    test("a refused payout leaves the request approved, and Pay now retries it under the next attempt", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       const kept = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
       });
       expect(kept.status).toBe("approved");
       expect(kept.note).toMatch(/didn't go out: insufficient_balance/);
-      agent.nextWithdraw = { status: "SUCCESS", details: { tx_hash: "TX2" } };
+      double.setBalance(WNEAR, BALANCE);
       const paid = await service.payNow(await studio(), { requestId: draft.id });
       expect(paid.status).toBe("paid");
-      expect(agent.withdrawals.map((w) => w.key)).toEqual([
-        `multiagency:${draft.id}:a1`,
-        `multiagency:${draft.id}:a2`,
+      expect(double.requests().map((r) => r.requestId)).toEqual([
+        payoutOf(draft.id, 1),
+        payoutOf(draft.id, 2),
       ]);
     });
 
     test("a builder the signed rules don't allow yet stays on the DAO path until you sign the update", async () => {
-      await setUpAgent();
+      await connectAgent();
+      double.setPolicy(NO_PAYEES);
       const { draft } = await approvedRequest();
       const approved = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
       });
       expect(approved.status).toBe("approved");
-      expect(agent.withdrawals).toEqual([]);
-      expect((await payouts.view("studio")).changes).toEqual([`allow paying ${CAROL}`]);
+      expect(double.requests()).toEqual([]);
       await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
-      const sync = await payouts.prepare("studio", { action: "sync_policy" });
-      await payouts.submit("studio", {
-        correlationId: sync.correlationId,
-        signedData: await agent.sign(sync.intent),
-      });
-      expect((await payouts.view("studio")).changes).toEqual([]);
+      double.setPolicy(PAYOUT_POLICY);
       expect((await service.payNow(await studio(), { requestId: draft.id })).status).toBe("paid");
     });
 
@@ -2473,7 +2493,7 @@ describe("work orders", () => {
       });
       expect(approved.status).toBe("approved");
       await service.terminate(await studio(), { id: wo.id });
-      await setUpAgent();
+      await connectAgent();
       await refused(service.payNow(await studio(), { requestId: draft.id }), "CLOSED");
       await refused(
         service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id }),
@@ -2483,7 +2503,7 @@ describe("work orders", () => {
         service.paymentProposal(requireTreasury(await studio()), { requestId: draft.id }),
         "CLOSED",
       );
-      expect(agent.withdrawals).toEqual([]);
+      expect(double.requests()).toEqual([]);
     });
 
     test("a DAO payment started before termination can still be quoted and linked, not re-proposed", async () => {
@@ -2505,14 +2525,15 @@ describe("work orders", () => {
 
     test("a payout that ends failed goes back to approved and the managers are told", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { status: "PROCESSING" };
+      await connectAgent();
+      holdForOwner();
       const paying = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
       });
       expect(paying.status).toBe("paying");
-      agent.statuses.set("pay-1", { status: "FAILED", details: {} });
+      double.vote(payoutOf(draft.id), "approve");
+      double.settle(payoutOf(draft.id), "FAILED");
       const tick = await service.tick("t1");
       expect(tick.ran).toBe(true);
       const detail = await service.get(await studio(), { id: paying.workOrderId });
@@ -2525,15 +2546,16 @@ describe("work orders", () => {
       );
       clock = new Date(clock.getTime() + 10 * 60_000);
       await service.tick("t2");
-      expect(agent.withdrawals).toHaveLength(1);
+      expect(double.requests()).toHaveLength(1);
     });
 
     test("a payout that needs review can still be rejected, and Pay now leaves it alone", async () => {
       const { wo, draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { status: "PROCESSING" };
+      await connectAgent();
+      holdForOwner();
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
-      agent.statuses.set("pay-1", { status: "NEEDS_REVIEW", details: {} });
+      double.vote(payoutOf(draft.id), "approve");
+      double.settle(payoutOf(draft.id), "FAILED");
       await service.tick("t1");
       const failedNotices = async () =>
         (await notificationsOf("studio-admin")).filter(
@@ -2545,7 +2567,7 @@ describe("work orders", () => {
         status: "needs_review",
         canRetry: false,
       });
-      if (agent.policy) agent.policy = { ...agent.policy, frozen: true };
+      double.setPolicy({ ...PAYOUT_POLICY, frozen: true });
       await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
       const [kept] = await db
         .select()
@@ -2557,7 +2579,7 @@ describe("work orders", () => {
       clock = new Date(clock.getTime() + 10 * 60_000);
       await service.tick("t2");
       expect(await failedNotices()).toBe(1);
-      expect(agent.withdrawals).toHaveLength(1);
+      expect(double.requests()).toHaveLength(1);
       const rejected = await service.rejectRequest(await studio(), {
         requestId: draft.id,
         note: "Checked the agent's history: nothing went out",
@@ -2567,8 +2589,8 @@ describe("work orders", () => {
 
     test("the follow-up doesn't mistake an earlier refused attempt for the one being sent", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       const kept = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
@@ -2598,7 +2620,7 @@ describe("work orders", () => {
     test("a payout interrupted before it reached the agent is retried and paid", async () => {
       const { draft } = await approvedRequest();
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
-      await setUpAgent();
+      await connectAgent();
       await db
         .update(compensationRequests)
         .set({ status: "paying", updatedAt: clock })
@@ -2627,20 +2649,21 @@ describe("work orders", () => {
         .from(compensationRequests)
         .where(eq(compensationRequests.id, draft.id));
       expect(paid?.status).toBe("paid");
-      expect(agent.withdrawals).toHaveLength(1);
+      expect(double.requests()).toHaveLength(1);
     });
 
     test("a payout that failed without proof nothing went out blocks the DAO path", async () => {
       const { wo, draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { status: "PROCESSING" };
+      await connectAgent();
+      holdForOwner();
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
-      agent.statuses.set("pay-1", { status: "FAILED", details: {} });
+      double.vote(payoutOf(draft.id), "approve");
+      double.settle(payoutOf(draft.id), "FAILED");
       await service.tick("t1");
       const detail = await service.get(await studio(), { id: wo.id });
       const request = detail.requests.find((r) => r.id === draft.id);
       expect(request?.status).toBe("approved");
-      expect(request?.agentPayout).toMatchObject({ status: "failed", canRetry: false });
+      expect(request?.agentPayout).toMatchObject({ status: "needs_review", canRetry: false });
       expect(request?.note).not.toMatch(/DAO proposal/);
       const treasury = requireTreasury(await studio());
       await refused(
@@ -2664,8 +2687,8 @@ describe("work orders", () => {
 
     test("a DAO payment started while the agent is pricing the payout keeps its locked amount", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
       let raced = false;
       let locked: Awaited<ReturnType<typeof service.startDaoPayment>> | null = null;
@@ -2687,10 +2710,10 @@ describe("work orders", () => {
         },
       });
       await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
-      expect(agent.withdrawals).toHaveLength(1);
-      const amount = locked!.quote.amount;
-      expect(amount).toBe("120000000000000000000000000");
-      transfer(31, { tokenId: "", amount });
+      expect(double.requests()).toHaveLength(1);
+      const lockedAmount = locked!.quote.amount;
+      expect(lockedAmount).toBe("120000000000000000000000000");
+      transfer(31, { tokenId: "", amount: lockedAmount });
       const linked = await service.linkProposal(requireTreasury(await studio()), {
         requestId: draft.id,
         proposalId: "31",
@@ -2701,8 +2724,8 @@ describe("work orders", () => {
 
     test("a DAO payment can't start while an automatic payout that may have gone out is settling", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
       let raced = false;
       service = createWorkOrdersService({
@@ -2712,7 +2735,8 @@ describe("work orders", () => {
           price: async () => {
             if (!raced) {
               raced = true;
-              agent.nextWithdraw = { status: "FAILED", details: {} };
+              double.setBalance(WNEAR, BALANCE);
+              double.loseNextAnswer();
               await service.payNow(await studio(), { requestId: draft.id }).catch(() => null);
             }
             return { priceUsd, at: "2026-09-20T12:00:00.000Z" };
@@ -2727,22 +2751,22 @@ describe("work orders", () => {
         .select()
         .from(compensationRequests)
         .where(eq(compensationRequests.id, draft.id));
-      expect(after?.status).toBe("approved");
+      expect(after?.status).toBe("paying");
       expect(after?.daoPaymentStartedAt).toBeNull();
-      expect(agent.withdrawals).toHaveLength(2);
+      expect(double.requests()).toHaveLength(2);
     });
 
     test("a NEAR work order's proposal links only once its DAO payment has turned automatic payment off", async () => {
       strongEvidence();
-      const amount = "100000000000000000000000";
+      const near = "100000000000000000000000";
       const wo = await active({ tokenId: "near", budgetAmount: "1000000000000000000000000" });
       await service.collect(await studio(), { id: wo.id });
       const draft = await service.mineDraftRequest(carol(), { id: wo.id });
-      await service.editRequest(carol(), { requestId: draft.id, requestedAmount: amount });
+      await service.editRequest(carol(), { requestId: draft.id, requestedAmount: near });
       await service.submitRequest(carol(), { requestId: draft.id });
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
-      await service.approveRequest(await studio(), { requestId: draft.id, amount });
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
+      await service.approveRequest(await studio(), { requestId: draft.id, amount: near });
       const preview = await service.paymentProposal(requireTreasury(await studio()), {
         requestId: draft.id,
       });
@@ -2756,9 +2780,9 @@ describe("work orders", () => {
       );
       expect(await db.select().from(billings).where(eq(billings.proposalId, "36"))).toHaveLength(0);
       await service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id });
-      agent.nextWithdraw = { status: "SUCCESS", details: { tx_hash: "TX9" } };
+      double.setBalance(WNEAR, BALANCE);
       await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
-      expect(agent.withdrawals).toHaveLength(1);
+      expect(double.requests()).toHaveLength(1);
       const linked = await service.linkProposal(requireTreasury(await studio()), {
         requestId: draft.id,
         proposalId: "36",
@@ -2768,8 +2792,8 @@ describe("work orders", () => {
 
     test("a scheduled retry that fails after a DAO payment started leaves the DAO payment alone", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
       const held = events.filter((e) => e.type === "request.payout_blocked").length;
       let raced = false;
@@ -2804,8 +2828,8 @@ describe("work orders", () => {
 
     test("a price left by a refused automatic payout isn't enough to link a proposal", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
       const [tried] = await db
         .select()
@@ -2824,19 +2848,19 @@ describe("work orders", () => {
 
     test("starting the DAO path stops automatic payment for good; rejecting the request ends it", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       const blocked = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
       });
       expect(blocked.autoPayBlocked).not.toBeNull();
       await service.startDaoPayment(requireTreasury(await studio()), { requestId: draft.id });
-      agent.nextWithdraw = { status: "SUCCESS", details: { tx_hash: "TX9" } };
+      double.setBalance(WNEAR, BALANCE);
       clock = new Date(clock.getTime() + 6 * 60_000);
       await service.tick("t1");
       await refused(service.payNow(await studio(), { requestId: draft.id }), "PAYOUTS_NOT_READY");
-      expect(agent.withdrawals).toHaveLength(1);
+      expect(double.requests()).toHaveLength(1);
       const [paused] = await db
         .select()
         .from(compensationRequests)
@@ -2850,13 +2874,13 @@ describe("work orders", () => {
         note: "Paying it as a new request instead",
       });
       expect(rejected.status).toBe("rejected");
-      expect(agent.withdrawals).toHaveLength(1);
+      expect(double.requests()).toHaveLength(1);
     });
 
     test("a request whose DAO proposal is still open on the DAO can't be rejected", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
       const tx = await service.startDaoPayment(requireTreasury(await studio()), {
         requestId: draft.id,
@@ -2897,8 +2921,8 @@ describe("work orders", () => {
 
     test("a payout the tick and the run both find stuck tells the managers once", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { status: "PROCESSING" };
+      await connectAgent();
+      holdForOwner();
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
       await db
         .update(compensationRequests)
@@ -2930,8 +2954,8 @@ describe("work orders", () => {
 
     test("a refused payout waits for funds, tells the managers once and pays on its own once funded", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       const blocked = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
@@ -2940,17 +2964,17 @@ describe("work orders", () => {
       expect(blocked.autoPayBlocked?.reason).toMatch(/insufficient_balance/);
       expect(blocked.note).toMatch(/tried again automatically/);
       await service.tick("t1");
-      expect(agent.withdrawals).toHaveLength(1);
+      expect(double.requests()).toHaveLength(1);
       clock = new Date(clock.getTime() + 6 * 60_000);
       await service.tick("t2");
-      expect(agent.withdrawals).toHaveLength(2);
+      expect(double.requests()).toHaveLength(2);
       const told = (await notificationsOf("studio-admin")).filter(
         (n) => n.kind === "compensation_request_payout_blocked",
       );
       expect(told).toHaveLength(1);
-      agent.nextWithdraw = { status: "SUCCESS", details: { tx_hash: "TX9" } };
+      double.setBalance(WNEAR, BALANCE);
       await service.tick("t3");
-      expect(agent.withdrawals).toHaveLength(2);
+      expect(double.requests()).toHaveLength(2);
       clock = new Date(clock.getTime() + 6 * 60_000);
       const result = await service.tick("t4");
       expect(result.counts.paid).toBe(1);
@@ -2958,10 +2982,10 @@ describe("work orders", () => {
       const request = detail.requests.find((r) => r.id === draft.id);
       expect(request?.status).toBe("paid");
       expect(request?.autoPayBlocked).toBeNull();
-      expect(agent.withdrawals.map((w) => w.key)).toEqual([
-        `multiagency:${draft.id}:a1`,
-        `multiagency:${draft.id}:a2`,
-        `multiagency:${draft.id}:a3`,
+      expect(double.requests().map((r) => r.requestId)).toEqual([
+        payoutOf(draft.id, 1),
+        payoutOf(draft.id, 2),
+        payoutOf(draft.id, 3),
       ]);
     });
 
@@ -2976,25 +3000,26 @@ describe("work orders", () => {
       expect(
         await service.payoutReadiness(await studio(), { requestId: draft.id, amount: "600000000" }),
       ).toMatchObject({ ready: false, code: "no_agent" });
-      await setUpAgent();
-      const empty = await service.payoutReadiness(await studio(), {
-        requestId: draft.id,
-        amount: "600000000",
-      });
-      expect(empty).toEqual({
+      await connectAgent();
+      double.setPolicy(capped(100n));
+      expect(
+        await service.payoutReadiness(await studio(), {
+          requestId: draft.id,
+          amount: "600000000",
+        }),
+      ).toEqual({
         ready: false,
-        code: "insufficient_balance",
-        reason: `The agent holds 0 NEAR; this payout needs ${near} NEAR`,
+        code: "over_cap",
+        reason: `${near} wNEAR is over the 100 wNEAR cap per payout`,
         near,
-        balanceNear: "0",
+        balanceNear: null,
         priceUsd: "4.99",
       });
-      agent.balanceRaw = (200n * 10n ** 24n).toString();
-      agent.monthlySpentUsd = "4800";
+      double.setPolicy(NO_PAYEES);
       expect(
         await service.payoutReadiness(await studio(), { requestId: draft.id, amount: "600000000" }),
-      ).toMatchObject({ ready: false, code: "over_monthly_budget", balanceNear: "200" });
-      agent.monthlySpentUsd = "0";
+      ).toMatchObject({ ready: false, code: "payee_not_allowed", near, priceUsd: "4.99" });
+      double.setPolicy(PAYOUT_POLICY);
       expect(
         await service.payoutReadiness(await studio(), { requestId: draft.id, amount: "600000000" }),
       ).toEqual({
@@ -3007,34 +3032,36 @@ describe("work orders", () => {
       });
       const detail = await service.get(await studio(), { id: draft.workOrderId });
       expect(detail.requests.find((r) => r.id === draft.id)?.status).toBe("submitted");
-      expect(agent.withdrawals).toEqual([]);
+      expect(double.requests()).toEqual([]);
     });
 
     test("the work order page warns when the agent can't cover its budget", async () => {
       const { wo } = await approvedRequest();
-      await setUpAgent();
+      await connectAgent();
       const needed = atomicToNear(usdToTokens(1_000_000_000n, "4.99", 24));
       expect(await service.payoutCoverage(await studio(), { id: wo.id })).toEqual({
-        covered: false,
+        covered: true,
         unpaid: "$1,000",
-        balanceNear: "0",
+        balanceNear: null,
         neededNear: needed,
-        shortfallNear: expect.any(String),
-        lowBalance: true,
+        shortfallNear: "0",
+        lowBalance: false,
         neededUsd: "1000.00",
         monthlyBudgetUsd: "5000",
-        monthlyRemainingUsd: "5000.00",
+        monthlyRemainingUsd: "5000",
         overMonthly: false,
       });
-      agent.balanceRaw = (300n * 10n ** 24n).toString();
-      agent.monthlySpentUsd = "4500";
+      double.setPolicy({
+        ...PAYOUT_POLICY,
+        budget: { ...PAYOUT_POLICY.budget, monthly_usd: "500" },
+      });
       expect(await service.payoutCoverage(await studio(), { id: wo.id })).toMatchObject({
         covered: false,
         lowBalance: false,
         overMonthly: true,
-        monthlyRemainingUsd: "500.00",
+        monthlyRemainingUsd: "500",
       });
-      agent.monthlySpentUsd = "0";
+      double.setPolicy(PAYOUT_POLICY);
       expect(await service.payoutCoverage(await studio(), { id: wo.id })).toMatchObject({
         covered: true,
       });
@@ -3044,39 +3071,37 @@ describe("work orders", () => {
 
     test("a payout on hold for funds emails the representative once, not on every retry", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
       clock = new Date(clock.getTime() + 6 * 60_000);
       await service.tick("t1");
       clock = new Date(clock.getTime() + 6 * 60_000);
       await service.tick("t2");
-      expect(agent.withdrawals).toHaveLength(3);
+      expect(double.requests()).toHaveLength(3);
       const held = events.filter((e) => e.type === "request.payout_blocked");
       expect(held).toHaveLength(1);
       const near = atomicToNear(usdToTokens(600_000_000n, "4.99", 24));
       expect(held[0]?.hold).toEqual({
         code: "insufficient_balance",
-        reason: `The agent holds 0 NEAR; this payout needs ${near} NEAR`,
-        balanceNear: "0",
+        reason: "insufficient_balance",
+        balanceNear: null,
         neededNear: near,
       });
-      expect(held[0]?.links.settings).toBe("https://app.example/admin/settings#payouts");
+      expect(held[0]?.links.settings).toBe("https://app.example/admin/settings#platform-agent");
       expect(held[0]?.request?.id).toBe(`${held[0]?.workOrder.id}-R1`);
-      agent.monthlySpentUsd = "4800";
+      double.setBalance(WNEAR, BALANCE);
+      double.setPolicy(capped(100n));
       clock = new Date(clock.getTime() + 6 * 60_000);
       await service.tick("t3");
       const again = events.filter((e) => e.type === "request.payout_blocked");
-      expect(again.map((e) => e.hold?.code)).toEqual([
-        "insufficient_balance",
-        "over_monthly_budget",
-      ]);
+      expect(again.map((e) => e.hold?.code)).toEqual(["insufficient_balance", "over_cap"]);
     });
 
     test("an agent outage between funding holds doesn't email the same hold again", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { refuse: "insufficient_balance" };
+      await connectAgent();
+      double.setBalance(WNEAR, "0");
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
       const held = () => events.filter((e) => e.type === "request.payout_blocked").length;
       expect(held()).toBe(1);
@@ -3095,18 +3120,21 @@ describe("work orders", () => {
       payouts.readiness = readiness;
       clock = new Date(clock.getTime() + 6 * 60_000);
       await service.tick("back");
-      expect(agent.withdrawals.length).toBeGreaterThan(1);
+      expect(double.requests().length).toBeGreaterThan(1);
       expect(held()).toBe(1);
     });
 
     test("a payout the agent can't confirm asks for a check instead of showing it as sending", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { status: "FAILED", details: { reason: "unknown outcome" } };
+      await connectAgent();
+      holdForOwner();
       const approved = await service.approveRequest(await studio(), {
         requestId: draft.id,
         amount: "600000000",
       });
+      double.vote(payoutOf(draft.id), "approve");
+      double.settle(payoutOf(draft.id), "FAILED");
+      await service.tick("settled");
       const detail = await service.get(await studio(), { id: approved.workOrderId });
       const request = detail.requests.find((r) => r.id === draft.id);
       expect(request?.status).toBe("approved");
@@ -3115,14 +3143,15 @@ describe("work orders", () => {
         headline: expect.stringMatching(/needs a check before it's paid again/),
       });
       expect(detail.progress.headline).not.toMatch(/^Sending/);
-      const tries = agent.withdrawals.length;
+      const tries = double.requests().length;
       clock = new Date(clock.getTime() + 30 * 60_000);
       await service.tick("later");
-      expect(agent.withdrawals).toHaveLength(tries);
+      expect(double.requests()).toHaveLength(tries);
     });
 
     test("a builder the rules don't allow yet is paid by the scheduler once the update is signed", async () => {
-      await setUpAgent();
+      await connectAgent();
+      double.setPolicy(NO_PAYEES);
       const { draft } = await approvedRequest();
       const approved = await service.approveRequest(await studio(), {
         requestId: draft.id,
@@ -3133,11 +3162,7 @@ describe("work orders", () => {
       expect((await notificationsOf("studio-admin")).map((n) => n.kind)).toContain(
         "compensation_request_payout_blocked",
       );
-      const sync = await payouts.prepare("studio", { action: "sync_policy" });
-      await payouts.submit("studio", {
-        correlationId: sync.correlationId,
-        signedData: await agent.sign(sync.intent),
-      });
+      double.setPolicy(PAYOUT_POLICY);
       clock = new Date(clock.getTime() + 6 * 60_000);
       await service.tick();
       const detail = await service.get(await studio(), { id: approved.workOrderId });
@@ -3146,54 +3171,21 @@ describe("work orders", () => {
 
     test("the run and the tick settling the same payout record one billing", async () => {
       const { draft } = await approvedRequest();
-      await setUpAgent();
-      agent.nextWithdraw = { status: "PROCESSING" };
+      await connectAgent();
+      holdForOwner();
       await service.approveRequest(await studio(), { requestId: draft.id, amount: "600000000" });
-      agent.statuses.set("pay-1", { status: "SUCCESS", details: { tx_hash: "TXONCE" } });
+      double.vote(payoutOf(draft.id), "approve");
+      double.settle(payoutOf(draft.id));
       await Promise.all([service.run("r"), service.tick("t")]);
       const rows = await db
         .select()
         .from(billings)
-        .where(eq(billings.proposalId, "intents:TXONCE"));
+        .where(eq(billings.proposalId, `intents:${correlationOf(draft.id)}`));
       expect(rows).toHaveLength(1);
       const paid = (await notificationsOf("carol")).filter(
         (n) => n.kind === "compensation_request_paid",
       );
       expect(paid).toHaveLength(1);
-    });
-
-    test("only what MultiAgency prepared, signed by the owner, is accepted", async () => {
-      await payouts.saveSettings("studio", "studio-admin", {
-        ownerAccountId: "someone-else.near",
-        monthlyBudgetUsd: "5000",
-        maxPayoutNear: "500",
-      });
-      await refused(
-        payouts.prepare("studio", {
-          action: "create_agent",
-          publicKey: `ed25519:${"1".repeat(44)}`,
-        }),
-        "OWNER_MISMATCH",
-      );
-      await payouts.saveSettings("studio", "studio-admin", {
-        ownerAccountId: "rita.near",
-        monthlyBudgetUsd: "5000",
-        maxPayoutNear: "500",
-      });
-      const create = await payouts.prepare("studio", {
-        action: "create_agent",
-        publicKey: `ed25519:${"1".repeat(44)}`,
-      });
-      await refused(
-        payouts.submit("studio", {
-          correlationId: create.correlationId,
-          signedData: { standard: "nep366", payload: { receiverId: "evil.near", actions: [] } },
-        }),
-        "SIGNED_PAYLOAD_MISMATCH",
-      );
-      expect((await payouts.view("studio")).blockers).toEqual([
-        "Create the payout agent with your wallet",
-      ]);
     });
   });
 
@@ -3327,21 +3319,12 @@ describe("work orders", () => {
 
     test("activation asks the payout agent to allow the builder and says what's missing", async () => {
       const allowed: string[] = [];
-      service = createWorkOrdersService({
-        ...serviceDeps,
-        payouts: {
-          readiness: async () => ({ ready: false, reason: "No payout agent" }),
-          send: async () => {
-            throw new Error("not used");
-          },
-          refresh: async (payout) => payout,
-          latest: async () => null,
-          ensurePayees: async (organizationId) => {
-            allowed.push(organizationId);
-            return { ok: false, reason: "Sign the updated rules" };
-          },
-        },
+      const { payouts } = platformPayouts(async (organizationId) => {
+        allowed.push(organizationId);
+        return [CAROL];
       });
+      await connectAgent();
+      service = createWorkOrdersService({ ...serviceDeps, payouts });
       const wo = await active({ tokenId: "usd" });
       expect(wo.status).toBe("active");
       expect(allowed).toEqual(["studio"]);
@@ -3352,17 +3335,8 @@ describe("work orders", () => {
     });
 
     test("an Agency without a payout agent approves without a note or a retry", async () => {
-      service = createWorkOrdersService({
-        ...serviceDeps,
-        payouts: {
-          readiness: async () => ({ ready: false, reason: "No payout agent" }),
-          send: async () => {
-            throw new Error("not used");
-          },
-          refresh: async (payout) => payout,
-          latest: async () => null,
-        },
-      });
+      const { double, payouts } = platformPayouts();
+      service = createWorkOrdersService({ ...serviceDeps, payouts });
       const wo = await active({ tokenId: "usd" });
       const draft = await service.mineDraftRequest(carol(), { id: wo.id });
       await service.submitRequest(carol(), { requestId: draft.id });
@@ -3373,6 +3347,7 @@ describe("work orders", () => {
       });
       expect(approved.note).toBeNull();
       expect(approved.autoPayBlocked).toBeNull();
+      expect(double.requests()).toEqual([]);
     });
 
     test("evidence windows follow the Agency's time zone", async () => {

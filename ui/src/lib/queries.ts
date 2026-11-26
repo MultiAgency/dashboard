@@ -176,16 +176,6 @@ export function adminContributorsListQueryOptions(apiClient: ApiClient) {
   });
 }
 
-export const oldPayoutPathQueryKey = ["platform", "old-payout-path"] as const;
-
-export function oldPayoutPathQueryOptions(apiClient: ApiClient) {
-  return queryOptions({
-    queryKey: oldPayoutPathQueryKey,
-    queryFn: () => apiClient.platformAgent.oldPayoutPath({}),
-    retry: false,
-  });
-}
-
 export const platformMembersQueryKey = ["platform", "members"] as const;
 
 export function platformMembersQueryOptions(apiClient: ApiClient) {
@@ -386,16 +376,6 @@ export function workOrderSetupQueryOptions(apiClient: ApiClient) {
   });
 }
 
-export const payoutAgentQueryKey = ["admin", "payout-agent"] as const;
-
-export function payoutAgentQueryOptions(apiClient: ApiClient) {
-  return queryOptions({
-    queryKey: [...payoutAgentQueryKey, ...workspaceKey()] as const,
-    queryFn: () => apiClient.workOrders.payoutAgent({}),
-    retry: false,
-  });
-}
-
 export function payoutCoverageQueryOptions(apiClient: ApiClient, id: string) {
   return queryOptions({
     queryKey: [...adminWorkOrdersQueryKey, "payout-coverage", ...workspaceKey(), id] as const,
@@ -418,14 +398,6 @@ export function payoutReadinessQueryOptions(
       amount,
     ] as const,
     queryFn: () => apiClient.workOrders.payoutReadiness({ requestId, amount }),
-    retry: false,
-  });
-}
-
-export function payoutFundingQueryOptions(apiClient: ApiClient) {
-  return queryOptions({
-    queryKey: [...payoutAgentQueryKey, "funding", ...workspaceKey()] as const,
-    queryFn: () => apiClient.workOrders.payoutFunding({}),
     retry: false,
   });
 }

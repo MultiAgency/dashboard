@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import { googleOauthStates, workOrderIntegrations } from "../../src/db/schema";
-import { open } from "../../src/services/payouts/crypto";
+import { open } from "../../src/services/crypto";
 import { docOf } from "../../src/services/work-orders/google";
 import {
   createGoogleConnections,
@@ -174,7 +174,7 @@ describe("Google Drive connection per organization", () => {
       /see and edit the Drive/,
     );
     const keyless = connections(tokenEndpoint(() => granted).fetcher, { secretKey: null });
-    await expect(keyless.start("studio", "admin-1")).rejects.toThrow(/PAYOUTS_SECRET_KEY/);
+    await expect(keyless.start("studio", "admin-1")).rejects.toThrow(/GOOGLE_TOKENS_SECRET_KEY/);
   });
 
   test("access tokens refresh when expired, and invalid_grant marks the connection broken", async () => {

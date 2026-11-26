@@ -209,7 +209,7 @@ describe("work order progress", () => {
       next: {
         kind: "link",
         label: "Fund the agent",
-        href: "/admin/settings#payouts",
+        href: "/admin/settings#platform-agent",
         external: false,
       },
     });

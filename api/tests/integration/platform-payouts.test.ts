@@ -1,13 +1,14 @@
 import { ASSETS, appClient } from "@multiagency/sdk";
 import { type PayoutDouble, payoutDouble } from "@multiagency/sdk/testing";
 import { eq, sql } from "drizzle-orm";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import {
   agentPayouts,
   platformAgents,
   platformConsents,
   platformPayouts,
 } from "../../src/db/schema";
+import { oldPayoutLatest } from "../../src/services/payouts/history";
 import { createPlatformAgents } from "../../src/services/platform/agents";
 import { routePayouts } from "../../src/services/platform/payout-router";
 import {
@@ -302,7 +303,6 @@ describe("work-order payouts through the platform", () => {
     });
     expect((await pay()).id).toBe("req-1-1");
     expect(double.requests().map((r) => r.requestId)).toEqual(["req-1-1"]);
-    expect(await payouts.unsettled(ORG)).toBe(0);
     const free = await database.db
       .select({ id: platformPayouts.requestId })
       .from(platformPayouts)
@@ -352,39 +352,10 @@ describe("work-order payouts through the platform", () => {
     expect(await settledFor()).toBe(1);
   });
 
-  test("the switch to the platform waits for the old path, and the way back waits for the platform", async () => {
-    await database.db.update(platformAgents).set({ payoutRoute: "legacy" });
-    await database.db.insert(agentPayouts).values({
-      id: "legacy-1",
-      organizationId: ORG,
-      requestId: "req-old",
-      attempt: 1,
-      status: "processing",
-      idempotencyKey: "k",
-      requestBody: "{}",
-      recipient: CAROL,
-      amount: "1",
-      assetId: ASSETS.wNEAR,
-    } as typeof agentPayouts.$inferInsert);
-    await expect(payouts.setRoute(ORG, "platform")).rejects.toThrow(/aren't settled yet/);
-    await database.db.update(agentPayouts).set({ status: "paid" });
-    expect(await payouts.setRoute(ORG, "platform")).toEqual({
-      organizationId: ORG,
-      route: "platform",
-    });
-
-    holdEach();
-    await pay();
-    await expect(payouts.setRoute(ORG, "legacy")).rejects.toThrow(/platform payout/);
-    double.vote("req-1-1", "approve");
-    double.settle("req-1-1");
-    await payouts.refresh((await payouts.latest("req-1"))!);
-    expect(await payouts.setRoute(ORG, "legacy")).toMatchObject({ route: "legacy" });
-  });
-
-  test("after a switch back, the old path's newer payout is the one that counts, and blocks a platform send", async () => {
+  test("an old-path payout still on record counts when it's the newer one, and blocks a platform send", async () => {
     double.setBalance(ASSETS.wNEAR, "0");
     expect(await pay()).toMatchObject({ id: "req-1-1", status: "refused" });
+    double.setBalance(ASSETS.wNEAR, (100n * NEAR).toString());
     await database.db.insert(agentPayouts).values({
       id: "legacy-1",
       organizationId: ORG,
@@ -398,29 +369,8 @@ describe("work-order payouts through the platform", () => {
       assetId: ASSETS.wNEAR,
       createdAt: new Date(clock.getTime() + 60_000),
     } as typeof agentPayouts.$inferInsert);
-    const legacyView = {
-      id: "legacy-1",
-      organizationId: ORG,
-      requestId: "req-1",
-      status: "processing" as const,
-      amount: "1",
-      correlationId: null,
-      txHash: null,
-      txUrl: null,
-      reason: null,
-      provenUnsent: false,
-      assetId: ASSETS.wNEAR,
-      createdAt: new Date(clock.getTime() + 60_000),
-    };
-    const legacy = {
-      readiness: vi.fn(),
-      send: vi.fn(),
-      refresh: vi.fn(),
-      latest: vi.fn(async (requestId: string) => (requestId === "req-1" ? legacyView : null)),
-    };
-    const routed = routePayouts(legacy, payouts);
-    expect(await routed.latest("req-1")).toMatchObject({ id: "legacy-1" });
-    double.setBalance(ASSETS.wNEAR, (100n * NEAR).toString());
+    const routed = routePayouts(oldPayoutLatest(database.db), payouts);
+    expect(await routed.latest("req-1")).toMatchObject({ id: "legacy-1", status: "processing" });
     expect(
       await routed.send(ORG, {
         requestId: "req-1",
@@ -429,9 +379,9 @@ describe("work-order payouts through the platform", () => {
         tokenId: "near",
       }),
     ).toMatchObject({ id: "legacy-1" });
+    expect(await routed.refresh((await routed.latest("req-1"))!)).toMatchObject({ id: "legacy-1" });
     expect(double.requests().map((r) => r.requestId)).toEqual(["req-1-1"]);
   });
-
   test("a gateway refusal while asking again leaves the payout in flight, never a new ID", async () => {
     await database.db.insert(platformPayouts).values({
       requestId: "req-1-1",
@@ -456,55 +406,34 @@ describe("work-order payouts through the platform", () => {
     expect(double.requests()).toHaveLength(0);
   });
 
-  test("the switch needs a consent that includes payouts", async () => {
-    await database.db.update(platformConsents).set({ scopes: "owner,read" });
-    await expect(payouts.setRoute(ORG, "platform")).rejects.toThrow(/includes payouts/);
-  });
-
-  test("the old payout path is only ever asked to pay in NEAR", async () => {
-    const legacy = {
-      readiness: vi.fn(),
-      send: vi.fn(),
-      refresh: vi.fn(),
-      latest: vi.fn(async () => null),
-    };
-    const routed = routePayouts(legacy, payouts);
-    await database.db.update(platformAgents).set({ payoutRoute: "legacy", payoutAsset: "usdc" });
-    expect(await routed.payoutToken?.(ORG)).toBe("near");
-    await expect(
-      routed.send(ORG, { requestId: "req-1", recipient: CAROL, amount: "1", tokenId: "usdc" }),
-    ).rejects.toThrow(/only in NEAR/);
-    expect(legacy.send).not.toHaveBeenCalled();
-  });
-
-  test("the router sends each Organization's payouts its own way and finds each record where it is", async () => {
-    const legacy = {
-      readiness: vi.fn(async () => ({ ready: true, code: null, reason: null })),
-      send: vi.fn(),
-      refresh: vi.fn(),
-      latest: vi.fn(async () => null),
-    };
-    const routed = routePayouts(legacy, payouts);
-    await database.db.update(platformAgents).set({ payoutRoute: "legacy" });
-    await routed.readiness(ORG, CAROL);
-    expect(legacy.readiness).toHaveBeenCalledTimes(1);
-
-    await database.db.update(platformAgents).set({ payoutRoute: "platform" });
+  test("the router asks the platform only for an Organization that pays through it", async () => {
+    const routed = routePayouts(oldPayoutLatest(database.db), payouts);
+    expect(await routed.readiness(ORG, CAROL)).toMatchObject({ ready: true });
     const sent = await routed.send(ORG, {
       requestId: "req-1",
       recipient: CAROL,
       amount: NEAR.toString(),
       tokenId: "near",
     });
-    expect(legacy.send).not.toHaveBeenCalled();
     expect(await routed.latest("req-1")).toMatchObject({ id: sent.id });
-    await routed.refresh(sent);
-    expect(legacy.refresh).not.toHaveBeenCalled();
-    await routed.latest("req-other");
-    expect(legacy.latest).toHaveBeenCalledWith("req-other");
 
-    expect(await routePayouts(null, payouts).readiness("orgElsewhere", CAROL)).toMatchObject({
+    expect(await routed.readiness("orgElsewhere", CAROL)).toEqual({
+      ready: false,
       code: "no_agent",
+      reason: "No payout agent",
     });
+    const strict = createPlatformPayouts({
+      db: database.db,
+      app: appClient({ base: double.base, credential: double.credential, fetch: double.fetch }),
+      agents: createPlatformAgents({ db: database.db, app: null, settings: SETTINGS }),
+      pendingPayees: async () => {
+        throw new Error("This Organization has no connected platform agent");
+      },
+    });
+    expect(
+      await routePayouts(oldPayoutLatest(database.db), strict).ensurePayees?.("orgElsewhere"),
+    ).toEqual({ ok: true, reason: null });
+    await database.db.update(platformConsents).set({ scopes: "owner,read" });
+    expect(await routed.readiness(ORG, CAROL)).toMatchObject({ code: "no_agent" });
   });
 });

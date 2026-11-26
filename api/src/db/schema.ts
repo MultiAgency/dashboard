@@ -15,7 +15,6 @@ import {
   OWNER_ACTION_KINDS,
   OWNER_ACTION_PHASES,
   PAYOUT_ASSETS,
-  PAYOUT_ROUTES,
   PLATFORM_REVOKED_REASONS,
   PLATFORM_SIGNING_KINDS,
 } from "../services/platform/terms";
@@ -933,22 +932,6 @@ export const workOrderSignatures = pgTable(
 
 export type WorkOrderSignatureRow = typeof workOrderSignatures.$inferSelect;
 
-export const payoutAgents = pgTable("payout_agents", {
-  organizationId: text("organization_id").primaryKey(),
-  ownerAccountId: text("owner_account_id").notNull(),
-  agentId: text("agent_id"),
-  grantTokenEnc: text("grant_token_enc"),
-  grantExpiresAt: timestamp("grant_expires_at", { withTimezone: false }),
-  grantRemindedFor: timestamp("grant_reminded_for", { withTimezone: false }),
-  monthlyBudgetUsd: text("monthly_budget_usd").notNull(),
-  maxPayoutNear: text("max_payout_near").notNull(),
-  updatedBy: text("updated_by").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
-  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
-});
-
-export type PayoutAgentRow = typeof payoutAgents.$inferSelect;
-
 export const platformAgents = pgTable("platform_agents", {
   organizationId: text("organization_id").primaryKey(),
   ownerAccountId: text("owner_account_id").notNull(),
@@ -973,7 +956,6 @@ export const platformAgents = pgTable("platform_agents", {
   monthlyBudgetUsd: text("monthly_budget_usd"),
   ownerApproval: boolean("owner_approval").notNull().default(false),
   grantRemindedFor: timestamp("grant_reminded_for", { withTimezone: false }),
-  payoutRoute: text("payout_route", { enum: PAYOUT_ROUTES }).notNull().default("legacy"),
   updatedBy: text("updated_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
@@ -1083,33 +1065,6 @@ export const platformDeposits = pgTable(
 );
 
 export type PlatformDepositRow = typeof platformDeposits.$inferSelect;
-
-export const PAYOUT_ACTIONS = [
-  "create_agent",
-  "issue_grant",
-  "sync_policy",
-  "freeze",
-  "unfreeze",
-] as const;
-
-export const payoutIntents = pgTable("payout_intents", {
-  correlationId: text("correlation_id").primaryKey(),
-  organizationId: text("organization_id").notNull(),
-  action: text("action", { enum: PAYOUT_ACTIONS }).notNull(),
-  intentType: text("intent_type").notNull(),
-  intent: text("intent").notNull(),
-  signerAccountId: text("signer_account_id").notNull(),
-  signerPublicKey: text("signer_public_key").notNull(),
-  agentId: text("agent_id"),
-  grantTokenEnc: text("grant_token_enc"),
-  grantExpiresAt: timestamp("grant_expires_at", { withTimezone: false }),
-  status: text("status").notNull(),
-  failureCode: text("failure_code"),
-  createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
-  updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
-});
-
-export type PayoutIntentRow = typeof payoutIntents.$inferSelect;
 
 export const AGENT_PAYOUT_STATUSES = [
   "sending",

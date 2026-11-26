@@ -1,6 +1,6 @@
 import { isPlaceholderAgencyName } from "../../lib/agency-name";
 import type { OrganizationScope } from "../organization-access";
-import type { FundingCheck } from "../payouts/service";
+import type { FundingCheck } from "../payouts/history";
 
 export type SetupState = "ok" | "missing" | "warning" | "optional";
 
@@ -14,16 +14,6 @@ export type SetupCheck = {
 };
 
 type Outcome = { state: SetupState; detail: string | null };
-
-type PayoutView = {
-  available: boolean;
-  unavailableReason: string | null;
-  agentId: string | null;
-  ready: boolean;
-  blockers: string[];
-  error: string | null;
-  balance: { near: string } | null;
-};
 
 export type SetupStatusDeps = {
   organizationName: (organizationId: string) => Promise<string | null>;
@@ -45,19 +35,24 @@ export type SetupStatusDeps = {
     } | null>;
   };
   payouts: {
-    view: (organizationId: string) => Promise<PayoutView>;
+    connected: (organizationId: string) => Promise<boolean>;
+    configured: (organizationId: string) => Promise<boolean>;
+    readiness: (
+      organizationId: string,
+      payee: string,
+    ) => Promise<{ ready: boolean; code?: string | null; reason: string | null }>;
     fundingCheck: (
       organizationId: string,
       needs: { near: bigint; priceUsd: string | null },
     ) => Promise<FundingCheck | null>;
-  };
+  } | null;
   fundingNeeds: (scope: OrganizationScope) => Promise<{ near: bigint; priceUsd: string | null }>;
 };
 
 const SETTINGS = {
   organization: "/admin/settings#organization",
   workOrders: "/admin/settings#work-orders",
-  payouts: "/admin/settings#payouts",
+  payouts: "/admin/settings#platform-agent",
 };
 
 export function isPlaceholderRepresentativeEmail(email: string | null | undefined): boolean {
@@ -151,38 +146,41 @@ export function createSetupStatus(deps: SetupStatusDeps) {
   }
 
   function payoutsOutcomes(scope: OrganizationScope) {
-    let view: Promise<PayoutView> | null = null;
-    const viewOnce = () => {
-      view ??= deps.payouts.view(scope.organizationId);
-      return view;
+    const payouts = deps.payouts;
+    const organizationId = scope.organizationId;
+    let configured: Promise<boolean> | null = null;
+    const configuredOnce = () => {
+      configured ??= payouts ? payouts.configured(organizationId) : Promise.resolve(false);
+      return configured;
     };
 
     const agent = async (): Promise<Outcome> => {
-      const current = await viewOnce();
-      if (!current.available) {
-        return optional("Not on this server; requests are paid by DAO proposal");
-      }
-      if (!current.agentId) {
+      if (!payouts) return optional("Not on this server; requests are paid by DAO proposal");
+      if (!(await payouts.connected(organizationId))) {
         return optional("None; requests are paid by DAO proposal");
       }
-      if (current.error) return warning(`Couldn't check: ${current.error}`);
-      if (!current.ready) return warning(current.blockers.join(". "));
+      if (!(await configuredOnce())) {
+        return warning("Connected, but the owner's consent doesn't include payouts");
+      }
+      const check = await payouts.readiness(organizationId, "");
+      if (!check.ready && check.code !== "payee_not_allowed") {
+        return warning(check.reason ?? "The platform agent can't pay yet");
+      }
       return ok("Rules applied; can pay approved requests");
     };
 
     const funding = async (): Promise<Outcome> => {
-      const current = await viewOnce();
-      if (!current.available || !current.agentId) {
+      if (!payouts || !(await configuredOnce())) {
         return optional("Set up a payout agent first");
       }
       const needs = await deps.fundingNeeds(scope);
       const bufferPercent = needs.priceUsd ? 2n : 0n;
       const needed = needs.near + (needs.near * bufferPercent) / 100n;
-      const check = await deps.payouts.fundingCheck(scope.organizationId, {
+      const check = await payouts.fundingCheck(organizationId, {
         near: needed,
         priceUsd: needs.priceUsd,
       });
-      if (!check) return optional("Set up a payout agent first");
+      if (!check) return optional("Its balance is shown on the platform agent's card");
       if (check.balanceNear === null) return warning("Couldn't read the agent's balance");
       const problems: string[] = [];
       if (check.lowBalance) {

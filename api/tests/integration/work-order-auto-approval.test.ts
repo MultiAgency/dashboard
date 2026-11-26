@@ -1,12 +1,19 @@
+import { ASSETS, appClient } from "@multiagency/sdk";
+import { type PayoutDouble, payoutDouble } from "@multiagency/sdk/testing";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
-import { compensationRequests, notifications, workOrders } from "../../src/db/schema";
 import {
-  createPayoutAgents,
-  type PayoutAgents,
-  workOrderPayees,
-} from "../../src/services/payouts/service";
+  compensationRequests,
+  notifications,
+  platformAgents,
+  platformConsents,
+  workOrders,
+} from "../../src/db/schema";
+import { oldPayoutLatest } from "../../src/services/payouts/history";
+import { createPlatformAgents } from "../../src/services/platform/agents";
+import { routePayouts } from "../../src/services/platform/payout-router";
+import { createPlatformPayouts } from "../../src/services/platform/payouts";
 import type { ConsistencyResult } from "../../src/services/work-orders/consistency";
 import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
 import {
@@ -14,7 +21,6 @@ import {
   createWorkOrdersService,
 } from "../../src/services/work-orders/service";
 import { DEFAULT_RENEWAL } from "../../src/services/work-orders/types";
-import { FakeAgentApi } from "../fakes/agent-api";
 import { type EngagementWorld, engagementWorld, refused } from "../fakes/engagements";
 import { FakeGitHub } from "../fakes/github";
 import { signedIn } from "../fakes/organizations";
@@ -25,6 +31,14 @@ const REPO = "studio/app";
 const EMPTY_REPO = "studio/empty";
 const CAROL = "carol.near";
 const HOUR_MS = 3_600_000;
+const AGENT = "own-studio";
+const NEAR = 10n ** 24n;
+const SETTINGS = {
+  base: "https://platform.test",
+  host: "platform.test",
+  deployment: "multiagency-dashboard",
+  credential: "tap_x.y",
+} as const;
 const CONSISTENT: ConsistencyResult = { verdict: "consistent", concerns: [], confidence: 0.9 };
 
 describe("work order trust tiers and automatic approval", () => {
@@ -33,8 +47,7 @@ describe("work order trust tiers and automatic approval", () => {
   let world: EngagementWorld;
   let github: FakeGitHub;
   let clock: Date;
-  let agent: FakeAgentApi;
-  let payouts: PayoutAgents;
+  let double: PayoutDouble;
   let verdict: ConsistencyResult | null | Error;
   let checks: number;
   let service: ReturnType<typeof createWorkOrdersService>;
@@ -48,14 +61,42 @@ describe("work order trust tiers and automatic approval", () => {
     clock = new Date("2026-09-20T12:00:00.000Z");
     verdict = CONSISTENT;
     checks = 0;
-    agent = new FakeAgentApi();
-    payouts = createPayoutAgents({
+    double = payoutDouble({
+      organization: "studio",
+      agent: AGENT,
+      policy: {
+        frozen: false,
+        actions: ["withdraw"],
+        confidential: true,
+        owner_approval: false,
+        assets: [ASSETS.wNEAR],
+        limits: { per_transaction: { [ASSETS.wNEAR]: (500n * NEAR).toString() } },
+        max_actions_per_hour: 10,
+        destinations: {
+          mode: "only",
+          list: [{ action: "withdraw", chain: "near", address: CAROL, memo: null }],
+        },
+        budget: { daily_usd: null, weekly_usd: null, monthly_usd: "100000" },
+        timelock_ms: 0,
+      },
+      grant: { label: "payout", expiresAt: "2027-06-01T00:00:00Z" },
+      balances: { [ASSETS.wNEAR]: (1000n * NEAR).toString() },
+      scopes: ["owner", "payout", "read"],
+    });
+    const app = appClient({
+      base: double.base,
+      credential: double.credential,
+      fetch: double.fetch,
+    });
+    const agents = createPlatformAgents({ db, app, settings: SETTINGS, now: () => clock });
+    const platform = createPlatformPayouts({
       db,
-      api: agent,
-      secretKey: "test-secret",
-      payees: workOrderPayees(db),
+      app,
+      agents,
+      pendingPayees: async () => [],
       now: () => clock,
     });
+    const payouts = routePayouts(oldPayoutLatest(db), platform);
     const builders = new Map<string, BuilderProfile>([
       [CAROL, { nearAccount: CAROL, name: "Carol", githubLogin: "carol-gh", userId: "carol" }],
     ]);
@@ -142,23 +183,27 @@ describe("work order trust tiers and automatic approval", () => {
   }
 
   async function setUpAgent() {
-    await payouts.saveSettings("studio", "studio-admin", {
+    await db.insert(platformAgents).values({
+      organizationId: "studio",
       ownerAccountId: "rita.near",
-      monthlyBudgetUsd: "5000",
-      maxPayoutNear: "500",
+      area: "payables",
+      host: SETTINGS.host,
+      deployment: SETTINGS.deployment,
+      agent: AGENT,
+      agentId: "agent-id",
+      updatedBy: "studio-admin",
     });
-    const create = await payouts.prepare("studio", {
-      action: "create_agent",
-      publicKey: `ed25519:${"1".repeat(44)}`,
-    });
-    await payouts.submit("studio", {
-      correlationId: create.correlationId,
-      signedData: await agent.sign(create.intent),
-    });
-    const grant = await payouts.prepare("studio", { action: "issue_grant" });
-    await payouts.submit("studio", {
-      correlationId: grant.correlationId,
-      signedData: await agent.sign(grant.intent),
+    await db.insert(platformConsents).values({
+      id: "consent-1",
+      organizationId: "studio",
+      agent: AGENT,
+      agentId: "agent-id",
+      kind: "consent",
+      scopes: "owner,payout,read",
+      expiresAt: new Date("2027-06-01T00:00:00Z"),
+      publicKey: "ed25519:x",
+      message: "{}",
+      createdBy: "studio-admin",
     });
   }
 
@@ -280,7 +325,7 @@ describe("work order trust tiers and automatic approval", () => {
     expect(paid.approvedBy).toBe("system");
     expect(paid.approvedAmount).toBe("600000000");
     expect(paid.trust?.approvedAutomatically).toBe(true);
-    expect(agent.withdrawals).toHaveLength(1);
+    expect(double.requests().filter((r) => r.method === "withdraw")).toHaveLength(1);
     expect(await kindsOf("studio-admin")).toContain("compensation_request_auto_approved");
   });
 
@@ -341,7 +386,7 @@ describe("work order trust tiers and automatic approval", () => {
       decision: "auto_pay",
       approvedAutomatically: true,
     });
-    expect(agent.withdrawals).toHaveLength(1);
+    expect(double.requests().filter((r) => r.method === "withdraw")).toHaveLength(1);
     expect(await kindsOf("studio-admin")).toContain("compensation_request_auto_approved");
   });
 

@@ -24,13 +24,13 @@ import { nearAccountsOf, type PluginContext } from "../../lib/organizations";
 import { rememberedLogin, rememberLogin } from "../builder-logins";
 import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
-import { atomicToNear, tokenOfAsset } from "../payouts/policy";
+import { atomicToNear, tokenOfAsset } from "../payouts/amounts";
 import {
   type FundingCheck,
   noUnsettledPayout,
   payoutRetryable,
   payoutSettledUnsent,
-} from "../payouts/service";
+} from "../payouts/history";
 import { noUnsettledPlatformPayout } from "../platform/payouts";
 import type { Project, ProjectDirectory } from "../project-directory";
 import { type DaoProposal, proposalDescription } from "../sputnik";
@@ -148,10 +148,6 @@ export type WorkOrderDeps = {
     refresh(payout: AgentPayoutView): Promise<AgentPayoutView>;
     latest(requestId: string): Promise<AgentPayoutView | null>;
     ensurePayees?(organizationId: string): Promise<{ ok: boolean; reason: string | null }>;
-    maintain?(): Promise<{
-      intentsSettled: number;
-      grantReminders: { organizationId: string; expiresAt: Date }[];
-    }>;
   } | null;
   notifications: WorkOrderNotifier;
   thresholds: RenewalThresholds;
@@ -645,7 +641,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           document: extra.document ?? row.documentUrl ?? row.preparedDocumentUrl ?? null,
           sign: row.esignBuilderUrl ?? null,
           countersign: row.esignRepresentativeUrl ?? null,
-          settings: absolute("/admin/settings#payouts"),
+          settings: absolute("/admin/settings#platform-agent"),
         },
         reportMd: extra.reportMd ?? null,
         terms:
@@ -5034,10 +5030,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             console.warn(`[API] work order ${row.code} step failed`, error);
           }
         }
-        const maintained = await deps.payouts?.maintain?.().catch((error: unknown) => {
-          console.warn("[API] payout agent upkeep failed", error);
-          return null;
-        });
         const remindGrant = ({
           organizationId,
           expiresAt,
@@ -5056,10 +5048,6 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
             .catch((error: unknown) =>
               console.warn("[API] payout permission reminder failed:", error),
             );
-        if (maintained) {
-          counts.intentsSettled = maintained.intentsSettled;
-          for (const reminder of maintained.grantReminders) await remindGrant(reminder);
-        }
         const upkept = await deps.platformUpkeep?.().catch((error: unknown) => {
           console.warn("[API] platform agent upkeep failed", error);
           return null;

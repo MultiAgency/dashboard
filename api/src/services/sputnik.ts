@@ -577,20 +577,6 @@ async function rpcCall<T>(accountId: string, body: unknown): Promise<T> {
   }
 }
 
-export async function fullAccessKeys(accountId: string): Promise<string[]> {
-  const result = await rpcCall<{
-    keys: { public_key: string; access_key: { permission: unknown } }[];
-  }>(accountId, {
-    jsonrpc: "2.0",
-    id: "full-access-keys",
-    method: "query",
-    params: { request_type: "view_access_key_list", finality: "final", account_id: accountId },
-  });
-  return result.keys
-    .filter((key) => key.access_key.permission === "FullAccess")
-    .map((key) => key.public_key);
-}
-
 // All call_function views; inner result.error must surface (else misleading EOF).
 async function viewCall<T>(
   networkAccountId: string,

@@ -96,7 +96,7 @@ export type ProgressInput = {
   requests: ProgressRequest[];
 };
 
-const SETTINGS_PAYOUTS = "/admin/settings#payouts";
+const SETTINGS_PAYOUTS = "/admin/settings#platform-agent";
 const FUNDING_CODES = new Set(["insufficient_balance", "over_monthly_budget", "over_cap"]);
 
 function latestRequest(requests: ProgressRequest[]): ProgressRequest | null {

@@ -3,7 +3,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { eq } from "drizzle-orm";
 import { describe, expect, test } from "vitest";
-import { platformAgents, platformPayouts } from "../../src/db/schema";
+import { platformPayouts } from "../../src/db/schema";
 import { createPlatformAgents } from "../../src/services/platform/agents";
 import {
   ASSETS,
@@ -359,10 +359,6 @@ describe.skipIf(!statePath)("the dashboard's server on the platform's local stac
       (await signAndSubmit(await owner.prepare(org, ACTOR, { kind: "grant" }))).correlationId,
     );
     await control("fund", { agent: agentId, amount: "20000000" });
-    await database.db
-      .update(platformAgents)
-      .set({ payoutRoute: "platform" })
-      .where(eq(platformAgents.organizationId, org));
     const usdc = ASSETS.USDC.replace(/^nep141:/, "");
     const pay = (requestId: string) =>
       payouts.send(org, { requestId, recipient: PAYEE, amount: "2000000", tokenId: usdc });
