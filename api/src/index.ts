@@ -57,6 +57,8 @@ import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./servic
 import { createPlatformAgents } from "./services/platform/agents";
 import { createPlatformApp, platformSettings } from "./services/platform/client";
 import { createPlatformOwnerActions } from "./services/platform/owner-actions";
+import { routePayouts } from "./services/platform/payout-router";
+import { createPlatformPayouts } from "./services/platform/payouts";
 import { createPlatformReads } from "./services/platform/reads";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
@@ -360,6 +362,12 @@ const initializeServices = (
       agents: platformAgents,
       payees: workOrderPayees(db),
     });
+    const platformPayouts = createPlatformPayouts({
+      db,
+      app: platformApp,
+      agents: platformAgents,
+      pendingPayees: platformOwnerActions.pendingPayees,
+    });
     const signedInNearKeys = async (userId: string | null | undefined) => {
       if (!authPool || !userId) return {};
       const { rows } = await authPool.query<{ account_id: string; public_key: string }>(
@@ -419,7 +427,10 @@ const initializeServices = (
       consistency: config.secrets.ANTHROPIC_API_KEY
         ? createConsistencyChecker({ apiKey: config.secrets.ANTHROPIC_API_KEY })
         : null,
-      payouts: payoutAgents.available ? payoutAgents : null,
+      payouts:
+        payoutAgents.available || platformApp
+          ? routePayouts(payoutAgents.available ? payoutAgents : null, platformPayouts)
+          : null,
       platformUpkeep: async () => ({
         ...(await platformAgents.maintain(
           authPool
@@ -499,6 +510,7 @@ const initializeServices = (
       platformAgents,
       platformReads,
       platformOwnerActions,
+      platformPayouts,
       signedInNearKeys,
       workOrderTimers,
     };
@@ -1436,6 +1448,13 @@ export default createPlugin.withPlugins<PluginsClient>()({
             const { platformReads } = Context.get(context["effect/context"], ApiServices);
             return platformReads.ownerActions(context.scope.organizationId);
           }),
+        setPayoutRoute: builder.platformAgent.setPayoutRoute
+          .use(auth.requireAdmin)
+          .handler(async ({ context, input }) => {
+            const { platformPayouts } = Context.get(context["effect/context"], ApiServices);
+            return platformPayouts.setRoute(input.organizationId, input.route);
+          }),
+
         ownerView: builder.platformAgent.ownerView
           .use(agencyManager)
           .handler(async ({ context }) => {

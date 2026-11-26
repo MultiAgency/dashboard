@@ -436,6 +436,7 @@ export function createPlatformAgents(deps: {
           createdAt: c.createdAt.toISOString(),
         })),
       consentDays: [...CONSENT_DAYS],
+      payoutRoute: row?.payoutRoute ?? "legacy",
       error: readError,
     };
   }
@@ -527,7 +528,7 @@ export function createPlatformAgents(deps: {
   async function startConsent(
     organizationId: string,
     actorId: string,
-    input: { days: ConsentDays },
+    input: { days: ConsentDays; payout?: boolean },
   ) {
     const { app, settings } = requirePlatform();
     const row = await load(organizationId);
@@ -543,7 +544,7 @@ export function createPlatformAgents(deps: {
       owner: row.ownerAccountId,
       agent: row.agent,
       agentId,
-      scopes: [...CONSENT_SCOPES],
+      scopes: input.payout ? [...CONSENT_SCOPES, "payout"] : [...CONSENT_SCOPES],
       expiresAt: new Date(now().getTime() + input.days * 86_400_000).toISOString(),
     });
     const nonce = await issueNonce(app);

@@ -107,6 +107,10 @@ const calls: Array<[string, (client: any) => Promise<unknown>]> = [
   ["prepareAction", (c) => c.platformAgent.prepareAction({ kind: "grant" })],
   ["submitAction", (c) => c.platformAgent.submitAction({ correlationId: "x", signedData: {} })],
   ["followAction", (c) => c.platformAgent.followAction({ correlationId: "x" })],
+  [
+    "setPayoutRoute",
+    (c) => c.platformAgent.setPayoutRoute({ organizationId: "studio", route: "platform" }),
+  ],
 ];
 
 describe("platform agent routes, turned off", () => {

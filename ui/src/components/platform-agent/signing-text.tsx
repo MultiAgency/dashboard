@@ -1,6 +1,8 @@
 import { platformTextFields } from "@/lib/platform-agent-signing";
 
 const SCOPES: Record<string, string> = {
+  payout:
+    "Ask the agent to pay agreed builders for approved compensation, within the rules you signed. Each payout is sent at most once.",
   read: "Read the agent: balance, signed rules, activity, ledger, held and unresolved payouts.",
   owner:
     "Prepare owner actions. Each one still needs your wallet's signature, or the confirm page.",

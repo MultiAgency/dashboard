@@ -281,6 +281,13 @@
       "when": 1795824000000,
       "tag": "0041_platform_owner_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795910400000,
+      "tag": "0042_platform_payouts",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,9 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AuthClient } from "../src/lib/auth";
 
 const view = vi.fn();
+const startConsent = vi.fn();
+const setPayoutRoute = vi.fn();
+const session = vi.fn(async () => ({ user: { role: "user" } }));
 const prepareCreate = vi.fn();
 const submitCreate = vi.fn();
 const owner = vi.hoisted(() => ({ client: {} as unknown }));
@@ -13,6 +16,8 @@ vi.mock("@/lib/api", () => ({
   useApiClient: () => ({
     platformAgent: {
       view,
+      startConsent,
+      setPayoutRoute,
       prepareCreate,
       submitCreate,
       overview: async () => {
@@ -23,9 +28,12 @@ vi.mock("@/lib/api", () => ({
     },
   }),
 }));
-vi.mock("@/lib/auth", () => ({ useAuthClient: () => owner.client }));
+vi.mock("@/lib/auth", () => ({
+  useAuthClient: () => owner.client,
+  sessionQueryOptions: () => ({ queryKey: ["session"], queryFn: session }),
+}));
 vi.mock("@/hooks/use-me-roles", () => ({
-  useMeRoles: () => ({ agencyDao: "studio.sputnik-dao.near" }),
+  useMeRoles: () => ({ agencyDao: "studio.sputnik-dao.near", organizationId: "orgStudio" }),
 }));
 
 const { signPlatformText } = await import("../src/lib/platform-agent-signing");
@@ -68,6 +76,9 @@ function wallet(accountId: string) {
 afterEach(() => {
   cleanup();
   view.mockReset();
+  startConsent.mockReset();
+  setPayoutRoute.mockReset();
+  session.mockImplementation(async () => ({ user: { role: "user" } }));
   prepareCreate.mockReset();
   submitCreate.mockReset();
   owner.client = {};
@@ -91,6 +102,7 @@ const baseView = {
   consent: null,
   consents: [],
   consentDays: [30, 90, 365],
+  payoutRoute: "legacy",
   error: null,
 };
 
@@ -204,6 +216,40 @@ describe("platform agent settings", () => {
     const link = await screen.findByRole("link", { name: "Open the confirm page" });
     expect(link.getAttribute("href")).toBe(`https://${HOST}/confirm/token`);
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  const connected = (scopes: string[]) => ({
+    ...baseView,
+    state: "connected",
+    signing: null,
+    consent: { id: "c1", scopes, expiresAt: "2027-02-23T12:00:00Z", expiringSoon: false },
+  });
+
+  test("a consent can include payouts, and only a site admin sees the switch", async () => {
+    view.mockResolvedValue(connected(["owner", "read"]));
+    startConsent.mockResolvedValue(connected(["owner", "read"]));
+    renderWith(<PlatformAgentSettings />);
+    expect(await screen.findByText(/pays through/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText(/request payouts/));
+    fireEvent.click(screen.getByRole("button", { name: "Prepare a consent" }));
+    await vi.waitFor(() => expect(startConsent).toHaveBeenCalledWith({ days: 90, payout: true }));
+    expect(screen.queryByRole("button", { name: /Site admin/ })).toBeNull();
+  });
+
+  test("a site admin switches an Organization with a payout consent to the platform", async () => {
+    session.mockImplementation(async () => ({ user: { role: "admin" } }));
+    view.mockResolvedValue(connected(["owner", "payout", "read"]));
+    setPayoutRoute.mockResolvedValue({ organizationId: "orgStudio", route: "platform" });
+    renderWith(<PlatformAgentSettings />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Site admin: pay through this platform agent" }),
+    );
+    await vi.waitFor(() =>
+      expect(setPayoutRoute).toHaveBeenCalledWith({
+        organizationId: "orgStudio",
+        route: "platform",
+      }),
+    );
   });
 
   test("a readable creation is shown first, and signed only on a second click", async () => {

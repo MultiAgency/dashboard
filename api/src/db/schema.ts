@@ -13,6 +13,7 @@ import {
 import {
   OWNER_ACTION_KINDS,
   PAYOUT_ASSETS,
+  PAYOUT_ROUTES,
   PLATFORM_REVOKED_REASONS,
   PLATFORM_SIGNING_KINDS,
 } from "../services/platform/terms";
@@ -969,6 +970,7 @@ export const platformAgents = pgTable("platform_agents", {
   maxPerPayout: text("max_per_payout"),
   monthlyBudgetUsd: text("monthly_budget_usd"),
   grantRemindedFor: timestamp("grant_reminded_for", { withTimezone: false }),
+  payoutRoute: text("payout_route", { enum: PAYOUT_ROUTES }).notNull().default("legacy"),
   updatedBy: text("updated_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
   updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
@@ -1022,6 +1024,36 @@ export const platformOwnerActions = pgTable(
 );
 
 export type PlatformOwnerActionRow = typeof platformOwnerActions.$inferSelect;
+
+export const platformPayouts = pgTable(
+  "platform_payouts",
+  {
+    requestId: text("request_id").primaryKey(),
+    compensationRequestId: text("compensation_request_id").notNull(),
+    attempt: integer("attempt").notNull(),
+    organizationId: text("organization_id").notNull(),
+    agent: text("agent").notNull(),
+    asset: text("asset").notNull(),
+    chain: text("chain").notNull(),
+    recipient: text("recipient").notNull(),
+    amount: text("amount").notNull(),
+    expectedRevision: integer("expected_revision").notNull(),
+    expectedDigest: text("expected_digest").notNull(),
+    state: text("state").notNull(),
+    status: text("status"),
+    code: text("code"),
+    failureCode: text("failure_code"),
+    neverExecuted: boolean("never_executed").notNull().default(false),
+    correlationId: text("correlation_id"),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    attemptOnce: uniqueIndex("platform_payouts_attempt").on(t.compensationRequestId, t.attempt),
+  }),
+);
+
+export type PlatformPayoutRow = typeof platformPayouts.$inferSelect;
 
 export const PAYOUT_ACTIONS = [
   "create_agent",
