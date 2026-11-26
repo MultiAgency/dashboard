@@ -38,14 +38,12 @@ describe("owner actions through the platform", () => {
   let actions: PlatformOwnerActions;
   let payees: string[];
   let terms: Map<string, PayoutTerms>;
-  let rejected: Array<[string, string]>;
   const key = generateKey().publicKey.toString();
 
   beforeEach(async () => {
     clock = new Date("2026-11-25T12:00:00.000Z");
     payees = ["carol.near"];
     terms = new Map();
-    rejected = [];
     platform = new FakePlatformApp({
       host: HOST,
       deployment: DEPLOYMENT,
@@ -63,9 +61,6 @@ describe("owner actions through the platform", () => {
       agents,
       payees: async () => payees,
       payoutTerms: async () => terms,
-      payoutRejected: async (organizationId, correlationId) => {
-        rejected.push([organizationId, correlationId]);
-      },
       now: () => clock,
     });
     const setup = await agents.startSetup(ORG, ACTOR, { ownerAccountId: OWNER });
@@ -333,19 +328,62 @@ describe("owner actions through the platform", () => {
     await actions.submit(ORG, { correlationId: vote.action.correlationId, signedData: {} });
     expect(platform.votes).toEqual([{ approvalId: "appr-1", verdict: "approve" }]);
     expect((await actions.view(ORG)).held).toEqual([]);
-    expect(rejected).toEqual([]);
   });
 
-  test("a rejection the owner signed marks the payout rejected, so it isn't sent again", async () => {
+  test("a signed vote still processing is followed until the platform settles it", async () => {
+    platform.settleLater = true;
     const vote = await actions.prepare(ORG, ACTOR, {
       kind: "payout_vote",
       approvalId: "appr-1",
       verdict: "reject",
     });
+    const submitted = await actions.submit(ORG, {
+      correlationId: vote.action.correlationId,
+      signedData: {},
+    });
     expect(vote.action.summary).toMatch(/^Reject paying /);
-    expect(rejected).toEqual([]);
+    expect(submitted).toMatchObject({ status: "PROCESSING", open: true });
+
+    const before = platform.count("agent:owner/status");
+    expect((await actions.view(ORG)).actions[0]).toMatchObject({
+      status: "PROCESSING",
+      open: true,
+    });
+    expect(platform.count("agent:owner/status")).toBe(before + 1);
+
+    platform.settle(vote.action.correlationId);
+    expect((await actions.view(ORG)).actions[0]).toMatchObject({ status: "SUCCESS", open: false });
+    await actions.view(ORG);
+    expect(platform.count("agent:owner/status")).toBe(before + 2);
+  });
+
+  test("an action signed on the confirm page stays followed, without its link, until it settles", async () => {
+    const freeze = await actions.prepare(ORG, ACTOR, { kind: "freeze" });
+    expect(freeze.action.confirmUrl).toMatch(/\/confirm\//);
+    platform.confirm(freeze.action.correlationId, false);
+    expect((await actions.view(ORG)).actions[0]).toMatchObject({
+      status: "PROCESSING",
+      open: true,
+      confirmUrl: null,
+    });
+    platform.settle(freeze.action.correlationId);
+    expect((await actions.view(ORG)).actions[0]).toMatchObject({ status: "SUCCESS", open: false });
+  });
+
+  test("the scheduled run follows signed actions with nobody watching", async () => {
+    platform.settleLater = true;
+    const vote = await actions.prepare(ORG, ACTOR, {
+      kind: "payout_vote",
+      approvalId: "appr-1",
+      verdict: "reject",
+    });
     await actions.submit(ORG, { correlationId: vote.action.correlationId, signedData: {} });
-    expect(rejected).toEqual([[ORG, "held-1"]]);
+    expect(await actions.followUnsettled()).toBe(1);
+    expect((await actions.view(ORG)).actions[0]).toMatchObject({ open: true });
+
+    platform.settle(vote.action.correlationId);
+    expect(await actions.followUnsettled()).toBe(1);
+    expect(await actions.followUnsettled()).toBe(0);
   });
 
   test("a vote is only for a payout that's waiting for one, and says how", async () => {

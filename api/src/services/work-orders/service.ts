@@ -125,6 +125,7 @@ export type WorkOrderDeps = {
     checked: number;
     revoked: number;
     failed: string[];
+    followed: number;
     grantReminders: Array<{ organizationId: string; expiresAt: Date }>;
   }>;
   payouts?: {
@@ -5039,6 +5040,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           counts.platformAgentsChecked = upkept.checked;
           counts.platformAgentsRevoked = upkept.revoked;
           counts.platformAgentsFailed = upkept.failed.length;
+          counts.platformOwnerActionsFollowed = upkept.followed;
           for (const reminder of upkept.grantReminders) await remindGrant(reminder);
         }
         await followUpPayouts(counts);

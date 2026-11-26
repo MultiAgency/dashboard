@@ -14,7 +14,6 @@ import {
   createPlatformPayouts,
   noUnsettledPlatformPayout,
   type PlatformPayouts,
-  platformPayoutRejected,
 } from "../../src/services/platform/payouts";
 import { migratedDatabase } from "./_pg";
 
@@ -296,7 +295,6 @@ describe("work-order payouts through the platform", () => {
     holdEach();
     const held = await pay();
     double.vote("req-1-1", "reject");
-    await platformPayoutRejected(database.db)(ORG, held.correlationId ?? "");
     expect(await payouts.refresh(held)).toMatchObject({
       status: "rejected",
       provenUnsent: true,

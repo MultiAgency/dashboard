@@ -11,11 +11,14 @@ import {
   GRANT_RENEW_DAYS,
   nep413Intent,
   type OwnerActionKind,
+  type OwnerActionPhase,
   type PayoutVerdict,
 } from "./terms";
 
 const DAY_MS = 86_400_000;
-const OPEN = new Set(["prepared", "adopted", "submitting", "submitted"]);
+const SIGNABLE = new Set(["prepared", "adopted"]);
+const SENDING = new Set(["submitting", "submitted"]);
+const ENDED: Array<OwnerActionPhase | null> = ["settled", "expired"];
 const FOLLOWED_PER_VIEW = 5;
 const ACTION_TYPES: Record<OwnerActionKind, AppOwnerAction["type"]> = {
   rules: "policy_update",
@@ -38,8 +41,6 @@ type Held = OwnerOutput<"held">[number];
 type Built = {
   action: AppOwnerAction;
   summary: string;
-  subject?: string;
-  verdict?: PayoutVerdict;
 };
 export type PrepareInput = {
   kind: OwnerActionKind;
@@ -63,7 +64,6 @@ export function createPlatformOwnerActions(deps: {
     organizationId: string,
     correlationIds: string[],
   ) => Promise<Map<string, PayoutTerms>>;
-  payoutRejected: (organizationId: string, correlationId: string) => Promise<void>;
   now?: () => Date;
 }) {
   const { db } = deps;
@@ -117,8 +117,22 @@ export function createPlatformOwnerActions(deps: {
       .orderBy(desc(platformOwnerActions.createdAt));
   }
 
+  function signable(action: PlatformOwnerActionRow) {
+    return (
+      SIGNABLE.has(action.status) &&
+      !ENDED.includes(action.phase) &&
+      action.expiresAt.getTime() > now().getTime()
+    );
+  }
+
+  function inFlight(action: PlatformOwnerActionRow) {
+    return (
+      !ENDED.includes(action.phase) && (action.phase === "submitted" || SENDING.has(action.status))
+    );
+  }
+
   function isOpen(action: PlatformOwnerActionRow) {
-    return OPEN.has(action.status) && action.expiresAt.getTime() > now().getTime();
+    return signable(action) || inFlight(action);
   }
 
   function actionView(action: PlatformOwnerActionRow) {
@@ -129,7 +143,7 @@ export function createPlatformOwnerActions(deps: {
       summary: action.summary,
       status: action.status,
       open,
-      confirmUrl: open ? action.confirmUrl : null,
+      confirmUrl: signable(action) ? action.confirmUrl : null,
       expiresAt: action.expiresAt.toISOString(),
       createdAt: action.createdAt.toISOString(),
     };
@@ -180,9 +194,7 @@ export function createPlatformOwnerActions(deps: {
     const grant = payoutGrants(overview).sort((a, b) =>
       b.expires_at.localeCompare(a.expires_at),
     )[0];
-    const unsettled = (await actionsOf(organizationId))
-      .filter((a) => OPEN.has(a.status))
-      .slice(0, FOLLOWED_PER_VIEW);
+    const unsettled = (await actionsOf(organizationId)).filter(isOpen).slice(0, FOLLOWED_PER_VIEW);
     for (const action of unsettled) {
       const status = await calls.call("owner/status", { correlationId: action.correlationId });
       if (status.ok) await noteStatus(action.correlationId, status.value);
@@ -296,8 +308,6 @@ export function createPlatformOwnerActions(deps: {
         correlationId: held.correlationId,
       },
       summary: `${input.verdict === "approve" ? "Approve" : "Reject"} paying ${amount} to ${held.recipient ?? "an unknown payee"}${purpose}`,
-      subject: held.correlationId,
-      verdict: input.verdict,
     };
   }
 
@@ -337,8 +347,6 @@ export function createPlatformOwnerActions(deps: {
     await record(organizationId, connection.agent, kind, {
       correlationId: open.correlationId,
       summary: `${built.summary} (its answer was lost; recovered from the platform)`,
-      subject: built.subject ?? null,
-      verdict: built.verdict ?? null,
       expiresAt: new Date(open.expiresAt),
       status: open.stage === "prepared" ? "adopted" : "submitted",
       requestedBy: actorId,
@@ -351,7 +359,7 @@ export function createPlatformOwnerActions(deps: {
     const built = await build(organizationId, connection, calls, input);
     const { action, summary } = built;
     const open = (await actionsOf(organizationId)).filter(
-      (a) => a.kind === input.kind && isOpen(a),
+      (a) => a.kind === input.kind && signable(a),
     );
     const same = open.find((a) => a.summary === summary);
     if (same) return { action: actionView(same), intent: storedIntent(same), preview: null };
@@ -391,8 +399,6 @@ export function createPlatformOwnerActions(deps: {
       summary,
       confirmUrl: confirm?.url ?? null,
       intent: readable ? JSON.stringify(readable) : null,
-      subject: built.subject ?? null,
-      verdict: built.verdict ?? null,
       expiresAt: new Date(confirm?.expiresAt ?? expiresAt),
       status: "prepared",
       requestedBy: actorId,
@@ -421,20 +427,17 @@ export function createPlatformOwnerActions(deps: {
 
   async function noteStatus(
     correlationId: string,
-    status: { stage: string; status?: string; phase?: string },
+    status: { stage: string; status?: string; phase?: OwnerActionPhase },
   ) {
-    if (status.phase !== "open") await setStatus(correlationId, status.status ?? status.stage);
+    if (status.phase === "open") return;
+    await setStatus(correlationId, status.status ?? status.stage, status.phase);
   }
 
-  async function setStatus(correlationId: string, status: string) {
-    const [action] = await db
+  async function setStatus(correlationId: string, status: string, phase?: OwnerActionPhase) {
+    await db
       .update(platformOwnerActions)
-      .set({ status, updatedAt: now() })
-      .where(eq(platformOwnerActions.correlationId, correlationId))
-      .returning();
-    if (action?.kind === "payout_vote" && action.verdict === "reject" && action.subject) {
-      if (status === "SUCCESS") await deps.payoutRejected(action.organizationId, action.subject);
-    }
+      .set({ status, ...(phase ? { phase } : {}), updatedAt: now() })
+      .where(eq(platformOwnerActions.correlationId, correlationId));
   }
 
   async function ownAction(organizationId: string, correlationId: string) {
@@ -457,7 +460,7 @@ export function createPlatformOwnerActions(deps: {
   ) {
     const { calls, connection } = await connected(organizationId, "owner");
     const action = await ownAction(organizationId, input.correlationId);
-    if (action.status !== "prepared" || !action.intent || !isOpen(action)) {
+    if (action.status !== "prepared" || !action.intent || !signable(action)) {
       throw badRequest(
         "This action was already sent, or it's signed on the confirm page. Follow its status instead.",
       );
@@ -468,7 +471,7 @@ export function createPlatformOwnerActions(deps: {
       signedData: input.signedData,
     });
     if (submitted.ok) {
-      await setStatus(action.correlationId, submitted.value.status);
+      await setStatus(action.correlationId, submitted.value.status, "submitted");
       return actionView(await ownAction(organizationId, action.correlationId));
     }
     if (submitted.kind === "unknown" || submitted.kind === "unavailable") {
@@ -493,6 +496,23 @@ export function createPlatformOwnerActions(deps: {
     );
     await noteStatus(action.correlationId, status);
     return actionView(await ownAction(organizationId, correlationId));
+  }
+
+  async function followUnsettled() {
+    let followed = 0;
+    if (!deps.app) return followed;
+    const rows = await db.select().from(platformOwnerActions);
+    for (const action of rows.filter(inFlight)) {
+      const connection = await deps.agents.connection(action.organizationId);
+      if (!connection) continue;
+      const status = await deps.app
+        .agent(action.organizationId, connection.agent)
+        .call("owner/status", { correlationId: action.correlationId });
+      if (!status.ok) continue;
+      await noteStatus(action.correlationId, status.value);
+      followed += 1;
+    }
+    return followed;
   }
 
   async function grantReminders() {
@@ -532,7 +552,16 @@ export function createPlatformOwnerActions(deps: {
       .filter((address) => !agreed.has(address));
   }
 
-  return { view, saveRules, prepare, submit, follow, grantReminders, pendingPayees };
+  return {
+    view,
+    saveRules,
+    prepare,
+    submit,
+    follow,
+    followUnsettled,
+    grantReminders,
+    pendingPayees,
+  };
 }
 
 export type PlatformOwnerActions = ReturnType<typeof createPlatformOwnerActions>;

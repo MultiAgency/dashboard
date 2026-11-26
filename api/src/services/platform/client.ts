@@ -56,6 +56,29 @@ export function platformSettings(secrets: {
   return { base: `https://${parsed.host}`, host: parsed.host, deployment, credential };
 }
 
+const procedureOf = (input: RequestInfo | URL) => {
+  const url = new URL(input instanceof Request ? input.url : input.toString());
+  return url.pathname.split("/rpc/")[1] ?? url.pathname;
+};
+
+export const loggedFetch =
+  (fetcher: typeof fetch = fetch) =>
+  async (input: RequestInfo | URL, init?: RequestInit) => {
+    const procedure = procedureOf(input);
+    const response = await fetcher(input, init).catch((error: unknown) => {
+      console.warn(`[API] MultiAgency platform ${procedure} didn't answer`, error);
+      throw error;
+    });
+    if (!response.ok) {
+      console.warn(`[API] MultiAgency platform ${procedure} answered HTTP ${response.status}`);
+    }
+    return response;
+  };
+
 export function createPlatformApp(settings: PlatformSettings): PlatformApp {
-  return appClient({ base: settings.base, credential: settings.credential });
+  return appClient({
+    base: settings.base,
+    credential: settings.credential,
+    fetch: loggedFetch(),
+  });
 }

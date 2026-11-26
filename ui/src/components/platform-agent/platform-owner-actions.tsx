@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Alert,
@@ -80,6 +80,20 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: platformAgentQueryKey });
+  const openBefore = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const actions = query.data?.actions;
+    if (!actions) return;
+    const open = new Set(actions.filter((a) => a.open).map((a) => a.correlationId));
+    const settled = [...(openBefore.current ?? [])].some((id) => !open.has(id));
+    openBefore.current = open;
+    if (settled) {
+      queryClient.invalidateQueries({
+        queryKey: platformAgentQueryKey,
+        predicate: (q) => !q.queryKey.includes("ownerView"),
+      });
+    }
+  }, [query.data, queryClient]);
   const failed = (fallback: string) => (err: Error) => {
     toast.error(err.message || fallback);
     refresh();

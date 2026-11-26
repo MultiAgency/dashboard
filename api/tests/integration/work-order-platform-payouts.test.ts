@@ -15,7 +15,7 @@ import {
 import { requireTreasury } from "../../src/services/organization-access";
 import { createPlatformAgents } from "../../src/services/platform/agents";
 import { routePayouts } from "../../src/services/platform/payout-router";
-import { createPlatformPayouts, platformPayoutRejected } from "../../src/services/platform/payouts";
+import { createPlatformPayouts } from "../../src/services/platform/payouts";
 import type { ConsistencyResult } from "../../src/services/work-orders/consistency";
 import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
 import {
@@ -358,11 +358,6 @@ describe("work-order payouts through the platform agent", () => {
     expect((await admin()).agentPayout?.reason).toMatch(/owner's vote/);
 
     double.vote(`${requestId}-1`, "reject");
-    const [row] = await db
-      .select()
-      .from(platformPayouts)
-      .where(eq(platformPayouts.requestId, `${requestId}-1`));
-    await platformPayoutRejected(db)("studio", row?.correlationId ?? "");
     for (const minutes of [6, 12, 18]) {
       clock = new Date(Date.parse("2026-11-05T12:00:00.000Z") + minutes * 60_000);
       await service.run();

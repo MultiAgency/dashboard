@@ -43,6 +43,9 @@ export const OWNER_ACTION_KINDS = [
 ] as const;
 export type OwnerActionKind = (typeof OWNER_ACTION_KINDS)[number];
 
+export const OWNER_ACTION_PHASES = ["open", "submitted", "settled", "expired"] as const;
+export type OwnerActionPhase = (typeof OWNER_ACTION_PHASES)[number];
+
 export const PAYOUT_VERDICTS = ["approve", "reject"] as const;
 export type PayoutVerdict = (typeof PAYOUT_VERDICTS)[number];
 

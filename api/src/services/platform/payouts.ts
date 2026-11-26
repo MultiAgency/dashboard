@@ -1,4 +1,4 @@
-import { type AnyColumn, and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { type AnyColumn, and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Database } from "../../db";
 import {
   agentPayouts,
@@ -37,20 +37,7 @@ function provenUnsent(row: PlatformPayoutRow) {
   return retryable(row) || row.state === "rejected";
 }
 
-export function platformPayoutRejected(db: Database) {
-  return async (organizationId: string, correlationId: string) => {
-    await db
-      .update(platformPayouts)
-      .set({ state: "rejected", updatedAt: new Date() })
-      .where(
-        and(
-          eq(platformPayouts.organizationId, organizationId),
-          eq(platformPayouts.correlationId, correlationId),
-          ne(platformPayouts.state, "succeeded"),
-        ),
-      );
-  };
-}
+const OWNER_REJECTIONS = new Set(["rejected_by_owner", "rejected"]);
 
 export type PayoutTerms = {
   compensationRequestId: string;
@@ -314,8 +301,12 @@ export function createPlatformPayouts(deps: {
   }
 
   function answered(value: PayoutAnswer): Partial<PlatformPayoutRow> {
+    const rejected =
+      value.state === "failed" &&
+      value.neverExecuted === true &&
+      OWNER_REJECTIONS.has(value.failureCode ?? "");
     return {
-      state: value.state === "not_found" ? "sending" : value.state,
+      state: rejected ? "rejected" : value.state === "not_found" ? "sending" : value.state,
       status: value.status,
       code: value.code,
       failureCode: value.failureCode ?? null,

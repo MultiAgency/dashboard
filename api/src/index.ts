@@ -59,11 +59,7 @@ import { createPlatformApp, platformSettings } from "./services/platform/client"
 import { createPlatformDeposits } from "./services/platform/deposits";
 import { createPlatformOwnerActions } from "./services/platform/owner-actions";
 import { routePayouts } from "./services/platform/payout-router";
-import {
-  createPlatformPayouts,
-  platformPayoutRejected,
-  platformPayoutTerms,
-} from "./services/platform/payouts";
+import { createPlatformPayouts, platformPayoutTerms } from "./services/platform/payouts";
 import { createPlatformReads } from "./services/platform/reads";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
@@ -370,7 +366,6 @@ const initializeServices = (
       agents: platformAgents,
       payees: workOrderPayees(db),
       payoutTerms: platformPayoutTerms(db),
-      payoutRejected: platformPayoutRejected(db),
     });
     const platformDeposits = createPlatformDeposits({
       db,
@@ -452,6 +447,7 @@ const initializeServices = (
             ? async (organizationId) => (await organizationDirectory.get(organizationId)) !== null
             : null,
         )),
+        followed: await platformOwnerActions.followUnsettled(),
         grantReminders: await platformOwnerActions.grantReminders(),
       }),
       google,

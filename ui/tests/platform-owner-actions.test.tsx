@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { generateKey } from "near-kit";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -41,6 +41,13 @@ vi.mock("@/lib/auth", () => ({
 const { PlatformOwnerActions } = await import(
   "../src/components/platform-agent/platform-owner-actions"
 );
+const { platformAgentReadKey } = await import("../src/lib/queries");
+const panelRead = vi.fn(async () => ({}));
+
+function PanelRead() {
+  useQuery({ queryKey: platformAgentReadKey("overview"), queryFn: panelRead });
+  return null;
+}
 
 const HOST = "api.dev.multiagency.ai";
 const view = {
@@ -86,6 +93,7 @@ function renderActions() {
   return render(
     <QueryClientProvider client={client}>
       <PlatformOwnerActions owner="rita.near" host={HOST} />
+      <PanelRead />
     </QueryClientProvider>,
   );
 }
@@ -159,13 +167,17 @@ describe("platform owner actions", () => {
     expect(screen.queryByRole("button", { name: /Sign with/ })).toBeNull();
   });
 
-  test("while an action is open the view is read again every 15 seconds, and not once none is", async () => {
+  test("while an action is open the view is read again every 15 seconds, the panel reloads when it settles, and nothing polls after", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
+      panelRead.mockClear();
       ownerView.mockResolvedValue({ ...view, pending: [], actions: [action({})] });
       renderActions();
       await screen.findByText("Pay dave.near by withdrawal to their NEAR account");
       expect(ownerView).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(ownerView).toHaveBeenCalledTimes(2);
+      expect(panelRead).toHaveBeenCalledTimes(1);
 
       ownerView.mockResolvedValue({
         ...view,
@@ -173,11 +185,13 @@ describe("platform owner actions", () => {
         actions: [action({ status: "SUCCESS", open: false })],
       });
       await vi.advanceTimersByTimeAsync(15_000);
-      expect(ownerView).toHaveBeenCalledTimes(2);
+      expect(ownerView).toHaveBeenCalledTimes(3);
       expect(await screen.findByText("success")).toBeTruthy();
+      await vi.waitFor(() => expect(panelRead).toHaveBeenCalledTimes(2));
 
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(ownerView).toHaveBeenCalledTimes(2);
+      expect(ownerView).toHaveBeenCalledTimes(3);
+      expect(panelRead).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
