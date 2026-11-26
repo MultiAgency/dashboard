@@ -184,7 +184,10 @@ const initializeServices = (
       plugins.projects.client(pluginContext),
     );
     const authDatabaseUrl = config.secrets.AUTH_DATABASE_URL;
-    const authPool = authDatabaseUrl ? new pg.Pool({ connectionString: authDatabaseUrl }) : null;
+    const authPool =
+      authDatabaseUrl && /^postgres(ql)?:\/\//i.test(authDatabaseUrl)
+        ? new pg.Pool({ connectionString: authDatabaseUrl })
+        : null;
     const organizationDirectory = authPool
       ? authDatabaseDirectory(authPool)
       : unconfiguredDirectory();
@@ -200,7 +203,7 @@ const initializeServices = (
       if (adopted) yield* Effect.logInfo("[API] Adopted Organization approvals from auth");
     } else {
       yield* Effect.logWarning(
-        "[API] AUTH_DATABASE_URL is not set: Organization approvals can't be adopted or reviewed, so every Organization stays pending",
+        "[API] AUTH_DATABASE_URL is not a Postgres URL: Organization approvals can't be adopted or reviewed, so every Organization stays pending",
       );
     }
     const appOrigin = (config.secrets.APP_ORIGIN ?? config.variables.appOrigin).replace(/\/+$/, "");

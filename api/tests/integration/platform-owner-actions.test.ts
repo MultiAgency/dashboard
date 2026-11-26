@@ -209,6 +209,27 @@ describe("owner actions through the platform", () => {
     expect(unfreeze.action.confirmUrl).toMatch(/\/confirm\//);
   });
 
+  test("reading the owner actions follows the open ones, and keeps unsigned ones open", async () => {
+    const freeze = await actions.prepare(ORG, ACTOR, { kind: "freeze" });
+    const grant = await actions.prepare(ORG, ACTOR, { kind: "grant" });
+    platform.confirm(freeze.action.correlationId);
+    const before = platform.count("agent:owner/status");
+
+    const listed = (await actions.view(ORG)).actions;
+    expect(platform.count("agent:owner/status")).toBe(before + 2);
+    expect(listed.find((a) => a.correlationId === freeze.action.correlationId)).toMatchObject({
+      status: "SUCCESS",
+      open: false,
+    });
+    expect(listed.find((a) => a.correlationId === grant.action.correlationId)).toMatchObject({
+      status: "prepared",
+      open: true,
+    });
+
+    await actions.view(ORG);
+    expect(platform.count("agent:owner/status")).toBe(before + 3);
+  });
+
   test("one Organization can't follow or submit another's action", async () => {
     const grant = await actions.prepare(ORG, ACTOR, { kind: "grant" });
     await expect(actions.follow(OTHER, grant.action.correlationId)).rejects.toThrow(

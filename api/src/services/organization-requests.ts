@@ -74,15 +74,15 @@ export function createOrganizationRequestsService(deps: {
       const waiting = organizations.filter((o) => approvals.get(o.id)?.status === "pending");
       return Promise.all(
         waiting.map(async (organization) => {
-          const owner = (await deps.organizations.managers(organization.id)).find(
-            (manager) => manager.role === "owner",
-          );
+          const owner = await deps.organizations.owner(organization.id);
           return {
             id: organization.id,
             name: organization.name,
             slug: organization.slug,
             requestedBy: owner?.userId ?? null,
+            requestedByName: owner?.name ?? null,
             requestedByEmail: owner?.email ?? null,
+            requestedByNearAccount: owner?.nearAccountId ?? null,
             requestedAt: (organization.createdAt ?? now()).toISOString(),
           };
         }),
