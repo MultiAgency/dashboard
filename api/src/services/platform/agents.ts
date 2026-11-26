@@ -744,7 +744,7 @@ export function createPlatformAgents(deps: {
     const status = await app
       .agent(organizationId, row.agent)
       .call("owner/status", { correlationId: row.createCorrelationId });
-    if (status.ok) {
+    if (status.ok && status.value.phase !== "open") {
       await update(organizationId, { createStatus: status.value.status ?? status.value.stage });
     }
     await noteCreated((await load(organizationId)) ?? row);

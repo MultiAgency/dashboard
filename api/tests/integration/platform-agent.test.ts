@@ -175,7 +175,7 @@ describe("connecting a platform agent", () => {
 
     const view = await agents.submitCreate(ORG, { correlationId, signedData: { signature: "x" } });
     expect(platform.count("agent:owner/status")).toBe(1);
-    expect(view.create?.status).toBe("PENDING_SIGNATURE");
+    expect(view.create?.status).toBe("submitting");
     await expect(
       agents.submitCreate(ORG, { correlationId, signedData: { signature: "x" } }),
     ).rejects.toThrow(/already sent/);
