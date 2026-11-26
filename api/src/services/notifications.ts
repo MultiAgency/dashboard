@@ -188,7 +188,9 @@ export const NOTIFICATION_KINDS = {
   }),
   compensation_request_paid: (p) => ({
     title: `${p.requestCode} is paid`,
-    body: `${p.amount} for ${p.requestCode} was paid by ${p.daoAccountId} (proposal #${p.proposalId}).`,
+    body: p.proposalId
+      ? `${p.amount} for ${p.requestCode} was paid by ${p.daoAccountId} (proposal #${p.proposalId}).`
+      : `${p.amount} for ${p.requestCode} was paid through ${p.agencyName}'s payout agent.`,
   }),
   compensation_request_failed: (p) => ({
     title: `The payment for ${p.requestCode} didn't go through`,

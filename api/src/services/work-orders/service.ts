@@ -2710,8 +2710,8 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     const payload = await payloadOf(row, {
       requestCode: `${row.code}-R${request.seq}`,
       amount: display(payout.amount, token),
-      daoAccountId: dao ?? "",
-      proposalId: payout.txHash ?? "",
+      daoAccountId: "",
+      proposalId: "",
       status: "Paid",
     });
     await notifyBuilder(row, "compensation_request_paid", payload);

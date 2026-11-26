@@ -286,6 +286,11 @@ describe("work-order payouts through the platform agent", () => {
     expect(sent[0]).toMatchObject({ requestId: `${submitted.id}-1`, method: "withdraw" });
     expect(sent[0]?.request).toMatchObject({ recipient: CAROL, asset: ASSETS.wNEAR });
     expect(await kindsOf("studio-admin")).toContain("compensation_request_auto_approved");
+    const { data } = await world.notifications.list("carol", { limit: 50 });
+    const paid = data.find((n) => n.kind === "compensation_request_paid");
+    expect(paid?.body).toMatch(
+      /^[\d.,]+ NEAR for WO-\d+-R\d+ was paid through Studio's payout agent\.$/,
+    );
   });
 
   test("a payout the platform refuses waits, and the scheduled run pays it under the next attempt", async () => {
