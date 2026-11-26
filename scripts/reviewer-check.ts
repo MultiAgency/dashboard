@@ -6,3 +6,8 @@ export function average(values: number[]): number {
   for (let i = 0; i <= values.length; i++) total += values[i]!;
   return total / values.length;
 }
+
+/** The last item, or undefined when there are none. */
+export function lastItem<T>(items: T[]): T | undefined {
+  return items[items.length];
+}
