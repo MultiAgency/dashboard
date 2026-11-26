@@ -1,15 +1,20 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { generateKey, verifyNep413Signature } from "near-kit";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AuthClient } from "../src/lib/auth";
 
 const view = vi.fn();
+const prepareCreate = vi.fn();
+const submitCreate = vi.fn();
+const owner = vi.hoisted(() => ({ client: {} as unknown }));
 
 vi.mock("@/lib/api", () => ({
   useApiClient: () => ({
     platformAgent: {
       view,
+      prepareCreate,
+      submitCreate,
       overview: async () => {
         throw new Error("not connected");
       },
@@ -18,7 +23,7 @@ vi.mock("@/lib/api", () => ({
     },
   }),
 }));
-vi.mock("@/lib/auth", () => ({ useAuthClient: () => ({}) }));
+vi.mock("@/lib/auth", () => ({ useAuthClient: () => owner.client }));
 vi.mock("@/hooks/use-me-roles", () => ({
   useMeRoles: () => ({ agencyDao: "studio.sputnik-dao.near" }),
 }));
@@ -63,6 +68,9 @@ function wallet(accountId: string) {
 afterEach(() => {
   cleanup();
   view.mockReset();
+  prepareCreate.mockReset();
+  submitCreate.mockReset();
+  owner.client = {};
 });
 
 function renderWith(node: React.ReactNode) {
@@ -196,5 +204,83 @@ describe("platform agent settings", () => {
     const link = await screen.findByRole("link", { name: "Open the confirm page" });
     expect(link.getAttribute("href")).toBe(`https://${HOST}/confirm/token`);
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  test("a readable creation is shown first, and signed only on a second click", async () => {
+    const key = generateKey();
+    const signMessage = vi.fn(
+      async (params: { message: string; recipient: string; nonce: Uint8Array }) =>
+        key.signNep413Message("rita.near", params),
+    );
+    owner.client = {
+      near: {
+        ensureConnected: vi.fn(async () => true),
+        getState: () => ({ accountId: "rita.near", publicKey: key.publicKey.toString() }),
+        getNearClient: () => ({ signMessage }),
+      },
+    };
+    const creating = {
+      ...baseView,
+      agentId: null,
+      setupPublicKey: key.publicKey.toString(),
+      state: "creating",
+      signing: null,
+    };
+    const intent = {
+      standard: "nep413",
+      payload: {
+        message: "Create the payout agent own-abc",
+        recipient: "outlayer.near",
+        nonce: NONCE,
+      },
+    };
+    view.mockResolvedValue(creating);
+    prepareCreate.mockResolvedValue({
+      view: {
+        ...creating,
+        create: {
+          correlationId: "corr-1",
+          confirmUrl: null,
+          expiresAt: "2026-11-25T12:10:00Z",
+          status: "prepared",
+        },
+      },
+      intent,
+    });
+    submitCreate.mockResolvedValue({ ...creating, state: "needs_consent", agentId: "agent-1" });
+    renderWith(<PlatformAgentSettings />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Prepare the agent's creation" }));
+    expect(await screen.findByText("Create the payout agent own-abc")).toBeTruthy();
+    expect(screen.getAllByText("outlayer.near").length).toBeGreaterThan(0);
+    expect(signMessage).not.toHaveBeenCalled();
+    expect(submitCreate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign the creation with rita.near" }));
+    await vi.waitFor(() => expect(submitCreate).toHaveBeenCalledTimes(1));
+    expect(signMessage).toHaveBeenCalledTimes(1);
+    expect(submitCreate.mock.calls[0]?.[0]).toMatchObject({ correlationId: "corr-1" });
+  });
+
+  test("a creation from another wallet key is refused before anything is prepared", async () => {
+    const key = generateKey();
+    owner.client = {
+      near: {
+        ensureConnected: vi.fn(async () => true),
+        getState: () => ({ accountId: "rita.near", publicKey: generateKey().publicKey.toString() }),
+        getNearClient: () => ({ signMessage: vi.fn() }),
+      },
+    };
+    view.mockResolvedValue({
+      ...baseView,
+      agentId: null,
+      setupPublicKey: key.publicKey.toString(),
+      state: "creating",
+      signing: null,
+    });
+    renderWith(<PlatformAgentSettings />);
+    fireEvent.click(await screen.findByRole("button", { name: "Prepare the agent's creation" }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(prepareCreate).not.toHaveBeenCalled();
   });
 });

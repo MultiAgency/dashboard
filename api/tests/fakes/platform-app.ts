@@ -426,10 +426,11 @@ export class FakePlatformApp {
       }
       if (path === "owner/status") {
         const open = this.opened.get(String(input?.correlationId));
-        return ok({
-          stage: "submitted",
-          status: open?.submitted ? "SUCCESS" : "PENDING_SIGNATURE",
-        });
+        return ok(
+          open?.submitted
+            ? { stage: "submitted", status: "SUCCESS", phase: "settled" }
+            : { stage: "unknown", phase: "open" },
+        );
       }
       if (path === "owner/pending") return ok([]);
       if (path === "owner/actions") {

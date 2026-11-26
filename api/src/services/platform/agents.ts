@@ -57,6 +57,8 @@ const ACCESS_ENDED_CODES = new Set([
 ]);
 
 type Failure = Extract<AppRouteResult<unknown> | OwnerResult<unknown>, { ok: false }>;
+
+const KEEPS_SIGNATURE = new Set<Failure["kind"]>(["unavailable", "rate_limited", "session"]);
 type RevokedReason = (typeof PLATFORM_REVOKED_REASONS)[number];
 
 export const badRequest = (message: string) => new ORPCError("BAD_REQUEST", { message });
@@ -576,7 +578,7 @@ export function createPlatformAgents(deps: {
   }
 
   async function settleFailure(organizationId: string, failure: Failure) {
-    if (failure.kind === "unavailable" || failure.kind === "rate_limited") return;
+    if (KEEPS_SIGNATURE.has(failure.kind)) return;
     await update(organizationId, CLEAR_PENDING);
   }
 
@@ -744,7 +746,7 @@ export function createPlatformAgents(deps: {
     const status = await app
       .agent(organizationId, row.agent)
       .call("owner/status", { correlationId: row.createCorrelationId });
-    if (status.ok) {
+    if (status.ok && status.value.phase !== "open") {
       await update(organizationId, { createStatus: status.value.status ?? status.value.stage });
     }
     await noteCreated((await load(organizationId)) ?? row);
