@@ -175,7 +175,7 @@ describe("connecting a platform agent", () => {
 
     const view = await agents.submitCreate(ORG, { correlationId, signedData: { signature: "x" } });
     expect(platform.count("agent:owner/status")).toBe(1);
-    expect(view.create?.status).toBe("PENDING_SIGNATURE");
+    expect(view.create?.status).toBe("submitting");
     await expect(
       agents.submitCreate(ORG, { correlationId, signedData: { signature: "x" } }),
     ).rejects.toThrow(/already sent/);
@@ -231,6 +231,44 @@ describe("connecting a platform agent", () => {
     expect(bodies).toHaveLength(2);
     expect(bodies[1]).toEqual(bodies[0]);
     expect(platform.consents.size).toBe(1);
+  });
+
+  test("checking a readable creation before it's signed leaves it signable", async () => {
+    platform.createMode = "nep413";
+    const setup = await agents.startSetup(ORG, ACTOR, { ownerAccountId: OWNER });
+    await agents.submitSigned(ORG, ACTOR, signed(setup));
+    const prepared = await agents.prepareCreate(ORG, ACTOR);
+    const followed = await agents.followCreate(ORG);
+    expect(followed.create?.status).toBe("prepared");
+    expect((await agents.prepareCreate(ORG, ACTOR)).intent).toEqual(prepared.intent);
+    const done = await agents.submitCreate(ORG, {
+      correlationId: prepared.view.create?.correlationId ?? "",
+      signedData: { signature: "x" },
+    });
+    expect(done.state).toBe("needs_consent");
+  });
+
+  test("a failing service credential keeps the owner's signature for sending again", async () => {
+    const setup = await agents.startSetup(ORG, ACTOR, { ownerAccountId: OWNER });
+    const created = await agents.submitSigned(ORG, ACTOR, signed(setup, "c2V0dXA="));
+    await agents.prepareCreate(ORG, ACTOR);
+    platform.confirmCreate(created.agent ?? "");
+    const consent = await agents.startConsent(ORG, ACTOR, { days: 90 });
+    platform.failNext("consents.submit", {
+      ok: false,
+      kind: "session",
+      status: 401,
+      error: "bad credential",
+    });
+    await expect(agents.submitSigned(ORG, ACTOR, signed(consent, "Y29uc2VudA=="))).rejects.toThrow(
+      /access to the MultiAgency platform isn't working/,
+    );
+    expect(await agents.view(ORG)).toMatchObject({ state: "consent_pending", retryable: true });
+
+    expect((await agents.retry(ORG, ACTOR)).state).toBe("connected");
+    const bodies = platform.calls.filter((c) => c.route === "consents.submit").map((c) => c.body);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toEqual(bodies[0]);
   });
 
   test("only the text and nonce the dashboard issued, unexpired, are submitted", async () => {
