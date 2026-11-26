@@ -803,6 +803,28 @@ describe("work orders", () => {
   });
 
   describe("the scheduled run: period end, auto draft, monthly renewal", () => {
+    test("records the platform agents' upkeep, and a failing upkeep doesn't stop the run", async () => {
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        platformUpkeep: async () => ({ checked: 3, revoked: 1, failed: ["orgX"] }),
+      });
+      expect((await service.run()).counts).toMatchObject({
+        platformAgentsChecked: 3,
+        platformAgentsRevoked: 1,
+        platformAgentsFailed: 1,
+      });
+
+      service = createWorkOrdersService({
+        ...serviceDeps,
+        platformUpkeep: async () => {
+          throw new Error("platform down");
+        },
+      });
+      const result = await service.run();
+      expect(result.ran).toBe(true);
+      expect(result.counts.platformAgentsChecked).toBeUndefined();
+    });
+
     test("ends the period, drafts the request and renews when every metric is met", async () => {
       strongEvidence();
       await active({ autoRenew: true });

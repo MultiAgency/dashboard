@@ -467,6 +467,69 @@ describe("connecting a platform agent", () => {
     expect((await agents.view(ORG)).state).toBe("connected");
   });
 
+  test("before an Organization is removed, every consent the platform lists for it is revoked", async () => {
+    await connect();
+    const stray = [...platform.consents.values()].find((c) => c.agentId !== "unborn");
+    if (!stray) throw new Error("no consent");
+    platform.consents.set("stray", { ...stray, id: "stray", revoked: false, revokedAt: null });
+
+    await agents.beforeOrganizationRemoved(ORG);
+
+    expect([...platform.consents.values()].every((c) => c.revoked)).toBe(true);
+    const view = await agents.view(ORG);
+    expect(view.state).toBe("ended");
+    expect(view.consents.map((c) => c.revokedReason)).toEqual(["organization_deleted"]);
+  });
+
+  test("an Organization isn't cleared for removal while a revocation goes unanswered", async () => {
+    await connect();
+    platform.failNext("consents.revoke", { ok: false, kind: "unavailable" });
+    await expect(agents.beforeOrganizationRemoved(ORG)).rejects.toThrow(/didn't answer/);
+    expect((await agents.view(ORG)).state).toBe("connected");
+  });
+
+  test("removal needs platform access only for an Organization that has a platform agent", async () => {
+    await connect();
+    const off = createPlatformAgents({ db: database.db, app: null, settings: null });
+    await expect(off.beforeOrganizationRemoved(ORG)).rejects.toThrow(/has a platform agent/);
+    await expect(off.beforeOrganizationRemoved(OTHER)).resolves.toBeUndefined();
+    const before = platform.calls.length;
+    await agents.beforeOrganizationRemoved(OTHER);
+    expect(platform.calls.length).toBe(before);
+  });
+
+  test("upkeep revokes for an Organization deleted around the dashboard, once", async () => {
+    await connect();
+    const exists = async (organizationId: string) => organizationId !== ORG;
+
+    expect(await agents.maintain(exists)).toEqual({ checked: 1, revoked: 1, failed: [] });
+    expect([...platform.consents.values()].every((c) => c.revoked)).toBe(true);
+
+    const calls = platform.calls.length;
+    expect(await agents.maintain(exists)).toEqual({ checked: 0, revoked: 0, failed: [] });
+    expect(platform.calls.length).toBe(calls);
+  });
+
+  test("upkeep notices a consent the platform ended, and never revokes without a directory", async () => {
+    await connect();
+    for (const consent of platform.consents.values()) consent.revoked = true;
+
+    expect(await agents.maintain(null)).toEqual({ checked: 1, revoked: 0, failed: [] });
+    expect((await agents.view(ORG)).state).toBe("ended");
+    expect(platform.count("consents.revoke")).toBe(0);
+  });
+
+  test("upkeep reports an Organization it couldn't check and goes on", async () => {
+    await connect();
+    platform.failNext("consents.list", { ok: false, kind: "unavailable" });
+    expect(await agents.maintain(async () => true)).toEqual({
+      checked: 1,
+      revoked: 0,
+      failed: [ORG],
+    });
+    expect((await agents.view(ORG)).state).toBe("connected");
+  });
+
   test("one Organization's agent is never read or revoked for another", async () => {
     await connect();
     const reads = createPlatformReads({ app: platform.client(), agents });

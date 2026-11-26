@@ -18,6 +18,7 @@ Up to #47 it also deleted legacy `client_projects` links to Projects that no lon
 | `API_DATABASE_URL` | `api_db` |
 | `AUTH_BASE_URL` | Host that serves `/api/auth/*`, for example `https://multiagency.ai` |
 | `AUTH_SESSION_COOKIE` | Cookie header of a session that owns every duplicate Organization. The auth API only lists the caller's own Organizations. |
+| `PLATFORM_URL`, `PLATFORM_APP_CREDENTIAL`, `PLATFORM_DEPLOYMENT` | The API's platform settings for this environment. Before removing an Organization that has a platform agent, the cleanup revokes every live consent the platform lists for it. Without these settings, or when the platform doesn't answer, that Organization is kept and listed under `skippedOrganizations`. |
 
 ### Run order
 

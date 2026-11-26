@@ -10,6 +10,8 @@ import {
   betterAuthOrganizations,
 } from "../api/src/lib/organizations.ts";
 import { createOrganizationCleanup } from "../api/src/services/organization-cleanup.ts";
+import { createPlatformAgents } from "../api/src/services/platform/agents.ts";
+import { createPlatformApp, platformSettings } from "../api/src/services/platform/client.ts";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 config({ path: resolve(__dirname, "../.env") });
@@ -49,9 +51,17 @@ async function main() {
   const api = authApi(requireEnv("AUTH_BASE_URL"), requireEnv("AUTH_SESSION_COOKIE"));
 
   try {
+    const db = drizzle(apiPool, { schema: apiSchema }) as unknown as Database;
+    const settings = platformSettings(process.env);
+    const platform = createPlatformAgents({
+      db,
+      app: settings ? createPlatformApp(settings) : null,
+      settings,
+    });
     const cleanup = createOrganizationCleanup({
-      db: drizzle(apiPool, { schema: apiSchema }) as unknown as Database,
+      db,
       organizations: betterAuthOrganizations(() => api),
+      beforeRemove: platform.beforeOrganizationRemoved,
     });
     const report = await cleanup.run({ dryRun });
     console.log(JSON.stringify({ dryRun, ...report }, null, 2));
