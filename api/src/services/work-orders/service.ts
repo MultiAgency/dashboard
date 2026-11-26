@@ -138,6 +138,7 @@ export type WorkOrderDeps = {
       organizationId: string,
       needs: { near: bigint; priceUsd: string | null },
     ): Promise<FundingCheck | null>;
+    configured?(organizationId: string): Promise<boolean>;
     payoutToken?(organizationId: string): Promise<string>;
     send(
       organizationId: string,
@@ -168,6 +169,7 @@ export type WorkOrderDeps = {
   userEmail?: (userId: string) => Promise<string | null>;
   appOrigin?: string;
   timeZone?: string;
+  approvalPayoutWaitMs?: number;
   now?: () => Date;
 };
 
@@ -260,6 +262,7 @@ const IN_FLIGHT: AgentPayoutView["status"][] = [
   "paid",
 ];
 const STUCK_PAYING_MS = 10 * 60_000;
+const APPROVAL_PAYOUT_WAIT_MS = 8_000;
 const DAO_PAYMENT_NOTE =
   "Being paid through a DAO proposal: automatic payment is off for this request. Link the proposal once it's created. To pay it another way, reject or remove the proposal on the DAO first, then reject the request so the builder can request it again.";
 
@@ -513,6 +516,13 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     return row.tokenId === USD
       ? null
       : `This Organization's payout agent pays in ${symbolOf(token)}, so only work orders priced in USD are paid automatically. Pay this one through a DAO proposal.`;
+  }
+
+  async function autoPayOf(row: WorkOrderRow) {
+    const payouts = deps.payouts;
+    if (!payouts?.configured || !(await payouts.configured(row.organizationId))) return null;
+    const token = await agentTokenOf(row);
+    return agentRefusal(row, token) ? null : { tokenId: token };
   }
 
   async function agentQuote(
@@ -963,7 +973,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       ["Work period", `${longDate(row.periodStart)} to ${longDate(row.periodEnd)}`],
       [
         "Budget cap",
-        `${display(row.budgetAmount, row.tokenId)}${row.tokenId === USD ? ", paid in NEAR at the price when each payment is started" : ""}`,
+        `${display(row.budgetAmount, row.tokenId)}${row.tokenId === USD ? ", in US dollars, paid in USDC at par or in NEAR at the price when each payment is started, as the Agency's payout agent pays" : ""}`,
       ],
       ["Payout account (NEAR)", row.builderNearAccount],
       ["GitHub account", row.githubLogin ?? ""],
@@ -2187,6 +2197,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       activity: summarizeActivity(collected, scopeOf(row)),
       requests: await Promise.all(requests.map((r) => requestView(r, row, requests, evidence))),
       repoOwners,
+      autoPay: await autoPayOf(row).catch(() => null),
     };
   }
 
@@ -3496,6 +3507,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     amount: string,
     actorId: string,
     confirmEvidenceIds?: string[],
+    payWithinMs?: number,
   ): Promise<CompensationRequestRow> {
     if (BigInt(amount) <= 0n) throw badRequest("AMOUNT_NOT_POSITIVE", "Approve more than zero");
     const approved = await db.transaction(async (tx) => {
@@ -3581,8 +3593,23 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       }),
     );
     await announce(row, "request.approved", { request: approved });
-    const paid = await tryAutoPay(approved, row);
-    return paid.request;
+    const paying = tryAutoPay(approved, row).then(
+      (paid) => paid.request,
+      (error: unknown) => {
+        console.warn(`[API] payout of request ${approved.id} couldn't start`, error);
+        return null;
+      },
+    );
+    if (payWithinMs === undefined) return (await paying) ?? mustRequest(approved.id);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const waited = await Promise.race([
+      paying,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), payWithinMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    return waited ?? mustRequest(approved.id);
   }
 
   const autoApproval = createAutoApproval({
@@ -4229,6 +4256,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         input.amount,
         scope.actorId,
         input.confirmEvidenceIds,
+        deps.approvalPayoutWaitMs ?? APPROVAL_PAYOUT_WAIT_MS,
       );
       return requestView(approved, row);
     },

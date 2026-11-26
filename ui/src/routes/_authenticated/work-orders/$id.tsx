@@ -215,7 +215,10 @@ function MyWorkOrderPage() {
               <>
                 <dt className="text-muted-foreground">Signed</dt>
                 <dd>
-                  {signedHow(wo.signature.method)} on {wo.signature.signedAt?.slice(0, 10)}
+                  {signedHow(wo.signature.method)}
+                  {(wo.signature.signedAt ?? wo.acceptedAt)
+                    ? ` on ${(wo.signature.signedAt ?? wo.acceptedAt)?.slice(0, 10)}`
+                    : ""}
                   {documentHref ? (
                     <>
                       {" · "}

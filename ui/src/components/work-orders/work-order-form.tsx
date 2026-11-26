@@ -731,7 +731,7 @@ function WorkOrderFields({
                 setDraft((current) => ({ ...current, tokenId: value, amount: "" }))
               }
               options={[
-                { value: USD, label: "USD (paid in NEAR at the live price)" },
+                { value: USD, label: "USD (paid in USDC, or in NEAR at the live price)" },
                 { value: NEAR, label: "NEAR" },
                 ...(tokenId !== USD && tokenId !== NEAR && tokenId
                   ? [{ value: tokenId, label: tokenSymbol(tokenId) }]
