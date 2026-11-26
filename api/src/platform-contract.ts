@@ -3,10 +3,12 @@ import { BAD_REQUEST, FORBIDDEN, UNAUTHORIZED } from "every-plugin/errors";
 import { z } from "zod";
 import {
   CONSENT_DAYS,
+  DEPOSIT_STATES,
   nep413Intent,
   OWNER_ACTION_KINDS,
   PAYOUT_ASSETS,
   PAYOUT_ROUTES,
+  PAYOUT_VERDICTS,
   PLATFORM_AGENT_STATES,
   PLATFORM_SIGNING_KINDS,
 } from "./services/platform/terms";
@@ -81,6 +83,7 @@ const payoutRules = z.object({
   asset: z.enum(PAYOUT_ASSETS),
   maxPerPayout: decimal,
   monthlyBudgetUsd: decimal,
+  ownerApproval: z.boolean(),
 });
 
 const ownerAction = z.object({
@@ -102,7 +105,42 @@ const ownerView = z.object({
   grant: z
     .object({ grantId: z.string(), expiresAt: z.string(), expiringSoon: z.boolean() })
     .nullable(),
+  held: z.array(
+    z.object({
+      approvalId: z.string(),
+      correlationId: z.string(),
+      at: z.string(),
+      recipient: z.string().nullable(),
+      amount: z.string().nullable(),
+      asset: z.string().nullable(),
+      chain: z.string().nullable(),
+      terms: z
+        .object({
+          compensationRequestId: z.string(),
+          workOrderId: z.string(),
+          workOrderTitle: z.string(),
+          approvedAmount: z.string().nullable(),
+          tokenId: z.string(),
+          priceUsd: z.string().nullable(),
+        })
+        .nullable(),
+    }),
+  ),
   actions: z.array(ownerAction),
+});
+
+const deposit = z.object({
+  requestId: z.string(),
+  asset: z.string(),
+  symbol: z.string(),
+  decimals: z.number().nullable(),
+  state: z.enum(DEPOSIT_STATES),
+  usable: z.boolean(),
+  address: z.string().nullable(),
+  memo: z.string().nullable(),
+  minAmount: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  code: z.string().nullable(),
 });
 
 export const platformAgentContract = {
@@ -240,25 +278,6 @@ export const platformAgentContract = {
     )
     .errors(errors),
 
-  held: oc
-    .route({ method: "GET", path: "/admin/platform-agent/held" })
-    .input(z.object({}))
-    .output(
-      z.array(
-        z.object({
-          at: z.string(),
-          kind: z.string(),
-          correlationId: z.string(),
-          approvalId: z.string(),
-          recipient: z.string().nullable(),
-          amount: z.string().nullable(),
-          asset: z.string().nullable(),
-          chain: z.string().nullable(),
-        }),
-      ),
-    )
-    .errors(errors),
-
   activity: oc
     .route({ method: "GET", path: "/admin/platform-agent/activity" })
     .input(z.object({}))
@@ -341,7 +360,14 @@ export const platformAgentContract = {
 
   prepareAction: oc
     .route({ method: "POST", path: "/admin/platform-agent/actions" })
-    .input(z.object({ kind: z.enum(OWNER_ACTION_KINDS), grantId: z.string().max(200).optional() }))
+    .input(
+      z.object({
+        kind: z.enum(OWNER_ACTION_KINDS),
+        grantId: z.string().max(200).optional(),
+        approvalId: z.string().max(200).optional(),
+        verdict: z.enum(PAYOUT_VERDICTS).optional(),
+      }),
+    )
     .output(
       z.object({
         action: ownerAction,
@@ -372,6 +398,18 @@ export const platformAgentContract = {
     .route({ method: "POST", path: "/admin/platform-agent/actions/status" })
     .input(z.object({ correlationId: z.string().min(1).max(200) }))
     .output(ownerAction)
+    .errors(errors),
+
+  deposit: oc
+    .route({ method: "GET", path: "/admin/platform-agent/deposit" })
+    .input(z.object({}))
+    .output(deposit.nullable())
+    .errors(errors),
+
+  fundAgent: oc
+    .route({ method: "POST", path: "/admin/platform-agent/deposit" })
+    .input(z.object({}))
+    .output(deposit)
     .errors(errors),
 
   setPayoutRoute: oc

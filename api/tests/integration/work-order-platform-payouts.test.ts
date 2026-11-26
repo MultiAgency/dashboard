@@ -14,7 +14,7 @@ import {
 import { requireTreasury } from "../../src/services/organization-access";
 import { createPlatformAgents } from "../../src/services/platform/agents";
 import { routePayouts } from "../../src/services/platform/payout-router";
-import { createPlatformPayouts } from "../../src/services/platform/payouts";
+import { createPlatformPayouts, platformPayoutRejected } from "../../src/services/platform/payouts";
 import type { ConsistencyResult } from "../../src/services/work-orders/consistency";
 import { createWorkOrderIntegrations } from "../../src/services/work-orders/outbox";
 import {
@@ -34,6 +34,21 @@ const CAROL = "carol.near";
 const AGENT = "own-studio";
 const NEAR = 10n ** 24n;
 const CONSISTENT: ConsistencyResult = { verdict: "consistent", concerns: [], confidence: 0.9 };
+const POLICY = {
+  frozen: false,
+  actions: ["withdraw" as const],
+  confidential: true,
+  owner_approval: false,
+  assets: [ASSETS.wNEAR],
+  limits: { per_transaction: { [ASSETS.wNEAR]: (500n * NEAR).toString() } },
+  max_actions_per_hour: 10,
+  destinations: {
+    mode: "only" as const,
+    list: [{ action: "withdraw" as const, chain: "near", address: CAROL, memo: null }],
+  },
+  budget: { daily_usd: null, weekly_usd: null, monthly_usd: "100000" },
+  timelock_ms: 0,
+};
 const SETTINGS = {
   base: "https://platform.test",
   host: "platform.test",
@@ -62,21 +77,7 @@ describe("work-order payouts through the platform agent", () => {
     double = payoutDouble({
       organization: "studio",
       agent: AGENT,
-      policy: {
-        frozen: false,
-        actions: ["withdraw"],
-        confidential: true,
-        owner_approval: false,
-        assets: [ASSETS.wNEAR],
-        limits: { per_transaction: { [ASSETS.wNEAR]: (500n * NEAR).toString() } },
-        max_actions_per_hour: 10,
-        destinations: {
-          mode: "only",
-          list: [{ action: "withdraw", chain: "near", address: CAROL, memo: null }],
-        },
-        budget: { daily_usd: null, weekly_usd: null, monthly_usd: "100000" },
-        timelock_ms: 0,
-      },
+      policy: POLICY,
       grant: { label: "payout", expiresAt: "2027-06-01T00:00:00Z" },
       balances: { [ASSETS.wNEAR]: (1000n * NEAR).toString() },
       scopes: ["owner", "payout", "read"],
@@ -338,5 +339,46 @@ describe("work-order payouts through the platform agent", () => {
       service.startDaoPayment(requireTreasury(await studio()), { requestId }),
     ).rejects.toThrow();
     expect(double.requests().filter((r) => r.requestId.startsWith(requestId))).toHaveLength(1);
+  });
+
+  test("a payout the owner rejects is held, never sent again, and can be paid through a DAO proposal", async () => {
+    await paidHistory(4);
+    clock = new Date("2026-11-05T12:00:00.000Z");
+    await automatic();
+    double.setPolicy({ ...POLICY, owner_approval: true });
+    const wo = await active();
+    const { submitted, admin } = await submit(wo.id);
+    const requestId = submitted.id;
+    expect(submitted.status).toBe("paying");
+    expect((await admin()).agentPayout?.reason).toMatch(/owner's vote/);
+
+    double.vote(`${requestId}-1`, "reject");
+    const [row] = await db
+      .select()
+      .from(platformPayouts)
+      .where(eq(platformPayouts.requestId, `${requestId}-1`));
+    await platformPayoutRejected(db)("studio", row?.correlationId ?? "");
+    for (const minutes of [6, 12, 18]) {
+      clock = new Date(Date.parse("2026-11-05T12:00:00.000Z") + minutes * 60_000);
+      await service.run();
+    }
+    const [settled] = await db
+      .select()
+      .from(compensationRequests)
+      .where(eq(compensationRequests.id, requestId));
+    expect(settled).toMatchObject({
+      status: "approved",
+      autoPayBlockedCode: "owner_rejected",
+      autoPayBlockedAt: null,
+    });
+    expect(settled?.note).toMatch(/isn't sent again automatically/);
+    expect(double.requests().filter((r) => r.requestId.startsWith(requestId))).toHaveLength(1);
+    expect(
+      (await kindsOf("studio-admin")).filter((k) => k === "compensation_request_payout_failed"),
+    ).toHaveLength(1);
+    const dao = await service
+      .startDaoPayment(requireTreasury(await studio()), { requestId })
+      .catch((error: Error) => error);
+    expect(dao instanceof Error ? dao.message : "").not.toMatch(/automatic payout/);
   });
 });

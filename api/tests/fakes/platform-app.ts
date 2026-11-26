@@ -47,6 +47,28 @@ export class FakePlatformApp {
       apply: () => void;
     }
   >();
+  held: Array<{
+    at: string;
+    kind: string;
+    request: Record<string, unknown>;
+    correlationId: string;
+    approvalId: string;
+  }> = [
+    {
+      at: "2026-11-25T10:00:00Z",
+      kind: "remote",
+      request: {
+        asset: "nep141:usdc",
+        amount: "5000000",
+        recipient: "carol.near",
+        confidential: true,
+      },
+      correlationId: "held-1",
+      approvalId: "appr-1",
+    },
+  ];
+  votes: Array<{ approvalId: string; verdict: string }> = [];
+  deposits = new Map<string, { asset: string; address: string }>();
   private failures = new Map<string, Failure[]>();
   private lost = new Set<string>();
   private now: () => number;
@@ -413,8 +435,8 @@ export class FakePlatformApp {
       const route = `agent:${path}`;
       const failure = this.take(route, { organization, agent, input });
       if (failure) return failure;
-      const owner = path.startsWith("owner/");
-      if (!this.liveConsent(organization, agent, owner ? "owner" : "read")) {
+      const scope = path.startsWith("owner/") ? "owner" : path === "deposit" ? "payout" : "read";
+      if (!this.liveConsent(organization, agent, scope)) {
         return {
           ok: false,
           kind: "forbidden",
@@ -432,6 +454,8 @@ export class FakePlatformApp {
           changes?: Record<string, unknown>;
           grantId?: string;
           expiresAt?: string;
+          approvalId?: string;
+          verdict?: string;
         };
         if (action.type === "agent_create" && action.owner?.public_key !== reservation?.setupKey) {
           return { ok: false, kind: "refused", code: "setup_key", error: "not the setup key" };
@@ -477,6 +501,13 @@ export class FakePlatformApp {
           },
           agent_unfreeze: () => {
             (this.overview.policy.policy as { frozen: boolean }).frozen = false;
+          },
+          approval_vote: () => {
+            this.held = this.held.filter((h) => h.approvalId !== action.approvalId);
+            this.votes.push({
+              approvalId: String(action.approvalId),
+              verdict: String(action.verdict),
+            });
           },
         };
         const apply = applies[action.type];
@@ -548,21 +579,39 @@ export class FakePlatformApp {
       }
       if (path === "overview") return ok({ ...this.overview, agentId: reservation?.agentId ?? "" });
       if (path === "unresolved") return ok([]);
-      if (path === "held") {
-        return ok([
-          {
-            at: "2026-11-25T10:00:00Z",
-            kind: "remote",
-            request: {
-              asset: "nep141:usdc",
-              amount: "5000000",
-              recipient: "carol.near",
-              confidential: true,
-            },
-            correlationId: "held-1",
-            approvalId: "appr-1",
+      if (path === "held") return ok(this.held);
+      if (path === "deposit") {
+        const requestId = String(input?.requestId ?? `anon-${this.deposits.size}`);
+        const recorded = this.deposits.get(requestId) ?? {
+          asset: String(input?.asset),
+          address: `deposit-address-${this.deposits.size + 1}`,
+        };
+        this.deposits.set(requestId, recorded);
+        return ok({
+          correlationId: `deposit-${requestId}`,
+          address: recorded.address,
+          memo: null,
+          minAmount: "1000",
+          expiresAt: new Date(this.now() + 3_600_000).toISOString(),
+        });
+      }
+      if (path === "depositStatus") {
+        const requestId = String(input?.requestId);
+        const recorded = this.deposits.get(requestId);
+        if (!recorded) return ok({ requestId, state: "not_found" });
+        return ok({
+          requestId,
+          state: "ready",
+          asset: recorded.asset,
+          requestedAt: new Date(this.now()).toISOString(),
+          deposit: {
+            correlationId: `deposit-${requestId}`,
+            address: recorded.address,
+            memo: null,
+            minAmount: "1000",
+            expiresAt: new Date(this.now() + 3_600_000).toISOString(),
           },
-        ]);
+        });
       }
       if (path === "activity" || path === "ledger" || path === "policyHistory") {
         return ok([]);

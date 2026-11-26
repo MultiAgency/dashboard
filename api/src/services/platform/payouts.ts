@@ -1,10 +1,12 @@
-import { type AnyColumn, desc, eq, sql } from "drizzle-orm";
+import { type AnyColumn, and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Database } from "../../db";
 import {
   agentPayouts,
+  compensationRequests,
   type PlatformPayoutRow,
   platformAgents,
   platformPayouts,
+  workOrders,
 } from "../../db/schema";
 import { atomicToNear, topUpFor } from "../payouts/policy";
 import type { FundingCheck } from "../payouts/service";
@@ -23,38 +25,103 @@ type Overview = OwnerOutput<"overview">;
 type PayoutAnswer = OwnerOutput<"payouts/request">;
 
 export function noUnsettledPlatformPayout(compensationRequestId: AnyColumn) {
-  return sql`not exists (select 1 from ${platformPayouts} where ${platformPayouts.compensationRequestId} = ${compensationRequestId} and not (${platformPayouts.state} = 'refused' or (${platformPayouts.state} = 'failed' and ${platformPayouts.neverExecuted})))`;
+  return sql`not exists (select 1 from ${platformPayouts} where ${platformPayouts.compensationRequestId} = ${compensationRequestId} and not (${platformPayouts.state} in ('refused', 'rejected') or (${platformPayouts.state} = 'failed' and ${platformPayouts.neverExecuted})))`;
+}
+
+function retryable(row: PlatformPayoutRow) {
+  return row.state === "refused" || (row.state === "failed" && row.neverExecuted);
 }
 
 function provenUnsent(row: PlatformPayoutRow) {
-  return row.state === "refused" || (row.state === "failed" && row.neverExecuted);
+  return retryable(row) || row.state === "rejected";
+}
+
+export function platformPayoutRejected(db: Database) {
+  return async (organizationId: string, correlationId: string) => {
+    await db
+      .update(platformPayouts)
+      .set({ state: "rejected", updatedAt: new Date() })
+      .where(
+        and(
+          eq(platformPayouts.organizationId, organizationId),
+          eq(platformPayouts.correlationId, correlationId),
+          ne(platformPayouts.state, "succeeded"),
+        ),
+      );
+  };
+}
+
+export type PayoutTerms = {
+  compensationRequestId: string;
+  workOrderId: string;
+  workOrderTitle: string;
+  approvedAmount: string | null;
+  tokenId: string;
+  priceUsd: string | null;
+};
+
+export function platformPayoutTerms(db: Database) {
+  return async (organizationId: string, correlationIds: string[]) => {
+    if (correlationIds.length === 0) return new Map<string, PayoutTerms>();
+    const rows = await db
+      .select({
+        correlationId: platformPayouts.correlationId,
+        compensationRequestId: platformPayouts.compensationRequestId,
+        workOrderId: workOrders.id,
+        workOrderTitle: workOrders.title,
+        approvedAmount: compensationRequests.approvedAmount,
+        tokenId: workOrders.tokenId,
+        priceUsd: compensationRequests.priceUsd,
+      })
+      .from(platformPayouts)
+      .innerJoin(
+        compensationRequests,
+        eq(compensationRequests.id, platformPayouts.compensationRequestId),
+      )
+      .innerJoin(workOrders, eq(workOrders.id, compensationRequests.workOrderId))
+      .where(
+        and(
+          eq(platformPayouts.organizationId, organizationId),
+          inArray(platformPayouts.correlationId, correlationIds),
+        ),
+      );
+    return new Map(
+      rows.flatMap(({ correlationId, ...terms }) =>
+        correlationId ? [[correlationId, terms] as const] : [],
+      ),
+    );
+  };
 }
 
 export function payoutView(row: PlatformPayoutRow): AgentPayoutView {
   const status: AgentPayoutView["status"] =
     row.state === "succeeded"
       ? "paid"
-      : row.state === "refused"
-        ? "refused"
-        : row.state === "failed"
-          ? row.neverExecuted
-            ? "failed"
-            : "needs_review"
-          : row.state === "unknown"
-            ? "uncertain"
-            : row.state === "sending"
-              ? "sending"
-              : row.state === "conflict"
-                ? "needs_review"
-                : "processing";
+      : row.state === "rejected"
+        ? "rejected"
+        : row.state === "refused"
+          ? "refused"
+          : row.state === "failed"
+            ? row.neverExecuted
+              ? "failed"
+              : "needs_review"
+            : row.state === "unknown"
+              ? "uncertain"
+              : row.state === "sending"
+                ? "sending"
+                : row.state === "conflict"
+                  ? "needs_review"
+                  : "processing";
   const reason =
     row.state === "held"
       ? "Waiting for the agent owner's vote on the MultiAgency platform"
-      : row.state === "unknown"
-        ? "The platform hasn't proven the outcome yet; nothing is sent again meanwhile"
-        : row.state === "conflict"
-          ? "The platform recorded other terms under this payout's ID; a person checks it"
-          : (row.code ?? row.failureCode ?? null);
+      : row.state === "rejected"
+        ? "The agent's owner rejected this payout"
+        : row.state === "unknown"
+          ? "The platform hasn't proven the outcome yet; nothing is sent again meanwhile"
+          : row.state === "conflict"
+            ? "The platform recorded other terms under this payout's ID; a person checks it"
+            : (row.code ?? row.failureCode ?? null);
   return {
     id: row.requestId,
     organizationId: row.organizationId,
@@ -122,8 +189,6 @@ export function createPlatformPayouts(deps: {
     if (policy.frozen) return refuse("frozen", "Payouts are frozen");
     if (overview.notInForce)
       return refuse("not_applied", `The agent's rules aren't in force: ${overview.notInForce}`);
-    if (policy.owner_approval)
-      return refuse("owner_approval", "The rules require a vote per payout");
     const live = overview.grants.some(
       (g) => g.label === "payout" && !g.revoked_at && Date.parse(g.expires_at) > now().getTime(),
     );
@@ -247,6 +312,7 @@ export function createPlatformPayouts(deps: {
       recipient: row.recipient,
       amount: row.amount,
       expectedPolicy: { revision: row.expectedRevision, digest: row.expectedDigest },
+      ...(row.allowDuplicateHeld ? { allowDuplicateHeld: true as const } : {}),
     });
     if (result.ok) return settle(row, answered(result.value));
     return afterFailure(row, connected.connection.consentId, result);
@@ -289,7 +355,7 @@ export function createPlatformPayouts(deps: {
       throw badRequest("This Organization's platform agent can't be asked to pay");
     }
     const [last] = await attemptsOf(input.requestId);
-    if (last && !provenUnsent(last)) return payoutView(last);
+    if (last && !retryable(last)) return payoutView(last);
     const attempt = (last?.attempt ?? 0) + 1;
     const requestId = `${input.requestId}-${attempt}`;
     if (!REQUEST_ID.test(requestId)) throw badRequest(`${requestId} can't be a platform payout ID`);
@@ -311,6 +377,7 @@ export function createPlatformPayouts(deps: {
       amount: input.amount,
       expectedRevision: overview.value.policy.revision,
       expectedDigest: overview.value.digest,
+      allowDuplicateHeld: true,
       state: "sending",
     });
     return payoutView(await ask(await record(requestId)));

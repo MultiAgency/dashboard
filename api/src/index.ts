@@ -56,9 +56,14 @@ import { atomicToNear, nearToAtomic, topUpFor, topUpProposal } from "./services/
 import { type AgentApiPort, createPayoutAgents, workOrderPayees } from "./services/payouts/service";
 import { createPlatformAgents } from "./services/platform/agents";
 import { createPlatformApp, platformSettings } from "./services/platform/client";
+import { createPlatformDeposits } from "./services/platform/deposits";
 import { createPlatformOwnerActions } from "./services/platform/owner-actions";
 import { routePayouts } from "./services/platform/payout-router";
-import { createPlatformPayouts } from "./services/platform/payouts";
+import {
+  createPlatformPayouts,
+  platformPayoutRejected,
+  platformPayoutTerms,
+} from "./services/platform/payouts";
 import { createPlatformReads } from "./services/platform/reads";
 import { createPrepaymentsService } from "./services/prepayments";
 import { createProjectDirectory } from "./services/project-directory";
@@ -361,6 +366,13 @@ const initializeServices = (
       app: platformApp,
       agents: platformAgents,
       payees: workOrderPayees(db),
+      payoutTerms: platformPayoutTerms(db),
+      payoutRejected: platformPayoutRejected(db),
+    });
+    const platformDeposits = createPlatformDeposits({
+      db,
+      app: platformApp,
+      agents: platformAgents,
     });
     const platformPayouts = createPlatformPayouts({
       db,
@@ -511,6 +523,7 @@ const initializeServices = (
       platformReads,
       platformOwnerActions,
       platformPayouts,
+      platformDeposits,
       signedInNearKeys,
       workOrderTimers,
     };
@@ -1424,10 +1437,6 @@ export default createPlugin.withPlugins<PluginsClient>()({
             const { platformReads } = Context.get(context["effect/context"], ApiServices);
             return platformReads.unresolved(context.scope.organizationId);
           }),
-        held: builder.platformAgent.held.use(agencyManager).handler(async ({ context }) => {
-          const { platformReads } = Context.get(context["effect/context"], ApiServices);
-          return platformReads.held(context.scope.organizationId);
-        }),
         activity: builder.platformAgent.activity.use(agencyManager).handler(async ({ context }) => {
           const { platformReads } = Context.get(context["effect/context"], ApiServices);
           return platformReads.activity(context.scope.organizationId);
@@ -1447,6 +1456,16 @@ export default createPlugin.withPlugins<PluginsClient>()({
           .handler(async ({ context }) => {
             const { platformReads } = Context.get(context["effect/context"], ApiServices);
             return platformReads.ownerActions(context.scope.organizationId);
+          }),
+        deposit: builder.platformAgent.deposit.use(agencyManager).handler(async ({ context }) => {
+          const { platformDeposits } = Context.get(context["effect/context"], ApiServices);
+          return platformDeposits.current(context.scope.organizationId);
+        }),
+        fundAgent: builder.platformAgent.fundAgent
+          .use(agencyManager)
+          .handler(async ({ context }) => {
+            const { platformDeposits } = Context.get(context["effect/context"], ApiServices);
+            return platformDeposits.fund(context.scope.organizationId, context.scope.actorId);
           }),
         setPayoutRoute: builder.platformAgent.setPayoutRoute
           .use(auth.requireAdmin)

@@ -160,6 +160,10 @@ export function payoutRetryable(payout: { status: string; provenUnsent: boolean 
   return payout.status === "refused" || (payout.status === "failed" && payout.provenUnsent);
 }
 
+export function payoutSettledUnsent(payout: { status: string; provenUnsent: boolean }): boolean {
+  return payoutRetryable(payout) || payout.status === "rejected";
+}
+
 export function noUnsettledPayout(requestId: AnyColumn) {
   return sql`not exists (select 1 from ${agentPayouts} where ${agentPayouts.requestId} = ${requestId} and not (${agentPayouts.status} = 'refused' or (${agentPayouts.status} = 'failed' and ${agentPayouts.provenUnsent})))`;
 }

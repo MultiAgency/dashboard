@@ -9,6 +9,7 @@ export type PayoutRules = {
   asset: PayoutAsset;
   maxPerPayout: string;
   monthlyBudgetUsd: string;
+  ownerApproval: boolean;
 };
 
 export const PAYOUT_ASSET_TERMS = {
@@ -97,9 +98,13 @@ export function rulesChanges(
     summary.push(`A monthly budget of $${rules.monthlyBudgetUsd}, with no daily or weekly budget`);
   }
 
-  if (signed.owner_approval) {
-    changes.owner_approval = false;
-    summary.push("Pay agreed builders within these limits without another signature");
+  if (signed.owner_approval !== rules.ownerApproval) {
+    changes.owner_approval = rules.ownerApproval;
+    summary.push(
+      rules.ownerApproval
+        ? "Hold each payout for the owner's vote"
+        : "Pay agreed builders within these limits without another signature",
+    );
   }
 
   return { changes, summary };

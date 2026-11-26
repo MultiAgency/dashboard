@@ -5,11 +5,6 @@ const LIST_LIMIT = 50;
 
 type AgentCalls = ReturnType<PlatformApp["agent"]>;
 
-const text = (value: unknown): string | null =>
-  typeof value === "string" || typeof value === "number" || typeof value === "bigint"
-    ? String(value)
-    : null;
-
 const newestFirst = <T extends { at: string }>(rows: T[]) =>
   [...rows].sort((a, b) => b.at.localeCompare(a.at)).slice(0, LIST_LIMIT);
 
@@ -89,18 +84,6 @@ export function createPlatformReads(deps: { app: PlatformApp | null; agents: Pla
         kind: u.kind,
         status: u.status,
         sent: u.sent,
-      })),
-
-    held: async (organizationId: string) =>
-      (await read(organizationId, (c) => c.call("held"))).map((h) => ({
-        at: h.at,
-        kind: h.kind,
-        correlationId: h.correlationId,
-        approvalId: h.approvalId,
-        recipient: text(h.request.recipient),
-        amount: text(h.request.amount),
-        asset: text(h.request.asset),
-        chain: text(h.request.chain),
       })),
 
     activity: async (organizationId: string) =>

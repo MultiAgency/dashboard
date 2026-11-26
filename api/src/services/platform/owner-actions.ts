@@ -1,10 +1,18 @@
 import { and, desc, eq } from "drizzle-orm";
 import type { Database } from "../../db";
 import { type PlatformOwnerActionRow, platformAgents, platformOwnerActions } from "../../db/schema";
+import { baseUnitsToDisplay } from "../tokens";
 import { badRequest, type PlatformAgents, platformError } from "./agents";
-import type { AppOwnerAction, OwnerResult, PlatformApp } from "./client";
+import type { AppOwnerAction, OwnerOutput, OwnerResult, PlatformApp } from "./client";
+import type { PayoutTerms } from "./payouts";
 import { type PayoutRules, rulesChanges } from "./rules";
-import { GRANT_DAYS, GRANT_RENEW_DAYS, nep413Intent, type OwnerActionKind } from "./terms";
+import {
+  GRANT_DAYS,
+  GRANT_RENEW_DAYS,
+  nep413Intent,
+  type OwnerActionKind,
+  type PayoutVerdict,
+} from "./terms";
 
 const DAY_MS = 86_400_000;
 const OPEN = new Set(["prepared", "adopted", "submitting", "submitted"]);
@@ -15,8 +23,9 @@ const ACTION_TYPES: Record<OwnerActionKind, AppOwnerAction["type"]> = {
   grant_revoke: "grant_revoke",
   freeze: "agent_freeze",
   unfreeze: "agent_unfreeze",
+  payout_vote: "approval_vote",
 };
-const SUMMARIES: Record<Exclude<OwnerActionKind, "rules">, string> = {
+const SUMMARIES: Record<Exclude<OwnerActionKind, "rules" | "payout_vote">, string> = {
   grant: `Let MultiAgency pay within these rules for ${GRANT_DAYS} days`,
   grant_revoke: "Stop MultiAgency paying under permission",
   freeze: "Freeze the agent: it pays nothing until unfrozen",
@@ -25,12 +34,36 @@ const SUMMARIES: Record<Exclude<OwnerActionKind, "rules">, string> = {
 
 type AgentCalls = ReturnType<PlatformApp["agent"]>;
 type Connection = NonNullable<Awaited<ReturnType<PlatformAgents["connection"]>>>;
+type Held = OwnerOutput<"held">[number];
+type Built = {
+  action: AppOwnerAction;
+  summary: string;
+  subject?: string;
+  verdict?: PayoutVerdict;
+};
+export type PrepareInput = {
+  kind: OwnerActionKind;
+  grantId?: string;
+  approvalId?: string;
+  verdict?: PayoutVerdict;
+};
+
+const text = (value: unknown): string | null =>
+  typeof value === "string" || typeof value === "number" || typeof value === "bigint"
+    ? String(value)
+    : null;
+const tokenOf = (asset: string) => asset.replace(/^nep141:/, "");
 
 export function createPlatformOwnerActions(deps: {
   db: Database;
   app: PlatformApp | null;
   agents: PlatformAgents;
   payees: (organizationId: string) => Promise<string[]>;
+  payoutTerms: (
+    organizationId: string,
+    correlationIds: string[],
+  ) => Promise<Map<string, PayoutTerms>>;
+  payoutRejected: (organizationId: string, correlationId: string) => Promise<void>;
   now?: () => Date;
 }) {
   const { db } = deps;
@@ -61,12 +94,18 @@ export function createPlatformOwnerActions(deps: {
         asset: platformAgents.payoutAsset,
         maxPerPayout: platformAgents.maxPerPayout,
         monthlyBudgetUsd: platformAgents.monthlyBudgetUsd,
+        ownerApproval: platformAgents.ownerApproval,
       })
       .from(platformAgents)
       .where(eq(platformAgents.organizationId, organizationId))
       .limit(1);
     return row?.asset && row.maxPerPayout && row.monthlyBudgetUsd
-      ? { asset: row.asset, maxPerPayout: row.maxPerPayout, monthlyBudgetUsd: row.monthlyBudgetUsd }
+      ? {
+          asset: row.asset,
+          maxPerPayout: row.maxPerPayout,
+          monthlyBudgetUsd: row.monthlyBudgetUsd,
+          ownerApproval: row.ownerApproval,
+        }
       : null;
   }
 
@@ -109,6 +148,28 @@ export function createPlatformOwnerActions(deps: {
     );
   }
 
+  function heldView(entry: Held, terms: PayoutTerms | undefined) {
+    return {
+      approvalId: entry.approvalId,
+      correlationId: entry.correlationId,
+      at: entry.at,
+      recipient: text(entry.request.recipient),
+      amount: text(entry.request.amount),
+      asset: text(entry.request.asset),
+      chain: text(entry.request.chain),
+      terms: terms ?? null,
+    };
+  }
+
+  async function heldOf(organizationId: string, connection: Connection, calls: AgentCalls) {
+    const held = await answer(organizationId, connection, await calls.call("held"));
+    const terms = await deps.payoutTerms(
+      organizationId,
+      held.map((h) => h.correlationId),
+    );
+    return held.map((h) => heldView(h, terms.get(h.correlationId)));
+  }
+
   async function view(organizationId: string) {
     const { calls, connection } = await connected(organizationId, "read");
     const overview = await answer(organizationId, connection, await calls.call("overview"));
@@ -139,6 +200,7 @@ export function createPlatformOwnerActions(deps: {
               Date.parse(grant.expires_at) - now().getTime() < GRANT_RENEW_DAYS * DAY_MS,
           }
         : null,
+      held: await heldOf(organizationId, connection, calls),
       actions: (await actionsOf(organizationId)).slice(0, 20).map(actionView),
     };
   }
@@ -151,6 +213,7 @@ export function createPlatformOwnerActions(deps: {
         payoutAsset: rules.asset,
         maxPerPayout: rules.maxPerPayout,
         monthlyBudgetUsd: rules.monthlyBudgetUsd,
+        ownerApproval: rules.ownerApproval,
         updatedBy: actorId,
         updatedAt: now(),
       })
@@ -162,8 +225,9 @@ export function createPlatformOwnerActions(deps: {
     organizationId: string,
     connection: Connection,
     calls: AgentCalls,
-    input: { kind: OwnerActionKind; grantId?: string },
-  ): Promise<{ action: AppOwnerAction; summary: string }> {
+    input: PrepareInput,
+  ): Promise<Built> {
+    if (input.kind === "payout_vote") return vote(organizationId, connection, calls, input);
     if (input.kind === "grant") {
       return {
         action: {
@@ -206,6 +270,37 @@ export function createPlatformOwnerActions(deps: {
     };
   }
 
+  async function vote(
+    organizationId: string,
+    connection: Connection,
+    calls: AgentCalls,
+    input: PrepareInput,
+  ): Promise<Built> {
+    if (!input.approvalId || !input.verdict) {
+      throw badRequest("Say which held payout to vote on, and how");
+    }
+    const held = (await heldOf(organizationId, connection, calls)).find(
+      (h) => h.approvalId === input.approvalId,
+    );
+    if (!held) throw badRequest("That payout isn't waiting for the owner's vote");
+    const amount =
+      held.amount && held.asset
+        ? baseUnitsToDisplay(held.amount, tokenOf(held.asset))
+        : (held.amount ?? "an unknown amount");
+    const purpose = held.terms ? ` for "${held.terms.workOrderTitle}"` : "";
+    return {
+      action: {
+        type: "approval_vote",
+        approvalId: held.approvalId,
+        verdict: input.verdict,
+        correlationId: held.correlationId,
+      },
+      summary: `${input.verdict === "approve" ? "Approve" : "Reject"} paying ${amount} to ${held.recipient ?? "an unknown payee"}${purpose}`,
+      subject: held.correlationId,
+      verdict: input.verdict,
+    };
+  }
+
   async function record(
     organizationId: string,
     agent: string,
@@ -223,7 +318,7 @@ export function createPlatformOwnerActions(deps: {
     connection: Connection,
     calls: AgentCalls,
     kind: OwnerActionKind,
-    summary: string,
+    built: Built,
     actorId: string,
   ) {
     const actions = await answer(organizationId, connection, await calls.call("owner/actions"));
@@ -241,7 +336,9 @@ export function createPlatformOwnerActions(deps: {
     if (!open) return null;
     await record(organizationId, connection.agent, kind, {
       correlationId: open.correlationId,
-      summary: `${summary} (its answer was lost; recovered from the platform)`,
+      summary: `${built.summary} (its answer was lost; recovered from the platform)`,
+      subject: built.subject ?? null,
+      verdict: built.verdict ?? null,
       expiresAt: new Date(open.expiresAt),
       status: open.stage === "prepared" ? "adopted" : "submitted",
       requestedBy: actorId,
@@ -249,13 +346,10 @@ export function createPlatformOwnerActions(deps: {
     return open.correlationId;
   }
 
-  async function prepare(
-    organizationId: string,
-    actorId: string,
-    input: { kind: OwnerActionKind; grantId?: string },
-  ) {
+  async function prepare(organizationId: string, actorId: string, input: PrepareInput) {
     const { calls, connection } = await connected(organizationId, "owner");
-    const { action, summary } = await build(organizationId, connection, calls, input);
+    const built = await build(organizationId, connection, calls, input);
+    const { action, summary } = built;
     const open = (await actionsOf(organizationId)).filter(
       (a) => a.kind === input.kind && isOpen(a),
     );
@@ -264,14 +358,10 @@ export function createPlatformOwnerActions(deps: {
     const prepared = await calls.call("owner/prepare", { action, signer: "wallet" });
     if (!prepared.ok) {
       if (prepared.kind === "unknown") {
-        const adopted = await adopt(
-          organizationId,
-          connection,
-          calls,
-          input.kind,
-          summary,
-          actorId,
-        );
+        const adopted =
+          input.kind === "payout_vote"
+            ? null
+            : await adopt(organizationId, connection, calls, input.kind, built, actorId);
         if (adopted)
           return {
             action: actionView(await ownAction(organizationId, adopted)),
@@ -301,6 +391,8 @@ export function createPlatformOwnerActions(deps: {
       summary,
       confirmUrl: confirm?.url ?? null,
       intent: readable ? JSON.stringify(readable) : null,
+      subject: built.subject ?? null,
+      verdict: built.verdict ?? null,
       expiresAt: new Date(confirm?.expiresAt ?? expiresAt),
       status: "prepared",
       requestedBy: actorId,
@@ -335,10 +427,14 @@ export function createPlatformOwnerActions(deps: {
   }
 
   async function setStatus(correlationId: string, status: string) {
-    await db
+    const [action] = await db
       .update(platformOwnerActions)
       .set({ status, updatedAt: now() })
-      .where(eq(platformOwnerActions.correlationId, correlationId));
+      .where(eq(platformOwnerActions.correlationId, correlationId))
+      .returning();
+    if (action?.kind === "payout_vote" && action.verdict === "reject" && action.subject) {
+      if (status === "SUCCESS") await deps.payoutRejected(action.organizationId, action.subject);
+    }
   }
 
   async function ownAction(organizationId: string, correlationId: string) {

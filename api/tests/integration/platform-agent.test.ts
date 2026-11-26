@@ -372,18 +372,6 @@ describe("connecting a platform agent", () => {
       monthly: { spentUsd: "20", remainingUsd: "480" },
     });
     expect(overview.book[0]).toMatchObject({ symbol: "USDC", confidential: "12500000" });
-    expect(await reads.held(ORG)).toEqual([
-      {
-        at: "2026-11-25T10:00:00Z",
-        kind: "remote",
-        correlationId: "held-1",
-        approvalId: "appr-1",
-        recipient: "carol.near",
-        amount: "5000000",
-        asset: "nep141:usdc",
-        chain: null,
-      },
-    ]);
 
     platform.failNext("agent:overview", {
       ok: false,
@@ -448,22 +436,22 @@ describe("connecting a platform agent", () => {
   test("an agent whose owner changed ends access", async () => {
     await connect();
     const reads = createPlatformReads({ app: platform.client(), agents });
-    platform.failNext("agent:held", {
+    platform.failNext("agent:unresolved", {
       ok: false,
       kind: "forbidden",
       status: 403,
       code: "owner_changed",
       error: "owner changed",
     });
-    await expect(reads.held(ORG)).rejects.toThrow(/owner_changed/);
+    await expect(reads.unresolved(ORG)).rejects.toThrow(/owner_changed/);
     expect((await agents.view(ORG)).state).toBe("ended");
   });
 
   test("a refused read that isn't the end of access leaves the consent live", async () => {
     await connect();
     const reads = createPlatformReads({ app: platform.client(), agents });
-    platform.failNext("agent:held", { ok: false, kind: "unavailable" });
-    await expect(reads.held(ORG)).rejects.toThrow(/didn't answer/);
+    platform.failNext("agent:unresolved", { ok: false, kind: "unavailable" });
+    await expect(reads.unresolved(ORG)).rejects.toThrow(/didn't answer/);
     expect((await agents.view(ORG)).state).toBe("connected");
   });
 

@@ -18,6 +18,7 @@ import { Field } from "@/components/admin-form";
 import { SigningText } from "@/components/platform-agent/signing-text";
 import { type ApiClient, useApiClient } from "@/lib/api";
 import { useAuthClient } from "@/lib/auth";
+import { formatTokenAmount, tokenSymbol } from "@/lib/format-amount";
 import { signAgentIntent } from "@/lib/payout-agent-signing";
 import { platformAgentQueryKey, platformAgentReadKey } from "@/lib/queries";
 
@@ -25,12 +26,40 @@ type OwnerView = Awaited<ReturnType<ApiClient["platformAgent"]["ownerView"]>>;
 type Prepared = Awaited<ReturnType<ApiClient["platformAgent"]["prepareAction"]>>;
 type Kind = Parameters<ApiClient["platformAgent"]["prepareAction"]>[0]["kind"];
 type Rules = NonNullable<OwnerView["rules"]>;
+type Held = OwnerView["held"][number];
+type Verdict = "approve" | "reject";
 
 const ASSET_LABELS: Record<Rules["asset"], string> = {
   wnear: "wNEAR, withdrawn to each builder's NEAR account",
   usdc: "USDC, sent as a confidential transfer",
 };
 const decimal = /^\d+(\.\d{1,6})?$/;
+const tokenOf = (asset: string) => asset.replace(/^nep141:/, "");
+const amountOf = (amount: string | null, asset: string | null) =>
+  amount && asset ? formatTokenAmount(amount, tokenOf(asset)) : (amount ?? "an unknown amount");
+
+function HeldTerms({ held }: { held: Held }) {
+  const terms = held.terms;
+  if (!terms) {
+    return (
+      <span className="text-destructive">
+        Not one of this dashboard's work-order payouts. Check it on the platform before voting.
+      </span>
+    );
+  }
+  const approved = terms.approvedAmount
+    ? formatTokenAmount(terms.approvedAmount, terms.tokenId)
+    : "an amount not yet approved";
+  const price =
+    terms.priceUsd && held.asset
+      ? `, converted at ${terms.priceUsd} USD per ${tokenSymbol(tokenOf(held.asset))}`
+      : "";
+  return (
+    <span className="text-muted-foreground">
+      For the work order "{terms.workOrderTitle}": {approved} approved{price}.
+    </span>
+  );
+}
 
 export function PlatformOwnerActions({ owner, host }: { owner: string; host: string | null }) {
   const apiClient = useApiClient();
@@ -43,6 +72,11 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
     queryFn: () => apiClient.platformAgent.ownerView({}),
     retry: false,
     refetchInterval: (q) => (q.state.data?.actions.some((a) => a.open) ? 15_000 : false),
+  });
+  const deposit = useQuery({
+    queryKey: platformAgentReadKey("deposit"),
+    queryFn: () => apiClient.platformAgent.deposit({}),
+    retry: false,
   });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: platformAgentQueryKey });
@@ -62,7 +96,7 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
   });
 
   const prepare = useMutation({
-    mutationFn: (input: { kind: Kind; grantId?: string }) =>
+    mutationFn: (input: { kind: Kind; grantId?: string; approvalId?: string; verdict?: Verdict }) =>
       apiClient.platformAgent.prepareAction(input),
     onSuccess: (result) => {
       setPrepared(result);
@@ -88,6 +122,12 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
     onError: failed("Couldn't sign it"),
   });
 
+  const fund = useMutation({
+    mutationFn: () => apiClient.platformAgent.fundAgent({}),
+    onSuccess: refresh,
+    onError: failed("Couldn't get a deposit address"),
+  });
+
   const follow = useMutation({
     mutationFn: (correlationId: string) => apiClient.platformAgent.followAction({ correlationId }),
     onSuccess: refresh,
@@ -103,9 +143,12 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
     );
   }
   const data = query.data;
-  const values = form ?? data.rules ?? { asset: "wnear", maxPerPayout: "", monthlyBudgetUsd: "" };
+  const values = form ??
+    data.rules ?? { asset: "wnear", maxPerPayout: "", monthlyBudgetUsd: "", ownerApproval: false };
   const valid = decimal.test(values.maxPerPayout) && decimal.test(values.monthlyBudgetUsd);
-  const busy = save.isPending || prepare.isPending || sign.isPending || follow.isPending;
+  const busy =
+    save.isPending || prepare.isPending || sign.isPending || follow.isPending || fund.isPending;
+  const funding = deposit.data;
   const open = data.actions.filter((a) => a.open);
   const openKind = (kind: Kind) => open.some((a) => a.kind === kind);
 
@@ -164,6 +207,14 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
               />
             </Field>
           </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={values.ownerApproval}
+              onChange={(e) => setForm({ ...values, ownerApproval: e.target.checked })}
+            />
+            Each payout waits for the owner's vote here before it's sent
+          </label>
           <Button type="submit" size="sm" className="self-start" disabled={busy || !valid}>
             {save.isPending ? "Saving…" : "Save the rules"}
           </Button>
@@ -185,6 +236,44 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
             >
               Prepare the updated rules
             </Button>
+          </div>
+        )}
+
+        {data.held.length > 0 && (
+          <div className="flex flex-col gap-2 border-t pt-4">
+            <span className="text-sm font-medium">Waiting for the owner's vote</span>
+            <p className="text-sm text-muted-foreground">
+              The platform's vote text doesn't name the payee or the amount. They're shown here.
+            </p>
+            <ul className="flex flex-col gap-3 text-sm">
+              {data.held.map((h) => (
+                <li key={h.approvalId} className="flex flex-col gap-1">
+                  <span>
+                    {amountOf(h.amount, h.asset)} to {h.recipient ?? "an unknown payee"}
+                    {h.chain
+                      ? ` by withdrawal to their ${h.chain.toUpperCase()} account`
+                      : " by confidential transfer"}
+                    , held since {new Date(h.at).toLocaleString()}
+                  </span>
+                  <HeldTerms held={h} />
+                  <div className="flex gap-2">
+                    {(["approve", "reject"] as const).map((verdict) => (
+                      <Button
+                        key={verdict}
+                        size="sm"
+                        variant={verdict === "approve" ? "default" : "outline"}
+                        disabled={busy || openKind("payout_vote")}
+                        onClick={() =>
+                          prepare.mutate({ kind: "payout_vote", approvalId: h.approvalId, verdict })
+                        }
+                      >
+                        {verdict === "approve" ? "Approve this payout" : "Reject it"}
+                      </Button>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
@@ -239,6 +328,52 @@ export function PlatformOwnerActions({ owner, host }: { owner: string; host: str
               </Button>
             )}
           </div>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <span className="text-sm font-medium">Fund the agent</span>
+          {funding?.usable && funding.address ? (
+            <div className="flex flex-col gap-1 text-sm">
+              <span>
+                Send {funding.symbol} to this deposit address. It credits only this agent's balance.
+              </span>
+              <span className="break-all font-mono text-xs">{funding.address}</span>
+              {funding.memo && (
+                <span>
+                  Memo: <span className="font-mono text-xs">{funding.memo}</span>
+                </span>
+              )}
+              {funding.minAmount && (
+                <span>
+                  At least {formatTokenAmount(funding.minAmount, tokenOf(funding.asset))}.
+                </span>
+              )}
+              {funding.expiresAt && (
+                <span className="text-muted-foreground">
+                  Valid until {new Date(funding.expiresAt).toLocaleString()}.
+                </span>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {funding?.state === "unknown" || funding?.state === "requesting"
+                ? "The platform hasn't confirmed the address yet. Ask again to check."
+                : funding?.state === "refused"
+                  ? `The platform refused the last request (${funding.code ?? "no reason given"}).`
+                  : "Get a one-time address that credits this agent in the asset its rules pay."}
+            </p>
+          )}
+          {!funding?.usable && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-start"
+              disabled={busy || !data.rules}
+              onClick={() => fund.mutate()}
+            >
+              {fund.isPending ? "Asking…" : "Get a deposit address"}
+            </Button>
+          )}
         </div>
 
         {prepared?.intent && (

@@ -11,9 +11,11 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import {
+  DEPOSIT_STATES,
   OWNER_ACTION_KINDS,
   PAYOUT_ASSETS,
   PAYOUT_ROUTES,
+  PAYOUT_VERDICTS,
   PLATFORM_REVOKED_REASONS,
   PLATFORM_SIGNING_KINDS,
 } from "../services/platform/terms";
@@ -969,6 +971,7 @@ export const platformAgents = pgTable("platform_agents", {
   payoutAsset: text("payout_asset", { enum: PAYOUT_ASSETS }),
   maxPerPayout: text("max_per_payout"),
   monthlyBudgetUsd: text("monthly_budget_usd"),
+  ownerApproval: boolean("owner_approval").notNull().default(false),
   grantRemindedFor: timestamp("grant_reminded_for", { withTimezone: false }),
   payoutRoute: text("payout_route", { enum: PAYOUT_ROUTES }).notNull().default("legacy"),
   updatedBy: text("updated_by").notNull(),
@@ -1012,6 +1015,8 @@ export const platformOwnerActions = pgTable(
     summary: text("summary").notNull(),
     confirmUrl: text("confirm_url"),
     intent: text("intent"),
+    subject: text("subject"),
+    verdict: text("verdict", { enum: PAYOUT_VERDICTS }),
     expiresAt: timestamp("expires_at", { withTimezone: false }).notNull(),
     status: text("status").notNull(),
     requestedBy: text("requested_by").notNull(),
@@ -1045,6 +1050,7 @@ export const platformPayouts = pgTable(
     failureCode: text("failure_code"),
     neverExecuted: boolean("never_executed").notNull().default(false),
     correlationId: text("correlation_id"),
+    allowDuplicateHeld: boolean("allow_duplicate_held").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
   },
@@ -1054,6 +1060,30 @@ export const platformPayouts = pgTable(
 );
 
 export type PlatformPayoutRow = typeof platformPayouts.$inferSelect;
+
+export const platformDeposits = pgTable(
+  "platform_deposits",
+  {
+    requestId: text("request_id").primaryKey(),
+    organizationId: text("organization_id").notNull(),
+    agent: text("agent").notNull(),
+    asset: text("asset").notNull(),
+    state: text("state", { enum: DEPOSIT_STATES }).notNull(),
+    address: text("address"),
+    memo: text("memo"),
+    minAmount: text("min_amount"),
+    expiresAt: timestamp("expires_at", { withTimezone: false }),
+    code: text("code"),
+    requestedBy: text("requested_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false }).notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: false }).notNull().default(sql`now()`),
+  },
+  (t) => ({
+    byOrganization: index("platform_deposits_organization").on(t.organizationId),
+  }),
+);
+
+export type PlatformDepositRow = typeof platformDeposits.$inferSelect;
 
 export const PAYOUT_ACTIONS = [
   "create_agent",

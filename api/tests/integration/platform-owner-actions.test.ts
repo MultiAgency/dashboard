@@ -6,6 +6,7 @@ import {
   createPlatformOwnerActions,
   type PlatformOwnerActions,
 } from "../../src/services/platform/owner-actions";
+import type { PayoutTerms } from "../../src/services/platform/payouts";
 import { FakePlatformApp } from "../fakes/platform-app";
 import { migratedDatabase } from "./_pg";
 
@@ -22,7 +23,12 @@ const SETTINGS = {
   credential: "tap_x.y",
 } as const;
 const DAY = 86_400_000;
-const WNEAR_RULES = { asset: "wnear", maxPerPayout: "50", monthlyBudgetUsd: "500" } as const;
+const WNEAR_RULES = {
+  asset: "wnear",
+  maxPerPayout: "50",
+  monthlyBudgetUsd: "500",
+  ownerApproval: false,
+} as const;
 
 describe("owner actions through the platform", () => {
   const database = migratedDatabase({ perTest: true });
@@ -31,11 +37,15 @@ describe("owner actions through the platform", () => {
   let agents: PlatformAgents;
   let actions: PlatformOwnerActions;
   let payees: string[];
+  let terms: Map<string, PayoutTerms>;
+  let rejected: Array<[string, string]>;
   const key = generateKey().publicKey.toString();
 
   beforeEach(async () => {
     clock = new Date("2026-11-25T12:00:00.000Z");
     payees = ["carol.near"];
+    terms = new Map();
+    rejected = [];
     platform = new FakePlatformApp({
       host: HOST,
       deployment: DEPLOYMENT,
@@ -52,6 +62,10 @@ describe("owner actions through the platform", () => {
       app: platform.client(),
       agents,
       payees: async () => payees,
+      payoutTerms: async () => terms,
+      payoutRejected: async (organizationId, correlationId) => {
+        rejected.push([organizationId, correlationId]);
+      },
       now: () => clock,
     });
     const setup = await agents.startSetup(ORG, ACTOR, { ownerAccountId: OWNER });
@@ -278,6 +292,86 @@ describe("owner actions through the platform", () => {
     const changed = await actions.prepare(ORG, ACTOR, { kind: "rules" });
     expect(changed.action.correlationId).not.toBe(first.action.correlationId);
     expect(prepareBody()).toMatchObject({ changes: { budget: { monthly_usd: "900" } } });
+  });
+
+  test("a held payout is shown with its work order, and the owner's vote names its payee and amount", async () => {
+    terms.set("held-1", {
+      compensationRequestId: "req-1",
+      workOrderId: "wo-1",
+      workOrderTitle: "Site build",
+      approvedAmount: "5000000",
+      tokenId: "usd",
+      priceUsd: null,
+    });
+    expect((await actions.view(ORG)).held).toEqual([
+      {
+        approvalId: "appr-1",
+        correlationId: "held-1",
+        at: "2026-11-25T10:00:00Z",
+        recipient: "carol.near",
+        amount: "5000000",
+        asset: "nep141:usdc",
+        chain: null,
+        terms: expect.objectContaining({ workOrderTitle: "Site build" }),
+      },
+    ]);
+
+    const vote = await actions.prepare(ORG, ACTOR, {
+      kind: "payout_vote",
+      approvalId: "appr-1",
+      verdict: "approve",
+    });
+    expect(prepareBody()).toEqual({
+      type: "approval_vote",
+      approvalId: "appr-1",
+      verdict: "approve",
+      correlationId: "held-1",
+    });
+    expect(vote.action.summary).toMatch(/^Approve paying .+ to carol\.near for "Site build"$/);
+    expect(vote.intent).not.toBeNull();
+
+    await actions.submit(ORG, { correlationId: vote.action.correlationId, signedData: {} });
+    expect(platform.votes).toEqual([{ approvalId: "appr-1", verdict: "approve" }]);
+    expect((await actions.view(ORG)).held).toEqual([]);
+    expect(rejected).toEqual([]);
+  });
+
+  test("a rejection the owner signed marks the payout rejected, so it isn't sent again", async () => {
+    const vote = await actions.prepare(ORG, ACTOR, {
+      kind: "payout_vote",
+      approvalId: "appr-1",
+      verdict: "reject",
+    });
+    expect(vote.action.summary).toMatch(/^Reject paying /);
+    expect(rejected).toEqual([]);
+    await actions.submit(ORG, { correlationId: vote.action.correlationId, signedData: {} });
+    expect(rejected).toEqual([[ORG, "held-1"]]);
+  });
+
+  test("a vote is only for a payout that's waiting for one, and says how", async () => {
+    const before = platform.count("agent:owner/prepare");
+    await expect(
+      actions.prepare(ORG, ACTOR, { kind: "payout_vote", approvalId: "appr-9", verdict: "reject" }),
+    ).rejects.toThrow(/isn't waiting for the owner's vote/);
+    await expect(
+      actions.prepare(ORG, ACTOR, { kind: "payout_vote", approvalId: "appr-1" }),
+    ).rejects.toThrow(/how/);
+    expect(platform.count("agent:owner/prepare")).toBe(before);
+  });
+
+  test("a vote whose answer was lost isn't adopted from another open vote", async () => {
+    platform.loseNextAnswer("agent:owner/prepare");
+    await expect(
+      actions.prepare(ORG, ACTOR, { kind: "payout_vote", approvalId: "appr-1", verdict: "reject" }),
+    ).rejects.toThrow(/answer was lost/);
+    expect(platform.count("agent:owner/actions")).toBe(0);
+  });
+
+  test("the owner chooses whether each payout waits for a vote", async () => {
+    await actions.saveRules(ORG, ACTOR, { ...WNEAR_RULES, ownerApproval: true });
+    expect((await actions.view(ORG)).rules).toMatchObject({ ownerApproval: true });
+    await actions.prepare(ORG, ACTOR, { kind: "rules" });
+    expect(prepareBody()).not.toHaveProperty("changes.owner_approval");
   });
 
   test("another open action of the kind is reported, not adopted in place of this one", async () => {
