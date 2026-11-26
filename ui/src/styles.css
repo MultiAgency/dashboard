@@ -7,6 +7,13 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  --type-masthead: clamp(2.375rem, 1rem + 5.6vw, 6.5rem);
+  --type-display: clamp(2rem, 1.35rem + 2.5vw, 4rem);
+  --type-section: clamp(1.75rem, 1.25rem + 1.9vw, 3.25rem);
+  --type-project: clamp(1.5rem, 1.05rem + 1.8vw, 3rem);
+  --type-subhead: clamp(1.125rem, 1rem + 0.75vw, 1.75rem);
+  --type-lead: clamp(0.9375rem, 0.9rem + 0.1vw, 1rem);
+
   --page: oklch(0.975 0 0);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -101,6 +108,14 @@
   }
 }
 
+@theme {
+  --text-lg: 1.0625rem;
+  --text-xl: 1.125rem;
+  --text-2xl: 1.3125rem;
+  --text-3xl: 1.5625rem;
+  --text-4xl: 1.875rem;
+}
+
 @theme inline {
   --font-sans: "Inter Variable", sans-serif;
   --font-heading: "Geist Variable", sans-serif;
@@ -161,6 +176,7 @@
 
   body {
     @apply m-0 bg-background text-foreground antialiased;
+    font-size: 0.9375rem;
     min-height: 100%;
     min-height: 100dvh;
   }
@@ -187,4 +203,13 @@
 
 .animate-fade-in {
   animation: fade-in-up 0.18s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+/* Shared diffusion on the site shell uses the active theme and no animation loop. */
+.agency-shell {
+  background-image:
+    radial-gradient(ellipse at 100% 3%, color-mix(in srgb, var(--page) 10%, transparent), var(--page) 72%),
+    radial-gradient(circle, color-mix(in srgb, var(--foreground) 13%, transparent) .8px, transparent 1px);
+  background-size: 100% 100vh, 8px 8px;
+  background-attachment: fixed;
 }
