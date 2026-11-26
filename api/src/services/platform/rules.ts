@@ -13,9 +13,13 @@ export type PayoutRules = {
 };
 
 export const PAYOUT_ASSET_TERMS = {
-  wnear: { id: ASSETS.wNEAR, decimals: 24, symbol: "wNEAR" },
-  usdc: { id: ASSETS.USDC, decimals: 6, symbol: "USDC" },
-} as const satisfies Record<PayoutAsset, { id: string; decimals: number; symbol: string }>;
+  wnear: { id: ASSETS.wNEAR, decimals: 24, symbol: "wNEAR", delivery: "near" },
+  usdc: { id: ASSETS.USDC, decimals: 6, symbol: "USDC", delivery: "intents" },
+} as const satisfies Record<
+  PayoutAsset,
+  { id: string; decimals: number; symbol: string; delivery: "near" | "intents" }
+>;
+export type PayoutAssetTerms = (typeof PAYOUT_ASSET_TERMS)[PayoutAsset];
 
 const sorted = (values: Iterable<string>) =>
   [...new Set([...values].map((v) => v.toLowerCase()))].sort();

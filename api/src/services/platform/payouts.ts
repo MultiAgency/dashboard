@@ -8,11 +8,12 @@ import {
   platformPayouts,
   workOrders,
 } from "../../db/schema";
-import { atomicToNear, topUpFor } from "../payouts/policy";
+import { atomicToDecimal, atomicToNear, tokenOfAsset, topUpFor } from "../payouts/policy";
 import type { FundingCheck } from "../payouts/service";
 import type { AgentPayoutView } from "../work-orders/service";
 import { badRequest, type PlatformAgents } from "./agents";
 import { ASSETS, type OwnerOutput, type OwnerResult, type PlatformApp } from "./client";
+import { PAYOUT_ASSET_TERMS, type PayoutAssetTerms } from "./rules";
 import type { PayoutRoute } from "./terms";
 
 const UNAVAILABLE = "Platform access isn't turned on for this server";
@@ -133,6 +134,7 @@ export function payoutView(row: PlatformPayoutRow): AgentPayoutView {
     txUrl: null,
     reason,
     provenUnsent: provenUnsent(row),
+    assetId: row.asset,
     createdAt: row.createdAt,
   };
 }
@@ -154,6 +156,19 @@ export function createPlatformPayouts(deps: {
       .where(eq(platformAgents.organizationId, organizationId))
       .limit(1);
     return deps.app && row?.route === "platform" ? "platform" : "legacy";
+  }
+
+  async function termsOf(organizationId: string): Promise<PayoutAssetTerms> {
+    const [row] = await db
+      .select({ asset: platformAgents.payoutAsset })
+      .from(platformAgents)
+      .where(eq(platformAgents.organizationId, organizationId))
+      .limit(1);
+    return PAYOUT_ASSET_TERMS[row?.asset ?? "wnear"];
+  }
+
+  async function payoutToken(organizationId: string) {
+    return tokenOfAsset((await termsOf(organizationId)).id);
   }
 
   async function payoutConnection(organizationId: string) {
@@ -193,8 +208,14 @@ export function createPlatformPayouts(deps: {
       (g) => g.label === "payout" && !g.revoked_at && Date.parse(g.expires_at) > now().getTime(),
     );
     if (!live) return refuse("no_grant", "MultiAgency's payout permission is missing or expired");
+    const terms = await termsOf(organizationId);
+    const units = (value: bigint) => `${atomicToDecimal(value, terms.decimals)} ${terms.symbol}`;
     const agreed = policy.destinations.list.some(
-      (d) => d.action === "withdraw" && d.chain === "near" && d.address === payee.toLowerCase(),
+      (d) =>
+        d.address === payee.toLowerCase() &&
+        (terms.delivery === "intents"
+          ? d.action === "transfer"
+          : d.action === "withdraw" && d.chain === terms.delivery),
     );
     if (!agreed) {
       return refuse(
@@ -202,23 +223,23 @@ export function createPlatformPayouts(deps: {
         `The signed rules don't allow paying ${payee} yet: sign the updated rules`,
       );
     }
-    if (policy.assets !== "any" && !policy.assets.includes(WNEAR)) {
-      return refuse("asset_not_allowed", "The rules don't allow paying in NEAR");
+    if (policy.assets !== "any" && !policy.assets.includes(terms.id)) {
+      return refuse("asset_not_allowed", `The rules don't allow paying in ${terms.symbol}`);
     }
     if (amountAtomic == null) return { ready: true, code: null, reason: null };
     const amount = BigInt(amountAtomic);
-    const cap = policy.limits.per_transaction?.[WNEAR];
+    const cap = policy.limits.per_transaction?.[terms.id];
     if (cap !== undefined && amount > BigInt(cap)) {
       return refuse(
         "over_cap",
-        `${atomicToNear(amount)} NEAR is over the ${atomicToNear(BigInt(cap))} NEAR cap per payout`,
+        `${units(amount)} is over the ${units(BigInt(cap))} cap per payout`,
       );
     }
-    const held = overview.book.find((h) => h.asset === WNEAR);
+    const held = overview.book.find((h) => h.asset === terms.id);
     const monthly = overview.policy.usage?.budget.monthly;
     const price = held?.price ?? null;
     if (monthly?.remaining_usd != null && price != null) {
-      const amountUsd = Number(atomicToNear(amount, 6)) * price;
+      const amountUsd = Number(atomicToDecimal(amount, terms.decimals, 6)) * price;
       if (amountUsd > Number(monthly.remaining_usd)) {
         return refuse(
           "over_monthly_budget",
@@ -230,7 +251,7 @@ export function createPlatformPayouts(deps: {
     if (balance !== null && balance < amount) {
       return refuse(
         "insufficient_balance",
-        `The agent holds ${atomicToNear(balance)} NEAR; this payout needs ${atomicToNear(amount)} NEAR`,
+        `The agent holds ${units(balance)}; this payout needs ${units(amount)}`,
       );
     }
     return { ready: true, code: null, reason: null };
@@ -240,6 +261,7 @@ export function createPlatformPayouts(deps: {
     organizationId: string,
     needs: { near: bigint; priceUsd: string | null },
   ): Promise<FundingCheck | null> {
+    if ((await termsOf(organizationId)).id !== WNEAR) return null;
     const overview = await overviewOf(organizationId);
     if (typeof overview === "string") return null;
     const held = overview.book.find((h) => h.asset === WNEAR);
@@ -308,7 +330,7 @@ export function createPlatformPayouts(deps: {
     const result = await connected.calls.call("payouts/request", {
       requestId: row.requestId,
       asset: row.asset,
-      delivery: { chain: row.chain },
+      delivery: row.chain === "intents" ? "intents" : { chain: row.chain },
       recipient: row.recipient,
       amount: row.amount,
       expectedPolicy: { revision: row.expectedRevision, digest: row.expectedDigest },
@@ -348,14 +370,20 @@ export function createPlatformPayouts(deps: {
 
   async function send(
     organizationId: string,
-    input: { requestId: string; recipient: string; amount: string },
+    input: { requestId: string; recipient: string; amount: string; tokenId: string },
   ): Promise<AgentPayoutView> {
     const connected = await payoutConnection(organizationId);
     if (!connected?.connection.scopes.includes("payout")) {
       throw badRequest("This Organization's platform agent can't be asked to pay");
     }
+    const terms = await termsOf(organizationId);
     const [last] = await attemptsOf(input.requestId);
     if (last && !retryable(last)) return payoutView(last);
+    if (tokenOfAsset(terms.id) !== input.tokenId) {
+      throw badRequest(
+        `The agent now pays in ${terms.symbol}; this payout is priced again on the next try`,
+      );
+    }
     const attempt = (last?.attempt ?? 0) + 1;
     const requestId = `${input.requestId}-${attempt}`;
     if (!REQUEST_ID.test(requestId)) throw badRequest(`${requestId} can't be a platform payout ID`);
@@ -371,8 +399,8 @@ export function createPlatformPayouts(deps: {
       attempt,
       organizationId,
       agent: connected.connection.agent,
-      asset: WNEAR,
-      chain: "near",
+      asset: terms.id,
+      chain: terms.delivery,
       recipient: input.recipient.toLowerCase(),
       amount: input.amount,
       expectedRevision: overview.value.policy.revision,
@@ -465,6 +493,7 @@ export function createPlatformPayouts(deps: {
 
   return {
     routeOf,
+    payoutToken,
     setRoute,
     isPlatformPayout,
     readiness,

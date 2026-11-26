@@ -395,7 +395,10 @@ function SubmittedRequest({
       {request.note && <p className="text-sm text-muted-foreground">{request.note}</p>}
       {request.agentPayout?.status === "paid" && (
         <p className="text-sm text-muted-foreground">
-          Paid {formatTokenAmount(request.agentPayout.amount, "near")} to your NEAR account
+          Paid {formatTokenAmount(request.agentPayout.amount, request.agentPayout.tokenId)}
+          {request.agentPayout.tokenId === "near"
+            ? " to your NEAR account"
+            : " by confidential transfer on NEAR Intents"}
           {request.agentPayout.txUrl ? (
             <>
               {" · "}

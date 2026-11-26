@@ -308,6 +308,7 @@ export const compensationRequest = z.object({
         "rejected",
       ]),
       amount: z.string(),
+      tokenId: z.string(),
       txUrl: z.string().nullable(),
       accountUrl: z.string().nullable(),
       reason: z.string().nullable(),

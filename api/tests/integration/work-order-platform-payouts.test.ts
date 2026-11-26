@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { Database } from "../../src/db";
 import {
+  billings,
   compensationRequests,
   notifications,
   platformAgents,
@@ -275,7 +276,11 @@ describe("work-order payouts through the platform agent", () => {
     const wo = await active();
     const { submitted, admin } = await submit(wo.id);
     expect(submitted.status).toBe("paid");
-    expect((await admin()).agentPayout).toMatchObject({ status: "paid" });
+    expect((await admin()).agentPayout).toMatchObject({
+      status: "paid",
+      tokenId: "near",
+      accountUrl: `https://nearblocks.io/address/${CAROL}`,
+    });
     const sent = double.requests();
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ requestId: `${submitted.id}-1`, method: "withdraw" });
@@ -380,5 +385,87 @@ describe("work-order payouts through the platform agent", () => {
       .startDaoPayment(requireTreasury(await studio()), { requestId })
       .catch((error: Error) => error);
     expect(dao instanceof Error ? dao.message : "").not.toMatch(/automatic payout/);
+  });
+
+  describe("an Organization whose agent pays in USDC", () => {
+    const USDC_TOKEN = ASSETS.USDC.replace(/^nep141:/, "");
+
+    beforeEach(async () => {
+      await db.update(platformAgents).set({ payoutAsset: "usdc" });
+      double.setPolicy({
+        ...POLICY,
+        actions: ["transfer" as const],
+        assets: [ASSETS.USDC],
+        limits: { per_transaction: { [ASSETS.USDC]: "1000000000" } },
+        destinations: {
+          mode: "only" as const,
+          list: [{ action: "transfer" as const, address: CAROL, confidential: true }],
+        },
+      });
+      double.setBalance(ASSETS.USDC, "5000000000");
+    });
+
+    test("a USD-priced request is paid its approved dollars in USDC, by confidential transfer", async () => {
+      await paidHistory(4);
+      clock = new Date("2026-11-05T12:00:00.000Z");
+      await automatic();
+      const wo = await active();
+      const { submitted, admin } = await submit(wo.id);
+      expect(submitted.status).toBe("paid");
+      expect(double.requests()).toMatchObject([
+        {
+          requestId: `${submitted.id}-1`,
+          method: "transfer",
+          request: { asset: ASSETS.USDC, amount: "600000000", recipient: CAROL },
+        },
+      ]);
+      expect((await admin()).agentPayout).toMatchObject({
+        status: "paid",
+        tokenId: USDC_TOKEN,
+        accountUrl: null,
+      });
+      const [paid] = await db
+        .select()
+        .from(compensationRequests)
+        .where(eq(compensationRequests.id, submitted.id));
+      expect(paid).toMatchObject({ payoutTokenId: USDC_TOKEN, payoutAmount: "600000000" });
+      expect(
+        await service.payoutReadiness(await studio(), {
+          requestId: submitted.id,
+          amount: "600000000",
+        }),
+      ).toEqual({
+        ready: true,
+        code: null,
+        reason: null,
+        near: null,
+        balanceNear: null,
+        priceUsd: null,
+      });
+      const [billing] = await db
+        .select()
+        .from(billings)
+        .where(eq(billings.id, paid?.billingId ?? ""));
+      expect(billing).toMatchObject({ tokenId: USDC_TOKEN, amount: "600000000" });
+    });
+
+    test("a NEAR-priced request isn't paid automatically, and says to use a DAO proposal", async () => {
+      strongEvidence();
+      clock = new Date("2026-11-05T12:00:00.000Z");
+      const wo = await active({ tokenId: "near", budgetAmount: (100n * NEAR).toString() });
+      const { submitted } = await submit(wo.id, { amount: (5n * NEAR).toString() });
+      const approved = await service.approveRequest(await studio(), {
+        requestId: submitted.id,
+        amount: (5n * NEAR).toString(),
+      });
+      expect(approved.status).toBe("approved");
+      const result = await service
+        .payNow(await studio(), { requestId: submitted.id })
+        .catch((error: Error) => error);
+      expect(result instanceof Error ? result.message : "").toMatch(
+        /pays in USDC, so only work orders priced in USD are paid automatically/,
+      );
+      expect(double.requests()).toEqual([]);
+    });
   });
 });

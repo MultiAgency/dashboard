@@ -24,7 +24,7 @@ import { nearAccountsOf, type PluginContext } from "../../lib/organizations";
 import { rememberedLogin, rememberLogin } from "../builder-logins";
 import type { NotificationKind } from "../notifications";
 import type { AgencyScope, OrganizationScope, TreasuryScope } from "../organization-access";
-import { atomicToNear } from "../payouts/policy";
+import { atomicToNear, tokenOfAsset } from "../payouts/policy";
 import {
   type FundingCheck,
   noUnsettledPayout,
@@ -138,9 +138,10 @@ export type WorkOrderDeps = {
       organizationId: string,
       needs: { near: bigint; priceUsd: string | null },
     ): Promise<FundingCheck | null>;
+    payoutToken?(organizationId: string): Promise<string>;
     send(
       organizationId: string,
-      input: { requestId: string; recipient: string; amount: string },
+      input: { requestId: string; recipient: string; amount: string; tokenId: string },
     ): Promise<AgentPayoutView>;
     refresh(payout: AgentPayoutView): Promise<AgentPayoutView>;
     latest(requestId: string): Promise<AgentPayoutView | null>;
@@ -190,6 +191,7 @@ export type AgentPayoutView = {
   txUrl: string | null;
   reason: string | null;
   provenUnsent: boolean;
+  assetId: string;
   createdAt: Date;
 };
 
@@ -497,6 +499,35 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   }
 
   type PayoutQuote = Awaited<ReturnType<typeof priceOf>>;
+
+  async function agentTokenOf(row: WorkOrderRow) {
+    return (await deps.payouts?.payoutToken?.(row.organizationId)) ?? NATIVE_TOKEN_ID;
+  }
+
+  function agentRefusal(row: WorkOrderRow, token: string): string | null {
+    if (token === NATIVE_TOKEN_ID) {
+      return payoutTokenOf(row) === NATIVE_TOKEN_ID
+        ? null
+        : "Automatic payouts pay in NEAR; this work order pays in another token";
+    }
+    return row.tokenId === USD
+      ? null
+      : `This Organization's payout agent pays in ${symbolOf(token)}, so only work orders priced in USD are paid automatically. Pay this one through a DAO proposal.`;
+  }
+
+  async function agentQuote(
+    row: WorkOrderRow,
+    request: CompensationRequestRow,
+    token: string,
+  ): Promise<PayoutQuote> {
+    if (token === NATIVE_TOKEN_ID) return priceOf(row, request);
+    return {
+      tokenId: token,
+      amount: request.approvedAmount ?? "0",
+      priceUsd: null,
+      pricedAt: null,
+    };
+  }
 
   const lockedPrice = (payout: PayoutQuote) =>
     payout.priceUsd
@@ -1845,8 +1876,12 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
                   ? {
                       status: p.status,
                       amount: p.amount,
+                      tokenId: tokenOfAsset(p.assetId),
                       txUrl: p.txUrl,
-                      accountUrl: nearAccountUrl(row.builderNearAccount),
+                      accountUrl:
+                        tokenOfAsset(p.assetId) === NATIVE_TOKEN_ID
+                          ? nearAccountUrl(row.builderNearAccount)
+                          : null,
                       reason: p.reason,
                       canRetry: payoutRetryable(p),
                     }
@@ -2266,7 +2301,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
 
   async function allowPayee(row: WorkOrderRow) {
     const payouts = deps.payouts;
-    if (!payouts?.ensurePayees || payoutTokenOf(row) !== NATIVE_TOKEN_ID) return;
+    if (!payouts?.ensurePayees || agentRefusal(row, await agentTokenOf(row))) return;
     const result = await payouts
       .ensurePayees(row.organizationId)
       .catch((error: unknown) => ({ ok: false, reason: errorText(error) }));
@@ -2621,6 +2656,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     payout: AgentPayoutView,
   ): Promise<CompensationRequestRow> {
     const dao = await deps.agencyDaoOf(row.organizationId).catch(() => null);
+    const token = tokenOfAsset(payout.assetId);
     const paid = await db.transaction(async (tx) => {
       const [claimed] = await tx
         .update(compensationRequests)
@@ -2639,7 +2675,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           id: crypto.randomUUID(),
           projectId: row.projectId,
           nearAccount: row.builderNearAccount,
-          tokenId: NATIVE_TOKEN_ID,
+          tokenId: token,
           amount: payout.amount,
           proposalId: `intents:${payout.txHash ?? payout.correlationId ?? payout.id}`,
           payingDaoAccountId: dao,
@@ -2653,7 +2689,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
           status: "paid",
           paidAt: now(),
           billingId: billing!.id,
-          payoutTokenId: NATIVE_TOKEN_ID,
+          payoutTokenId: token,
           payoutAmount: payout.amount,
           autoPayBlockedReason: null,
           autoPayBlockedCode: null,
@@ -2673,7 +2709,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
     }
     const payload = await payloadOf(row, {
       requestCode: `${row.code}-R${request.seq}`,
-      amount: display(payout.amount, NATIVE_TOKEN_ID),
+      amount: display(payout.amount, token),
       daoAccountId: dao ?? "",
       proposalId: payout.txHash ?? "",
       status: "Paid",
@@ -2861,12 +2897,9 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
   ): Promise<{ request: CompensationRequestRow; reason: string | null }> {
     const payouts = deps.payouts;
     if (!payouts) return { request, reason: "Automatic payouts aren't set up" };
-    if (payoutTokenOf(row) !== NATIVE_TOKEN_ID) {
-      return {
-        request,
-        reason: "Automatic payouts pay in NEAR; this work order pays in another token",
-      };
-    }
+    const token = await agentTokenOf(row);
+    const refusal = agentRefusal(row, token);
+    if (refusal) return { request, reason: refusal };
     if (request.daoPaymentStartedAt) return { request, reason: DAO_PAYMENT_NOTE };
     const last = await payouts.latest(request.id);
     if (last?.status === "rejected") {
@@ -2893,7 +2926,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         reason,
       };
     }
-    const quote = await priceOf(row, request);
+    const quote = await agentQuote(row, request, token);
     const [claimed] = await db
       .update(compensationRequests)
       .set({ ...lockedPrice(quote), status: "paying", autoPayTriedAt: now(), updatedAt: now() })
@@ -2917,6 +2950,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         requestId: request.id,
         recipient: row.builderNearAccount,
         amount: quote.amount,
+        tokenId: quote.tokenId,
       });
     } catch (error) {
       const last = await payouts.latest(request.id).catch(() => undefined);
@@ -4219,11 +4253,21 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         priceUsd: extra.priceUsd ?? null,
       });
       if (!payouts) return result("unavailable", "Automatic payouts aren't set up");
-      if (payoutTokenOf(row) !== NATIVE_TOKEN_ID) {
-        return result(
-          "unavailable",
-          "Automatic payouts pay in NEAR; this work order pays in another token",
+      const token = await agentTokenOf(row);
+      const refusal = agentRefusal(row, token);
+      if (refusal) return result("unavailable", refusal);
+      const refused = (check: { code?: string | null; reason: string | null }) =>
+        check.code ?? (check.reason === NO_AGENT ? "no_agent" : "unreachable");
+      if (token !== NATIVE_TOKEN_ID) {
+        const check = await payouts.readiness(
+          row.organizationId,
+          row.builderNearAccount,
+          BigInt(input.amount),
+          null,
         );
+        return check.ready
+          ? result(null, null)
+          : result(refused(check), check.reason ?? "The payout agent isn't ready");
       }
       let priced: { near: bigint; priceUsd: string | null };
       try {
@@ -4239,7 +4283,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
         priced.priceUsd,
       );
       if (check.ready) return result(null, null, { near, priceUsd: priced.priceUsd });
-      const code = check.code ?? (check.reason === NO_AGENT ? "no_agent" : "unreachable");
+      const code = refused(check);
       const funding =
         !NOT_PAYING_NOW.has(code) && payouts.fundingCheck
           ? await payouts
@@ -4258,6 +4302,7 @@ export function createWorkOrdersService(deps: WorkOrderDeps) {
       const payouts = deps.payouts;
       if (!payouts?.fundingCheck || FINAL.includes(row.status)) return null;
       if (payoutTokenOf(row) !== NATIVE_TOKEN_ID) return null;
+      if ((await agentTokenOf(row)) !== NATIVE_TOKEN_ID) return null;
       const { paid } = amountsOf(row, await requestsOf(row.id));
       const budget = BigInt(row.budgetAmount);
       const unpaid = budget > paid ? budget - paid : 0n;

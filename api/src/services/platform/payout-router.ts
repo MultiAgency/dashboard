@@ -1,4 +1,5 @@
 import { payoutRetryable } from "../payouts/service";
+import { NATIVE_TOKEN_ID } from "../tokens";
 import type { AgentPayoutView, WorkOrderDeps } from "../work-orders/service";
 import { badRequest } from "./agents";
 import type { PlatformPayouts } from "./payouts";
@@ -27,9 +28,16 @@ export function routePayouts(legacy: Payouts | null, platform: PlatformPayouts):
     },
     fundingCheck: async (organizationId, needs) =>
       (await (await pick(organizationId))?.fundingCheck?.(organizationId, needs)) ?? null,
+    payoutToken: async (organizationId) =>
+      (await platform.routeOf(organizationId)) === "platform"
+        ? platform.payoutToken(organizationId)
+        : NATIVE_TOKEN_ID,
     send: async (organizationId, input) => {
       const payouts = await pick(organizationId);
       if (!payouts) throw badRequest("Automatic payouts aren't set up for this Organization");
+      if (payouts === legacy && input.tokenId !== NATIVE_TOKEN_ID) {
+        throw badRequest("The old payout agent pays only in NEAR");
+      }
       const last = await latest(input.requestId);
       if (last && !payoutRetryable(last)) return last;
       return payouts.send(organizationId, input);
