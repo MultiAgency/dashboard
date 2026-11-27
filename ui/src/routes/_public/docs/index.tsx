@@ -8,21 +8,27 @@ export const Route = createFileRoute("/_public/docs/")({
   head: () => ({
     meta: [
       { title: "Docs" },
-      { name: "description", content: "How MultiAgency operates and the integrations it runs on." },
+      {
+        name: "description",
+        content:
+          "How MultiAgency operates, the platform and apps, and the integrations it runs on.",
+      },
     ],
   }),
   component: DocsIndex,
 });
 
-const SECTION_ORDER: DocSection[] = ["operating", "skills"];
+const SECTION_ORDER: DocSection[] = ["operating", "platform", "skills"];
 
 const SECTION_TITLE: Record<DocSection, string> = {
   operating: "Operating model",
+  platform: "Platform and apps",
   skills: "Integration skills",
 };
 
 const SECTION_DESCRIPTION: Record<DocSection, string> = {
   operating: "How the Agency is set up and how work gets paid.",
+  platform: "The platform, Treasury, Desk and NEAR Extents, with a glossary.",
   skills: "Guides for the integrations the platform runs on.",
 };
 
@@ -36,7 +42,7 @@ function DocsIndex() {
     <div className="flex animate-fade-in flex-col gap-10">
       <PageHeader
         title="Docs"
-        description="How MultiAgency operates and the integrations it runs on."
+        description="How MultiAgency operates, the platform and apps, and the integrations it runs on."
       />
 
       {grouped.map(({ section, entries }) => (
