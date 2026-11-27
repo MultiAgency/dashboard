@@ -8,7 +8,11 @@ export const Route = createFileRoute("/_public/docs/")({
   head: () => ({
     meta: [
       { title: "Docs" },
-      { name: "description", content: "How MultiAgency operates, the platform and apps, and the integrations it runs on." },
+      {
+        name: "description",
+        content:
+          "How MultiAgency operates, the platform and apps, and the integrations it runs on.",
+      },
     ],
   }),
   component: DocsIndex,
